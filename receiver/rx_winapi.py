@@ -1,4 +1,4 @@
-"""Receiver: funkcje Windows (timer, priorytet, jedna instancja, SendInput, obszar roboczy, gniazda UDP)."""
+"""Receiver: funkcje Windows (timer, priorytet, jedna instancja, SendInput, gniazda UDP)."""
 import ctypes
 import ctypes.wintypes as wt
 import ntpath
@@ -72,14 +72,6 @@ def ensure_single_instance():
             sys.exit(1)
     except (AttributeError, OSError) as e:
         print(f"Single-instance check failed ({e!r}); continuing without lock.")
-
-
-def work_area():
-    """Obszar roboczy pulpitu (bez paska zadań): (lewo, góra, prawo, dół) albo None."""
-    r = wt.RECT()
-    if user32.SystemParametersInfoW(0x30, 0, ctypes.byref(r), 0):   # SPI_GETWORKAREA
-        return r.left, r.top, r.right, r.bottom
-    return None
 
 
 # ---------------- Mysz (SendInput) ----------------

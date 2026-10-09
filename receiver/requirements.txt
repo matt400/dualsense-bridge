@@ -1,1 +1,2 @@
 vgamepad>=0.1.0
+PySide6-Essentials>=6.6

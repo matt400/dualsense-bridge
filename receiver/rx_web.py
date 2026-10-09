@@ -16,7 +16,6 @@ chroni przed obcymi stronami w przeglądarce (CSRF) i DNS rebinding.
 import hmac
 import json
 import os
-import re
 import secrets
 import subprocess
 import threading
@@ -27,9 +26,8 @@ from urllib.parse import parse_qs, urlparse
 import rx_buttons as B
 import rx_games
 import rx_mouse
-import rx_net
+import rx_profiles as P
 import rx_state as S
-from proto import CMD_POWER_OFF
 from rx_config import C
 
 HTML_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rx_remap_ui.html")
@@ -37,12 +35,6 @@ token = secrets.token_urlsafe(9)
 server = None
 base_url = None
 MAX_BODY = 64 * 1024
-EXE_RE = re.compile(r"[a-z0-9_.()+\-][a-z0-9_.()+\- ]{0,78}\.exe")
-
-
-def _profile(key):
-    return {"key": key, "label": S.profile_label(key), "profile": S.store.get(key),
-            "saved": S.store.get_saved(key), "in_file": S.store.in_file(key)}
 
 
 def _pads():
@@ -51,83 +43,52 @@ def _pads():
         base = S.profile_key(i)
         pads.append({"slot": i, "id": S.pad_id[i], "base": base, "active": S.active[i],
                      "connected": bool(S.alive[i]), "mouse": bool(S.mouse_mode[i]), "mouse_sens": rx_mouse.sens[i],
-                     "profiles": [_profile(k) for k in S.store.keys_for(base)]})
+                     "profiles": [P.info(k) for k in S.store.keys_for(base)]})
     return {"inputs": [{"name": n, "label": B.LABELS[n]} for n in B.INPUTS], "pads": pads,
             "game": S.game, "recent": list(rx_games.recent), "game_profiles": C.GAME_PROFILES}
 
 
-def _key_for(slot, key):
-    """Klucz profilu z żądania, sprawdzony: profil pada albo "<pad>@<gra.exe>" tego samego pada; inaczej None."""
-    base = S.profile_key(slot)
-    if not key or key == base:
-        return base
-    if isinstance(key, str) and key.startswith(base + "@") and EXE_RE.fullmatch(key[len(base) + 1:]):
-        return key
-    return None
-
-
 def _slot(body):
     slot = body.get("slot")
-    return slot if isinstance(slot, int) and not isinstance(slot, bool) and 0 <= slot < C.NUM_PADS else None
+    return slot if P.slot_ok(slot) else None
 
 
 def _live():
-    out = []
-    for i in range(C.NUM_PADS):
-        s = S.states[i]
-        raw, st = s["raw"], s["rawst"]
-        # *_out = to, co widzi gra (po remapowaniu); bez sufiksu = fizyczne wejścia pada
-        out.append({"connected": bool(S.alive[i]), "active": S.active[i], "gyro_on": bool(s["gyro_on"]),
-                    "pressed": sorted(B.pressed_inputs(*raw)),
-                    "ls": [st[0], st[1]], "rs": [st[2], st[3]], "l2": raw[3], "r2": raw[4],
-                    "pressed_out": sorted(B.pressed_inputs(s["mask"], s["hx"], s["hy"], s["lt"], s["rt"])),
-                    "ls_out": [s["lx"], s["ly"]], "rs_out": [s["rx"], s["ry"]], "l2_out": s["lt"], "r2_out": s["rt"]})
-    return {"pads": out, "game": S.game}
+    return {"pads": [P.live(i) for i in range(C.NUM_PADS)], "game": S.game}
 
 
 def _apply(body):
     slot = _slot(body)
     if slot is None:
         return 400, {"ok": False, "msg": "bad slot"}
-    key = _key_for(slot, body.get("key"))
+    key = P.key_for(slot, body.get("key"))
     if key is None:
         return 400, {"ok": False, "msg": "bad profile name - use the game's .exe file name, e.g. eldenring.exe"}
-    prof = B.normalize_profile(body.get("profile"))
-    if body.get("save"):
-        ok, msg = S.store.save(key, prof)
-    else:
-        S.store.set_live(key, prof)
-        ok, msg = True, "Applied (not saved)"
-    S.reload_profile(slot)
-    return 200, {"ok": ok, "msg": msg, "active": S.active[slot], **_profile(key)}
+    ok, msg = P.apply(slot, key, body.get("profile"), bool(body.get("save")))
+    return 200, {"ok": ok, "msg": msg, "active": S.active[slot], **P.info(key)}
 
 
 def _delete(body):
     slot = _slot(body)
-    key = _key_for(slot, body.get("key")) if slot is not None else None
+    key = P.key_for(slot, body.get("key")) if slot is not None else None
     if key is None or not B.is_game_key(key):
         return 400, {"ok": False, "msg": "only game profiles can be deleted"}
-    with S.profile_lock:
-        ok, msg = S.store.delete(key)
-        if S.override[slot] == key:
-            S.override[slot] = None
-        S.reload_profile(slot)
+    ok, msg = P.delete(slot, key)
     return 200, {"ok": ok, "msg": msg, "active": S.active[slot]}
 
 
 def _use(body):
     slot = _slot(body)
-    key = _key_for(slot, body.get("key")) if slot is not None else None
-    if key is None or not S.use_profile(slot, key):
+    key = P.key_for(slot, body.get("key")) if slot is not None else None
+    if key is None or not P.use(slot, key):
         return 400, {"ok": False, "msg": "no such profile"}
     return 200, {"ok": True, "active": S.active[slot]}
 
 
 def _power(body):
     slot = _slot(body)
-    if slot is None or not S.alive[slot]:
+    if slot is None or not P.power_off(slot):
         return 400, {"ok": False, "msg": "pad not connected"}
-    rx_net.send_cmd(slot, CMD_POWER_OFF)
     return 200, {"ok": True, "msg": "Power off sent"}
 
 

@@ -14,11 +14,14 @@ DualSense ──Bluetooth──> telefon: sender/ ──UDP 5005──> PC: rece
 - **Serwer DSU (Cemuhook)** z ruchem i dotykiem dla emulatorów (Cemu, Yuzu/Ryujinx, Dolphin).
 - **Touchpad jako mysz:** kursor, tap = lewy przycisk, przewijanie dwoma palcami, tap dwoma palcami = prawy przycisk.
   Przełączanie: PS + klik touchpada.
-- **Edytor w przeglądarce** (przycisk „Remap” w oknie receivera, rysunek pada):
-  - remapowanie przycisków i gałek,
-  - strefy martwe, krzywe i anti-deadzone gałek i spustów,
-  - celowanie żyroskopem jako prawa gałka albo mysz,
-  - profile per gra (`gra.exe`), które włączają się same, gdy gra jest aktywnym oknem.
+- **Jedno okno do wszystkiego** (PySide6, ikona w zasobniku):
+  - po lewej karty padów: bateria, ping, utrata pakietów, realne Hz, aktywny profil, wyłączenie pada;
+  - na środku rysunek pada na żywo: kliknij przycisk, spust albo gałkę, żeby ją zremapować lub dostroić;
+  - po prawej profil (domyślny / per gra), zakładki **Selected**, **Gyro**, **Changes** i przycisk **Save** (Ctrl+S);
+  - remapowanie przycisków i gałek, strefy martwe, krzywe i anti-deadzone, celowanie żyroskopem (prawa gałka / mysz);
+  - profile per gra (`gra.exe`), które włączają się same, gdy gra jest aktywnym oknem;
+  - zmiany działają na padzie od razu, zapis do `remap.json` jest osobno;
+  - akcje nieodwracalne (wyłączenie pada, usunięcie profilu, reset) wymagają drugiego kliknięcia, bez okienek.
 - **Skróty z PS:**
 
   | Skrót | Działanie |
@@ -28,7 +31,7 @@ DualSense ──Bluetooth──> telefon: sender/ ──UDP 5005──> PC: rece
   | PS + d-pad lewo / prawo | zmiana profilu |
   | długie PS | Xbox Game Bar albo Steam Big Picture |
 
-- **Okno receivera** (ikona w zasobniku): bateria, ping, utrata pakietów, realne Hz pada, aktywny profil, przycisk wyłączenia pada.
+- **Edytor w przeglądarce** (opcjonalny, `remap_ui = true`): to samo co w oknie, w Edge/Chrome.
 - **Wyłączanie pada** z PC albo samo po bezczynności (domyślnie 15 min).
 - **Niskie opóźnienia:**
   - przyciski wysyłane natychmiast, z powtórkami na wypadek zgubionego pakietu,
@@ -41,7 +44,7 @@ DualSense ──Bluetooth──> telefon: sender/ ──UDP 5005──> PC: rece
 |---|---|---|
 | System | Windows 10 / 11 | Linux z jądrem ze sterownikiem `hid-playstation` |
 | Python | 3.11+ | 3.11+ |
-| Inne | sterownik ViGEmBus, `vgamepad` | `evdev`, `bluez` (`bluetoothctl`) |
+| Inne | sterownik ViGEmBus, `vgamepad`, `PySide6-Essentials` | `evdev`, `bluez` (`bluetoothctl`) |
 
 ## Instalacja
 
@@ -127,7 +130,8 @@ Profile remapowania zapisują się w `receiver/remap.json`, przypisane do pada (
 ## Struktura
 
 ```
-receiver/   Windows: receiver_controller.py (start), rx_*.py (moduły), rx_remap_ui.html (edytor)
+receiver/   Windows: receiver_controller.py (start), rx_*.py (moduły), rx_qt*.py (okno),
+            rx_web.py + rx_remap_ui.html (opcjonalny edytor w przeglądarce)
 sender/     Linux:   sender_controller.py (start), sender_*.py (moduły)
 tests/      testy na Linuksie z zaślepkami Windows i urządzeń evdev
 ```
@@ -137,7 +141,7 @@ tests/      testy na Linuksie z zaślepkami Windows i urządzeń evdev
 ## Testy
 
 ```
-pip install evdev pyflakes playwright      # playwright: test edytora w przeglądarce (opcjonalnie)
+pip install evdev pyflakes PySide6-Essentials playwright   # playwright: test edytora w przeglądarce (opcjonalnie)
 ./tests/run_tests.sh
 ```
 
@@ -145,6 +149,6 @@ Testy obejmują:
 - logikę obu stron: touchpad, gesty, limiter, przepełnienie bufora, skróty, profile, gyro, kształtowanie gałek;
 - komunikację end-to-end przez UDP;
 - start prawdziwych procesów;
-- edytor w headless Chromium i okno receivera pod Xvfb.
+- okno receivera (Qt offscreen, bez ekranu) i edytor w headless Chromium.
 
 Działanie z prawdziwym padem, ViGEm i Windows trzeba sprawdzić ręcznie.
