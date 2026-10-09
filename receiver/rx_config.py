@@ -144,10 +144,15 @@ def init(argv=None):
     script_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
     C.log_handle = None
     if cfg["log_file"]:   # logi do pliku (z rotacją przy starcie); pythonw nie ma konsoli
+        lf = os.path.join(script_dir, cfg["log_file"])
         try:
-            lf = os.path.join(script_dir, cfg["log_file"])
             if os.path.exists(lf) and os.path.getsize(lf) > 1_000_000:
                 os.replace(lf, lf + ".1")
+        except OSError:
+            # Windows: plik trzyma jeszcze inny proces (stary receiver tuż po restarcie z ustawień, podgląd logu) -
+            # bez rotacji, ale logowanie musi działać dalej
+            pass
+        try:
             C.log_handle = open(lf, "a", buffering=1, encoding="utf-8")
             sys.stdout = sys.stderr = C.log_handle
         except OSError:

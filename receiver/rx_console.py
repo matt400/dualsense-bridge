@@ -7,6 +7,7 @@
 
 Ustawienia: console.json obok skryptu (brak pliku / błędna wartość -> domyślne, plik jest tworzony). Edycja w oknie:
 rx_qt_console.py. Przyciski pada nadal trafiają do gry - wykrywanie podwójnego kliknięcia tylko je obserwuje.
+Naciśnięcie razem z innym wejściem (skrót: PS + Share, PS + d-pad, PS + klik touchpada) nie jest kliknięciem.
 
 Wątek sieci woła tylko on_state() (porównanie bitu i czasu). Polecenia ekranu / dźwięku / toast wykonuje jeden wątek
 roboczy z kolejki, więc nic nie blokuje odbioru UDP, a kolejne przełączenia nie wyprzedzają poprzednich.
@@ -181,6 +182,9 @@ class Console:
         if (cb := self._capture) is not None:
             self._feed_capture(i, cb, mask, hx, hy, lt, rt)
             return                          # naciśnięcie przy wyborze przycisku nie liczy się jako kliknięcie
+        if down and pressed_inputs(mask, hx, hy, lt, rt) - {self.cfg.toggle_button}:
+            self.combo(i)                   # skrót (np. PS + Share, PS + d-pad) to nie kliknięcie
+            return
         if not rising:
             return
         now = time.monotonic()
@@ -189,6 +193,12 @@ class Console:
             self._jobs.put(self._toggle)
         else:
             self._last_click[i] = now
+
+    def combo(self, i):
+        """Przycisk trybu użyty razem z innym wejściem (także klikiem touchpada, który nie jest w masce): to naciśnięcie
+        nie liczy się jako kliknięcie i przerywa serię - dwa skróty z PS pod rząd nie przełączają ekranu."""
+        if self._down[i]:
+            self._last_click[i] = 0.0
 
     def _feed_capture(self, i, cb, *inputs):
         cur = pressed_inputs(*inputs)
@@ -284,6 +294,12 @@ def init():
 def on_state(i, mask, hx, hy, lt, rt):
     if ctl is not None:
         ctl.on_state(i, mask, hx, hy, lt, rt)
+
+
+def on_touch_click(i):
+    """Klik touchpada (pakiet T_CLICK) - przy trzymanym przycisku trybu to skrót, a nie kliknięcie."""
+    if ctl is not None:
+        ctl.combo(i)
 
 
 def close(restart=False):

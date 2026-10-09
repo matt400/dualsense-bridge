@@ -178,6 +178,8 @@ def handle(t, i, data):
         if down == S.tp_down[i]:
             return
         S.tp_down[i] = down
+        if down:
+            rx_console.on_touch_click(i)
         if down and S.states[i]["raw"][0] & PS_BIT:   # PS + klik touchpada = zmiana trybu (na surowym PS)
             S.swallow[i] = True
             S.mouse_mode[i] = not S.mouse_mode[i]

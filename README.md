@@ -34,6 +34,8 @@ DualSense ──Bluetooth──> telefon: sender/ ──UDP 5005──> PC: rece
 - **Tryb konsoli:** podwójne kliknięcie wybranego przycisku pada (domyślnie PS) przełącza ekran i dźwięk między
   monitorem a telewizorem. Wykrywanie tylko obserwuje wejścia, więc przyciski (także PS) trafiają do gry i Steama jak
   dotąd - to, co Steam robi z podwójnego PS, działa równolegle. Długie PS (`ps_hold_action`) zostaje bez zmian.
+  Naciśnięcie w skrócie (PS + Share, PS + d-pad, PS + klik touchpada) nie liczy się jako kliknięcie, więc dwa skróty
+  pod rząd nie przełączają ekranu.
 
   | | Ekran (`DisplaySwitch.exe`) | Dźwięk | Powiadomienie |
   |---|---|---|---|

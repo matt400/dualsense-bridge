@@ -75,5 +75,37 @@ ts = [threading.Thread(target=flip), threading.Thread(target=web), threading.Thr
 ok = S.active[0] == S.active_key(0) and S.remap_maps[0] == store.get(S.active[0])
 check("spójny profil po równoległych zmianach", ok)
 S.set_game(None)
+import socket
+web_port = rx_web.server.server_address[1]
 rx_web.stop()
+probe = socket.socket()
+probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)   # jak HTTPServer: TIME_WAIT po zapytaniach nie przeszkadza, aktywny nasłuch tak
+try:
+    probe.bind(("127.0.0.1", web_port)); probe.listen(); port_free = True
+except OSError:
+    port_free = False
+finally:
+    probe.close()
+check("rx_web.stop() zwalnia port edytora (restart dostaje ten sam URL)", port_free)
+
+# rotacja logu: plik trzymany przez inny proces (Windows: stary receiver po restarcie) nie może wyłączyć logowania
+import rx_config
+log = os.path.join(TMP, "rx.log")
+open(log, "w").write("x" * 1_100_000)
+real_replace, real_stdout, real_stderr = os.replace, sys.stdout, sys.stderr
+def busy(*a):
+    raise PermissionError(32, "plik używany przez inny proces")
+log_cfg = os.path.join(TMP, "log.json")
+with open(log_cfg, "w") as f:
+    json.dump({"log_file": log}, f)
+os.replace = busy
+try:
+    handle = rx_config.init(["--config", log_cfg]).log_handle
+finally:
+    os.replace = real_replace
+    sys.stdout, sys.stderr = real_stdout, real_stderr
+check("nieudana rotacja logu nie wyłącza logowania do pliku", handle is not None and handle.name == log)
+if handle is not None:
+    handle.close()
+rx_config.init(["--remap-file", C.REMAP_PATH])           # przywróć konfigurację testów
 print("ALL PASS" if all(results.values()) else f"FAILED: {[k for k, v in results.items() if not v]}")
