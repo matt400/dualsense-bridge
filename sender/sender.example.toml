@@ -1,0 +1,33 @@
+# Nadajnik (telefon). Skopiuj jako sender.toml, odkomentuj i zmień to, czego potrzebujesz.
+# Uruchomienie: doas python3 sender_controller.py --config sender.toml
+# Wartości poniżej to ustawienia domyślne.
+
+# host = "192.168.1.4"
+# port = 5005
+# max_pads = 2
+# grab_pad = true
+# grab_touch = true
+# tap_click = true
+# tap_max_s = 0.2
+# tap_max_move = 40
+# heartbeat_s = 0.05
+# pad_min_dt = 0.004   # min odstęp pakietów stanu (4 ms = 250 Hz = max wirtualnego DS4); pierwszy pakiet po ciszy   # idzie od razu, zmiany w oknie zlewają się w jeden pakiet na końcu okna; 0 = bez limitu
+# motion_min_dt = 0.004   # j.w. dla ruchu; próbki gyro/acc w oknie są uśredniane (mniej szumu przy 500-1000 Hz)
+# motion_deadband_gyro = 128
+# motion_deadband_acc = 16
+# rescan_s = 2.0
+# stick_deadzone = 3
+# calibrate_s = 1.0
+# calibrate_max_range = 4096
+# autobias = true
+# autobias_s = 1.0
+# autobias_range = 1024
+# battery_poll_s = 5.0
+# touch_coalesce_ms = 5   # DS4/DSU dotyk: max 1 pakiet na tyle ms (0 = każda zmiana); było 50 = 20 Hz
+# touch_deadzone = 2   # ignoruj zmiany palca mniejsze niż tyle jednostek (szum czujnika)
+# touch_start_move = 5   # mysz: kursor rusza dopiero po przesunięciu o tyle (brak drgania przy tapie)
+# gestures = true   # 2 palce = przewijanie, tap 2 palcami = prawy przycisk myszy
+# idle_off_min = 15   # wyłącz pada (rozłącz Bluetooth) po tylu minutach bez użycia; 0 = nigdy
+# rt_priority = 0   # >0 = SCHED_FIFO z tym priorytetem (1-99, sensownie 10-20); wymaga doas
+# key = ""
+# stats = false

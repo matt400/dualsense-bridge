@@ -1,0 +1,699 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DualSense remap</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #14161c; color: #e8eaf0; font: 14px/1.45 "Segoe UI", system-ui, sans-serif; }
+  header { display: flex; align-items: center; gap: 18px; padding: 12px 22px; background: #1a1d25; border-bottom: 1px solid #272b36; flex-wrap: wrap; }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: .3px; }
+  .tabs { display: flex; gap: 6px; }
+  .tab { background: #232733; color: #c9cddb; border: 1px solid #2f3442; border-radius: 8px; padding: 6px 14px; cursor: pointer; font: inherit; }
+  .tab.active { background: #ffb300; color: #14161c; border-color: #ffb300; font-weight: 600; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #5b6172; margin-left: 7px; }
+  .dot.on { background: #4cd08a; box-shadow: 0 0 6px #4cd08a; }
+  .seg { display: flex; border: 1px solid #2f3442; border-radius: 8px; overflow: hidden; }
+  .seg button { background: #232733; color: #c9cddb; border: none; padding: 6px 12px; cursor: pointer; font: inherit; font-size: 12px; }
+  .seg button.on { background: #3a4054; color: #fff; font-weight: 600; }
+  #conn { margin-left: auto; color: #8b91a1; font-size: 12px; }
+  #conn.bad { color: #ff6b6b; }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) 350px; gap: 22px; padding: 22px; max-width: 1280px; margin: 0 auto; }
+  @media (max-width: 920px) { main { grid-template-columns: 1fr; } }
+  .stage { background: radial-gradient(ellipse at 50% 35%, #232836 0%, #181b23 70%); border: 1px solid #272b36; border-radius: 16px; padding: 10px; position: sticky; top: 12px; align-self: start; }
+  @media (max-width: 920px) { .stage { position: static; } }
+  .hint { text-align: center; color: #8b91a1; font-size: 12px; margin: 2px 0 6px; }
+  svg#pad { width: 100%; height: auto; display: block; }
+  .panel { background: #1a1d25; border: 1px solid #272b36; border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 14px; align-self: start; }
+  .panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 1.2px; color: #8b91a1; margin: 0 0 6px; font-weight: 600; }
+  .panel h3 { margin: 0 0 8px; font-size: 18px; }
+  .meta { color: #8b91a1; font-size: 12px; word-break: break-all; }
+  select { width: 100%; background: #232733; color: #e8eaf0; border: 1px solid #343a4a; border-radius: 8px; padding: 8px 10px; font: inherit; }
+  label.row { display: flex; align-items: center; gap: 8px; margin: 8px 0 0; cursor: pointer; }
+  .field { margin-top: 10px; }
+  .field > span { display: block; color: #8b91a1; font-size: 12px; margin-bottom: 4px; }
+  ul.changes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 200px; overflow: auto; }
+  ul.changes li { display: flex; justify-content: space-between; gap: 8px; background: #232733; border-radius: 8px; padding: 6px 10px; }
+  ul.changes li button { background: none; border: none; color: #8b91a1; cursor: pointer; font-size: 16px; line-height: 1; }
+  ul.changes li button:hover { color: #ff6b6b; }
+  .empty { color: #6b7184; font-style: italic; }
+  .btns { display: flex; gap: 8px; flex-wrap: wrap; }
+  button.b { background: #232733; color: #e8eaf0; border: 1px solid #343a4a; border-radius: 8px; padding: 8px 14px; cursor: pointer; font: inherit; }
+  button.b:hover { border-color: #ffb300; }
+  button.b.primary { background: #ffb300; color: #14161c; border-color: #ffb300; font-weight: 600; }
+  #status { font-size: 12px; min-height: 18px; color: #8b91a1; }
+  #status.ok { color: #4cd08a; } #status.warn { color: #ffb300; } #status.err { color: #ff6b6b; }
+  .nopad { color: #ffb300; font-size: 12px; }
+  input[type=range] { width: 100%; accent-color: #ffb300; }
+  .val { color: #e8eaf0; font-weight: 600; margin-left: 4px; }
+  input.txt { width: 100%; background: #232733; color: #e8eaf0; border: 1px solid #343a4a; border-radius: 8px; padding: 8px 10px; font: inherit; }
+  button.b.small { padding: 5px 10px; font-size: 12px; }
+  button.b:disabled { opacity: .45; cursor: default; }
+  #gyrobox { border-top: 1px solid #272b36; padding-top: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>DualSense &middot; remap, tuning &amp; gyro</h1>
+  <div class="tabs" id="tabs"></div>
+  <div class="seg" id="view" title="What the lights and sticks on the drawing show">
+    <button data-v="out" class="on">Result (what the game gets)</button><button data-v="in">Physical pad</button>
+  </div>
+  <span id="conn">connecting&hellip;</span>
+</header>
+<main>
+  <section class="stage">
+    <div class="hint">Click any button, D-pad direction, trigger or stick &mdash; the drawing shows what the game receives after your remaps.</div>
+<svg id="pad" viewBox="0 0 800 520" xmlns="http://www.w3.org/2000/svg">
+<style>
+  .shape { fill: #3a3f4d; stroke: #565d70; stroke-width: 1.5; transition: fill .06s; }
+  .inp { cursor: pointer; }
+  .inp:hover .shape, .inp:hover .ring { stroke: #ffffff; }
+  .inp.sel .shape, .inp.sel .ring { stroke: #ffb300; stroke-width: 3.5; }
+  .inp.on .shape { fill: #ffb300; }
+  .sym { fill: none; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+  .inp.on .sym { stroke: #14161c !important; }
+  .arrow { fill: #8e96ab; pointer-events: none; }
+  .inp.on .arrow { fill: #14161c; }
+  .lbl { fill: #c9cddb; font: 600 12px "Segoe UI", sans-serif; text-anchor: middle; pointer-events: none; }
+  .inp.on .lbl { fill: #14161c; }
+  .ring { fill: #1a1d25; stroke: #4a5062; stroke-width: 2; }
+  .stick.on .ring { fill: #4b3a0c; }
+  .capc { fill: #3a3f4d; stroke: #5b6278; stroke-width: 1.5; }
+  .stick.on .capc { fill: #ffb300; }
+  .capi { fill: none; stroke: #565d70; stroke-width: 1.5; }
+  .badge rect { fill: #ffb300; }
+  .badge text { fill: #14161c; font: 700 11px "Segoe UI", sans-serif; pointer-events: none; }
+  .badge.bad rect { fill: #ff6b6b; }
+  .badge { pointer-events: none; }
+</style>
+<defs>
+  <linearGradient id="bodyg" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#3a4050"/><stop offset="1" stop-color="#232733"/>
+  </linearGradient>
+</defs>
+
+<!-- triggers (behind the body) -->
+<g class="inp trig" data-name="l2"><title>L2</title>
+  <path class="shape" d="M128 84 C130 50 170 36 214 40 C236 42 246 56 248 82 Z"/><text class="lbl" x="190" y="68">L2</text></g>
+<g class="inp trig" data-name="r2"><title>R2</title>
+  <path class="shape" d="M672 84 C670 50 630 36 586 40 C564 42 554 56 552 82 Z"/><text class="lbl" x="610" y="68">R2</text></g>
+
+<!-- body -->
+<path d="M400 96 C360 96 318 98 268 104 C200 112 150 130 118 190 C84 256 62 360 66 430 C69 478 112 496 144 466 C176 436 206 372 246 350 C290 328 340 338 400 338 C460 338 510 328 554 350 C594 372 624 436 656 466 C688 496 731 478 734 430 C738 360 716 256 682 190 C650 130 600 112 532 104 C482 98 440 96 400 96 Z"
+      fill="url(#bodyg)" stroke="#555d72" stroke-width="2.5"/>
+
+<!-- shoulders -->
+<g class="inp" data-name="l1"><title>L1</title>
+  <rect class="shape" x="132" y="86" width="124" height="24" rx="12" transform="rotate(-9 194 98)"/>
+  <text class="lbl" x="192" y="107" transform="rotate(-9 194 98)">L1</text></g>
+<g class="inp" data-name="r1"><title>R1</title>
+  <rect class="shape" x="544" y="86" width="124" height="24" rx="12" transform="rotate(9 606 98)"/>
+  <text class="lbl" x="608" y="107" transform="rotate(9 606 98)">R1</text></g>
+
+<!-- touchpad + lightbar (not remappable) -->
+<g><title>Touchpad - not remappable (PS + click toggles mouse mode)</title>
+  <rect x="300" y="112" width="200" height="96" rx="24" fill="#1a1d25" stroke="#434a5c" stroke-width="2"/>
+  <text class="lbl" x="400" y="165" style="fill:#5d6478;font-weight:500">TOUCHPAD</text>
+  <path d="M293 122 Q282 160 293 200" fill="none" stroke="#3d8bff" stroke-width="4" stroke-linecap="round" opacity=".85"/>
+  <path d="M507 122 Q518 160 507 200" fill="none" stroke="#3d8bff" stroke-width="4" stroke-linecap="round" opacity=".85"/>
+</g>
+
+<!-- share / options -->
+<g class="inp" data-name="share"><title>Share / Create</title>
+  <rect class="shape" x="266" y="136" width="12" height="38" rx="6"/></g>
+<g class="inp" data-name="options"><title>Options</title>
+  <rect class="shape" x="522" y="136" width="12" height="38" rx="6"/></g>
+
+<!-- PS + mute -->
+<g class="inp" data-name="ps"><title>PS button</title>
+  <circle class="shape" cx="400" cy="252" r="16"/><text class="lbl" x="400" y="256">PS</text></g>
+<rect x="391" y="292" width="18" height="8" rx="4" fill="#2a2e3a" stroke="#434a5c"/>
+
+<!-- D-pad -->
+<circle cx="205" cy="200" r="13" fill="#2a2e3a" stroke="#434a5c"/>
+<g class="inp" data-name="dpad_up"><title>D-pad Up</title>
+  <path class="shape" d="M191 190 V168 Q191 160 199 160 H211 Q219 160 219 168 V190 Z"/><path class="arrow" d="M205 166 L198 178 H212 Z"/></g>
+<g class="inp" data-name="dpad_down"><title>D-pad Down</title>
+  <path class="shape" d="M191 210 V232 Q191 240 199 240 H211 Q219 240 219 232 V210 Z"/><path class="arrow" d="M205 234 L198 222 H212 Z"/></g>
+<g class="inp" data-name="dpad_left"><title>D-pad Left</title>
+  <path class="shape" d="M195 186 H173 Q165 186 165 194 V206 Q165 214 173 214 H195 Z"/><path class="arrow" d="M171 200 L183 193 V207 Z"/></g>
+<g class="inp" data-name="dpad_right"><title>D-pad Right</title>
+  <path class="shape" d="M215 186 H237 Q245 186 245 194 V206 Q245 214 237 214 H215 Z"/><path class="arrow" d="M239 200 L227 193 V207 Z"/></g>
+
+<!-- face buttons -->
+<g class="inp" data-name="triangle"><title>Triangle</title>
+  <circle class="shape" cx="595" cy="160" r="19"/><polygon class="sym" points="595,150 586,166 604,166" style="stroke:#4cd08a"/></g>
+<g class="inp" data-name="circle"><title>Circle</title>
+  <circle class="shape" cx="635" cy="200" r="19"/><circle class="sym" cx="635" cy="200" r="8.5" style="stroke:#ff6b6b"/></g>
+<g class="inp" data-name="cross"><title>Cross</title>
+  <circle class="shape" cx="595" cy="240" r="19"/><path class="sym" d="M587 232 L603 248 M603 232 L587 248" style="stroke:#5b9bff"/></g>
+<g class="inp" data-name="square"><title>Square</title>
+  <circle class="shape" cx="555" cy="200" r="19"/><rect class="sym" x="547" y="192" width="16" height="16" rx="1.5" style="stroke:#e58bd2"/></g>
+
+<!-- sticks -->
+<g class="inp stick" data-name="left_stick"><title>Left stick (click = L3)</title>
+  <circle class="ring" cx="305" cy="285" r="42"/>
+  <g class="cap"><circle class="capc" cx="305" cy="285" r="28"/><circle class="capi" cx="305" cy="285" r="17"/></g></g>
+<g class="inp stick" data-name="right_stick"><title>Right stick (click = R3)</title>
+  <circle class="ring" cx="495" cy="285" r="42"/>
+  <g class="cap"><circle class="capc" cx="495" cy="285" r="28"/><circle class="capi" cx="495" cy="285" r="17"/></g></g>
+
+<g id="badges"></g>
+</svg>
+  </section>
+
+  <aside class="panel">
+    <div>
+      <h2>Controller</h2>
+      <div id="padmeta" class="meta"></div>
+      <div class="btns" style="margin-top:8px"><button class="b small" id="power" title="Disconnects the pad over Bluetooth - it switches off">Power off pad</button></div>
+    </div>
+    <div>
+      <h2>Profile</h2>
+      <select id="profsel" aria-label="Profile"></select>
+      <div id="profinfo" class="meta" style="margin-top:6px"></div>
+      <div id="newprof" hidden>
+        <div class="field"><span>Game executable (as shown in Task Manager &rarr; Details)</span>
+          <input id="newexe" class="txt" list="recent" placeholder="eldenring.exe" autocomplete="off" spellcheck="false">
+          <datalist id="recent"></datalist></div>
+        <label class="row"><input type="checkbox" id="newcopy" checked> Start from the current settings</label>
+        <div class="btns" style="margin-top:8px"><button class="b primary" id="newok">Create</button><button class="b" id="newcancel">Cancel</button></div>
+      </div>
+      <div class="btns" style="margin-top:8px"><button class="b small" id="profdel" hidden>Delete this game profile</button></div>
+    </div>
+    <div id="editor"></div>
+    <div id="gyrobox"></div>
+    <div>
+      <h2>Changes</h2>
+      <ul class="changes" id="changes"></ul>
+    </div>
+    <div>
+      <div class="btns">
+        <button class="b primary" id="save">Save</button>
+        <button class="b" id="revert">Revert to saved</button>
+        <button class="b" id="reset">Reset all</button>
+      </div>
+      <div id="status"></div>
+    </div>
+  </aside>
+</main>
+
+<script>
+"use strict";
+const NS = "http://www.w3.org/2000/svg";
+const Q = new URLSearchParams(location.search);
+const TOKEN = Q.get("t") || "";
+const HDR = { "X-Token": TOKEN };
+const SHORT = { cross: "✕", circle: "○", triangle: "△", square: "□", l1: "L1", r1: "R1",
+  share: "SHARE", options: "OPT", ps: "PS", l3: "L3", r3: "R3", dpad_up: "↑", dpad_down: "↓",
+  dpad_left: "←", dpad_right: "→", l2: "L2", r2: "R2" };
+const STICK_NAME = { left: "Left stick", right: "Right stick", none: "Disabled (centered)" };
+const STICK_OF = { left_stick: "left", right_stick: "right" };
+const L3OF = { left_stick: "l3", right_stick: "r3" };
+const STICK_DEF = { dz: 0, outer: 1, curve: 1, anti: 0 };
+const TRIG_DEF = { dz: 0, max: 255 };
+const GYRO_DEF = { mode: "off", hold: "always", sens: 1, inv_x: false, inv_y: false, anti: 0 };
+const GYRO_MODE = { off: "Off", stick: "Right stick (works in every game)", mouse: "Mouse (PC shooters, menus)" };
+const EXE_RE = /^[a-z0-9_.()+\-][a-z0-9_.()+\- ]{0,78}\.exe$/;
+const EMPTY = () => ({ buttons: {}, sticks: {}, tuning: {}, gyro: {} });
+
+let meta = null, cur = Math.max(0, (parseInt(Q.get("pad") || "1", 10) || 1) - 1);
+let base = null, curKey = null, prof = EMPTY(), saved = EMPTY(), inFile = false;
+let sel = null, timer = null, labels = {}, view = "out";
+try { view = localStorage.getItem("padview") === "in" ? "in" : "out"; } catch (e) {}
+
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const clone = (o) => JSON.parse(JSON.stringify(o));
+const r3 = (v) => Math.round(v * 1000) / 1000;
+const stable = (o) => (o && typeof o === "object" && !Array.isArray(o))
+  ? "{" + Object.keys(o).sort().map((k) => JSON.stringify(k) + ":" + stable(o[k])).join(",") + "}" : JSON.stringify(o);
+const same = (a, b) => stable(a) === stable(b);
+const norm = (p) => ({ buttons: p.buttons || {}, sticks: p.sticks || {}, tuning: p.tuning || {}, gyro: p.gyro || {} });
+const defStick = (out) => ({ src: out, inv_x: false, inv_y: false });
+const isGame = (key) => !!key && key.includes("@");
+const pad = () => meta.pads[cur];
+const entry = (key) => pad().profiles.find((e) => e.key === key);
+const profName = (key) => isGame(key) ? key.slice(key.indexOf("@") + 1) : "Default (all games)";
+
+async function api(path, body) {
+  const r = await fetch(path, body === undefined ? { headers: HDR }
+    : { method: "POST", headers: { ...HDR, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (r.status === 403) throw new Error("forbidden - open the editor from the receiver (token)");
+  return r.json();
+}
+
+function setStatus(text, cls) { const s = $("#status"); s.textContent = text; s.className = cls || ""; }
+
+function refreshStatus() {
+  if (!same(prof, saved)) setStatus("● Applied live — not saved yet", "warn");
+  else if (isGame(curKey) && !inFile) setStatus("● Game profile not saved yet", "warn");
+  else setStatus("✓ Matches saved profile", "ok");
+}
+
+/* ---------- loading ---------- */
+function select(key) {
+  const e = entry(key) || entry(pad().active) || pad().profiles[0];
+  curKey = e.key;
+  prof = norm(clone(e.profile)); saved = norm(clone(e.saved)); inFile = e.in_file;
+  renderAll(); refreshStatus();
+  // edytowany profil działa od razu na padzie (podgląd "Result" i test w grze), do następnej zmiany aktywnego okna
+  if (e.key !== pad().active) {
+    const slot = cur, key2 = e.key;
+    api("/api/use", { slot, key: key2 }).then((r) => {
+      if (r.ok && slot === cur && meta.pads[slot]) { meta.pads[slot].active = r.active; renderProfiles(); }
+    }).catch(() => {});
+  }
+}
+
+async function flush() {
+  // zmiana czekająca na wysłanie (debounce 150 ms) musi trafić do starego profilu przed przełączeniem
+  if (timer === null) return;
+  clearTimeout(timer); timer = null;
+  await doApply(false);
+}
+
+async function load(force) {
+  const d = await api("/api/pads");
+  meta = d;
+  labels = Object.fromEntries(d.inputs.map((i) => [i.name, i.label]));
+  if (cur >= d.pads.length) cur = 0;
+  const p = d.pads[cur];
+  const e = entry(curKey);
+  if (force || p.base !== base || !e) {
+    base = p.base;
+    select(force || !e ? p.active : curKey);
+  } else {
+    saved = norm(e.saved); inFile = e.in_file;
+    renderMeta(); renderProfiles(); refreshStatus();
+  }
+  renderTabs();
+}
+
+function renderTabs() {
+  const t = $("#tabs");
+  if (t.children.length !== meta.pads.length) {
+    t.innerHTML = "";
+    meta.pads.forEach((p, i) => {
+      const b = document.createElement("button");
+      b.className = "tab"; b.dataset.i = i;
+      b.innerHTML = "Pad " + (i + 1) + '<span class="dot"></span>';
+      b.onclick = async () => { await flush(); cur = i; sel = null; curKey = null; hideNew(); load(true); };
+      t.appendChild(b);
+    });
+  }
+  [...t.children].forEach((b, i) => {
+    b.classList.toggle("active", i === cur);
+    b.querySelector(".dot").classList.toggle("on", !!meta.pads[i].connected);
+  });
+}
+
+function renderMeta() {
+  const p = pad();
+  const m = $("#padmeta");
+  m.textContent = "Pad id: " + (p.id || "—") + "   ·   touchpad: " + (p.mouse ? "mouse" : "DS4 touch")
+    + " (mouse speed " + (+p.mouse_sens).toFixed(2) + ")";
+  if (!p.id) {
+    const n = document.createElement("div");
+    n.className = "nopad";
+    n.textContent = p.connected ? "Pad id not received (old sender?) - profile is bound to the slot."
+                                : "Not connected - you can still edit; the profile attaches to this pad id once it connects.";
+    m.appendChild(n);
+  }
+  $("#power").disabled = !p.connected;
+}
+
+function renderProfiles() {
+  const p = pad(), s = $("#profsel");
+  const html = p.profiles.map((e) => `<option value="${esc(e.key)}">${esc(profName(e.key))}${e.key === p.active ? "   ● in use" : ""}</option>`).join("")
+    + '<option value="__new">＋ New game profile…</option>';
+  if (s.dataset.sig !== html) { s.innerHTML = html; s.dataset.sig = html; }
+  s.value = curKey;
+  $("#profdel").hidden = !isGame(curKey);
+  let info = curKey === p.active ? "In use right now."
+    : isGame(curKey) ? `Used automatically while ${profName(curKey)} is the active window.`
+    : "Used when no game profile matches the active window.";
+  info += "  Active window: " + (meta.game || "—") + ".";
+  if (!meta.game_profiles) info += "  (game profiles are disabled: game_profiles = false)";
+  $("#profinfo").textContent = info;
+  const dl = $("#recent");
+  const opts = meta.recent.map((x) => `<option value="${esc(x)}">`).join("");
+  if (dl.dataset.sig !== opts) { dl.innerHTML = opts; dl.dataset.sig = opts; }
+}
+
+function renderAll() { renderMeta(); renderProfiles(); renderEditor(); renderGyro(); renderChanges(); renderBadges(); markSel(); }
+
+/* ---------- editing ---------- */
+function targetOf(src) { return src in prof.buttons ? prof.buttons[src] : src; }
+
+function opts(current) {
+  let h = "";
+  for (const n of Object.keys(labels)) h += `<option value="${n}"${n === current ? " selected" : ""}>${esc(labels[n])}</option>`;
+  return h + `<option value="__none"${current === null ? " selected" : ""}>— disabled —</option>`;
+}
+
+function setButton(src, v) {
+  const dst = v === "__none" ? null : v;
+  if (dst === src) delete prof.buttons[src]; else prof.buttons[src] = dst;
+  changed();
+}
+
+function setStick(out, patch) {
+  const e = Object.assign({}, prof.sticks[out] || defStick(out), patch);
+  const d = defStick(out);
+  if (e.src === d.src && !e.inv_x && !e.inv_y) delete prof.sticks[out]; else prof.sticks[out] = e;
+  changed();
+}
+
+function setTuning(name, patch) {
+  const d = name === "l2" || name === "r2" ? TRIG_DEF : STICK_DEF;
+  const e = { ...d, ...(prof.tuning[name] || {}), ...patch };
+  if (same(e, d)) delete prof.tuning[name]; else prof.tuning[name] = e;
+  changed();
+}
+
+function setGyro(patch) {
+  const before = prof.gyro.mode || "off";
+  const e = { ...GYRO_DEF, ...prof.gyro, ...patch };
+  prof.gyro = same(e, GYRO_DEF) ? {} : e;
+  changed();
+  if ((prof.gyro.mode || "off") !== before) renderGyro();
+}
+
+const fmt = (v, unit) => unit === "%" ? Math.round(v) + "%" : unit === "x" ? (+v).toFixed(2) + "×" : String(Math.round(v));
+function slider(id, label, val, min, max, step, unit) {
+  return `<div class="field"><span>${label} <b class="val" id="v_${id}">${fmt(val, unit)}</b></span>`
+    + `<input type="range" id="r_${id}" min="${min}" max="${max}" step="${step}" value="${val}"></div>`;
+}
+function bindRange(id, unit, fn) {
+  const r = $("#r_" + id);
+  r.oninput = () => { $("#v_" + id).textContent = fmt(r.value, unit); fn(+r.value); };
+}
+
+function renderEditor() {
+  const ed = $("#editor");
+  if (!sel) { ed.innerHTML = '<h2>Selected</h2><div class="empty">Click a part of the controller.</div>'; return; }
+  if (sel in STICK_OF) {
+    const out = STICK_OF[sel], e = prof.sticks[out] || defStick(out), l3 = L3OF[sel];
+    const t = { ...STICK_DEF, ...(prof.tuning[out] || {}) };
+    ed.innerHTML = `<h2>Selected</h2><h3>${STICK_NAME[out]}</h3>
+      <div class="field"><span>The game sees this stick's data from</span>
+        <select id="ssrc">${["left", "right", "none"].map((k) => `<option value="${k}"${k === e.src ? " selected" : ""}>${STICK_NAME[k]}</option>`).join("")}</select></div>
+      <label class="row"><input type="checkbox" id="invx"${e.inv_x ? " checked" : ""}> Invert X (left ↔ right)</label>
+      <label class="row"><input type="checkbox" id="invy"${e.inv_y ? " checked" : ""}> Invert Y (up ↔ down)</label>
+      <div class="field"><span>Stick click (${SHORT[l3]}) acts as</span><select id="dst">${opts(targetOf(l3))}</select></div>
+      <h2 style="margin-top:16px">Response</h2>
+      ${slider("dz", "Deadzone", t.dz * 100, 0, 50, 1, "%")}
+      ${slider("outer", "Full tilt at", t.outer * 100, 50, 100, 1, "%")}
+      ${slider("curve", "Curve (above 1 = finer small moves)", t.curve, 0.3, 3, 0.05, "x")}
+      ${slider("anti", "Anti-deadzone (beats the game's own deadzone)", t.anti * 100, 0, 50, 1, "%")}
+      <div class="btns" style="margin-top:8px"><button class="b small" id="tdef">Default response</button></div>`;
+    $("#ssrc").onchange = (ev) => setStick(out, { src: ev.target.value });
+    $("#invx").onchange = (ev) => setStick(out, { inv_x: ev.target.checked });
+    $("#invy").onchange = (ev) => setStick(out, { inv_y: ev.target.checked });
+    $("#dst").onchange = (ev) => setButton(l3, ev.target.value);
+    bindRange("dz", "%", (v) => setTuning(out, { dz: r3(v / 100) }));
+    bindRange("outer", "%", (v) => setTuning(out, { outer: r3(v / 100) }));
+    bindRange("curve", "x", (v) => setTuning(out, { curve: r3(v) }));
+    bindRange("anti", "%", (v) => setTuning(out, { anti: r3(v / 100) }));
+    $("#tdef").onclick = () => { delete prof.tuning[out]; changed(); renderEditor(); };
+    return;
+  }
+  const trig = sel === "l2" || sel === "r2";
+  const t = { ...TRIG_DEF, ...(prof.tuning[sel] || {}) };
+  ed.innerHTML = `<h2>Selected</h2><h3>${esc(labels[sel])}</h3>
+    <div class="field"><span>Acts as</span><select id="dst">${opts(targetOf(sel))}</select></div>
+    <div class="btns" style="margin-top:10px"><button class="b" id="dflt">Default</button></div>`
+    + (trig ? `<h2 style="margin-top:16px">${SHORT[sel]} response (what the game gets)</h2>
+      ${slider("tdz", "Deadzone (ignore light touches up to)", t.dz, 0, 200, 1, "")}
+      ${slider("tmax", "Full press at", t.max, 55, 255, 1, "")}
+      <div class="btns" style="margin-top:8px"><button class="b small" id="tdef">Default response</button></div>` : "");
+  $("#dst").onchange = (ev) => setButton(sel, ev.target.value);
+  $("#dflt").onclick = () => { delete prof.buttons[sel]; changed(); renderEditor(); };
+  if (trig) {
+    const name = sel;
+    bindRange("tdz", "", (v) => setTuning(name, { dz: v }));
+    bindRange("tmax", "", (v) => setTuning(name, { max: v }));
+    $("#tdef").onclick = () => { delete prof.tuning[name]; changed(); renderEditor(); };
+  }
+}
+
+function renderGyro() {
+  const g = { ...GYRO_DEF, ...prof.gyro };
+  const box = $("#gyrobox");
+  let h = `<h2>Gyro aim</h2><div class="field"><span>Mode</span><select id="gmode">`
+    + Object.entries(GYRO_MODE).map(([k, v]) => `<option value="${k}"${k === g.mode ? " selected" : ""}>${v}</option>`).join("")
+    + "</select></div>";
+  if (g.mode !== "off") {
+    h += `<div class="field"><span>Active</span><select id="ghold"><option value="always"${g.hold === "always" ? " selected" : ""}>Always</option>`
+      + Object.keys(labels).map((n) => `<option value="${n}"${n === g.hold ? " selected" : ""}>While holding ${esc(labels[n])}</option>`).join("")
+      + "</select></div>"
+      + slider("gsens", "Sensitivity", g.sens, 0.1, 5, 0.05, "x")
+      + `<label class="row"><input type="checkbox" id="ginvx"${g.inv_x ? " checked" : ""}> Invert horizontal</label>`
+      + `<label class="row"><input type="checkbox" id="ginvy"${g.inv_y ? " checked" : ""}> Invert vertical</label>`
+      + (g.mode === "stick" ? slider("ganti", "Anti-deadzone (small turns still move the view)", g.anti * 100, 0, 50, 1, "%") : "")
+      + '<div id="glive" class="meta" style="margin-top:8px"></div>';
+  } else {
+    h += '<div class="meta">Turn the pad to aim: as the right stick (any game) or as a mouse.</div>';
+  }
+  box.innerHTML = h;
+  $("#gmode").onchange = (ev) => setGyro({ mode: ev.target.value });
+  if (g.mode === "off") return;
+  $("#ghold").onchange = (ev) => setGyro({ hold: ev.target.value });
+  bindRange("gsens", "x", (v) => setGyro({ sens: Math.round(v * 100) / 100 }));
+  $("#ginvx").onchange = (ev) => setGyro({ inv_x: ev.target.checked });
+  $("#ginvy").onchange = (ev) => setGyro({ inv_y: ev.target.checked });
+  if (g.mode === "stick") bindRange("ganti", "%", (v) => setGyro({ anti: r3(v / 100) }));
+}
+
+function describeTuning(name, t) {
+  if (name === "l2" || name === "r2") return `${SHORT[name]} response: deadzone ${t.dz}, full at ${t.max}`;
+  const parts = [];
+  if (t.dz) parts.push(`deadzone ${Math.round(t.dz * 100)}%`);
+  if (t.outer !== 1) parts.push(`full at ${Math.round(t.outer * 100)}%`);
+  if (t.curve !== 1) parts.push(`curve ${(+t.curve).toFixed(2)}`);
+  if (t.anti) parts.push(`anti-deadzone ${Math.round(t.anti * 100)}%`);
+  return `${STICK_NAME[name]} response: ${parts.join(", ")}`;
+}
+
+function renderChanges() {
+  const ul = $("#changes");
+  ul.innerHTML = "";
+  const add = (text, undo) => {
+    const li = document.createElement("li");
+    const s = document.createElement("span"); s.textContent = text;
+    const b = document.createElement("button"); b.textContent = "×"; b.title = "Remove"; b.onclick = undo;
+    li.append(s, b); ul.appendChild(li);
+  };
+  for (const [src, dst] of Object.entries(prof.buttons))
+    add(`${labels[src]} → ${dst === null ? "disabled" : labels[dst]}`, () => { delete prof.buttons[src]; changed(); renderEditor(); });
+  for (const [out, e] of Object.entries(prof.sticks)) {
+    const inv = [e.inv_x ? "invert X" : "", e.inv_y ? "invert Y" : ""].filter(Boolean).join(", ");
+    add(`${STICK_NAME[out]} ← ${e.src === "none" ? "centered" : STICK_NAME[e.src]}${inv ? " (" + inv + ")" : ""}`,
+        () => { delete prof.sticks[out]; changed(); renderEditor(); });
+  }
+  for (const [name, t] of Object.entries(prof.tuning))
+    add(describeTuning(name, { ...(name === "l2" || name === "r2" ? TRIG_DEF : STICK_DEF), ...t }),
+        () => { delete prof.tuning[name]; changed(); renderEditor(); });
+  if (prof.gyro.mode && prof.gyro.mode !== "off") {
+    const g = { ...GYRO_DEF, ...prof.gyro };
+    add(`Gyro: ${g.mode === "stick" ? "right stick" : "mouse"}, ${g.hold === "always" ? "always" : "hold " + labels[g.hold]}, sensitivity ${g.sens}×`,
+        () => { prof.gyro = {}; changed(); renderGyro(); });
+  }
+  if (!ul.children.length) ul.innerHTML = '<li class="empty" style="background:none;padding:0">No changes - everything works as default.</li>';
+}
+
+function badge(layer, cx, cy, text, bad) {
+  const g = document.createElementNS(NS, "g");
+  g.setAttribute("class", "badge" + (bad ? " bad" : ""));
+  const t = document.createElementNS(NS, "text");
+  t.textContent = text; t.setAttribute("x", cx); t.setAttribute("y", cy + 4); t.setAttribute("text-anchor", "middle");
+  g.appendChild(t); layer.appendChild(g);
+  const bb = t.getBBox();
+  const r = document.createElementNS(NS, "rect");
+  r.setAttribute("x", bb.x - 6); r.setAttribute("y", bb.y - 2); r.setAttribute("width", bb.width + 12);
+  r.setAttribute("height", bb.height + 4); r.setAttribute("rx", 8);
+  g.insertBefore(r, t);
+}
+
+function renderBadges() {
+  const layer = $("#badges");
+  layer.innerHTML = "";
+  const at = (name) => document.querySelector(`.inp[data-name="${name}"]`);
+  for (const [src, dst] of Object.entries(prof.buttons)) {
+    const el = at(src) || at(Object.keys(L3OF).find((k) => L3OF[k] === src));
+    if (!el) continue;
+    const bb = el.getBBox();
+    const above = src === "l2" || src === "r2";
+    const cy = above ? bb.y - 10 : bb.y + bb.height + 12;
+    badge(layer, bb.x + bb.width / 2, cy, "→ " + (dst === null ? "∅" : SHORT[dst]), dst === null);
+  }
+  for (const [out, e] of Object.entries(prof.sticks)) {
+    const bb = at(out + "_stick").getBBox();
+    const tag = (e.src === out ? "" : e.src === "none" ? "∅" : "← " + e.src[0].toUpperCase()) +
+                ((e.inv_x || e.inv_y) ? " " + (e.inv_x ? "⇄" : "") + (e.inv_y ? "⇅" : "") : "");
+    badge(layer, bb.x + bb.width / 2, bb.y - 8, tag.trim(), e.src === "none");
+  }
+  for (const out of ["left", "right"]) {
+    if (!prof.tuning[out]) continue;
+    const bb = at(out + "_stick").getBBox();
+    badge(layer, out === "left" ? bb.x - 16 : bb.x + bb.width + 16, bb.y + bb.height / 2, "∿", false);
+  }
+  if (prof.gyro.mode && prof.gyro.mode !== "off") {
+    const bb = at("right_stick").getBBox();
+    badge(layer, bb.x + bb.width / 2, bb.y + bb.height + 30, "gyro " + (prof.gyro.mode === "mouse" ? "🖱" : "→ R"), false);
+  }
+}
+
+function markSel() {
+  document.querySelectorAll(".inp").forEach((el) => el.classList.toggle("sel", el.dataset.name === sel));
+}
+
+function changed() {
+  renderChanges(); renderBadges(); refreshStatus();
+  clearTimeout(timer);
+  timer = setTimeout(() => { timer = null; doApply(false); }, 150);   // zmiany działają na żywo, zapis jest osobno
+}
+
+async function doApply(save) {
+  clearTimeout(timer); timer = null;
+  const key = curKey;
+  try {
+    const r = await api("/api/apply", { slot: cur, key, profile: prof, save });
+    if (!r.ok) { setStatus(r.msg || "error", "err"); return false; }
+    if (key !== curKey) return true;            // w międzyczasie wybrano inny profil
+    pad().active = r.active;
+    saved = norm(r.saved); inFile = r.in_file;
+    if (save) { prof = norm(clone(r.profile)); renderAll(); setStatus("✓ " + r.msg, "ok"); }
+    else { renderProfiles(); refreshStatus(); }
+    return true;
+  } catch (e) { setStatus(String(e.message || e), "err"); return false; }
+}
+
+/* ---------- profiles ---------- */
+function hideNew() { $("#newprof").hidden = true; }
+
+$("#profsel").onchange = async (ev) => {
+  const v = ev.target.value;
+  if (v === "__new") {
+    ev.target.value = curKey;
+    $("#newprof").hidden = false;
+    $("#newexe").value = meta.recent.find((x) => !entry(pad().base + "@" + x)) || "";
+    $("#newexe").focus();
+    return;
+  }
+  await flush();
+  hideNew(); sel = null; select(v);
+};
+$("#newcancel").onclick = hideNew;
+$("#newexe").onkeydown = (ev) => { if (ev.key === "Enter") $("#newok").click(); };
+$("#newok").onclick = async () => {
+  let exe = $("#newexe").value.trim().toLowerCase();
+  if (exe && !exe.endsWith(".exe")) exe += ".exe";
+  if (!EXE_RE.test(exe)) { setStatus("Type the game's .exe file name, e.g. eldenring.exe", "err"); return; }
+  const key = pad().base + "@" + exe;
+  if (!entry(key)) {
+    await flush();
+    prof = norm($("#newcopy").checked ? clone(prof) : EMPTY());
+    curKey = key; saved = EMPTY(); inFile = false;
+    if (!(await doApply(false))) return;
+    await load(false);
+  }
+  hideNew();
+  select(key);
+  setStatus(`Profile for ${exe} created - save it to keep it`, "warn");
+};
+$("#profdel").onclick = async () => {
+  if (!isGame(curKey) || !confirm(`Delete the profile for ${profName(curKey)}?`)) return;
+  const r = await api("/api/delete", { slot: cur, key: curKey });
+  if (!r.ok) { setStatus(r.msg || "error", "err"); return; }
+  curKey = null;
+  await load(true);
+  setStatus("✓ Profile deleted", "ok");
+};
+$("#power").onclick = async () => {
+  if (!confirm(`Turn off pad ${cur + 1}?`)) return;
+  try {
+    const r = await api("/api/power", { slot: cur });
+    setStatus(r.ok ? "✓ Pad is switching off" : (r.msg || "error"), r.ok ? "ok" : "err");
+  } catch (e) { setStatus(String(e.message || e), "err"); }
+};
+
+/* ---------- live view ---------- */
+const lerp = (a, b, t) => Math.round(a + (b - a) * t);
+function liveUpdate(p) {
+  const o = view === "out";
+  const pressed = new Set(o ? p.pressed_out : p.pressed);
+  const ls = o ? p.ls_out : p.ls, rs = o ? p.rs_out : p.rs;
+  const l2 = o ? p.l2_out : p.l2, r2 = o ? p.r2_out : p.r2;
+  document.querySelectorAll(".inp").forEach((el) => {
+    const n = el.dataset.name;
+    const on = pressed.has(n) || (n in L3OF && pressed.has(L3OF[n]));
+    el.classList.toggle("on", on);
+    if (n === "l2" || n === "r2") {      // spust: płynne wypełnienie zależne od wychylenia
+      const v = (n === "l2" ? l2 : r2) / 255;
+      el.querySelector(".shape").style.fill = v > 0.02 ? `rgb(${lerp(58, 255, v)},${lerp(63, 179, v)},${lerp(77, 0, v)})` : "";
+    }
+  });
+  const move = (name, xy) => {
+    const cap = document.querySelector(`.inp[data-name="${name}"] .cap`);
+    if (cap) cap.setAttribute("transform", `translate(${((xy[0] - 128) / 127) * 14},${((xy[1] - 128) / 127) * 14})`);
+  };
+  move("left_stick", ls); move("right_stick", rs);
+  const gl = $("#glive");
+  if (gl) {
+    const g = { ...GYRO_DEF, ...prof.gyro };
+    const live = curKey === p.active;
+    gl.textContent = !live ? "This profile is not in use right now."
+      : p.gyro_on ? "● Gyro active" : (g.hold === "always" ? "Gyro idle" : `Gyro idle — hold ${labels[g.hold]}`);
+    gl.style.color = live && p.gyro_on ? "#4cd08a" : "";
+  }
+}
+
+async function tick() {
+  try {
+    const d = await api("/api/live");
+    $("#conn").textContent = "live"; $("#conn").className = "";
+    if (d.pads[cur]) liveUpdate(d.pads[cur]);
+    if (meta) {
+      let act = false;
+      d.pads.forEach((p, i) => {
+        const m = meta.pads[i];
+        if (!m) return;
+        m.connected = p.connected;
+        if (m.active !== p.active) { m.active = p.active; act = act || i === cur; }
+      });
+      renderTabs();
+      if (d.game !== meta.game) { meta.game = d.game; act = true; }
+      if (act) renderProfiles();
+    }
+  } catch (e) {
+    $("#conn").textContent = "receiver not reachable"; $("#conn").className = "bad";
+  }
+  setTimeout(tick, 70);
+}
+
+/* ---------- init ---------- */
+document.querySelectorAll(".inp").forEach((el) => {
+  el.addEventListener("click", () => { sel = el.dataset.name; markSel(); renderEditor(); });
+});
+document.querySelectorAll("#view button").forEach((b) => {
+  b.classList.toggle("on", b.dataset.v === view);
+  b.onclick = () => {
+    view = b.dataset.v;
+    try { localStorage.setItem("padview", view); } catch (e) {}
+    document.querySelectorAll("#view button").forEach((x) => x.classList.toggle("on", x === b));
+  };
+});
+$("#save").onclick = () => doApply(true);
+$("#revert").onclick = () => { prof = norm(clone(saved)); renderAll(); doApply(false); };
+$("#reset").onclick = () => { prof = EMPTY(); renderAll(); doApply(false); };
+
+load(true).then(tick).catch((e) => { setStatus(String(e.message || e), "err"); $("#conn").textContent = "error"; $("#conn").className = "bad"; });
+setInterval(() => { if (meta) load(false).catch(() => {}); }, 1500);
+</script>
+</body>
+</html>

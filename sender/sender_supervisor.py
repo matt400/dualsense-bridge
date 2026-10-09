@@ -1,0 +1,242 @@
+"""Sender: wykrywanie padów (evdev), przydział slotów, cykl życia kontrolera."""
+import asyncio
+import os
+import re
+import time
+
+import evdev
+
+import sender_state as state
+import sender_streams as streams
+from proto import T_BYE
+from sender_config import C, IDLE_TP, SETTLE_S
+from sender_ctrl import Ctrl
+from sender_net import emit
+
+_not_pads = {}       # ścieżka -> identyfikator węzła (inode, ctime) urządzenia, które nie jest padem
+
+
+def _node_id(path):
+    """Węzeł /dev/input/eventN jest tworzony od nowa przy każdym podłączeniu - (inode, ctime) go odróżnia."""
+    try:
+        st = os.stat(path)
+        return st.st_ino, st.st_ctime_ns
+    except OSError:
+        return None
+_first_seen = {}     # klucz -> kiedy zobaczyliśmy niekompletną grupę urządzeń
+
+
+def event_num(dev):
+    m = re.search(r"(\d+)$", dev.path)
+    return int(m.group(1)) if m else 0
+
+
+def discover():
+    groups = {}
+    paths = evdev.list_devices()
+    for p in [p for p in _not_pads if p not in paths]:
+        del _not_pads[p]
+    busy = {d.path for c in state.active.values() for d in c.devices()}
+    for path in paths:
+        if path in busy:
+            continue
+        nid = _node_id(path)
+        if nid is not None and _not_pads.get(path) == nid:
+            continue
+        try:
+            d = evdev.InputDevice(path)
+        except OSError:
+            continue
+        name = d.name
+        if "Wireless Controller" not in name:
+            d.close()
+            _not_pads[path] = nid
+            continue
+        key = d.uniq or d.phys or "unknown"
+        kind = "touch" if "Touchpad" in name else "motion" if "Motion" in name else "pad"
+        g = groups.setdefault(key, {})
+        if kind in g:
+            d.close()
+        else:
+            g[kind] = d
+    return groups
+
+
+def close_group(g):
+    for d in g.values():
+        try:
+            d.close()
+        except Exception:
+            pass
+
+
+def pick_slot(key):
+    if key in state.slots:
+        return state.slots[key]
+    taken = {i for k, i in state.slots.items() if k in state.active}
+    for i in range(C.MAX_PADS):
+        if i not in taken:
+            for k in [k for k, v in state.slots.items() if v == i]:
+                del state.slots[k]
+            state.slots[key] = i
+            return i
+    return None
+
+
+def dispatch_feedback(idx, vals):
+    for c in state.active.values():
+        if c.idx == idx:
+            c.apply_feedback(*vals)
+
+
+def grab(dev, label):
+    try:
+        dev.grab()
+        print(f"{label}: grabbed")
+    except OSError as e:
+        print(f"{label}: grab failed: {e}")
+
+
+KIND_ATTR = {"motion": "motion_dev", "touch": "touch_dev"}
+
+
+def attach(c, kind, dev):
+    """Podłącza urządzenie ruchu / touchpada do działającego pada (także gdy pojawi się później niż pad)."""
+    setattr(c, KIND_ATTR[kind], dev)
+    if kind == "touch":
+        if C.GRAB_TOUCH:
+            grab(dev, f"Touchpad {c.idx}")
+        coro = streams.stream_touch(c)
+    else:
+        coro = streams.stream_motion(c)
+    t = asyncio.create_task(_run_extra(c, kind, dev, coro))
+    c.extra.add(t)
+    t.add_done_callback(c.extra.discard)
+
+
+async def _run_extra(c, kind, dev, coro):
+    """Koniec strumienia (urządzenie zniknęło) odłącza tylko to urządzenie - pad działa dalej,
+    a supervisor dołączy je ponownie, gdy wróci."""
+    try:
+        await coro
+    except asyncio.CancelledError:
+        raise
+    except OSError:
+        pass
+    except Exception as e:
+        print(f"Controller {c.idx} {kind} error: {e!r}")
+    finally:
+        if getattr(c, KIND_ATTR[kind]) is dev:
+            setattr(c, KIND_ATTR[kind], None)
+        if kind == "touch":
+            c.touch = IDLE_TP
+            c.tp = 0
+        for fn in (dev.ungrab, dev.close):
+            try:
+                fn()
+            except Exception:
+                pass
+        if state.active.get(c.key) is c and not getattr(c, "closing", False):
+            print(f"Controller {c.idx}: {kind} device lost - waiting for it to come back")
+
+
+def incomplete(c):
+    return c.motion_dev is None or c.touch_dev is None
+
+
+async def run_ctrl(c):
+    tasks = []
+    try:
+        c.init_state()
+        print(f"== Controller {c.idx} ({c.key})")
+        print(f"   Pad:    {c.pad_dev.name} ({c.pad_dev.path})")
+        print(f"   Motion: {c.motion_dev.name if c.motion_dev else 'NOT FOUND'}")
+        print(f"   Touch:  {c.touch_dev.name if c.touch_dev else 'NOT FOUND'}")
+        print(f"   Lightbar: {c.led or 'not found'}")
+        if C.GRAB_PAD:
+            grab(c.pad_dev, f"Pad {c.idx}")
+        c.send_ident()        # receiver od razu wie, który to pad (profil remapowania)
+        tasks.append(asyncio.create_task(streams.stream_pad(c)))
+        tasks.append(asyncio.create_task(streams.stream_battery(c)))
+        for kind in ("motion", "touch"):          # osobne zadania: ich utrata nie rozłącza pada
+            dev = getattr(c, KIND_ATTR[kind])
+            if dev is not None:
+                setattr(c, KIND_ATTR[kind], None)
+                attach(c, kind, dev)
+
+        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        for t in pending:
+            t.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
+        for t in done:
+            exc = t.exception()
+            if exc and not isinstance(exc, OSError):
+                print(f"Controller {c.idx} error: {exc!r}")
+    except OSError as e:
+        print(f"Controller {c.idx}: device error: {e}")
+    finally:
+        c.closing = True
+        for t in tasks + list(c.extra):
+            t.cancel()
+        if c.extra:
+            await asyncio.gather(*c.extra, return_exceptions=True)
+        c.cancel_timers()
+        c.stop_feedback()
+        for d in c.devices():
+            try:
+                d.ungrab()
+            except OSError:
+                pass
+            try:
+                d.close()
+            except Exception:
+                pass
+        c.send_neutral()
+        for _ in range(3):
+            emit(T_BYE, c.idx)
+        state.active.pop(c.key, None)
+        print(f"Controller {c.idx}: disconnected (waiting for reconnect)")
+
+
+async def supervisor():
+    first = True
+    while True:
+        if len(state.active) < C.MAX_PADS or any(incomplete(c) for c in state.active.values()):
+            groups = discover()
+            now = time.monotonic()
+            for k in [k for k in _first_seen if k not in groups]:
+                del _first_seen[k]
+            order = sorted(groups.items(),
+                           key=lambda kv: event_num(kv[1]["pad"]) if "pad" in kv[1] else 1 << 30)
+            for key, g in order:
+                c = state.active.get(key)
+                if c is not None:             # pad już działa: dołącz brakujące urządzenia, które pojawiły się później
+                    for kind in ("motion", "touch"):
+                        if kind in g and getattr(c, KIND_ATTR[kind]) is None and not getattr(c, "closing", False):
+                            dev = g.pop(kind)
+                            print(f"Controller {c.idx}: {kind} device attached ({dev.path})")
+                            attach(c, kind, dev)
+                    close_group(g)
+                    continue
+                if "pad" not in g:
+                    close_group(g)
+                    continue
+                # nowo pojawiony pad: urządzenia motion/touchpad bywają widoczne ułamek sekundy później
+                t0 = _first_seen.setdefault(key, now)
+                if not ("motion" in g and "touch" in g) and now - t0 < SETTLE_S:
+                    close_group(g)
+                    continue
+                idx = pick_slot(key)
+                if idx is None:
+                    close_group(g)
+                    continue
+                _first_seen.pop(key, None)
+                c = Ctrl(idx, key, g["pad"], g.get("motion"), g.get("touch"))
+                state.active[key] = c
+                t = asyncio.create_task(run_ctrl(c))
+                state.bg_tasks.add(t)
+                t.add_done_callback(state.bg_tasks.discard)
+            if first and not state.active:
+                print("No DualSense found yet - connect controller (bluetoothctl), waiting...")
+            first = False
+        await asyncio.sleep(C.RESCAN_S)

@@ -218,3 +218,15 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# --- dualsense-bridge ---
+__pycache__/
+*.pyc
+# konfiguracja może zawierać klucz HMAC - do repo idą tylko *.example.toml
+*.toml
+!*.example.toml
+*.log
+*.log.1
+remap.json.tmp
+# zrzuty z testów UI
+tests/*.png

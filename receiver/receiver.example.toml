@@ -1,0 +1,44 @@
+# Receiver (Windows). Skopiuj jako receiver.toml, odkomentuj i zmień to, czego potrzebujesz.
+# Uruchomienie: python receiver_controller.py --config receiver.toml
+# Wartości poniżej to ustawienia domyślne.
+
+# in_port = 5005
+# dsu_port = 26760
+# pads = 2   # liczba slotów (max 4); wirtualne DS4 powstają tylko dla podłączonych
+# mouse_pads = [0]   # które kontrolery startują w trybie myszy
+# pad_hz = 1000   # max częstotliwość raportów DS4 (zlewanie serii pakietów); sender sam ogranicza do ~250 Hz,   # więc 250 tutaj dublowało limit i przy jitterze sieci dokładało uśpienie; 0 = bez limitu
+# dsu_hz = 1000   # j.w. dla DSU; 0 = bez limitu
+# dsu_tx_interval = 0.5   # nie wysyłaj DSU bez zmian częściej niż to
+# dsu_batch = false   # wiele pakietów DSU w jednym datagramie - nie każdy klient to akceptuje
+# acc_res = 8192.0
+# gyro_res = 1024.0
+# acc_sign = [1, 1, 1]
+# gyro_sign = [1, 1, 1]
+# mouse_sens = 0.5   # za szybko -> 0.35, za wolno -> 0.8, odwrócone -> ujemna
+# scroll_sens = 0.6   # przewijanie dwoma palcami (jednostki kółka na jednostkę touchpada); 120 = 1 działka
+# scroll_natural = false   # True = treść podąża za palcami (jak w telefonie)
+# stale_s = 0.5   # cisza dłuższa niż tyle -> reset stanu (anty "zablokowane przyciski")
+# unplug_s = 10.0   # cisza dłuższa niż tyle -> odłącz wirtualny DS4
+# allow = ""   # np. "192.168.1.50" - tylko pakiety z tego IP
+# key = ""   # wspólny klucz HMAC (lub zmienna środowiskowa PADKEY)
+# stats = false   # wypisuj statystyki pakietów co 1 s
+# log_file = ""   # np. "receiver.log" (przydatne z pythonw / autostartem)
+# remap_file = "remap.json"   # profile remapowania (zapis z edytora "Remap")
+# remap_ui = true   # edytor remapowania w przeglądarce (SVG pada), tylko 127.0.0.1
+# remap_ui_app = true   # edytor w osobnym oknie (Edge/Chrome --app); False = zwykła karta przeglądarki
+# remap_ui_port = 8765   # pierwszy próbowany port (kolejne 9, gdy zajęty); 0 = losowy
+# gui = true   # okno ze stanem baterii (--no-gui wyłącza)
+# tray = true   # minimalizacja do zasobnika systemowego
+# gui_topmost = true   # okno zawsze na wierzchu
+# gui_start_visible = false   # True = pokaż okno od razu po starcie
+# gui_wait_pad = false   # True = nie twórz okna ani ikony, dopóki żaden pad się nie połączy
+# low_batt = 15   # próg (%) niskiej baterii
+# low_batt_notify = true   # powiadomienie z zasobnika przy niskiej baterii
+# ps_modifier = true   # PS jako klawisz skrótów: krótkie PS trafia do gry po puszczeniu (+~0.1 s), PS + przycisk = skrót
+# ps_hold_s = 1.0   # tyle trzymania PS (bez innych przycisków) = ps_hold_action
+# ps_hold_action = "gamebar"   # gamebar (Win+G) | bigpicture (Steam Big Picture) | none
+# ps_share_action = "screenshot"   # screenshot (Win+PrtScr, do Obrazy\Zrzuty ekranu) | capture (Game Bar) | none
+# confirm = true   # potwierdzenia na padzie: krótka wibracja / mignięcie lightbara przy skrótach
+# idle_lightbar = [0, 0, 128]   # kolor lightbara po mignięciu, gdy gra sama go nie ustawia
+# game_profiles = true   # automatyczny profil wg gry na pierwszym planie
+# game_ignore = []   # dodatkowe programy pomijane na liście "ostatnie gry" w edytorze (np. "obs64.exe")
