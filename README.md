@@ -38,12 +38,12 @@ DualSense ──Bluetooth──> telefon: sender/ ──UDP 5005──> PC: rece
   | | Ekran (`DisplaySwitch.exe`) | Dźwięk | Powiadomienie |
   |---|---|---|---|
   | ON | tylko TV (`/external`) | `audio_tv` | „Tryb konsoli włączony” |
-  | OFF | tylko monitor (`/internal`) | `audio_pc` | „Tryb konsoli wyłączony” |
+  | OFF | oba ekrany (`/extend`) | `audio_pc` | „Tryb konsoli wyłączony” |
   | brak pakietów z pada przez `timeout_s` | jak OFF | jak OFF | jak OFF |
   | start receivera (autostart) | `startup_mode`: `extend` (oba ekrany) albo `internal` | `audio_pc` | brak |
 
   Przy starcie domyślnie oba ekrany są aktywne, więc nie zostajesz bez obrazu. Zwykłe zamknięcie receivera przy
-  włączonym trybie konsoli wraca na monitor. Błąd polecenia ekranu, dźwięku albo powiadomienia trafia do logu i nie
+  włączonym trybie konsoli wraca do extend. Błąd polecenia ekranu, dźwięku albo powiadomienia trafia do logu i nie
   przerywa działania.
 - **Ustawienia trybu konsoli** (ikona w zasobniku → Ustawienia, albo przycisk w oknie): przycisk pada wybierasz
   naciśnięciem go na padzie, czasy to pola liczbowe, urządzenia audio to listy aktywnych wyjść Windows z przyciskiem

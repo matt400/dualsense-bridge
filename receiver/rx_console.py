@@ -1,8 +1,8 @@
 """Receiver: tryb konsoli - jedno podwójne kliknięcie przycisku pada przełącza ekran i dźwięk między monitorem a TV.
 
   ON   ekran tylko TV (DisplaySwitch /external), dźwięk audio_tv, toast "Tryb konsoli włączony"
-  OFF  ekran tylko monitor (DisplaySwitch /internal), dźwięk audio_pc, toast "Tryb konsoli wyłączony"
-  auto-OFF  brak pakietów z pada przez timeout_s -> samo OFF (nie zostajesz z czarnym monitorem)
+  OFF  ekran extend (DisplaySwitch /extend: oba ekrany), dźwięk audio_pc, toast "Tryb konsoli wyłączony"
+  auto-OFF  brak pakietów z pada przez timeout_s -> samo OFF (oba ekrany aktywne, nie zostajesz bez obrazu)
   start     startup_mode: extend (oba ekrany) albo internal (tylko monitor) + dźwięk audio_pc
 
 Ustawienia: console.json obok skryptu (brak pliku / błędna wartość -> domyślne, plik jest tworzony). Edycja w oknie:
@@ -26,7 +26,7 @@ from rx_buttons import BIT, BUTTON_CODES, DIRS, INPUTS, TRIG_ON, pressed_inputs
 from rx_config import C
 
 STARTUP_MODES = ("extend", "internal")
-TEST_S = 10.0              # "Przetestuj": tyle sekund w trybie ON, potem samo OFF (monitor nie zostaje czarny)
+TEST_S = 10.0              # "Przetestuj": tyle sekund w trybie ON, potem samo OFF (extend, monitor nie zostaje czarny)
 APP_NAME = "DualSense bridge"
 DISPLAY_ARG = {"extend": "/extend", "internal": "/internal", "tv": "/external"}
 _STOP = object()
@@ -243,7 +243,7 @@ class Console:
     def _apply(self, on, cfg=None, why="", toast=True):
         cfg = cfg or self.cfg
         self.on, self._since, self._revert = on, time.monotonic(), None
-        _step("display", _display, "tv" if on else "internal")
+        _step("display", _display, "tv" if on else "extend")
         if audio := cfg.audio_tv if on else cfg.audio_pc:
             _step("audio", _audio, audio)
         print(f"Console: {'ON' if on else 'OFF'}" + (f" ({why})" if why else ""))
@@ -260,7 +260,7 @@ class Console:
         self._jobs.put(lambda: self._test(cfg))
 
     def close(self, restart=False):
-        """Zamykanie receivera. Przy zwykłym wyjściu z włączonym trybem konsoli wracamy na monitor (po restarcie
+        """Zamykanie receivera. Przy zwykłym wyjściu z włączonym trybem konsoli wracamy do extend (po restarcie
         sam start ustawi ekran wg startup_mode, więc dwa razy nie przełączamy)."""
         if self.on and not restart:
             self._jobs.put(lambda: self._apply(False, why="zamknięcie receivera", toast=False))

@@ -79,8 +79,8 @@ check(S.states[0]["raw"][0] == 0, "stan pada dalej śledzony (przyciski trafiaj�
 calls.clear()
 click(); time.sleep(0.05); click()
 check(wait_for(lambda: not c.on), "drugie podwójne kliknięcie -> OFF")
-check(calls == [("display", "internal"), ("audio", "Głośniki"), ("toast", "Tryb konsoli wyłączony", "")], f"OFF: ekran, dźwięk PC, toast: {calls}")
-ok("podwójne kliknięcie: ON (TV + audio_tv + toast), OFF (monitor + audio_pc + toast)")
+check(calls == [("display", "extend"), ("audio", "Głośniki"), ("toast", "Tryb konsoli wyłączony", "")], f"OFF: ekran, dźwięk PC, toast: {calls}")
+ok("podwójne kliknięcie: ON (TV + audio_tv + toast), OFF (extend + audio_pc + toast)")
 
 calls.clear()
 click(); time.sleep(0.5); click(); time.sleep(0.5); click()
@@ -125,7 +125,7 @@ for i in range(C.NUM_PADS):
     S.last_seen[i] = now - 6
 c._since = now - 6
 c._tick()
-check(not c.on and calls[:2] == [("display", "internal"), ("audio", "Głośniki")] and calls[2][0] == "toast"
+check(not c.on and calls[:2] == [("display", "extend"), ("audio", "Głośniki")] and calls[2][0] == "toast"
       and calls[2][1] == "Tryb konsoli wyłączony" and "5 s" in calls[2][2], f"cisza > timeout_s -> OFF + toast: {calls}")
 calls.clear(); c._tick()
 check(not calls, "w trybie OFF cisza nic nie robi")
@@ -197,12 +197,12 @@ ok("Przetestuj: ON i automatyczny powrót, na ustawieniach z okna")
 # ---------- zamykanie: ON -> powrót na monitor (bez toastu); restart nie przełącza ----------
 c = new_console(audio_pc="Głośniki"); c._apply(True); calls.clear()
 c.close(restart=False)
-check(("display", "internal") in calls and ("audio", "Głośniki") in calls and not any(x[0] == "toast" for x in calls) and not c.on,
-      f"wyjście z włączonym trybem -> monitor, bez toastu: {calls}")
+check(("display", "extend") in calls and ("audio", "Głośniki") in calls and not any(x[0] == "toast" for x in calls) and not c.on,
+      f"wyjście z włączonym trybem -> extend, bez toastu: {calls}")
 c = new_console(audio_pc="Głośniki"); c._apply(True); calls.clear()
 c.close(restart=True)
 check(not calls, "przy restarcie ekran zostawia start nowego procesu")
-ok("zamknięcie: ON wraca na monitor, restart nie dubluje przełączeń")
+ok("zamknięcie: ON wraca do extend, restart nie dubluje przełączeń")
 
 # ---------- rx_audio.find ----------
 devs = [("1", "Speakers (Realtek)"), ("2", "LG TV (NVIDIA High Definition Audio)"), ("3", "Headphones (USB)")]

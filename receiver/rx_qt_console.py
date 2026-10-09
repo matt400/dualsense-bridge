@@ -2,7 +2,7 @@
 
 Przycisk pada wybierasz naciśnięciem go na padzie (rx_console.arm_capture), urządzenia audio to lista aktywnych wyjść
 Windows (rx_audio, przycisk Odśwież). "Przetestuj" włącza tryb konsoli na kilka sekund z wartościami z okna (jeszcze
-niezapisanymi) i sam wraca na monitor. "Zapisz" zapisuje console.json i prosi właściciela okna o restart receivera
+niezapisanymi) i sam wraca do extend. "Zapisz" zapisuje console.json i prosi właściciela okna o restart receivera
 (sygnał saved) - po restarcie obowiązuje startup_mode jak przy autostarcie.
 """
 from PySide6.QtCore import QTimer, Signal
@@ -43,7 +43,7 @@ class ConsoleSettings(QDialog):
         lay.setSpacing(12)
         lay.addWidget(label("Tryb konsoli", "h3"))
         lay.addWidget(label("Podwójne kliknięcie wybranego przycisku pada przełącza ekran i dźwięk między monitorem "
-                            "a telewizorem. Brak sygnału z pada przez ustawiony czas wraca na monitor.", "dim", wrap=True))
+                            "a telewizorem. Brak sygnału z pada przez ustawiony czas wraca do trybu rozszerzonego (oba ekrany).", "dim", wrap=True))
 
         self.pick = button("")
         self.pick.clicked.connect(self._toggle_capture)
@@ -77,7 +77,7 @@ class ConsoleSettings(QDialog):
                             "(Save w oknie głównym) zostaną utracone.", "dim", wrap=True))
 
         self.test_btn = button("Przetestuj")
-        self.test_btn.setToolTip("Włącza tryb konsoli na kilka sekund z wartościami z tego okna, potem wraca na monitor")
+        self.test_btn.setToolTip("Włącza tryb konsoli na kilka sekund z wartościami z tego okna, potem wraca do trybu rozszerzonego")
         self.test_btn.clicked.connect(self._test)
         cancel = button("Anuluj")
         cancel.clicked.connect(self.close)
@@ -165,7 +165,7 @@ class ConsoleSettings(QDialog):
             self._status("Tryb konsoli nie działa w tym uruchomieniu.", "bad")
             return
         rx_console.ctl.test(self.collect())
-        self._status(f"Test: TV i dźwięk TV na {rx_console.TEST_S:.0f} s, potem powrót na monitor.", "ok")
+        self._status(f"Test: TV i dźwięk TV na {rx_console.TEST_S:.0f} s, potem powrót do trybu rozszerzonego.", "ok")
         self.test_btn.setEnabled(False)
         QTimer.singleShot(int((rx_console.TEST_S + 5) * 1000), lambda: self.test_btn.setEnabled(True))
 
