@@ -19,7 +19,7 @@ sys.argv = ["receiver_controller.py", "--no-gui", "--remap-file", os.path.join(t
 import rx_config
 _init = rx_config.init
 def init(argv=None):
-    C = _init(argv); C.IN_PORT = 25005; C.DSU_PORT = 26799; C.REMAP_UI_PORT = 0; C.GAME_PROFILES = True
+    C = _init(argv); C.IN_PORT = 25005; C.DSU_PORT = 26799; C.REMAP_UI_PORT = 0; C.GAME_PROFILES = True; C.CONSOLE_PATH = os.path.join(tmp, "console.json")
     return C
 rx_config.init = init
 import receiver_controller

@@ -1,5 +1,6 @@
 """Receiver: serwer DSU (Cemuhook) - gyro/akcelerometr/dotyk dla emulatorów."""
 import random
+import socket
 import struct
 import threading
 import time
@@ -25,6 +26,7 @@ ZERO12 = bytes(12)
 SERVER_ID = random.getrandbits(32)
 
 dsu = None
+_threads = []
 dsu_clients = {}
 dsu_lock = threading.Lock()
 _cache = {}
@@ -86,9 +88,11 @@ def dsu_data(slot, s, counter):
 
 
 def rx_thread():
-    while True:
+    while not S.stop.is_set():
         try:
             data, addr = dsu.recvfrom(2048)
+        except socket.timeout:
+            continue                                   # timeout tylko po to, by sprawdzić S.stop
         except OSError as e:
             if getattr(e, "winerror", None) not in (10040, 10054):   # za duży datagram / ICMP - po prostu dalej
                 time.sleep(0.01)
@@ -165,9 +169,17 @@ def tx_thread():
                         pass
 
 
+def close():
+    """Po S.stop: czeka na wątki serwera i zamyka gniazdo - port wolny dla nowego procesu po restarcie."""
+    for t in _threads:
+        t.join(1.0)
+    if dsu is not None:
+        dsu.close()
+
+
 def start():
     global dsu
     dsu = bind_udp(C.DSU_PORT, "DSU server")
+    dsu.settimeout(0.25)       # wątek odbioru sprawdza S.stop; zamknięcie gniazda z innego wątku nie przerywa recvfrom na Linuksie
     print(f"DSU server on UDP {C.DSU_PORT} (slots 0..{C.NUM_PADS - 1}).")
-    S.start_thread("dsu rx", rx_thread)
-    S.start_thread("dsu tx", tx_thread)
+    _threads[:] = [S.start_thread("dsu rx", rx_thread), S.start_thread("dsu tx", tx_thread)]

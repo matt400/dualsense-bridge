@@ -31,6 +31,25 @@ DualSense ──Bluetooth──> telefon: sender/ ──UDP 5005──> PC: rece
   | PS + d-pad lewo / prawo | zmiana profilu |
   | długie PS | Xbox Game Bar albo Steam Big Picture |
 
+- **Tryb konsoli:** podwójne kliknięcie wybranego przycisku pada (domyślnie PS) przełącza ekran i dźwięk między
+  monitorem a telewizorem. Wykrywanie tylko obserwuje wejścia, więc przyciski (także PS) trafiają do gry i Steama jak
+  dotąd - to, co Steam robi z podwójnego PS, działa równolegle. Długie PS (`ps_hold_action`) zostaje bez zmian.
+
+  | | Ekran (`DisplaySwitch.exe`) | Dźwięk | Powiadomienie |
+  |---|---|---|---|
+  | ON | tylko TV (`/external`) | `audio_tv` | „Tryb konsoli włączony” |
+  | OFF | tylko monitor (`/internal`) | `audio_pc` | „Tryb konsoli wyłączony” |
+  | brak pakietów z pada przez `timeout_s` | jak OFF | jak OFF | jak OFF |
+  | start receivera (autostart) | `startup_mode`: `extend` (oba ekrany) albo `internal` | `audio_pc` | brak |
+
+  Przy starcie domyślnie oba ekrany są aktywne, więc nie zostajesz bez obrazu. Zwykłe zamknięcie receivera przy
+  włączonym trybie konsoli wraca na monitor. Błąd polecenia ekranu, dźwięku albo powiadomienia trafia do logu i nie
+  przerywa działania.
+- **Ustawienia trybu konsoli** (ikona w zasobniku → Ustawienia, albo przycisk w oknie): przycisk pada wybierasz
+  naciśnięciem go na padzie, czasy to pola liczbowe, urządzenia audio to listy aktywnych wyjść Windows z przyciskiem
+  odświeżenia, „Przetestuj” włącza tryb na 10 s z wartościami z okna. „Zapisz i uruchom ponownie” zapisuje
+  `console.json` i restartuje receiver (czyste zamknięcie padów, portów UDP i ViGEm, start jak z autostartu).
+  Niezapisane zmiany profilu remapowania (Save w oknie głównym) przy restarcie przepadają.
 - **Edytor w przeglądarce** (opcjonalny, `remap_ui = true`): to samo co w oknie, w Edge/Chrome.
 - **Wyłączanie pada** z PC albo samo po bezczynności (domyślnie 15 min).
 - **Niskie opóźnienia:**
@@ -44,7 +63,7 @@ DualSense ──Bluetooth──> telefon: sender/ ──UDP 5005──> PC: rece
 |---|---|---|
 | System | Windows 10 / 11 | Linux z jądrem ze sterownikiem `hid-playstation` |
 | Python | 3.11+ | 3.11+ |
-| Inne | sterownik ViGEmBus, `vgamepad`, `PySide6-Essentials` | `evdev`, `bluez` (`bluetoothctl`) |
+| Inne | sterownik ViGEmBus, `vgamepad`, `PySide6-Essentials`, `pycaw`, `winotify` | `evdev`, `bluez` (`bluetoothctl`) |
 
 ## Instalacja
 
@@ -116,6 +135,19 @@ Najczęściej zmieniane:
 
 Profile remapowania zapisują się w `receiver/remap.json`, przypisane do pada (MAC), a nie do slotu.
 
+Tryb konsoli ma własny plik `receiver/console.json` (obok skryptu). Brak pliku albo błędna wartość = wartości domyślne
+(plik jest tworzony i poprawiany, uszkodzony zostaje jako `console.json.bad`). Najwygodniej edytować w oknie
+(Ustawienia), ręcznie też można:
+
+| Klucz | Domyślnie | Co robi |
+|---|---|---|
+| `toggle_button` | `ps` | przycisk pada: `ps`, `share`, `options`, `cross`, `circle`, `triangle`, `square`, `l1`, `r1`, `l3`, `r3`, `dpad_*`, `l2`, `r2` |
+| `double_click_ms` | 400 | maksymalny odstęp między dwoma naciśnięciami (100-2000) |
+| `audio_tv` | "" | nazwa urządzenia audio TV (jak na liście w Ustawieniach; pusty = dźwięk bez zmian) |
+| `audio_pc` | "" | nazwa urządzenia audio komputera |
+| `timeout_s` | 60 | brak pakietów z pada przez tyle sekund = automatyczne OFF (5-3600) |
+| `startup_mode` | `extend` | ekran przy starcie receivera: `extend` albo `internal` |
+
 ## Rozwiązywanie problemów
 
 | Objaw | Co sprawdzić |
@@ -148,7 +180,9 @@ pip install evdev pyflakes PySide6-Essentials playwright   # playwright: test ed
 Testy obejmują:
 - logikę obu stron: touchpad, gesty, limiter, przepełnienie bufora, skróty, profile, gyro, kształtowanie gałek;
 - komunikację end-to-end przez UDP;
-- start prawdziwych procesów;
+- start prawdziwych procesów oraz czyste zamknięcie przy restarcie z ustawień (porty UDP, wirtualne DS4, blokada instancji);
+- tryb konsoli z zaślepionymi poleceniami ekranu, dźwięku i powiadomień (config, podwójne kliknięcie, auto-OFF, błędy);
 - okno receivera (Qt offscreen, bez ekranu) i edytor w headless Chromium.
 
-Działanie z prawdziwym padem, ViGEm i Windows trzeba sprawdzić ręcznie.
+Działanie z prawdziwym padem, ViGEm, `DisplaySwitch.exe`, przełączaniem dźwięku (pycaw) i powiadomieniami Windows trzeba
+sprawdzić ręcznie.
