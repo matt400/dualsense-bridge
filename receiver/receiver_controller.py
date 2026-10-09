@@ -1,18 +1,20 @@
-"""DualSense UDP receiver (Windows): wirtualny DS4 (ViGEm) + serwer DSU (Cemuhook) + okno z baterią
-i remapowaniem przycisków. Protokół: proto.py.
+"""DualSense UDP receiver (Windows): wirtualny DS4 (ViGEm) + serwer DSU (Cemuhook) + jedno okno (PySide6)
+z baterią, łączem i remapowaniem. Protokół: proto.py.
 
 Pliki: proto.py (wspólny), rx_config.py, rx_state.py, rx_buttons.py (remap + remap.json),
        rx_shape.py (strefy martwe, krzywe, gyro), rx_hotkeys.py (skróty PS), rx_games.py (profil wg gry),
        rx_gyro.py (gyro jako mysz), rx_feedback.py (wibracja, lightbar, potwierdzenia),
        rx_winapi.py, rx_mouse.py, rx_report.py, rx_net.py, rx_dsu.py, rx_ds4.py,
-       rx_tray.py, rx_gui.py, rx_web.py + rx_remap_ui.html (edytor remapowania).
+       okno: rx_qt.py (okno, zasobnik), rx_qt_pad.py (rysunek pada), rx_qt_panels.py, rx_qt_widgets.py, rx_qt_style.py,
+       rx_editor.py (model edycji profilu), rx_profiles.py, rx_status.py, rx_icon.py;
+       opcjonalnie rx_web.py + rx_remap_ui.html (edytor w przeglądarce, remap_ui = true).
 
 Wirtualny DS4 powstaje dopiero po pierwszym pakiecie z danego slotu i znika, gdy nadajnik
 zgłosi rozłączenie pada (pakiet 8) albo milczy dłużej niż unplug_s.
 
-Po starcie widać tylko ikonę w zasobniku. Klik w ikonę (albo prawy klik: Show) pokazuje okno z baterią;
-przycisk "Remap" przy padzie otwiera w przeglądarce edytor SVG (zmiany działają od razu, Save = zapis do
-remap.json). Adres edytora (z tokenem, tylko 127.0.0.1) jest też wypisany w konsoli / logu.
+Po starcie widać tylko ikonę w zasobniku. Klik w ikonę pokazuje jedno okno: pady z baterią i łączem po lewej,
+rysunek pada na środku (klik w przycisk, spust albo gałkę = remapowanie), profile / gyro / lista zmian po prawej
+(zmiany działają od razu, Save = zapis do remap.json). Krzyżyk i minimalizacja chowają okno do zasobnika.
 Profil jest przypisany do pada (MAC), nie do slotu, więc zamiana kolejności padów go nie gubi.
 Skróty (PS jako modyfikator, ps_modifier): PS + klik touchpada = mysz / dotyk DS4, PS + Share = zrzut ekranu,
 PS + d-pad góra/dół = czułość myszy, PS + d-pad lewo/prawo = zmiana profilu, długie PS = Game Bar / Big Picture.
@@ -76,17 +78,17 @@ def main():
     use_gui = C.USE_GUI
     if use_gui:
         try:
-            import tkinter  # noqa: F401
+            import PySide6.QtWidgets  # noqa: F401
         except ImportError:
-            print("tkinter not available - running without GUI")
+            print("PySide6 not installed (pip install -r requirements.txt) - running without GUI")
             use_gui = False
 
     try:
         if use_gui:
-            import rx_gui
+            import rx_qt
             net_thread = S.start_thread("net", rx_net.net_loop)
             try:
-                rx_gui.run_gui()
+                rx_qt.run_gui()
             except Exception as e:     # np. brak ekranu - działaj dalej bez okna
                 print(f"GUI unavailable: {e!r} - running without GUI")
                 while not S.stop.is_set() and net_thread.is_alive():

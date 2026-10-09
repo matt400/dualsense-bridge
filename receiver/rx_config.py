@@ -32,13 +32,13 @@ DEFAULTS = {
     "key": "",               # wspólny klucz HMAC (lub zmienna środowiskowa PADKEY)
     "stats": False,          # wypisuj statystyki pakietów co 1 s
     "log_file": "",          # np. "receiver.log" (przydatne z pythonw / autostartem)
-    "remap_file": "remap.json",  # profile remapowania (zapis z edytora "Remap")
-    "remap_ui": True,        # edytor remapowania w przeglądarce (SVG pada), tylko 127.0.0.1
+    "remap_file": "remap.json",  # profile remapowania (przycisk Save w oknie)
+    "remap_ui": False,       # dodatkowy edytor remapowania w przeglądarce (to samo co w oknie), tylko 127.0.0.1
     "remap_ui_app": True,    # edytor w osobnym oknie (Edge/Chrome --app); False = zwykła karta przeglądarki
     "remap_ui_port": 8765,   # pierwszy próbowany port (kolejne 9, gdy zajęty); 0 = losowy
-    "gui": True,             # okno ze stanem baterii (--no-gui wyłącza)
+    "gui": True,             # okno (pady, bateria, remapowanie; --no-gui wyłącza)
     "tray": True,            # minimalizacja do zasobnika systemowego
-    "gui_topmost": True,     # okno zawsze na wierzchu
+    "gui_topmost": False,    # okno zawsze na wierzchu
     "gui_start_visible": False,  # True = pokaż okno od razu po starcie
     "gui_wait_pad": False,   # True = nie twórz okna ani ikony, dopóki żaden pad się nie połączy
     "low_batt": 15,          # próg (%) niskiej baterii
@@ -122,7 +122,7 @@ def init(argv=None):
     ap.add_argument("--pads", type=int, help="liczba slotów padów (1-4)")
     ap.add_argument("--remap-file", dest="remap_file", help="plik z profilami remapowania (domyślnie remap.json)")
     ap.add_argument("--stats", action="store_true", default=None, help="pokazuj statystyki pakietów")
-    ap.add_argument("--no-gui", action="store_true", default=None, help="bez okna z baterią")
+    ap.add_argument("--no-gui", action="store_true", default=None, help="bez okna")
     ap.add_argument("--autostart", choices=["on", "off"], help="włącz/wyłącz uruchamianie z Windows i wyjdź")
     args = ap.parse_args(argv)
 
