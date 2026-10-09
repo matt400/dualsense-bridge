@@ -2,7 +2,9 @@
 import ctypes
 import ctypes.wintypes as wt
 import ntpath
+import os
 import socket
+import subprocess
 import sys
 
 k32 = ctypes.windll.kernel32
@@ -72,6 +74,28 @@ def ensure_single_instance():
             sys.exit(1)
     except (AttributeError, OSError) as e:
         print(f"Single-instance check failed ({e!r}); continuing without lock.")
+
+
+def release_single_instance():
+    """Zwalnia blokadę jednej instancji - bez tego nowy proces po restarcie zobaczyłby "już działa" i by wyszedł."""
+    global _mutex
+    if _mutex:
+        try:
+            k32.CloseHandle(_mutex)
+        except Exception:
+            pass
+        _mutex = None
+
+
+def relaunch():
+    """Nowy proces receivera z tymi samymi argumentami (jak autostart). Wołać po zwolnieniu portów i blokady instancji."""
+    cmd = [sys.executable, os.path.abspath(sys.argv[0]), *sys.argv[1:]]
+    kw = {"cwd": os.getcwd(), "close_fds": True}
+    if os.path.basename(sys.executable).lower().startswith("pythonw"):      # autostart: bez konsoli, niezależny od starego
+        kw.update(creationflags=0x00000008 | 0x00000200,                    # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+                  stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.Popen(cmd, **kw)
+    print("Restarting:", subprocess.list2cmdline(cmd))
 
 
 # ---------------- Mysz (SendInput) ----------------

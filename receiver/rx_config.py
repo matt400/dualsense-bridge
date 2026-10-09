@@ -180,6 +180,7 @@ def init(argv=None):
     C.USE_GUI = bool(cfg["gui"])
     C.LOW_BATT = int(cfg["low_batt"])
     C.REMAP_PATH = os.path.join(script_dir, cfg["remap_file"])
+    C.CONSOLE_PATH = os.path.join(script_dir, "console.json")   # ustawienia trybu konsoli (rx_console.py)
     C.REMAP_UI = bool(cfg["remap_ui"])
     C.REMAP_UI_PORT = int(cfg["remap_ui_port"])
     C.REMAP_UI_APP = bool(cfg["remap_ui_app"])

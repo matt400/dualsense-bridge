@@ -2,6 +2,7 @@
 import socket
 import time
 
+import rx_console
 import rx_feedback as F
 import rx_hotkeys as hotkeys
 import rx_mouse as mouse
@@ -58,6 +59,12 @@ def init():
     codec = Codec(C.KEY)
     in_sock = bind_udp(C.IN_PORT, "pad events", 1 << 20)
     in_sock.settimeout(0.1)   # pozwala wykrywać ciszę ze strony nadajnika
+
+
+def close():
+    """Zamyka gniazdo odbiorcze (po zatrzymaniu pętli sieci) - port wolny dla nowego procesu po restarcie."""
+    if in_sock is not None:
+        in_sock.close()
 
 
 def send_peer(pkt):
@@ -138,6 +145,7 @@ def handle(t, i, data):
         lx, ly, lt, rx, ry, rt = v[:6]
         hx, hy = clamp(v[6], -1, 1), clamp(v[7], -1, 1)
         hotkeys.on_state(i, mask, hx, hy)
+        rx_console.on_state(i, mask, hx, hy, lt, rt)
         with S.lock:
             s = S.states[i]
             s["raw"] = (mask, hx, hy, lt, rt)

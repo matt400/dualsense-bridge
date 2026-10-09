@@ -23,6 +23,7 @@ from rx_buttons import profile_size
 from rx_config import C
 from rx_editor import Editor
 from rx_icon import ICON_LOW, ICON_OK, icon_png, render_icon
+from rx_qt_console import ConsoleSettings
 from rx_qt_pad import PadView
 from rx_qt_panels import ChangesPage, GyroPage, PartPage, ProfileBar
 from rx_qt_style import LEVEL, apply_theme, set_prop
@@ -136,6 +137,7 @@ class MainWindow(QMainWindow):
         self.warned = [False] * C.NUM_PADS     # powiadomienie o niskiej baterii wysłane raz na rozładowanie
         self.note_text, self.note_until = None, 0.0
         self.low_any, self.tip, self.online = False, None, None
+        self.settings_dlg = None               # okno ustawień trybu konsoli (tworzone przy pierwszym otwarciu)
 
         self.apply_timer = QTimer(self)
         self.apply_timer.setSingleShot(True)
@@ -187,6 +189,9 @@ class MainWindow(QMainWindow):
         title = label("DualSense bridge")
         title.setObjectName("title")
         self.sender = label("")
+        settings_btn = button("Ustawienia", small=True)
+        settings_btn.setToolTip("Tryb konsoli: przycisk pada, urządzenia audio, czasy")
+        settings_btn.clicked.connect(self.open_settings)
         quit_btn = ConfirmButton("Quit", "Quit?", small=True)
         quit_btn.setToolTip("Stops the receiver - the virtual pads disappear")
         quit_btn.confirmed.connect(self.quit)
@@ -194,6 +199,7 @@ class MainWindow(QMainWindow):
         lay.addStretch(1)
         lay.addWidget(self.sender)
         lay.addSpacing(12)
+        lay.addWidget(settings_btn)
         lay.addWidget(quit_btn)
         return bar
 
@@ -276,6 +282,7 @@ class MainWindow(QMainWindow):
         tray = QSystemTrayIcon(self.icons[False], self)
         menu = QMenu()
         menu.addAction("Show window", self.bring_to_front)
+        menu.addAction("Ustawienia", self.open_settings)
         menu.addAction("Quit", self.quit)
         tray.setContextMenu(menu)
         self._tray_menu = menu                 # Qt nie przejmuje własności menu - trzeba je trzymać
@@ -325,6 +332,17 @@ class MainWindow(QMainWindow):
         self.settings.setValue("slot", self.ed.slot)
         self.settings.setValue("view", self.view)
         self.settings.sync()
+
+    def open_settings(self):
+        if self.settings_dlg is None:
+            self.settings_dlg = ConsoleSettings(self)
+            self.settings_dlg.saved.connect(self.restart)
+        self.settings_dlg.present()
+
+    def restart(self):
+        """Zapisane ustawienia: zwykłe zamknięcie okna, a receiver sam startuje od nowa po zwolnieniu portów i ViGEm."""
+        S.restart = True
+        self.quit()
 
     def quit(self):
         self.flush()

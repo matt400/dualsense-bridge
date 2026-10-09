@@ -5,7 +5,9 @@ Pliki: proto.py (wspólny), rx_config.py, rx_state.py, rx_buttons.py (remap + re
        rx_shape.py (strefy martwe, krzywe, gyro), rx_hotkeys.py (skróty PS), rx_games.py (profil wg gry),
        rx_gyro.py (gyro jako mysz), rx_feedback.py (wibracja, lightbar, potwierdzenia),
        rx_winapi.py, rx_mouse.py, rx_report.py, rx_net.py, rx_dsu.py, rx_ds4.py,
+       rx_console.py + rx_audio.py (tryb konsoli: monitor / TV, console.json),
        okno: rx_qt.py (okno, zasobnik), rx_qt_pad.py (rysunek pada), rx_qt_panels.py, rx_qt_widgets.py, rx_qt_style.py,
+       rx_qt_console.py (okno ustawień trybu konsoli),
        rx_editor.py (model edycji profilu), rx_profiles.py, rx_status.py, rx_icon.py;
        opcjonalnie rx_web.py + rx_remap_ui.html (edytor w przeglądarce, remap_ui = true).
 
@@ -21,6 +23,8 @@ PS + d-pad góra/dół = czułość myszy, PS + d-pad lewo/prawo = zmiana profil
 Profile gier: profil "pad@gra.exe" włącza się sam, gdy ta gra jest na pierwszym planie (zakładka w edytorze).
 Gyro: celowanie żyroskopem jako prawa gałka albo mysz, ustawiane w profilu (edytor -> Gyro aim).
 W trybie myszy: 1 palec = kursor, tap = LPM, 2 palce = przewijanie, tap 2 palcami = PPM (scroll_sens, scroll_natural).
+Tryb konsoli: podwójne kliknięcie wybranego przycisku (domyślnie PS) przełącza ekran i dźwięk monitor <-> TV, po ciszy
+z pada samo wraca na monitor; start ustawia startup_mode (extend / internal). Ustawienia: tray -> Ustawienia (console.json).
 Konfiguracja: --config plik.toml|json (klucze jak w DEFAULTS), flagi CLI nadpisują plik.
 Autostart z Windows: --autostart on|off (wpis w HKCU\\...\\Run, uruchamia pythonw bez konsoli).
 """
@@ -41,6 +45,7 @@ def main():
     rx_winapi.ensure_single_instance()
 
     import rx_buttons
+    import rx_console
     import rx_ds4
     import rx_dsu
     import rx_feedback
@@ -59,11 +64,11 @@ def main():
     rx_net.init()
     rx_dsu.start()
     rx_web.start()
+    rx_console.init()   # ekran i dźwięk wg startup_mode (extend: oba ekrany aktywne, nigdy bez obrazu)
 
     gc.collect()
     gc.freeze()        # obiekty ze startu nie są już skanowane przez GC - krótsze, rzadsze pauzy w wątkach czasu rzeczywistego
-    for i in range(C.NUM_PADS):
-        S.start_thread(f"slot{i}", rx_ds4.slot_thread, i)
+    slot_threads = [S.start_thread(f"slot{i}", rx_ds4.slot_thread, i) for i in range(C.NUM_PADS)]
     S.start_thread("feedback", rx_feedback.feedback_thread, rx_net.send_feedback)
     S.start_thread("gyro mouse", rx_gyro.mouse_thread)
     if C.GAME_PROFILES:
@@ -106,8 +111,19 @@ def main():
             S.want[i].clear()
             rx_net.clear_slot(i)
             S.wake[i].set()
-        time.sleep(0.3)   # daj wątkom slotów odłączyć wirtualne DS4
+        deadline = time.monotonic() + 2.0
+        for t in slot_threads:      # wątki slotów odłączają wirtualne DS4 od ViGEm (koniec wątku = odłączone)
+            t.join(max(0.0, deadline - time.monotonic()))
+        rx_console.close(restart=S.restart)
+        rx_net.close()
+        rx_dsu.close()
+        rx_winapi.release_single_instance()
         rx_winapi.end_timer()
+        if S.restart:               # porty, ViGEm i blokada instancji są już zwolnione - nowy proces startuje jak z autostartu
+            try:
+                rx_winapi.relaunch()
+            except OSError as e:
+                print(f"Restart failed: {e!r} - start the receiver manually")
         if C.log_handle is not None:
             try:
                 C.log_handle.flush()

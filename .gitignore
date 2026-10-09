@@ -232,3 +232,7 @@ remap.json.tmp
 receiver_ui.ini
 # zrzuty z testów UI
 tests/*.png
+# ustawienia trybu konsoli (nazwy urządzeń audio użytkownika)
+console.json
+console.json.tmp
+console.json.bad

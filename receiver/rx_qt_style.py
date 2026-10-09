@@ -45,9 +45,9 @@ QPushButton[seg]:checked {{ background: #3a4054; color: #ffffff; font-weight: 60
 QToolButton {{ background: transparent; border: none; color: {DIM}; font-size: 16px; padding: 0 4px; }}
 QToolButton:hover {{ color: {BAD}; }}
 
-QComboBox, QLineEdit {{ background: {TRACK}; border: 1px solid #343a4a; border-radius: 8px; padding: 6px 10px;
+QComboBox, QLineEdit, QSpinBox {{ background: {TRACK}; border: 1px solid #343a4a; border-radius: 8px; padding: 6px 10px;
                        selection-background-color: {ACCENT}; selection-color: {BG}; }}
-QComboBox:hover, QLineEdit:focus {{ border-color: {ACCENT}; }}
+QComboBox:hover, QLineEdit:focus, QSpinBox:focus {{ border-color: {ACCENT}; }}
 QComboBox::drop-down {{ border: none; width: 22px; }}
 QComboBox QAbstractItemView {{ background: {CARD}; border: 1px solid {BORDER}; selection-background-color: {ACCENT};
                               selection-color: {BG}; outline: none; padding: 2px; }}
