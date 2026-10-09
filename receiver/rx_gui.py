@@ -1,4 +1,4 @@
-"""Receiver: okno ze stanem baterii (tkinter), ikona w zasobniku i okno remapowania przycisków."""
+"""Receiver: okno ze stanem pada (tkinter), ikona w zasobniku i okno remapowania przycisków."""
 import base64
 import ctypes
 import queue
@@ -9,6 +9,12 @@ import rx_winapi as winapi
 from rx_buttons import profile_size
 from rx_config import C
 from rx_tray import ICON_OK, Tray, icon_png, render_icon
+
+# Paleta wspólna z edytorem remapowania (rx_remap_ui.html), żeby oba okna wyglądały jak jedna aplikacja.
+BG, CARD, BORDER, TRACK = "#14161c", "#1a1d25", "#272b36", "#2a2e3a"
+FG, DIM, MUTED = "#e8eaf0", "#8b91a1", "#555b6b"
+OK, WARN, BAD, CHARGE, ACCENT = "#4cd08a", "#ffb300", "#ff6b6b", "#5b9bff", "#ffb300"
+FONT = "Segoe UI"
 
 
 def open_editor(slot):
@@ -43,24 +49,40 @@ def link_text(i, now):
     inf = S.info[i]
     if inf and now - inf[3] < INFO_MAX_AGE:
         rtt, pad_hz, motion_hz, _ = inf
-        parts.append(f"ping {rtt:.1f} ms" if rtt is not None else "ping \u2014")
+        parts.append(f"ping {rtt:.1f} ms" if rtt is not None else "ping —")
         parts.append(f"pad {pad_hz} Hz")
     if S.link_loss is not None:
         parts.append(f"loss {S.link_loss:.1f}%")
     parts.append(f"{S.pps[i]:.0f} pkt/s")
-    return "   \u00b7   ".join(parts)
+    return "  ·  ".join(parts)
 
 
 def link_color(i, now):
-    """Zielony = dobrze, pomarańczowy = zauważalne (ping > 5 ms / strata > 1 %), czerwony = źle."""
+    """Zielony = dobrze, bursztynowy = zauważalne (ping > 5 ms / strata > 1 %), czerwony = źle."""
     inf = S.info[i]
     rtt = inf[0] if inf and now - inf[3] < INFO_MAX_AGE else None
     loss = S.link_loss or 0.0
     if (rtt or 0) > 20 or loss > 5:
-        return "#e53935"
+        return BAD
     if (rtt or 0) > 5 or loss > 1:
-        return "#fb8c00"
-    return "#66bb6a"
+        return WARN
+    return OK
+
+
+def battery_color(pct, charging, low_batt):
+    return CHARGE if charging else BAD if pct <= low_batt else WARN if pct <= 30 else OK
+
+
+def round_rect(canvas, x0, y0, x1, y1, r, **kw):
+    """Prostokąt z zaokrąglonymi rogami (wielokąt wygładzany); r jest przycinane do połowy krótszego boku."""
+    return canvas.create_polygon(*rr_points(x0, y0, x1, y1, r), smooth=True, **kw)
+
+
+def rr_points(x0, y0, x1, y1, r):
+    r = max(0, min(r, (x1 - x0) / 2, (y1 - y0) / 2))
+    return [x0 + r, y0, x0 + r, y0, x1 - r, y0, x1 - r, y0, x1, y0, x1, y0 + r, x1, y0 + r,
+            x1, y1 - r, x1, y1 - r, x1, y1, x1 - r, y1, x1 - r, y1, x0 + r, y1, x0 + r, y1,
+            x0, y1, x0, y1 - r, x0, y1 - r, x0, y0 + r, x0, y0 + r, x0, y0]
 
 
 def run_gui():
@@ -79,14 +101,14 @@ def run_gui():
     except Exception:
         pass
 
-    BG, FG, DIM = "#1e1e1e", "#e6e6e6", "#9aa0a6"
     root = tk.Tk()
     root.withdraw()                                          # start bez okna - pokazuje je użytkownik
     root.title("DualSense bridge")
     root.configure(bg=BG)
     root.resizable(False, False)
     sc = max(1.0, root.winfo_fpixels("1i") / 96)         # skala DPI: pasek rośnie razem z tekstem
-    W, H = round(280 * sc), round(20 * sc)
+    W, H = round(280 * sc), round(10 * sc)
+    pad_x = round(14 * sc)
     topmost = bool(cfg["gui_topmost"])
     root.attributes("-topmost", topmost)
     try:
@@ -108,37 +130,61 @@ def run_gui():
         except tk.TclError:
             pass
 
-    sender_lbl = tk.Label(root, text="", font=("Segoe UI", 10, "bold"), bg=BG, anchor="w", padx=14, pady=(8))
-    sender_lbl.grid(row=0, column=0, sticky="ew")
+    def make_button(parent, text, command, primary=False):
+        """Płaski przycisk z podświetleniem po najechaniu; wyłączony przycisk nie reaguje na hover."""
+        base, hover = (ACCENT, "#ffc233") if primary else (TRACK, "#353a4a")
+        fg = BG if primary else FG
+        b = tk.Button(parent, text=text, command=command, font=(FONT, 9, "bold" if primary else "normal"), fg=fg,
+                      bg=base, activebackground=hover, activeforeground=fg, disabledforeground=MUTED, relief="flat",
+                      bd=0, padx=round(12 * sc), pady=round(4 * sc), cursor="hand2", highlightthickness=0)
+        b.bind("<Enter>", lambda _e: str(b.cget("state")) != "disabled" and b.config(bg=hover))
+        b.bind("<Leave>", lambda _e: b.config(bg=base))
+        return b
 
+    # --- nagłówek ---
+    header = tk.Frame(root, bg=BG)
+    header.grid(row=0, column=0, sticky="ew", padx=pad_x, pady=(round(12 * sc), round(8 * sc)))
+    header.columnconfigure(1, weight=1)
+    tk.Label(header, text="DualSense bridge", font=(FONT, 13, "bold"), fg=FG, bg=BG, anchor="w").grid(row=0, column=0)
+    sender_lbl = tk.Label(header, text="", font=(FONT, 9), bg=BG, anchor="e")
+    sender_lbl.grid(row=0, column=1, sticky="e")
+
+    # --- karty padów ---
     rows = []
     for i in range(NUM_PADS):
-        fr = tk.Frame(root, bg=BG, padx=14, pady=8)
-        fr.grid(row=i + 1, column=0, sticky="ew")
-        fr.columnconfigure(1, weight=1)
-        tk.Label(fr, text=f"Pad {i + 1}", font=("Segoe UI", 11, "bold"), fg=FG, bg=BG,
-                 anchor="w").grid(row=0, column=0, sticky="w")
-        status = tk.Label(fr, text="", font=("Segoe UI", 9), fg=DIM, bg=BG, anchor="e")
+        card = tk.Frame(root, bg=CARD, highlightthickness=1, highlightbackground=BORDER, highlightcolor=BORDER)
+        card.grid(row=i + 1, column=0, sticky="ew", padx=pad_x, pady=(0, round(10 * sc)))
+        inner = tk.Frame(card, bg=CARD, padx=round(14 * sc), pady=round(12 * sc))
+        inner.pack(fill="both", expand=True)
+        inner.columnconfigure(0, weight=1)
+        tk.Label(inner, text=f"Pad {i + 1}", font=(FONT, 11, "bold"), fg=FG, bg=CARD, anchor="w"
+                 ).grid(row=0, column=0, sticky="w")
+        status = tk.Label(inner, text="", font=(FONT, 9, "bold"), fg=DIM, bg=CARD, anchor="e")
         status.grid(row=0, column=1, sticky="e")
-        bar = tk.Canvas(fr, width=W, height=H, bg="#333333", highlightthickness=0)
-        bar.grid(row=1, column=0, columnspan=2, pady=(5, 0))
-        fill = bar.create_rectangle(0, 0, 0, H, width=0, fill="#4caf50")
-        txt = bar.create_text(W // 2, H // 2, text="", fill="white", font=("Segoe UI", 9, "bold"))
-        info = tk.Label(fr, text="", font=("Segoe UI", 8), fg=DIM, bg=BG, anchor="w")
-        info.grid(row=2, column=0, sticky="w")
-        btns = tk.Frame(fr, bg=BG)
-        btns.grid(row=2, column=1, rowspan=2, sticky="e")
-        btn = dict(font=("Segoe UI", 8), fg=FG, bg="#2a2a2a", activebackground="#3a3a3a", activeforeground=FG,
-                   relief="flat", bd=0, padx=8)
-        tk.Button(btns, text="Remap", command=lambda i=i: open_editor(i), **btn).pack(side="left", padx=(0, 4))
-        off = tk.Button(btns, text="Off", command=lambda i=i: power_off(i), **btn)
-        off.pack(side="left")
-        link = tk.Label(fr, text="", font=("Segoe UI", 8), fg=DIM, bg=BG, anchor="w")
+
+        bar = tk.Canvas(inner, width=W, height=H, bg=CARD, highlightthickness=0)
+        bar.grid(row=1, column=0, sticky="w", pady=(round(8 * sc), round(2 * sc)))
+        round_rect(bar, 0, 0, W, H, H / 2, fill=TRACK, outline="")
+        fill = round_rect(bar, 0, 0, W, H, H / 2, fill=OK, outline="", state="hidden")
+        pct_lbl = tk.Label(inner, text="", font=(FONT, 10, "bold"), fg=FG, bg=CARD, anchor="e")
+        pct_lbl.grid(row=1, column=1, sticky="e", pady=(round(8 * sc), round(2 * sc)))
+
+        info = tk.Label(inner, text="", font=(FONT, 8), fg=DIM, bg=CARD, anchor="w")
+        info.grid(row=2, column=0, columnspan=2, sticky="w", pady=(round(6 * sc), 0))
+        link = tk.Label(inner, text="", font=(FONT, 8), fg=DIM, bg=CARD, anchor="w")
         link.grid(row=3, column=0, sticky="w")
-        rows.append((status, bar, fill, txt, info, link, off))
-    tk.Button(root, text="Quit", command=root.destroy, font=("Segoe UI", 8), fg=DIM, bg="#2a2a2a",
-              activebackground="#3a3a3a", activeforeground=FG, relief="flat", bd=0, padx=10
-              ).grid(row=NUM_PADS + 1, column=0, sticky="e", padx=14, pady=(0, 8))
+        btns = tk.Frame(inner, bg=CARD)
+        btns.grid(row=3, column=1, sticky="e", pady=(round(6 * sc), 0))
+        make_button(btns, "Remap", lambda i=i: open_editor(i), primary=True).pack(side="left", padx=(0, 6))
+        off = make_button(btns, "Off", lambda i=i: power_off(i))
+        off.pack(side="left")
+        rows.append((status, bar, fill, pct_lbl, info, link, off, card))
+
+    # --- stopka ---
+    footer = tk.Frame(root, bg=BG)
+    footer.grid(row=NUM_PADS + 1, column=0, sticky="ew", padx=pad_x, pady=(0, round(12 * sc)))
+    footer.columnconfigure(0, weight=1)
+    make_button(footer, "Quit", root.destroy).grid(row=0, column=1, sticky="e")
 
     last_row = [None] * NUM_PADS
     warned = [False] * NUM_PADS
@@ -196,11 +242,11 @@ def run_gui():
             ui["online"] = online
             p = S.peer
             src = p[0] if p else ""
-            sender_lbl.config(text=("\u25cf Sender online" + (f"  ({src})" if src else "")) if online
-                              else "\u25cf Sender offline", fg="#66bb6a" if online else "#e53935")
+            sender_lbl.config(text=("●  Sender online" + (f"  ({src})" if src else "")) if online
+                              else "●  Sender offline", fg=OK if online else BAD)
         low_any, tips = False, []
         now = time.monotonic()
-        for i, (status, bar, fill, txt, info, link, off) in enumerate(rows):
+        for i, (status, bar, fill, pct_lbl, info, link, off, card) in enumerate(rows):
             lt = link_text(i, now)
             if link.cget("text") != lt:          # zmienia się co sekundę - osobno od reszty wiersza
                 link.config(text=lt, fg=link_color(i, now))
@@ -224,21 +270,20 @@ def run_gui():
                 continue        # nic się nie zmieniło - nie dotykaj widgetów
             last_row[i] = key
             off.config(state="normal" if alive[i] else "disabled")
+            card.config(highlightbackground=BAD if low else BORDER)    # czerwona ramka przy rozładowanym padzie
             if alive[i]:
-                status.config(text="connected", fg="#66bb6a")
+                status.config(text="●  connected", fg=OK)
             elif want[i].is_set():
-                status.config(text="no signal", fg="#fb8c00")
+                status.config(text="●  no signal", fg=WARN)
             else:
-                status.config(text="not connected", fg=DIM)
+                status.config(text="○  not connected", fg=DIM)
             if not known:
-                bar.coords(fill, 0, 0, 0, H)
-                bar.itemconfig(txt, text="battery n/a")
+                bar.itemconfig(fill, state="hidden")
+                pct_lbl.config(text="n/a", fg=DIM)
             else:
-                color = ("#42a5f5" if charging else "#e53935" if pct <= LOW_BATT
-                         else "#fb8c00" if pct <= 30 else "#4caf50")
-                bar.coords(fill, 0, 0, W * pct // 100, H)
-                bar.itemconfig(fill, fill=color)
-                bar.itemconfig(txt, text=f"{pct}%" + ("  charging" if charging else ""))
+                bar.coords(fill, *rr_points(0, 0, max(W * pct // 100, H), H, H / 2))   # min. szerokość = kropka
+                bar.itemconfig(fill, fill=battery_color(pct, charging, LOW_BATT), state="normal" if pct else "hidden")
+                pct_lbl.config(text=f"{pct}%" + (" ⚡" if charging else ""), fg=BAD if low else FG)
             n = profile_size(S.remap_maps[i])
             info.config(text=f"DS4: {'on' if plugged[i] else 'off'}"
                              f"   |   touchpad: {'mouse' if mouse_mode[i] else 'DS4'}"
