@@ -29,7 +29,7 @@ SENS_STEP, SENS_MIN, SENS_MAX = 1.15, 0.05, 5.0
 
 
 class Slot:
-    __slots__ = ("down", "used", "out", "gen", "tap", "sup_share", "sup_dpad", "prev_mask", "prev_hat", "timer")
+    __slots__ = ("down", "used", "out", "gen", "tap", "sup_share", "sup_dpad", "prev_mask", "prev_hat", "timer", "fresh")
 
     def __init__(self):
         self.down = self.used = self.out = self.sup_share = self.sup_dpad = False
@@ -37,6 +37,7 @@ class Slot:
         self.tap = 0                   # numer impulsu PS - koniec starego impulsu nie ucina nowego
         self.prev_mask, self.prev_hat = 0, (0, 0)
         self.timer = None
+        self.fresh = True              # pierwszy stan po połączeniu: PS trzymane od włączania pada to nie nowe naciśnięcie
 
 
 slots = []
@@ -79,6 +80,11 @@ def on_state(i, mask, hx, hy):
     ps = bool(mask & PS_BIT)
     pm, (phx, phy) = h.prev_mask, h.prev_hat
     h.prev_mask, h.prev_hat = mask, (hx, hy)
+    if h.fresh:
+        h.fresh = False
+        if ps:                         # pad włączany przytrzymaniem PS: bez Game Bar (długie PS) i bez PS dla gry
+            h.down = h.used = True
+            return
     if ps and not h.down:
         h.down, h.used = True, False
         h.gen += 1
@@ -87,7 +93,8 @@ def on_state(i, mask, hx, hy):
         h.timer.start()
     elif not ps and h.down:
         h.down = False
-        h.timer.cancel()
+        if h.timer is not None:
+            h.timer.cancel()
         if not h.used and master.check(i, "ps_game"):
             _tap(i, refresh=False)     # wołający (rx_net) i tak zaraz przelicza stan - już z nowymi wejściami
     if h.down:

@@ -35,6 +35,8 @@ DualSense ──Bluetooth──> telefon: sender/ ──UDP 5005──> PC: rece
   | PS + d-pad lewo / prawo | zmiana profilu |
   | długie PS | Xbox Game Bar albo Steam Big Picture |
 
+  PS trzymane już w chwili połączenia pada (włączanie pada przytrzymaniem PS) nie otwiera Game Bar i nie idzie do gry.
+
 - **Tryb konsoli:** podwójne kliknięcie wybranego przycisku pada (domyślnie **R2**) przełącza ekran i dźwięk między
   monitorem a telewizorem. R2 liczy się tylko przy głębokim naciśnięciu (z histerezą - drżenie spustu nie daje
   podwójnego kliknięcia) i tylko samo: R2 razem z innym przyciskiem (typowo w grze) nie przełącza. **Po połączeniu pada
@@ -264,7 +266,8 @@ Testy obejmują:
 - tryb konsoli z zaślepionymi poleceniami ekranu, dźwięku i powiadomień (config, podwójne kliknięcie, auto-OFF, błędy);
 - pad master (uprawnienia, akcje PS + przycisk, przejęcie), auto-ON trybu konsoli, R2 z histerezą,
   stabilizację kliku touchpada, `slots.json`;
-- okno receivera (Qt offscreen, bez ekranu) i edytor w headless Chromium.
+- okno receivera (Qt offscreen, bez ekranu) i edytor w headless Chromium;
+- regresje z przeglądu bugów (`test_review.py`, `test_review_tx.py`).
 
 Działanie z prawdziwym padem, ViGEm, `DisplaySwitch.exe`, przełączaniem dźwięku (pycaw) i powiadomieniami Windows trzeba
 sprawdzić ręcznie.

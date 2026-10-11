@@ -72,6 +72,7 @@ ok("obserwator okna: profil gry, lista ostatnich gier bez przeglądarek")
 store.delete(base + "@elden.exe"); S.reload_profile(0)
 PS, SHARE = BIT[316], BIT[314]
 calls.clear()
+state(0)                         # pad już połączony (PS w pierwszym stanie po połączeniu to włączanie pada, nie skrót)
 state(0, mask=PS)
 assert not S.states[0]["mask"] & PS, "PS nie może iść do gry od razu"
 state(0, mask=0)

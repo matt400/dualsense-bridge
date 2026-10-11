@@ -221,9 +221,10 @@ def handle(t, i, data):
     elif t == T_IDENT:
         pid = BODY[T_IDENT].unpack_from(data, 4)[0].rstrip(b"\0").decode("ascii", "replace").lower()
         if pid and pid != S.pad_id[i]:
-            S.pad_id[i] = pid
-            S.override[i] = None
-            S.reload_profile(i)
+            with S.profile_lock:              # wątek gry (set_game) nie może przeliczyć profilu w pół zmiany pada
+                S.pad_id[i] = pid
+                S.override[i] = None
+                S.reload_profile(i)
             rx_console.pad_connected(i)   # nowy pad w slocie - jeśli to master, auto-ON trybu konsoli
             n = profile_size(S.remap_maps[i])
             print(f"Controller {i}: id {pid}, profile {S.profile_label(S.active[i])}"

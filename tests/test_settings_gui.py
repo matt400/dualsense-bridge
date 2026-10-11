@@ -64,8 +64,8 @@ QApplication.instance().quit = lambda: closed.append(True)
 dlg.save_btn.click(); pump()
 m, mo = rx_settings.cur.master, rx_settings.cur.mouse
 assert m.pad == B and m.when_absent == "nobody" and not m.claim_hold and "ps_game" in m.only_master and "console" not in m.only_master
-assert m.actions["sleep"] == "square" and mo.sens == 3.0 and mo.click_freeze_ms == 250 and mo.click_rewind_ms == 0 and mo.drag_threshold == 100
-assert M.sens == [3.0] * C.NUM_PADS, "czułość działa od razu"
+assert m.actions["sleep"] == "square" and mo.sens == 5.0 and mo.click_freeze_ms == 250 and mo.click_rewind_ms == 0 and mo.drag_threshold == 100
+assert M.sens == [5.0] * C.NUM_PADS, "czułość działa od razu"
 assert S.restart is False and not closed, "mysz / master bez restartu (tryb konsoli bez zmian)"
 assert "Zapisano" in dlg.status.text()
 saved = json.load(open(C.SETTINGS_PATH))

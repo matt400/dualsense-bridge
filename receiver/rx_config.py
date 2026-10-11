@@ -180,7 +180,7 @@ def init(argv=None):
     C.STALE_S = float(cfg["stale_s"])
     C.UNPLUG_S = float(cfg["unplug_s"])
     C.ALLOWED_IP = cfg["allow"]
-    C.KEY = cfg["key"].encode() if cfg["key"] else b""
+    C.KEY = str(cfg["key"]).encode() if cfg["key"] else b""     # key = 1234 (liczba w .toml) - jak w nadajniku
     C.DEBUG = bool(cfg["stats"])
     C.USE_GUI = bool(cfg["gui"])
     C.LOW_BATT = int(cfg["low_batt"])

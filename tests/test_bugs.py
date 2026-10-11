@@ -11,6 +11,7 @@ def check(name, cond):
 
 # B7: ps_hold_action = none -> długie PS ma dać PS dla gry po puszczeniu (a nie nic)
 C.PS_HOLD_ACTION = "none"
+state(0)                         # pad już połączony (PS w pierwszym stanie po połączeniu to włączanie pada, nie skrót)
 state(0, mask=PS); time.sleep(C.PS_HOLD_S + 0.1); state(0, mask=0)
 check("długie PS przy ps_hold_action=none trafia do gry", S.states[0]["mask"] & PS)
 time.sleep(0.15); state(0); C.PS_HOLD_ACTION = "gamebar"

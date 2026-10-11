@@ -138,7 +138,7 @@ class ConsoleSettings(QDialog):
         return [switching, tv, games, note]
 
     def _mouse_tab(self):
-        self.sens = SliderRow(_("Czułość kursora"), 0.05, 3.0, 0.05, "x")
+        self.sens = SliderRow(_("Czułość kursora"), 0.05, 5.0, 0.05, "x")   # zakres jak MouseConfig i PS + ↑/↓ (do 5×)
         self.freeze = SliderRow(_("Kursor stoi po wciśnięciu i puszczeniu kliku [ms]"), 0, 400, 10)
         self.rewind = SliderRow(_("Cofnij ruch sprzed kliknięcia [ms] (docisk palca przesuwa kursor)"), 0, 200, 10)
         self.drag = SliderRow(_("Przeciąganie z wciśniętym klikiem zaczyna się po (jednostki touchpada)"), 0, 300, 5)

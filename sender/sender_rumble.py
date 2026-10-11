@@ -261,12 +261,14 @@ class Rumble:
                 continue
             try:
                 (self._send_hidraw if m == "hidraw" else self._send_evdev)(small, large)
+            except (BlockingIOError, InterruptedError):
+                pass        # chwilowo pełna kolejka raportów - to nie awaria; powtórka / odświeżenie dośle stan
             except OSError as e:
                 print(f"Controller {self.idx}: rumble via {m} failed ({e!r}) - not using it any more")
                 self.methods.remove(m)
                 if m == "evdev" and "hidraw" not in self.methods and self._open_hidraw():
                     self.methods.append("hidraw")
-                    self._send_hidraw(small, large)
+                    self._send(small, large, only="hidraw")    # z tą samą obsługą błędów (wyjątek nie wyjdzie do pętli)
 
     def _send_hidraw(self, small, large):
         self.seq = (self.seq + 1) & 0x0F

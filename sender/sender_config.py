@@ -38,7 +38,7 @@ DEFAULTS = {
     "touch_deadzone": 2,           # ignoruj zmiany palca mniejsze niż tyle jednostek (szum czujnika)
     "touch_start_move": 5,         # mysz: kursor rusza dopiero po przesunięciu o tyle (brak drgania przy tapie)
     "gestures": True,              # 2 palce = przewijanie, tap 2 palcami = prawy przycisk myszy
-    "rumble": "auto",              # wibracja: auto (sterownik, a bez niego raport HID przez hidraw) | evdev | hidraw | off
+    "rumble": "auto",              # wibracja: auto (sterownik evdev i raport HID przez hidraw naraz) | evdev | hidraw | off
     "idle_off_min": 15,            # wyłącz pada (rozłącz Bluetooth) po tylu minutach bez użycia; 0 = nigdy
     "rt_priority": 10,             # SCHED_FIFO z tym priorytetem (1-99); 0 = zwykły planista; wymaga doas
     "low_latency": True,           # procesor bez głębokiego uśpienia + najszybsze rdzenie (sender_rt); wymaga doas
