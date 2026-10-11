@@ -151,6 +151,19 @@ doas python3 sender_controller.py 192.168.1.4 --stats
 `--stats` co 5 s wypisuje ping i realną częstotliwość raportów pada. Autostart receivera z Windows:
 `python receiver_controller.py --autostart on`.
 
+Autostart nadajnika na telefonie - usługa systemowa działająca jako root (wibracja przez `/dev/hidraw`, tryb niskich
+opóźnień), OpenRC albo systemd wykrywane samo:
+
+```
+cd sender
+cp sender.example.toml sender.toml      # ustaw host = IP komputera
+doas ./install-service.sh               # albo: doas ./install-service.sh 192.168.1.4 --key SEKRET
+```
+
+Log: `/var/log/dualsense-sender.log` (OpenRC) albo `journalctl -u dualsense-sender` (systemd). Usunięcie:
+`doas ./install-service.sh --remove`. Wcześniejszy własny autostart nadajnika trzeba wyłączyć - drugi nadajnik
+nie wystartuje (`Another sender is already running`).
+
 ## Konfiguracja
 
 Wszystkie ustawienia z wartościami domyślnymi i opisem są w `sender/sender.example.toml` i
@@ -206,7 +219,7 @@ Nadajnik zapisuje stały przydział pad → slot w `sender/slots.json` (`slots_f
 | Ruch odwrócony w emulatorze (DSU) | `acc_sign` / `gyro_sign` w konfiguracji receivera |
 | Profil gry się nie włącza | gry z anti-cheatem mogą blokować odczyt nazwy procesu; przełącz ręcznie PS + d-pad |
 | `virtual DS4 error ... ViGEmBus` | zainstaluj sterownik ViGEmBus |
-| Pad nie wibruje | karta pada: „stary nadajnik” = skopiuj nowe pliki `sender/` na telefon, „brak uprawnień” = uruchom nadajnik przez `doas`, „brak w jądrze” = jądro telefonu bez `CONFIG_PLAYSTATION_FF` i `CONFIG_HIDRAW`, „nie znaleziono pada” = brak `/dev/hidraw` tego pada; na telefonie: `doas python3 sender_rumble.py --test` (wibruje każdym sposobem po kolei, bez sieci) i ustaw w `sender.toml` `rumble` na ten, który działa; log nadajnika `rumble via ...` i `rumble N/N from PC` (czy polecenie z PC dochodzi); przycisk „Wibracja” na karcie pada |
+| Pad nie wibruje | karta pada: „stary nadajnik” = skopiuj nowe pliki `sender/` na telefon, „brak uprawnień” = nadajnik nie działa jako root (`doas` albo usługa z `install-service.sh`), „brak w jądrze” = jądro telefonu bez `CONFIG_PLAYSTATION_FF` i `CONFIG_HIDRAW`, „nie znaleziono pada” = brak `/dev/hidraw` tego pada; na telefonie: `doas python3 sender_rumble.py --test` (wibruje każdym sposobem po kolei, bez sieci) i ustaw w `sender.toml` `rumble` na ten, który działa; log nadajnika `rumble via ...` i `rumble N/N from PC` (czy polecenie z PC dochodzi); przycisk „Wibracja” na karcie pada |
 | Tryb konsoli nie reaguje | log receivera: `Console: double ... on controller N` = wykryte; `only the master pad can do that` = funkcja zastrzeżona dla mastera (Ustawienia → Master) |
 | Gra w co-op widzi pady dziwnie (Steam) | Steam → biblioteka → gra → Właściwości → Kontroler: spróbuj „Wyłącz Steam Input” (gra czyta dwa DS4 sama) albo odwrotnie; kolejność graczy w Big Picture → Ustawienia → Kontroler |
 

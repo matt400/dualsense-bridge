@@ -1,0 +1,23 @@
+#!/sbin/openrc-run
+# Nadajnik DualSense bridge jako usługa OpenRC (postmarketOS / Alpine) - działa jako root: wibracja przez
+# /dev/hidraw, tryb niskich opóźnień. Instalacja: doas ./install-service.sh (ustawienia w /etc/conf.d/dualsense-sender)
+
+name="DualSense bridge sender"
+description="DualSense -> UDP sender (receiver on Windows)"
+
+: "${SENDER_DIR:=/opt/dualsense-bridge/sender}"
+: "${SENDER_ARGS:=--config sender.toml}"
+
+command="/usr/bin/python3"
+command_args="-u ${SENDER_DIR}/sender_controller.py ${SENDER_ARGS}"
+directory="${SENDER_DIR}"
+supervisor="supervise-daemon"          # wznawia nadajnik po awarii
+respawn_delay=2
+respawn_max=0
+output_log="/var/log/dualsense-sender.log"
+error_log="/var/log/dualsense-sender.log"
+
+depend() {
+	use net bluetooth
+	after bluetooth
+}

@@ -331,7 +331,8 @@ EN = {
     "wibracja: wyłączona": "rumble: off",
     "W sender.toml ustaw rumble = \"auto\".": "Set rumble = \"auto\" in sender.toml.",
     "wibracja: brak uprawnień": "rumble: no permission",
-    "Nadajnik nie może otworzyć /dev/hidraw - uruchom go przez doas.": "The sender cannot open /dev/hidraw - run it with doas.",
+    "Nadajnik nie może otworzyć /dev/hidraw - uruchom go przez doas albo zainstaluj usługę: doas ./install-service.sh":
+        "The sender cannot open /dev/hidraw - run it with doas or install the service: doas ./install-service.sh",
     "wibracja: brak w jądrze": "rumble: missing in kernel",
     "Jądro telefonu nie ma CONFIG_PLAYSTATION_FF ani CONFIG_HIDRAW - bez jednej z nich pad nie wibruje.":
         "The phone kernel has neither CONFIG_PLAYSTATION_FF nor CONFIG_HIDRAW - the pad cannot rumble without one of them.",
