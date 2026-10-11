@@ -193,5 +193,41 @@ check(rxenv.calls == [("m", M.LDOWN, 0, 0, 0), ("m", M.MOVE, 2, 0, 0), ("m", M.L
       f"0 = poprawki wyłączone (dawne zachowanie): {rxenv.calls}")
 ok("mysz: cofnięcie ruchu sprzed kliku, freeze, próg przeciągania, wyłączalne")
 
+# ---------- "zawieszony" mute (zły odczyt u nadajnika) i pakiet caps ----------
+import rx_net, rx_status
+from proto import T_CAPS, CAPS_MUTE_OK, CAPS_MUTE_FAIL, CAPS_MUTE_OPEN
+rx_net.MUTE_STUCK_S = 0.3
+settings(pad="")
+state(0, mask=BIT[MUTE]); time.sleep(0.35)
+state(0, mask=BIT[MUTE] | BIT[CROSS])
+check(S.mute_stuck[0] and not S.states[0]["raw"][0] & BIT[MUTE], "mute trzymany dłużej niż limit -> ignorowany")
+check(S.states[0]["mask"] & BIT[CROSS], "przy zawieszonym mute zwykły przycisk trafia do gry (nie jest kombinacją)")
+check(rx_status.mute_status(0)[1] == "bad", "okno pokazuje zawieszony mute")
+state(0, mask=BIT[CROSS]); state(0)
+check(not S.mute_stuck[0], "puszczony -> mute znów działa")
+state(0, mask=BIT[MUTE]); check(S.states[0]["raw"][0] & BIT[MUTE], "krótkie mute działa normalnie"); state(0)
+S.caps[0] = None
+check(rx_status.mute_status(0)[0] == "mute: stary nadajnik", "brak caps = stary nadajnik")
+feed(T_CAPS, 0, 3, CAPS_MUTE_OPEN | CAPS_MUTE_OK)
+check(S.caps[0] == (3, 3) and rx_status.mute_status(0)[1] == "ok", f"caps: mute działa {S.caps[0]}")
+feed(T_CAPS, 0, 3, CAPS_MUTE_FAIL)
+check(rx_status.mute_status(0)[1] == "bad", "caps: mute niedostępny")
+ok("mute: zawieszony bit ignorowany, stan mute z nadajnika (caps) w oknie")
+
+# ---------- pierwszy stan po połączeniu: trzymane wejścia to nie naciśnięcia ----------
+settings(pad=A, actions={"pause": "options", "close_game": "", "sleep": "", "shutdown": ""})
+rx_master.reset(0); rxenv.calls.clear()
+state(0, mask=BIT[MUTE] | BIT[OPT]); time.sleep(0.05)
+check(not any(x[:2] == ("k", W.VK_ESCAPE) for x in rxenv.calls), "pad połączony z trzymanym mute + Options nie pauzuje")
+state(0)
+ok("pierwszy stan po połączeniu nie wyzwala akcji")
+
+# ---------- korona przed identyfikatorem pada ----------
+S.pad_id[1] = None
+okk, msg = rx_master.set_master(1, save=False)
+check(not okk and "identyfikatora" in msg and rx_settings.cur.master.pad == A, "bez MAC pad nie zostaje masterem (klucz slotN by się zgubił)")
+ident(1, B)
+ok("master tylko dla pada z identyfikatorem")
+
 print("FAIL" if fails else "PASS", "master:", len(fails), "błędów" if fails else "wszystko OK")
 sys.exit(1 if fails else 0)

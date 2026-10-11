@@ -215,6 +215,7 @@ class Console:
         if now - self._last_click[i] <= self.cfg.double_click_ms / 1000:
             self._last_click[i] = 0.0       # trzecie kliknięcie zaczyna od nowa, nie przełącza drugi raz
             if master.check(i, "console"):  # może być zastrzeżone dla pada master
+                print(f"Console: double {self.cfg.toggle_button} on controller {i}")
                 self._jobs.put(self._toggle)
         else:
             self._last_click[i] = now

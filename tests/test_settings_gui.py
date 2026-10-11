@@ -40,7 +40,7 @@ ok("korona: klik = master, klik na masterze = brak mastera, zapis do pliku")
 # ---------- zakładki ustawień ----------
 win.open_settings(); pump(100)
 dlg = win.settings_dlg
-assert [dlg.tabs.tabText(i) for i in range(3)] == ["Tryb konsoli", "Mysz", "Master"]
+assert [dlg.tabs.tabText(i) for i in range(dlg.tabs.count())] == ["Tryb konsoli", "Mysz", "Master", "Okno"]
 assert dlg.toggle_button == "mute" and "Mute" in dlg.pick_name.text() and not dlg.pick_icon.pixmap().isNull()
 assert not dlg.tabs.tabIcon(2).isNull(), "zakładki z ikonami"
 dlg.tabs.setCurrentIndex(1); pump()
@@ -93,6 +93,29 @@ assert "mute" not in targets and "ps" in targets, "mute można zremapować, ale 
 assert win.part_page.dst.itemText(0) == "" and not win.part_page.dst.itemIcon(0).isNull(), "cele jako ikony"
 win.grab().save(os.path.join(os.path.dirname(__file__), "gui_master2.png"))
 ok("remap: mute klikalny na rysunku, cele jako ikony z podpowiedzią")
+# ---------- ekran okna ----------
+dlg.present(); pump()
+scr = [dlg.screen_box.itemData(i) for i in range(dlg.screen_box.count())]
+names = [k for k, _ in rx_qt.screens()]
+assert scr == ["", *names], (scr, names)
+dlg.screen_box.set_data(names[0]); dlg.tabs.setCurrentIndex(3)
+dlg.save_btn.click(); pump()
+assert win.screen_choice() == names[0] and win.settings.value("screen") == names[0], "wybrany ekran zapisany"
+win.move(-5000, -5000); win.place_on_screen()
+assert QApplication.screens()[0].availableGeometry().contains(win.frameGeometry().center()), "okno przeniesione na wybrany ekran"
+win.set_screen_choice("NIE-MA-TAKIEGO"); dlg.hide(); dlg.present(); pump()
+assert dlg.screen_box.currentData() == "NIE-MA-TAKIEGO" and "niepodłączony" in dlg.screen_box.currentText()
+assert win.place_on_screen() is False, "brak wybranego ekranu -> okno zostaje"
+win.set_screen_choice("")
+ok("ekran okna: lista ekranów, zapis, przeniesienie, brak ekranu")
+
+# ---------- stan mute na karcie pada ----------
+from proto import T_CAPS, CAPS_MUTE_OK
+feed(T_CAPS, 0, 3, CAPS_MUTE_OK); state(0); win.slow_tick(); pump()
+assert card0.mute.text() == "mute: działa" and card0.mute.property("level") == "ok", card0.mute.text()
+assert win.cards[1].mute.text() == "mute: stary nadajnik", win.cards[1].mute.text()
+ok("karta pada: czy mute działa (nowy / stary nadajnik)")
+
 # ---------- przycisk Restart w nagłówku i ikona okna ----------
 from PySide6.QtWidgets import QPushButton
 btn = next(b for b in win.findChildren(QPushButton) if b.text() == "Restart")

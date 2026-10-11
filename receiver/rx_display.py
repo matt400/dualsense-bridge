@@ -17,6 +17,8 @@ DEVICE_INFO_GET_SOURCE_NAME, DPI_GET, DPI_SET = 1, -3, -4
 ENUM_CURRENT_SETTINGS = 0xFFFFFFFF
 DM_BITSPERPEL, DM_PELSWIDTH, DM_PELSHEIGHT, DM_DISPLAYFREQUENCY = 0x40000, 0x80000, 0x100000, 0x400000
 CDS_UPDATEREGISTRY = 0x1
+ERROR_INSUFFICIENT_BUFFER = 122
+DISP_CHANGE_SUCCESSFUL, DISP_CHANGE_RESTART = 0, 1
 SETTLE_S = 6.0          # tyle czekamy, aż Windows przełączy układ ekranów na "tylko TV"
 
 
@@ -99,17 +101,27 @@ def _user32():
     return ctypes.WinDLL("user32")
 
 
+def _query(u):
+    """Aktywne ścieżki ekranów; układ może się zmieniać w trakcie (przełączanie TV) - wtedy ponów."""
+    for _ in range(5):
+        n_paths, n_modes = ctypes.c_uint32(), ctypes.c_uint32()
+        if u.GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, ctypes.byref(n_paths), ctypes.byref(n_modes)):
+            raise OSError("GetDisplayConfigBufferSizes failed")
+        paths, modes = (PATH_INFO * n_paths.value)(), (MODE_INFO * n_modes.value)()
+        r = u.QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, ctypes.byref(n_paths), paths, ctypes.byref(n_modes), modes, None)
+        if r == 0:
+            return paths[:n_paths.value]
+        if r != ERROR_INSUFFICIENT_BUFFER:
+            raise OSError(f"QueryDisplayConfig failed ({r})")
+        time.sleep(0.1)
+    raise OSError("QueryDisplayConfig: display layout keeps changing")
+
+
 def active_sources():
     """[(adapterId, sourceId, nazwa GDI np. \\\\.\\DISPLAY2)] aktywnych ekranów."""
     u = _user32()
-    n_paths, n_modes = ctypes.c_uint32(), ctypes.c_uint32()
-    if u.GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, ctypes.byref(n_paths), ctypes.byref(n_modes)):
-        raise OSError("GetDisplayConfigBufferSizes failed")
-    paths, modes = (PATH_INFO * n_paths.value)(), (MODE_INFO * n_modes.value)()
-    if u.QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, ctypes.byref(n_paths), paths, ctypes.byref(n_modes), modes, None):
-        raise OSError("QueryDisplayConfig failed")
     out, seen = [], set()
-    for p in paths[:n_paths.value]:
+    for p in _query(u):
         src = p.sourceInfo
         key = (src.adapterId.LowPart, src.adapterId.HighPart, src.id)
         if key in seen:
@@ -127,11 +139,11 @@ def set_resolution(device, w, h):
     """-> opis zmiany; nic nie robi, gdy ekran już ma w×h."""
     u = _user32()
     cur = DEVMODEW(dmSize=ctypes.sizeof(DEVMODEW))
-    if u.EnumDisplaySettingsW(device, ENUM_CURRENT_SETTINGS, ctypes.byref(cur)) and (cur.dmPelsWidth, cur.dmPelsHeight) == (w, h):
+    if u.EnumDisplaySettingsW(device, ctypes.c_uint32(ENUM_CURRENT_SETTINGS), ctypes.byref(cur)) and (cur.dmPelsWidth, cur.dmPelsHeight) == (w, h):
         return f"{w}x{h} already set"
     modes, k = [], 0
     dm = DEVMODEW(dmSize=ctypes.sizeof(DEVMODEW))
-    while u.EnumDisplaySettingsW(device, k, ctypes.byref(dm)):
+    while u.EnumDisplaySettingsW(device, ctypes.c_uint32(k), ctypes.byref(dm)):
         modes.append((dm.dmPelsWidth, dm.dmPelsHeight, dm.dmBitsPerPel, dm.dmDisplayFrequency))
         k += 1
     best = pick_mode(modes, w, h)
@@ -140,7 +152,7 @@ def set_resolution(device, w, h):
     new = DEVMODEW(dmSize=ctypes.sizeof(DEVMODEW), dmPelsWidth=w, dmPelsHeight=h, dmBitsPerPel=best[2],
                    dmDisplayFrequency=best[3], dmFields=DM_PELSWIDTH | DM_PELSHEIGHT | DM_BITSPERPEL | DM_DISPLAYFREQUENCY)
     r = u.ChangeDisplaySettingsExW(device, ctypes.byref(new), None, CDS_UPDATEREGISTRY, None)
-    if r != 0:
+    if r not in (DISP_CHANGE_SUCCESSFUL, DISP_CHANGE_RESTART):
         raise OSError(f"ChangeDisplaySettingsExW({device}, {w}x{h}@{best[3]}) = {r}")
     return f"{w}x{h} @ {best[3]} Hz"
 

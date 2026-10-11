@@ -351,7 +351,10 @@ function targetOf(src) { return src in prof.buttons ? prof.buttons[src] : src; }
 
 function opts(current) {
   let h = "";
-  for (const n of Object.keys(labels)) h += `<option value="${n}"${n === current ? " selected" : ""}>${esc(labels[n])}</option>`;
+  for (const n of Object.keys(labels)) {
+    if (n === "mute") continue;            // DS4 nie ma mute - może być tylko źródłem, nie celem
+    h += `<option value="${n}"${n === current ? " selected" : ""}>${esc(labels[n])}</option>`;
+  }
   return h + `<option value="__none"${current === null ? " selected" : ""}>— disabled —</option>`;
 }
 
