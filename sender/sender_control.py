@@ -6,7 +6,8 @@ from subprocess import DEVNULL, PIPE
 
 import sender_net as net
 import sender_state as state
-from proto import CMD_POWER_OFF, T_INFO
+import sender_update
+from proto import CMD_POWER_OFF, CMD_UPDATE, T_INFO
 from sender_config import C
 
 MAC_RE = re.compile(r"[0-9a-f]{2}(?::[0-9a-f]{2}){5}", re.IGNORECASE)
@@ -54,6 +55,9 @@ async def power_off(c, reason):
 
 
 def on_command(idx, cmd, _arg):
+    if cmd == CMD_UPDATE:                  # dotyczy całego nadajnika, nie pada (idx = 255)
+        _spawn(sender_update.run())
+        return
     c = ctrl_by_idx(idx)
     if c is None:
         return

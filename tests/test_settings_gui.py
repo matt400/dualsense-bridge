@@ -158,6 +158,49 @@ assert S.restart is True and closed, "drugi klik: restart receivera"
 S.restart = False
 assert not QApplication.instance().windowIcon().isNull() and len(win.windowIcon().availableSizes()) >= 4, "ikona pada w kilku rozmiarach"
 ok("Restart: dwa kliknięcia, restart receivera; ikona aplikacji ustawiona")
+
+# ---------- Aktualizuj: git pull w tle, komunikat, restart po pobraniu ----------
+import rx_update
+rx_qt.UPDATE_RESTART_MS = 50
+results = iter([rx_update.Result(True, False, "Masz najnowszą wersję"),
+                rx_update.Result(True, True, "Zaktualizowano (2 zmian): aaaaaaa → bbbbbbb", "a", "b")])
+rx_update.update = lambda: (time.sleep(0.1), next(results))[1]
+import time
+btn = win.update_btn
+assert btn.text() == "Aktualizuj" and not btn.icon().isNull()
+S.restart = False; closed.clear()
+btn.click(); btn.click(); pump(20)
+assert not btn.isEnabled() and btn.text() == "Aktualizuję…", "w trakcie: przycisk zablokowany"
+pump(300)
+assert btn.isEnabled() and "najnowszą" in win.status.text() and S.restart is False, "brak zmian - bez restartu"
+btn.click(); btn.click(); pump(500)
+assert S.restart is True and closed and "Zaktualizowano" in btn.toolTip(), "nowa wersja -> restart receivera"
+S.restart = False
+ok("Aktualizuj: potwierdzenie, git pull w tle, komunikat, restart tylko po pobraniu nowej wersji")
+
+# ---------- wersje i aktualizacja nadajnika ----------
+import rx_net
+from proto import BODY, CMD_UPDATE, T_BUILD, T_CMD, UPD_DONE
+assert win.version_lbl.text().startswith("wersja ") and win.version_lbl.toolTip()
+rx_update._version = ("1111111", 1791700000, "Receiver")
+def build(h, st):
+    rx_net.on_build(rx_net.codec.pack(T_BUILD, 255, h, 1791600000, st), time.monotonic())
+S.last_pkt = time.monotonic(); build(b"2222222", 0); win.slow_tick(); pump()
+assert "2222222" in win.sender.text() and win.sender.property("level") == "warn" and "Aktualizuj" in win.sender.toolTip(), \
+    "inna wersja nadajnika niż receivera -> żółty, podpowiedź"
+build(b"1111111", 0); win.slow_tick(); pump()
+assert win.sender.property("level") == "ok", "ta sama wersja - zielony"
+rx_update.update = lambda: rx_update.Result(True, True, "Zaktualizowano (1 zmian): 1111111 → 3333333")
+rx_qt.UPDATE_RESTART_MS = 50
+sent.clear(); S.restart = False; closed.clear(); btn.setEnabled(True)   # po poprzedniej aktualizacji czeka na restart
+btn.click(); btn.click(); pump(150)
+cmds = [p for p in sent if p[0] == T_CMD]
+assert cmds and cmds[0][1] == 255 and BODY[T_CMD].unpack_from(cmds[0][3], 4)[0] == CMD_UPDATE, "polecenie aktualizacji do nadajnika"
+assert S.restart is False, "receiver czeka na wynik nadajnika"
+S.last_pkt = time.monotonic(); build(b"1111111", UPD_DONE); pump(500)
+assert "nadajnik: zaktualizowany" in btn.toolTip() and S.restart is True, btn.toolTip()
+S.restart = False
+ok("wersja w nagłówku, wersja nadajnika (inna = żółty), Aktualizuj: polecenie do nadajnika, czekanie na jego wynik")
 offs = []
 rx_console.power_off = lambda why: offs.append(why) or True
 rx_qt.session_end()

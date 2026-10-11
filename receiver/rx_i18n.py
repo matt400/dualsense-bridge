@@ -341,6 +341,46 @@ EN = {
         "The sender did not find /dev/hidraw of this pad - on the phone: doas python3 sender_rumble.py --test",
     "sterownik": "driver",
     "wibracja: {ways}": "rumble: {ways}",
+    # ---------- aktualizacja ----------
+    "Aktualizuj": "Update",
+    "Aktualizować?": "Update?",
+    "Aktualizuję…": "Updating…",
+    "Pobieranie aktualizacji…": "Downloading update…",
+    "Pobiera nową wersję z GitHuba (git pull) dla receivera i nadajnika; oba uruchamiają się od nowa":
+        "Downloads the new version from GitHub (git pull) for the receiver and the sender; both restart",
+    "wersja {v}": "version {v}",
+    "nieznana": "unknown",
+    "Ostatnia zmiana: {s}": "Latest change: {s}",
+    "Wersja nieznana - folder nie jest klonem git": "Version unknown - the folder is not a git clone",
+    "Nadajnik: wersja {s}, receiver: {r} - kliknij Aktualizuj": "Sender: version {s}, receiver: {r} - click Update",
+    "Nadajnik: wersja {s}": "Sender: version {s}",
+    "Nadajnik nie podaje wersji (starsza wersja albo nie klon git)":
+        "The sender does not report its version (older version or not a git clone)",
+    "nadajnik niepołączony - zaktualizuje się następnym razem": "sender not connected - it will be updated next time",
+    "nadajnik w starej wersji - zaktualizuj go raz ręcznie (git pull na telefonie)":
+        "the sender is too old - update it once by hand (git pull on the phone)",
+    "nadajnik: najnowsza wersja": "sender: latest version",
+    "nadajnik: zaktualizowany, uruchamia się od nowa": "sender: updated, restarting",
+    "nadajnik: folder na telefonie to nie klon git - na telefonie: "
+    "git clone https://github.com/matt400/dualsense-bridge i doas ./install-service.sh z nowego folderu":
+        "sender: the folder on the phone is not a git clone - on the phone: git clone https://github.com/matt400/dualsense-bridge "
+        "and doas ./install-service.sh from the new folder",
+    "nadajnik: brak git na telefonie (doas apk add git)": "sender: git missing on the phone (doas apk add git)",
+    "nadajnik: git pull nie powiódł się (szczegóły w logu na telefonie)": "sender: git pull failed (details in the phone log)",
+    "nadajnik nie odpowiedział": "the sender did not respond",
+    "Folder nie jest repozytorium git (pobrany jako ZIP?) - sklonuj: git clone https://github.com/matt400/dualsense-bridge":
+        "The folder is not a git repository (downloaded as ZIP?) - clone it: git clone https://github.com/matt400/dualsense-bridge",
+    "Nie znaleziono git - zainstaluj Git for Windows (git-scm.com)": "git not found - install Git for Windows (git-scm.com)",
+    "git pull nie powiódł się: {msg}": "git pull failed: {msg}",
+    "Masz najnowszą wersję": "You have the latest version",
+    "git nie odpowiada: {msg}": "git does not respond: {msg}",
+    "Zaktualizowano ({n} zmian): {old} → {new}": "Updated ({n} changes): {old} → {new}",
+    "pip nie zadziałał ({msg}) - uruchom: pip install -r receiver\\requirements.txt":
+        "pip failed ({msg}) - run: pip install -r receiver\\requirements.txt",
+    "pip: {msg}": "pip: {msg}",
+    "nowe biblioteki zainstalowane": "new libraries installed",
+    "Uruchom ponownie receiver (przycisk Restart w oknie), żeby działał nowy kod.":
+        "Restart the receiver (Restart button in the window) to run the new code.",
     # ---------- ikony ----------
     "Ekran": "Screen",
     "Uruchom ponownie": "Restart",

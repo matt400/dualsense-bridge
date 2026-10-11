@@ -10,6 +10,7 @@ import os
 import signal
 from functools import cache
 import sys
+import threading
 import time
 
 from PySide6.QtCore import QAbstractNativeEventFilter, QEvent, QSettings, QSize, Qt, QTimer, Signal
@@ -23,8 +24,11 @@ import rx_games
 import rx_master
 import rx_profiles as P
 import rx_state as S
+import rx_net
+import rx_update
 import rx_status as ST
 import rx_winapi as W
+from proto import CMD_UPDATE, UPD_RUNNING
 from rx_buttons import profile_size
 from rx_config import C
 from rx_editor import Editor
@@ -37,6 +41,8 @@ from rx_qt_style import LEVEL, apply_theme, set_prop
 from rx_qt_widgets import BatteryBar, ConfirmButton, Segmented, button, label
 
 LIVE_MS, SLOW_MS, APPLY_MS = 33, 400, 150
+UPDATE_WAIT_S = 60.0       # tyle najwyżej czekamy na wynik aktualizacji nadajnika (git pull na telefonie)
+UPDATE_RESTART_MS = 2500   # po udanej aktualizacji: tyle widać komunikat, potem restart receivera
 NOTE_S = 6.0           # tyle sekund komunikat (np. "Saved") zasłania status profilu
 VIEWS = (("out", "Wynik"), ("in", "Fizycznie"))
 
@@ -198,6 +204,8 @@ class PadCard(QFrame):
 
 
 class MainWindow(QMainWindow):
+    update_done = Signal(object)          # rx_update.Result z wątku aktualizacji
+
     def __init__(self, settings):
         super().__init__()
         self.settings = settings
@@ -229,6 +237,7 @@ class MainWindow(QMainWindow):
 
         self._build()
         self.tray = self._make_tray()
+        self.update_done.connect(self._update_finished)
         QShortcut(QKeySequence.StandardKey.Save, self, activated=self.save)
         QShortcut(QKeySequence(Qt.Key.Key_F11), self, activated=self.toggle_fullscreen)
         self.select_pad(self.ed.slot)
@@ -267,6 +276,10 @@ class MainWindow(QMainWindow):
         lay.setContentsMargins(20, 10, 16, 10)
         title = label("DualSense bridge")
         title.setObjectName("title")
+        commit, ts, subject = rx_update.version()
+        self.version_lbl = label(_("wersja {v}").format(v=rx_update.describe(commit, ts)), "dim")
+        self.version_lbl.setToolTip(_("Ostatnia zmiana: {s}").format(s=subject) if subject else
+                                    _("Wersja nieznana - folder nie jest klonem git"))
         self.sender = label("")
         settings_btn = button(_("Ustawienia"), small=True)
         settings_btn.setIcon(icon("gear"))
@@ -276,6 +289,10 @@ class MainWindow(QMainWindow):
         restart_btn.setIcon(icon("restart"))
         restart_btn.setToolTip(_("Uruchamia receiver od nowa (pady na chwilę znikną, niezapisane zmiany profilu przepadną)"))
         restart_btn.confirmed.connect(self.restart)
+        self.update_btn = ConfirmButton(_("Aktualizuj"), _("Aktualizować?"), small=True)
+        self.update_btn.setIcon(icon("update"))
+        self.update_btn.setToolTip(_("Pobiera nową wersję z GitHuba (git pull) dla receivera i nadajnika; oba uruchamiają się od nowa"))
+        self.update_btn.confirmed.connect(self.start_update)
         quit_btn = ConfirmButton(_("Zakończ"), _("Zakończyć?"), small=True)
         quit_btn.setIcon(icon("power"))
         quit_btn.setToolTip(_("Zatrzymuje receiver - wirtualne pady znikają"))
@@ -286,6 +303,8 @@ class MainWindow(QMainWindow):
         self.fs_btn.clicked.connect(self.toggle_fullscreen)
         lay.setSpacing(8)
         lay.addWidget(title)
+        lay.addSpacing(6)
+        lay.addWidget(self.version_lbl, 0, Qt.AlignmentFlag.AlignBottom)
         lay.addStretch(1)
         lay.addWidget(self.sender)
         lay.addSpacing(8)
@@ -294,7 +313,7 @@ class MainWindow(QMainWindow):
         sep.setFixedHeight(22)
         lay.addWidget(sep)
         lay.addSpacing(8)
-        for b in (self.fs_btn, settings_btn, restart_btn, quit_btn):
+        for b in (self.fs_btn, settings_btn, self.update_btn, restart_btn, quit_btn):
             lay.addWidget(b)
         return bar
 
@@ -381,6 +400,7 @@ class MainWindow(QMainWindow):
         menu = QMenu()
         menu.addAction(_("Pokaż okno"), self.bring_to_front)
         menu.addAction(_("Ustawienia"), self.open_settings)
+        menu.addAction(icon("update"), _("Aktualizuj"), self.start_update)
         menu.addAction(icon("restart"), "Restart", self.restart)
         menu.addAction(_("Zakończ"), self.quit)
         tray.setContextMenu(menu)
@@ -482,6 +502,70 @@ class MainWindow(QMainWindow):
             self.settings_dlg.saved.connect(self.restart)
             self.settings_dlg.applied.connect(self.slow_tick)
         self.settings_dlg.present()
+
+    def _sender_label(self, online, build):
+        """'● Nadajnik online (ip) · a1b2c3d'; inna wersja niż receiver -> żółty i podpowiedź, żeby zaktualizować."""
+        if not online:
+            self.sender.setText(_("●  Nadajnik offline"))
+            self.sender.setToolTip("")
+            set_prop(self.sender, "level", "bad")
+            return
+        src = S.peer[0] if S.peer else ""
+        mine = rx_update.version()[0]
+        text = _("●  Nadajnik online") + (f"  ({src})" if src else "")
+        if build and build[0]:
+            text += f"  ·  {build[0]}"
+        stale = bool(build and build[0] and mine and build[0] != mine)
+        tip = (_("Nadajnik: wersja {s}, receiver: {r} - kliknij Aktualizuj").format(
+                   s=rx_update.describe(*build), r=rx_update.describe(*rx_update.version()[:2])) if stale else
+               _("Nadajnik: wersja {s}").format(s=rx_update.describe(*build)) if build and build[0] else
+               _("Nadajnik nie podaje wersji (starsza wersja albo nie klon git)"))
+        self.sender.setText(text)
+        self.sender.setToolTip(tip)
+        set_prop(self.sender, "level", "warn" if stale else "ok")
+
+    def start_update(self):
+        """Aktualizacja obu stron: polecenie do nadajnika (git pull na telefonie, sam się restartuje) i git pull
+        receivera w osobnym wątku; wynik wraca sygnałem do wątku okna, potem czekamy na wynik nadajnika."""
+        if not self.update_btn.isEnabled():
+            return
+        self.update_btn.setEnabled(False)
+        self.update_btn.setText(_("Aktualizuję…"))
+        self.note(_("Pobieranie aktualizacji…"), "")
+        self._upd_sender = S.sender_online() and S.sender_build is not None   # nowy nadajnik odpowie wynikiem
+        self._upd_t0 = time.monotonic()
+        if S.sender_build is not None:
+            S.sender_build = (*S.sender_build[:2], UPD_RUNNING, time.monotonic())
+        if S.sender_online():
+            rx_net.send_cmd(255, CMD_UPDATE)
+        threading.Thread(target=lambda: self.update_done.emit(rx_update.update()), name="update", daemon=True).start()
+
+    def _update_finished(self, r):
+        """Receiver gotowy - czekamy (najwyżej UPDATE_WAIT_S) na wynik nadajnika, potem komunikat i restart."""
+        print(f"Update: {r.text}")
+        self._upd_result = r
+        self._update_poll()
+
+    def _update_poll(self):
+        r = self._upd_result
+        waiting = (self._upd_sender and S.sender_build is not None and S.sender_build[2] == UPD_RUNNING
+                   and time.monotonic() - self._upd_t0 < UPDATE_WAIT_S)
+        if waiting:
+            QTimer.singleShot(250, self._update_poll)
+            return
+        parts = [r.text]
+        if S.sender_online() or S.sender_build is not None:
+            parts.append(rx_update.sender_text(S.sender_build))
+        else:
+            parts.append(_("nadajnik niepołączony - zaktualizuje się następnym razem"))
+        text = " · ".join(parts)
+        print(f"Update: {text}")
+        self.update_btn.setText(_("Aktualizuj"))
+        self.update_btn.setEnabled(not r.changed)
+        self.update_btn.setToolTip(text)
+        self.note(text, "ok" if r.ok else "bad")
+        if r.changed:
+            QTimer.singleShot(UPDATE_RESTART_MS, self.restart)
 
     def restart(self):
         """Restart (przycisk, zasobnik, zapisane ustawienia): zwykłe zamknięcie okna, a receiver sam startuje od nowa
@@ -626,11 +710,10 @@ class MainWindow(QMainWindow):
     def _slow(self):
         now = time.monotonic()
         online = S.sender_online(now)
-        if online != self.online:
-            self.online = online
-            src = S.peer[0] if S.peer else ""
-            self.sender.setText((_("●  Nadajnik online") + (f"  ({src})" if src else "")) if online else _("●  Nadajnik offline"))
-            set_prop(self.sender, "level", "ok" if online else "bad")
+        build = S.sender_build[:2] if S.sender_build else None
+        if (online, build) != self.online:
+            self.online = (online, build)
+            self._sender_label(online, build)
         low_any, tips = False, []
         for c in self.cards:
             i = c.slot
