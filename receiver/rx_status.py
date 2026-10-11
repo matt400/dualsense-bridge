@@ -1,4 +1,5 @@
 """Receiver: teksty i poziomy jakości do okna (łącze, bateria) - czyste funkcje, bez Qt, łatwe do przetestowania."""
+from rx_i18n import _
 import rx_state as S
 
 INFO_MAX_AGE = 3.0   # pakiet "info" starszy niż tyle = brak danych o pingu i Hz
@@ -17,11 +18,11 @@ def link_parts(i, now):
     inf = _info(i, now)
     if inf:
         rtt, pad_hz, _motion_hz, _t = inf
-        parts.append(("ping", f"ping {rtt:.1f} ms" if rtt is not None else "ping —"))
-        parts.append(("hz", f"pad {pad_hz} Hz"))
+        parts.append(("ping", _("ping {ms} ms").format(ms=f"{rtt:.1f}") if rtt is not None else "ping —"))
+        parts.append(("hz", _("pad {hz} Hz").format(hz=pad_hz)))
     if S.link_loss is not None:
-        parts.append(("loss", f"loss {S.link_loss:.1f}%"))
-    parts.append(("pps", f"{S.pps[i]:.0f} pkt/s"))
+        parts.append(("loss", _("strata {pct}%").format(pct=f"{S.link_loss:.1f}")))
+    parts.append(("pps", _("{n} pkt/s").format(n=f"{S.pps[i]:.0f}")))
     return parts
 
 

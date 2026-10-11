@@ -3,6 +3,7 @@
 Zmiany działają na żywo (apply(save=False) wywołuje okno po krótkim debounce), zapis do remap.json jest osobno.
 Profil to {"buttons", "sticks", "tuning", "gyro"} - jak w rx_buttons.normalize_profile.
 """
+from rx_i18n import _
 import copy
 
 import rx_buttons as B
@@ -13,11 +14,11 @@ from rx_shape import GYRO_DEF, STICK_DEF, TRIG_DEF
 SHORT = {"cross": "✕", "circle": "○", "triangle": "△", "square": "□", "l1": "L1", "r1": "R1", "share": "SHARE",
          "options": "OPT", "ps": "PS", "l3": "L3", "r3": "R3", "dpad_up": "↑", "dpad_down": "↓", "dpad_left": "←",
          "dpad_right": "→", "l2": "L2", "r2": "R2"}
-STICK_NAME = {"left": "Left stick", "right": "Right stick", "none": "Disabled (centered)"}
+STICK_NAME = {"left": "Lewa gałka", "right": "Prawa gałka", "none": "Wyłączona (środek)"}   # przez _() w oknie
 STICK_OF = {"left_stick": "left", "right_stick": "right"}     # część rysunku -> wyjście gałki
 L3_OF = {"left_stick": "l3", "right_stick": "r3"}             # klik gałki
-GYRO_MODES = {"off": "Off", "stick": "Right stick (works in every game)", "mouse": "Mouse (PC shooters, menus)"}
-NEW_GAME_HINT = "Type the game's .exe file name, e.g. eldenring.exe"
+GYRO_MODES = {"off": "Wyłączone", "stick": "Prawa gałka (działa w każdej grze)", "mouse": "Mysz (strzelanki na PC, menu)"}
+NEW_GAME_HINT = "Wpisz nazwę pliku .exe gry, np. eldenring.exe"
 
 
 def empty():
@@ -25,7 +26,7 @@ def empty():
 
 
 def profile_name(key):
-    return S.profile_label(key) if B.is_game_key(key) else "Default (all games)"
+    return S.profile_label(key) if B.is_game_key(key) else _("Domyślny")
 
 
 def _tuning_defaults(name):
@@ -134,49 +135,50 @@ class Editor:
     def status(self):
         """-> ("ok" | "warn", tekst) do paska stanu."""
         if self.modified():
-            return "warn", "● Applied live - not saved yet"
+            return "warn", _("● Zastosowano na żywo - jeszcze niezapisane")
         if B.is_game_key(self.key) and not self.in_file:
-            return "warn", "● Game profile not saved yet"
-        return "ok", "✓ Matches saved profile"
+            return "warn", _("● Profil gry jeszcze niezapisany")
+        return "ok", _("✓ Zgodny z zapisanym profilem")
 
     def info(self):
         """Opis wybranego profilu pod listą."""
         if self.key == S.active[self.slot]:
-            text = "In use right now."
+            text = _("Używany teraz.")
         elif B.is_game_key(self.key):
-            text = f"Used automatically while {profile_name(self.key)} is the active window."
+            text = _("Używany automatycznie, gdy aktywnym oknem jest {name}.").format(name=profile_name(self.key))
         else:
-            text = "Used when no game profile matches the active window."
-        return f"{text}  Active window: {S.game or '—'}."
+            text = _("Używany, gdy żaden profil gry nie pasuje do aktywnego okna.")
+        return _("{text}  Aktywne okno: {game}.").format(text=text, game=S.game or "—")
 
     def changes(self):
         """[(opis, cofnięcie)] - lista zmian względem domyślnych; cofnięcie usuwa jedną pozycję."""
-        L, out = B.LABELS, []
+        L, out = {k: _(v) for k, v in B.LABELS.items()}, []
         for src, dst in self.prof["buttons"].items():
-            out.append((f"{L[src]} → {'disabled' if dst is None else L[dst]}", lambda s=src: self.clear_button(s)))
+            out.append((f"{L[src]} → {_('wyłączony') if dst is None else L[dst]}", lambda s=src: self.clear_button(s)))
         for name, e in self.prof["sticks"].items():
-            inv = ", ".join(t for t, on in (("invert X", e["inv_x"]), ("invert Y", e["inv_y"])) if on)
-            src = "centered" if e["src"] == "none" else STICK_NAME[e["src"]]
-            out.append((f"{STICK_NAME[name]} ← {src}" + (f" ({inv})" if inv else ""), lambda n=name: self.clear_stick(n)))
+            inv = ", ".join(t for t, on in ((_("odwróć X"), e["inv_x"]), (_("odwróć Y"), e["inv_y"])) if on)
+            src = _("środek") if e["src"] == "none" else _(STICK_NAME[e["src"]])
+            out.append((f"{_(STICK_NAME[name])} ← {src}" + (f" ({inv})" if inv else ""), lambda n=name: self.clear_stick(n)))
         for name in self.prof["tuning"]:
             out.append((self._describe_tuning(name), lambda n=name: self.clear_tuning(n)))
         g = self.gyro()
         if g["mode"] != "off":
-            hold = "always" if g["hold"] == "always" else f"hold {L[g['hold']]}"
-            mode = "right stick" if g["mode"] == "stick" else "mouse"
-            out.append((f"Gyro: {mode}, {hold}, sensitivity {g['sens']:g}×", self.clear_gyro))
+            hold = _("zawsze") if g["hold"] == "always" else _("przytrzymaj {b}").format(b=L[g["hold"]])
+            mode = _("prawa gałka") if g["mode"] == "stick" else _("mysz")
+            out.append((_("Gyro: {mode}, {hold}, czułość {sens}×").format(mode=mode, hold=hold, sens=f"{g['sens']:g}"),
+                        self.clear_gyro))
         return out
 
     def _describe_tuning(self, name):
         t = self.tuning(name)
         if name in B.TRIGGERS:
-            return f"{SHORT[name]} response: deadzone {t['dz']}, full at {t['max']}"
+            return _("Reakcja {b}: strefa martwa {dz}, pełne od {mx}").format(b=SHORT[name], dz=t["dz"], mx=t["max"])
         parts = [f"{label} {fmt}" for label, fmt, on in (
-            ("deadzone", f"{round(t['dz'] * 100)}%", t["dz"]),
-            ("full at", f"{round(t['outer'] * 100)}%", t["outer"] != 1),
-            ("curve", f"{t['curve']:.2f}", t["curve"] != 1),
-            ("anti-deadzone", f"{round(t['anti'] * 100)}%", t["anti"])) if on]
-        return f"{STICK_NAME[name]} response: {', '.join(parts)}"
+            (_("strefa martwa"), f"{round(t['dz'] * 100)}%", t["dz"]),
+            (_("pełne od"), f"{round(t['outer'] * 100)}%", t["outer"] != 1),
+            (_("krzywa"), f"{t['curve']:.2f}", t["curve"] != 1),
+            (_("anty-strefa martwa"), f"{round(t['anti'] * 100)}%", t["anti"])) if on]
+        return _("{stick} - reakcja: {parts}").format(stick=_(STICK_NAME[name]), parts=", ".join(parts))
 
     # ---------- zapis i profile gier ----------
     def apply(self, save=False):
@@ -191,15 +193,15 @@ class Editor:
         """Tworzy profil gry (tylko w pamięci, do zapisania) i wybiera go. -> (ok, komunikat)."""
         key = P.game_key(self.slot, text)
         if key is None:
-            return False, NEW_GAME_HINT
+            return False, _(NEW_GAME_HINT)
         if key not in S.store.keys_for(self.base):
             P.apply(self.slot, key, copy.deepcopy(self.prof) if copy_current else empty(), save=False)
         self.select(key)
-        return True, f"Profile for {key.split('@', 1)[1]} created - save it to keep it"
+        return True, _("Utworzono profil dla {exe} - zapisz go, żeby go zachować").format(exe=key.split("@", 1)[1])
 
     def delete_current(self):
         """Usuwa wybrany profil gry. -> (ok, komunikat)."""
         ok, msg = P.delete(self.slot, self.key)
         if ok:
             self.select()
-        return ok, "Profile deleted" if ok else msg
+        return ok, _("Profil usunięty") if ok else msg

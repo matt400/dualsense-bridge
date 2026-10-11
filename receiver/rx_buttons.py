@@ -13,6 +13,7 @@ jest wczytywany jak "buttons".
 Profile gier: klucz "<pad>@<gra.exe>" (np. "aa:bb:cc:dd:ee:ff@eldenring.exe") - używany automatycznie, gdy ta gra
 jest na pierwszym planie. Profil gry istnieje nawet pusty (= "w tej grze bez zmian"), w odróżnieniu od profilu pada.
 """
+from rx_i18n import _
 import json
 import os
 import threading
@@ -29,11 +30,12 @@ BUTTON_CODES = {"cross": 304, "circle": 305, "triangle": 307, "square": 308,
 DIRS = {"dpad_up": (0, -1), "dpad_down": (0, 1), "dpad_left": (-1, 0), "dpad_right": (1, 0)}   # (hx, hy)
 TRIGGERS = ("l2", "r2")
 INPUTS = tuple(BUTTON_CODES) + tuple(DIRS) + TRIGGERS
-LABELS = {"cross": "Cross (X)", "circle": "Circle (O)", "triangle": "Triangle", "square": "Square",
-          "l1": "L1", "r1": "R1", "share": "Share / Create", "options": "Options", "ps": "PS button",
-          "l3": "L3 (stick)", "r3": "R3 (stick)",
-          "dpad_up": "D-pad Up", "dpad_down": "D-pad Down", "dpad_left": "D-pad Left", "dpad_right": "D-pad Right",
-          "l2": "L2 (trigger)", "r2": "R2 (trigger)"}
+# nazwy wejść po polsku - w oknie zawsze przez rx_i18n._() (wersja angielska w rx_i18n.EN)
+LABELS = {"cross": "Krzyżyk (X)", "circle": "Kółko (O)", "triangle": "Trójkąt", "square": "Kwadrat",
+          "l1": "L1", "r1": "R1", "share": "Share / Create", "options": "Options", "ps": "Przycisk PS",
+          "l3": "L3 (gałka)", "r3": "R3 (gałka)",
+          "dpad_up": "D-pad góra", "dpad_down": "D-pad dół", "dpad_left": "D-pad lewo", "dpad_right": "D-pad prawo",
+          "l2": "L2 (spust)", "r2": "R2 (spust)"}
 TRIG_ON = 40   # od tej wartości analogowej spust liczy się jako wciśnięty przycisk
 
 
@@ -265,10 +267,10 @@ class RemapStore:
         with self._lock:
             self.live.pop(key, None)
             if self.saved.pop(key, None) is None:
-                return True, "Deleted"
-            return self._write("Deleted")
+                return True, _("Usunięto")
+            return self._write("Usunięto - {file}")
 
-    def _write(self, done="Saved"):
+    def _write(self, done="Zapisano - {file}"):
         """Zapis atomowy (plik tymczasowy + zamiana) - przerwanie w trakcie nie psuje remap.json. Wołać pod _lock."""
         tmp = self.path + ".tmp"
         try:
@@ -276,5 +278,5 @@ class RemapStore:
                 json.dump({"version": 3, "profiles": self.saved}, f, indent=2, sort_keys=True)
             os.replace(tmp, self.path)
         except OSError as e:
-            return False, f"Save failed: {e}"
-        return True, f"{done} - {os.path.basename(self.path)}"
+            return False, _("Zapis nieudany: {err}").format(err=e)
+        return True, _(done).format(file=os.path.basename(self.path))

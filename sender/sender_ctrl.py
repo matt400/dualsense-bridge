@@ -5,9 +5,6 @@ import os
 import time
 import zlib
 
-from evdev import ecodes as ec
-from evdev import ff
-
 import sender_net as net
 from proto import (KEY_BIT, T_CLICK, T_IDENT, T_MOUSE, T_STATE, T_TOUCH, clamp)
 from sender_config import BURST_DELAYS, C, IDLE_TP, NEUTRAL_PAD, PAD_ABS, STICK_AXES
@@ -47,8 +44,7 @@ class Ctrl:
         self.t_state = 0.0
         self.last_key = None
         self.pending = False
-        self.ff_id = None
-        self.rumble_last = (0, 0, 0.0)
+        self.rumble = None            # sender_rumble.Rumble (ustawiane w run_ctrl)
         self.led = None
         self.led_color = None
         self.reports = {"pad": 0, "motion": 0}   # liczniki raportów urządzeń (Hz w pakiecie info)
@@ -180,25 +176,8 @@ class Ctrl:
 
     # ---- feedback z PC ----
     def apply_feedback(self, small, large, r, g, b):
-        now = time.monotonic()
-        try:
-            if small or large:
-                ls, ll, lt = self.rumble_last
-                if (small, large) != (ls, ll) or now - lt > 0.4:
-                    rumble = ff.Rumble(strong_magnitude=large * 257, weak_magnitude=small * 257)
-                    eff = ff.Effect(ec.FF_RUMBLE, self.ff_id if self.ff_id is not None else -1, 0,
-                                    ff.Trigger(0, 0), ff.Replay(1000, 0),
-                                    ff.EffectType(ff_rumble_effect=rumble))
-                    self.ff_id = self.pad_dev.upload_effect(eff)
-                    self.pad_dev.write(ec.EV_FF, self.ff_id, 1)
-                    self.rumble_last = (small, large, now)
-            elif self.rumble_last[:2] != (0, 0) and self.ff_id is not None:
-                self.pad_dev.write(ec.EV_FF, self.ff_id, 0)
-                self.rumble_last = (0, 0, now)
-        except (OSError, AttributeError) as e:
-            if self.rumble_last != (-1, -1, 0.0):
-                print(f"Controller {self.idx}: rumble unavailable: {e!r}")
-                self.rumble_last = (-1, -1, 0.0)
+        if self.rumble is not None:
+            self.rumble.set(small, large)
         if self.led and (r, g, b) != self.led_color:
             try:
                 with open(self.led + "/multi_intensity", "w") as f:
@@ -223,9 +202,6 @@ class Ctrl:
                 setattr(self, name, None)
 
     def stop_feedback(self):
-        try:
-            if self.ff_id is not None:
-                self.pad_dev.write(ec.EV_FF, self.ff_id, 0)
-                self.pad_dev.erase_effect(self.ff_id)
-        except Exception:
-            pass
+        if self.rumble is not None:
+            self.rumble.close()
+            self.rumble = None

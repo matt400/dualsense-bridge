@@ -5,6 +5,7 @@ Szybkość: rysunek pada odświeża się 30 razy na sekundę tylko, gdy okno jes
 zmienił; reszta (karty, zasobnik) co 400 ms, także przy ukrytym oknie (podpowiedź zasobnika, niski stan baterii).
 Zmiany profilu działają na pad na żywo po 150 ms od ostatniego ruchu suwaka, zapis do remap.json jest osobno (Save).
 """
+from rx_i18n import _
 import os
 import signal
 from functools import cache
@@ -16,6 +17,7 @@ from PySide6.QtGui import QIcon, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QMainWindow, QMenu, QSystemTrayIcon, QTabWidget,
                                QToolButton, QVBoxLayout, QWidget)
 
+import rx_feedback as F
 import rx_games
 import rx_master
 import rx_profiles as P
@@ -35,7 +37,7 @@ from rx_qt_widgets import BatteryBar, ConfirmButton, Segmented, button, label
 
 LIVE_MS, SLOW_MS, APPLY_MS = 33, 400, 150
 NOTE_S = 6.0           # tyle sekund komunikat (np. "Saved") zasłania status profilu
-VIEWS = (("out", "Result"), ("in", "Physical"))
+VIEWS = (("out", "Wynik"), ("in", "Fizycznie"))
 
 
 @cache
@@ -47,6 +49,11 @@ def make_icon(rgb):
         pm.loadFromData(icon_png(render_icon(rgb, size)))
         ic.addPixmap(pm)
     return ic
+
+
+def _profile_label(key):
+    label = S.profile_label(key)
+    return _("domyślny") if label == "default" else label
 
 
 def screens():
@@ -76,7 +83,7 @@ class PadCard(QFrame):
         self.crown.setIconSize(QSize(20, 20))
         self.crown.setCursor(Qt.CursorShape.PointingHandCursor)
         self.crown.clicked.connect(self.toggle_master)
-        head.addWidget(label(f"Pad {slot + 1}", "name"))
+        head.addWidget(label(_("Pad {n}").format(n=slot + 1), "name"))
         head.addWidget(self.crown)
         head.addStretch(1)
         head.addWidget(self.status)
@@ -100,10 +107,19 @@ class PadCard(QFrame):
         lay.addLayout(mode_row)
         lay.addWidget(self.profile)
         row = QHBoxLayout()
-        self.off = ConfirmButton("Power off", "Turn off?", small=True)
-        self.off.setToolTip("Disconnects the pad over Bluetooth - it switches off")
+        self.off = ConfirmButton(_("Wyłącz"), _("Wyłączyć?"), small=True)
+        self.off.setToolTip(_("Rozłącza pada przez Bluetooth - pad się wyłącza"))
         self.off.confirmed.connect(lambda: P.power_off(slot))
         row.addWidget(self.off)
+        self.rumble = QToolButton()
+        self.rumble.setObjectName("crown")
+        self.rumble.setIcon(icon("rumble"))
+        self.rumble.setIconSize(QSize(20, 20))
+        self.rumble.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.rumble.setToolTip(_("Test wibracji") + " - "
+                               + _("Krótka wibracja i mignięcie lightbara - sprawdza, czy wibracja dochodzi do pada"))
+        self.rumble.clicked.connect(lambda: F.pulse(slot, "test", force=True))
+        row.addWidget(self.rumble)
         row.addStretch(1)
         lay.addLayout(row)
 
@@ -141,27 +157,29 @@ class PadCard(QFrame):
             return low                        # nic się nie zmieniło - nie dotykaj widżetów
         self._key = key
         self.crown.setIcon(icon("crown", dim=not master))
-        self.crown.setToolTip("Pad master - kliknij, aby zdjąć" if master else "Kliknij: ten pad zostaje masterem")
+        self.crown.setToolTip(_("Pad master - kliknij, aby zdjąć") if master else _("Kliknij: ten pad zostaje masterem"))
         self.crown.setEnabled(master or alive or want)
         self.off.setEnabled(alive)
+        self.rumble.setEnabled(alive)
         set_prop(self, "low", low)
-        self.status.setText("●  connected" if alive else "●  no signal" if want else "○  not connected")
+        self.status.setText(_("●  połączony") if alive else _("●  brak sygnału") if want else _("○  niepodłączony"))
         set_prop(self.status, "level", "ok" if alive else "warn" if want else "")
         charging = bool(flags & 1)
         if pct > 100:                         # stan baterii nieznany
             self.bar.set(None, LEVEL["ok"])
-            self.pct.setText("n/a")
+            self.pct.setText(_("b/d"))
         else:
             self.bar.set(pct, LEVEL[ST.battery_level(pct, charging, C.LOW_BATT)])
             self.pct.setText(f"{pct}%" + (" ⚡" if charging else ""))
         set_prop(self.pct, "level", "bad" if low else "")
         n = profile_size(S.remap_maps[i])
-        self.mode.setText(f"DS4: {'on' if S.plugged[i] else 'off'}  ·  touchpad: {'mouse' if S.mouse_mode[i] else 'DS4'}")
+        self.mode.setText(_("DS4: {ds4}  ·  touchpad: {tp}").format(ds4=_("wł.") if S.plugged[i] else _("wył."),
+                                                                     tp=_("mysz") if S.mouse_mode[i] else "DS4"))
         pm = pixmap("mouse" if S.mouse_mode[i] else "touchpad", 32)
         pm.setDevicePixelRatio(2)
         self.mode_icon.setPixmap(pm)
-        self.mode_icon.setToolTip("Touchpad jako mysz" if S.mouse_mode[i] else "Touchpad jako dotyk DS4")
-        self.profile.setText(f"profile: {S.profile_label(S.active[i])}" + (f" ({n})" if n else ""))
+        self.mode_icon.setToolTip(_("Touchpad jako mysz") if S.mouse_mode[i] else _("Touchpad jako dotyk DS4"))
+        self.profile.setText(_("profil: {name}").format(name=_profile_label(S.active[i])) + (f" ({n})" if n else ""))
         return low
 
 
@@ -198,6 +216,7 @@ class MainWindow(QMainWindow):
         self._build()
         self.tray = self._make_tray()
         QShortcut(QKeySequence.StandardKey.Save, self, activated=self.save)
+        QShortcut(QKeySequence(Qt.Key.Key_F11), self, activated=self.toggle_fullscreen)
         self.select_pad(self.ed.slot)
         self.pad.set_selected(None)
         geo = settings.value("geometry")
@@ -235,20 +254,28 @@ class MainWindow(QMainWindow):
         title = label("DualSense bridge")
         title.setObjectName("title")
         self.sender = label("")
-        settings_btn = button("Ustawienia", small=True)
-        settings_btn.setToolTip("Tryb konsoli, mysz touchpada, pad master")
+        settings_btn = button(_("Ustawienia"), small=True)
+        settings_btn.setToolTip(_("Tryb konsoli, mysz touchpada, pad master, okno, język"))
         settings_btn.clicked.connect(self.open_settings)
         restart_btn = ConfirmButton("Restart", "Restart?", small=True)
         restart_btn.setIcon(icon("restart"))
-        restart_btn.setToolTip("Uruchamia receiver od nowa (pady na chwilę znikną, niezapisane zmiany profilu przepadną)")
+        restart_btn.setToolTip(_("Uruchamia receiver od nowa (pady na chwilę znikną, niezapisane zmiany profilu przepadną)"))
         restart_btn.confirmed.connect(self.restart)
-        quit_btn = ConfirmButton("Quit", "Quit?", small=True)
-        quit_btn.setToolTip("Stops the receiver - the virtual pads disappear")
+        quit_btn = ConfirmButton(_("Zakończ"), _("Zakończyć?"), small=True)
+        quit_btn.setToolTip(_("Zatrzymuje receiver - wirtualne pady znikają"))
         quit_btn.confirmed.connect(self.quit)
         lay.addWidget(title)
         lay.addStretch(1)
         lay.addWidget(self.sender)
         lay.addSpacing(12)
+        self.fs_btn = QToolButton()
+        self.fs_btn.setObjectName("crown")
+        self.fs_btn.setIcon(icon("fullscreen"))
+        self.fs_btn.setIconSize(QSize(20, 20))
+        self.fs_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.fs_btn.setToolTip(_("Pełny ekran (F11)"))
+        self.fs_btn.clicked.connect(self.toggle_fullscreen)
+        lay.addWidget(self.fs_btn)
         lay.addWidget(settings_btn)
         lay.addWidget(restart_btn)
         lay.addWidget(quit_btn)
@@ -275,11 +302,11 @@ class MainWindow(QMainWindow):
         self.pad.part_clicked.connect(self.on_part)
         lay.addWidget(self.pad, 1)
         row = QHBoxLayout()
-        row.addWidget(label("Click any part of the pad to remap or tune it.", "dim"), 1)
-        row.addWidget(label("Drawing shows:", "dim"))
-        self.seg = Segmented(VIEWS)
+        row.addWidget(label(_("Kliknij część pada, aby ją zremapować."), "dim"), 1)
+        row.addWidget(label(_("Rysunek pokazuje:"), "dim"))
+        self.seg = Segmented([(k, _(t)) for k, t in VIEWS])
         self.seg.set(self.view)
-        self.seg.setToolTip("Result = what the game gets after your remaps. Physical = what the pad itself is doing.")
+        self.seg.setToolTip(_("Wynik = to, co dostaje gra po remapowaniu. Fizycznie = to, co robi sam pad."))
         self.seg.changed.connect(self.set_view)
         row.addWidget(self.seg)
         lay.addLayout(row)
@@ -302,7 +329,7 @@ class MainWindow(QMainWindow):
         self.tabs = QTabWidget()
         self.tabs.tabBar().setExpanding(True)
         self.tabs.tabBar().setDrawBase(False)
-        for page, name in ((self.part_page, "Selected"), (self.gyro_page, "Gyro"), (self.changes_page, "Changes")):
+        for page, name in ((self.part_page, _("Wybrane")), (self.gyro_page, _("Gyro")), (self.changes_page, _("Zmiany"))):
             self.tabs.addTab(page, name)
         for page in (self.part_page, self.gyro_page):
             page.edited.connect(self.on_edit)
@@ -311,14 +338,14 @@ class MainWindow(QMainWindow):
         self.status = label("", wrap=True)
         lay.addWidget(self.status)
         row = QHBoxLayout()
-        self.save_btn = button("Save", primary=True)
-        self.save_btn.setToolTip("Write the profile to remap.json (Ctrl+S)")
+        self.save_btn = button(_("Zapisz"), primary=True)
+        self.save_btn.setToolTip(_("Zapisz profil do remap.json (Ctrl+S)"))
         self.save_btn.clicked.connect(self.save)
-        revert = button("Revert")
-        revert.setToolTip("Go back to the saved version of this profile")
+        revert = button(_("Cofnij"))
+        revert.setToolTip(_("Wróć do zapisanej wersji tego profilu"))
         revert.clicked.connect(self.revert)
-        reset = ConfirmButton("Reset all", "Reset?")
-        reset.setToolTip("Clear every change in this profile")
+        reset = ConfirmButton(_("Resetuj"), _("Zresetować?"))
+        reset.setToolTip(_("Usuń wszystkie zmiany w tym profilu"))
         reset.confirmed.connect(self.reset)
         for b in (self.save_btn, revert, reset):
             row.addWidget(b)
@@ -333,10 +360,10 @@ class MainWindow(QMainWindow):
             return None
         tray = QSystemTrayIcon(self.icons[False], self)
         menu = QMenu()
-        menu.addAction("Show window", self.bring_to_front)
-        menu.addAction("Ustawienia", self.open_settings)
+        menu.addAction(_("Pokaż okno"), self.bring_to_front)
+        menu.addAction(_("Ustawienia"), self.open_settings)
         menu.addAction(icon("restart"), "Restart", self.restart)
-        menu.addAction("Quit", self.quit)
+        menu.addAction(_("Zakończ"), self.quit)
         tray.setContextMenu(menu)
         self._tray_menu = menu                 # Qt nie przejmuje własności menu - trzeba je trzymać
         tray.setToolTip("DualSense bridge")
@@ -355,6 +382,20 @@ class MainWindow(QMainWindow):
         self.settings.sync()
         self.place_on_screen()
 
+    def fullscreen(self):
+        return str(self.settings.value("fullscreen", "false")).lower() == "true"
+
+    def set_fullscreen(self, on):
+        """Pełny ekran / okno (zapamiętane). Pełny ekran zajmuje wybrany ekran (Ustawienia -> Okno) albo bieżący."""
+        self.settings.setValue("fullscreen", bool(on))
+        self.settings.sync()
+        self.fs_btn.setToolTip(_("Wyjdź z pełnego ekranu (F11)") if on else _("Pełny ekran (F11)"))
+        if self.isVisible():
+            self.bring_to_front()
+
+    def toggle_fullscreen(self):
+        self.set_fullscreen(not self.fullscreen())
+
     def place_on_screen(self):
         """Przenosi okno na wybrany ekran (na środek, zmniejszone, jeśli się nie mieści). Wybranego ekranu nie ma
         (np. monitor wyłączony w trybie konsoli) -> okno zostaje tam, gdzie jest; Qt pilnuje, żeby było widoczne."""
@@ -363,15 +404,20 @@ class MainWindow(QMainWindow):
         if target is None or self.screen() is target and target.availableGeometry().contains(self.frameGeometry()):
             return False
         area = target.availableGeometry()
-        if self.isMaximized():
+        if self.isMaximized() or self.isFullScreen():
             self.showNormal()
         self.resize(min(self.width(), area.width() - 40), min(self.height(), area.height() - 60))
         self.move(area.center() - self.rect().center())
         return True
 
     def bring_to_front(self):
+        if self.isFullScreen() and not self.fullscreen():
+            self.showNormal()
         self.place_on_screen()
-        self.showNormal()
+        if self.fullscreen():
+            self.showFullScreen()
+        else:
+            self.showNormal()
         self.raise_()
         self.activateWindow()
 
@@ -528,7 +574,7 @@ class MainWindow(QMainWindow):
 
     def update_changes(self):
         n = self.changes_page.refresh()
-        self.tabs.setTabText(2, f"Changes ({n})" if n else "Changes")
+        self.tabs.setTabText(2, _("Zmiany ({n})").format(n=n) if n else _("Zmiany"))
 
     def note(self, text, level):
         """Komunikat zasłaniający status profilu na kilka sekund (zapisano, błąd, utworzono profil)."""
@@ -564,7 +610,7 @@ class MainWindow(QMainWindow):
         if online != self.online:
             self.online = online
             src = S.peer[0] if S.peer else ""
-            self.sender.setText(("●  Sender online" + (f"  ({src})" if src else "")) if online else "●  Sender offline")
+            self.sender.setText((_("●  Nadajnik online") + (f"  ({src})" if src else "")) if online else _("●  Nadajnik offline"))
             set_prop(self.sender, "level", "ok" if online else "bad")
         low_any, tips = False, []
         for c in self.cards:
@@ -573,14 +619,16 @@ class MainWindow(QMainWindow):
             pct, flags = S.batt_info[i]
             charging, known = bool(flags & 1), pct <= 100
             if S.want[i].is_set() or S.alive[i]:
-                tips.append(f"Pad {i + 1}: " + (f"{pct}%" + (" (charging)" if charging else "") if known else "n/a"))
+                tips.append(_("Pad {n}").format(n=i + 1) + ": "
+                            + (f"{pct}%" + (_(" (ładuje się)") if charging else "") if known else _("b/d")))
             if ST.is_low(i, C.LOW_BATT) and not self.warned[i]:
                 self.warned[i] = True
                 if self.tray and C.cfg["low_batt_notify"]:
-                    self.tray.showMessage("Low battery", f"Pad {i + 1}: {pct}%", QSystemTrayIcon.MessageIcon.Warning, 8000)
+                    self.tray.showMessage(_("Niska bateria"), _("Pad {n}").format(n=i + 1) + f": {pct}%",
+                                          QSystemTrayIcon.MessageIcon.Warning, 8000)
             elif self.warned[i] and (charging or (known and pct > C.LOW_BATT + 5)):
                 self.warned[i] = False
-        title = "DualSense bridge - LOW BATTERY" if low_any else "DualSense bridge"
+        title = _("DualSense bridge - NISKA BATERIA") if low_any else "DualSense bridge"
         if title != self.windowTitle():
             self.setWindowTitle(title)
         if self.ed.sync():                     # np. nadeszło id pada - profil pada zmienił klucz
@@ -588,8 +636,8 @@ class MainWindow(QMainWindow):
         else:
             self.update_profile_bar()
             self.update_status()
-        tip = ("DualSense bridge\nSender: " + ("online" if online else "offline") + "\n"
-               + ("\n".join(tips) if tips else "No pads connected"))
+        tip = (f"DualSense bridge\n{_('Nadajnik')}: " + ("online" if online else "offline") + "\n"
+               + ("\n".join(tips) if tips else _("Brak podłączonych padów")))
         if self.tray and (tip != self.tip or low_any != self.low_any):
             self.tray.setToolTip(tip)
             self.tray.setIcon(self.icons[low_any])

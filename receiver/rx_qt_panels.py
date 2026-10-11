@@ -3,6 +3,7 @@
 Panele czytają i zmieniają Editor (rx_editor) i sygnałem `edited` mówią oknu, że profil się zmienił
 (okno odświeża plakietki, status i wysyła profil na pad z krótkim opóźnieniem).
 """
+from rx_i18n import _
 from PySide6.QtCore import QStringListModel, Qt, Signal
 from PySide6.QtWidgets import (QCheckBox, QCompleter, QFrame, QHBoxLayout, QLineEdit, QScrollArea, QStackedWidget,
                                QToolButton, QVBoxLayout, QWidget)
@@ -14,7 +15,8 @@ from rx_qt_icons import pixmap
 from rx_qt_widgets import Combo, ConfirmButton, SliderRow, button, field, input_items, label
 
 NONE = "__none"
-TARGETS = input_items(B.INPUTS) + [(NONE, "— disabled —")]       # ikony przycisków (nazwa w podpowiedzi)
+def targets():
+    return input_items(B.INPUTS) + [(NONE, _("— wyłączony —"))]       # ikony przycisków (nazwa w podpowiedzi)
 
 
 def r3(v):
@@ -55,10 +57,11 @@ class ProfileBar(QWidget):
         row = QHBoxLayout()
         self.combo = Combo()
         self.combo.changed.connect(lambda key: self.selected.emit(key))
-        self.add = button("＋ Game", small=True)
-        self.add.setToolTip("New profile for a game")
+        self.combo.setToolTip(_("● = profil teraz w użyciu"))
+        self.add = button(_("+ Gra"), small=True)
+        self.add.setToolTip(_("Nowy profil dla gry"))
         self.add.clicked.connect(self._open_new)
-        self.remove = ConfirmButton("Delete", small=True)
+        self.remove = ConfirmButton(_("Usuń"), _("Usunąć?"), small=True)
         self.remove.confirmed.connect(self.delete)
         row.addWidget(self.combo, 1)
         row.addWidget(self.add)
@@ -74,23 +77,23 @@ class ProfileBar(QWidget):
         fl.setSpacing(6)
         self.exe = QLineEdit()
         self.exe.setPlaceholderText("eldenring.exe")
-        self.exe.setToolTip("Program name as shown in Task Manager → Details")
+        self.exe.setToolTip(_("Nazwa programu jak w Menedżerze zadań → Szczegóły"))
         self.completer_model = QStringListModel()
         completer = QCompleter(self.completer_model, self.exe)
         completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         completer.setCompletionMode(QCompleter.CompletionMode.UnfilteredPopupCompletion)
         self.exe.setCompleter(completer)
         self.exe.returnPressed.connect(self._create)
-        self.copy = QCheckBox("Start from the current settings")
+        self.copy = QCheckBox(_("Zacznij od bieżących ustawień"))
         self.copy.setChecked(True)
-        ok, cancel = button("Create", primary=True, small=True), button("Cancel", small=True)
+        ok, cancel = button(_("Utwórz"), primary=True, small=True), button(_("Anuluj"), small=True)
         ok.clicked.connect(self._create)
         cancel.clicked.connect(self.close_new)
         btns = QHBoxLayout()
         btns.addWidget(ok)
         btns.addWidget(cancel)
         btns.addStretch(1)
-        fl.addWidget(label("Game program (as in Task Manager → Details)", "dim"))
+        fl.addWidget(label(_("Program gry (jak w Menedżerze zadań → Szczegóły)"), "dim"))
         fl.addWidget(self.exe)
         fl.addWidget(self.copy)
         fl.addLayout(btns)
@@ -102,7 +105,7 @@ class ProfileBar(QWidget):
         sig = tuple(profiles)
         if sig != self._sig:
             self._sig = sig
-            self.combo.set_items([(k, n + ("   ● in use" if use else "")) for k, n, use in profiles])
+            self.combo.set_items([(k, n + ("  ●" if use else "")) for k, n, use in profiles])
         self.combo.set_data(key)
         self.remove.setVisible(B.is_game_key(key))
         self.info.setText(info)
@@ -143,33 +146,33 @@ class PartPage(QWidget):
     def _hint_page():
         w = QWidget()
         lay = _vbox(w)
-        lay.addWidget(label("SELECTED", "h2"))
-        lay.addWidget(label("Click a button, trigger or stick on the controller to remap or tune it.", "dim", wrap=True))
+        lay.addWidget(label(_("WYBRANE"), "h2"))
+        lay.addWidget(label(_("Kliknij przycisk, spust albo gałkę na rysunku pada, aby ją zremapować lub dostroić."), "dim", wrap=True))
         lay.addStretch(1)
         return scrolled(w)
 
     def _button_page(self):
         w = QWidget()
         lay = _vbox(w)
-        lay.addWidget(label("SELECTED", "h2"))
+        lay.addWidget(label(_("WYBRANE"), "h2"))
         head = QHBoxLayout()
         self.title_icon = label("")
         self.title = label("", "h3")
         head.addWidget(self.title_icon)
         head.addWidget(self.title, 1)
         lay.addLayout(head)
-        self.dst = Combo(TARGETS)
+        self.dst = Combo(targets())
         self.dst.changed.connect(lambda v: self._set_button(self.name, v))
-        lay.addWidget(field("Acts as", self.dst))
-        self.dflt = button("Default", small=True)
+        lay.addWidget(field(_("Działa jak"), self.dst))
+        self.dflt = button(_("Domyślnie"), small=True)
         self.dflt.clicked.connect(lambda: self._reset_button(self.name))
         lay.addWidget(self.dflt, 0, Qt.AlignmentFlag.AlignLeft)
         self.trig = QWidget()
         tl = _vbox(self.trig)
         self.trig_title = label("", "h2")
-        self.tdz = SliderRow("Deadzone (ignore light touches up to)", 0, 200, 1)
-        self.tmax = SliderRow("Full press at", 55, 255, 1)
-        self.tdef = button("Default response", small=True)
+        self.tdz = SliderRow(_("Strefa martwa (ignoruj lekkie dotknięcia do)"), 0, 200, 1)
+        self.tmax = SliderRow(_("Pełne wciśnięcie od"), 55, 255, 1)
+        self.tdef = button(_("Domyślna reakcja"), small=True)
         self.tdz.changed.connect(lambda v: self._tune(self.name, dz=round(v)))
         self.tmax.changed.connect(lambda v: self._tune(self.name, max=round(v)))
         self.tdef.clicked.connect(lambda: self._reset_tuning(self.name))
@@ -183,14 +186,14 @@ class PartPage(QWidget):
     def _stick_page(self):
         w = QWidget()
         lay = _vbox(w)
-        lay.addWidget(label("SELECTED", "h2"))
+        lay.addWidget(label(_("WYBRANE"), "h2"))
         self.stick_title = label("", "h3")
         lay.addWidget(self.stick_title)
-        self.ssrc = Combo([(k, STICK_NAME[k]) for k in ("left", "right", "none")])
+        self.ssrc = Combo([(k, _(STICK_NAME[k])) for k in ("left", "right", "none")])
         self.ssrc.changed.connect(lambda v: self._stick(src=v))
-        lay.addWidget(field("The game sees this stick's data from", self.ssrc))
+        lay.addWidget(field(_("Gra widzi dane tej gałki z"), self.ssrc))
         inv = QHBoxLayout()
-        self.invx, self.invy = QCheckBox("Invert X"), QCheckBox("Invert Y")
+        self.invx, self.invy = QCheckBox(_("Odwróć X")), QCheckBox(_("Odwróć Y"))
         self.invx.toggled.connect(lambda on: self._stick(inv_x=on))
         self.invy.toggled.connect(lambda on: self._stick(inv_y=on))
         inv.addWidget(self.invx)
@@ -198,22 +201,22 @@ class PartPage(QWidget):
         inv.addStretch(1)
         lay.addLayout(inv)
         self.l3_caption = label("", "dim")
-        self.l3 = Combo(TARGETS)
+        self.l3 = Combo(targets())
         self.l3.changed.connect(lambda v: self._set_button(L3_OF[self.name], v))
         lay.addWidget(self.l3_caption)
         lay.addWidget(self.l3)
         lay.addWidget(label("RESPONSE", "h2"))
-        self.dz = SliderRow("Deadzone", 0, 50, 1, "%")
-        self.outer = SliderRow("Full tilt at", 50, 100, 1, "%")
-        self.curve = SliderRow("Curve (above 1 = finer small moves)", 0.3, 3, 0.05, "x")
-        self.anti = SliderRow("Anti-deadzone (beats the game's own deadzone)", 0, 50, 1, "%")
+        self.dz = SliderRow(_("Strefa martwa"), 0, 50, 1, "%")
+        self.outer = SliderRow(_("Pełne wychylenie od"), 50, 100, 1, "%")
+        self.curve = SliderRow(_("Krzywa (powyżej 1 = dokładniejsze małe ruchy)"), 0.3, 3, 0.05, "x")
+        self.anti = SliderRow(_("Anty-strefa martwa (pokonuje strefę martwą gry)"), 0, 50, 1, "%")
         self.dz.changed.connect(lambda v: self._tune(STICK_OF[self.name], dz=r3(v / 100)))
         self.outer.changed.connect(lambda v: self._tune(STICK_OF[self.name], outer=r3(v / 100)))
         self.curve.changed.connect(lambda v: self._tune(STICK_OF[self.name], curve=r3(v)))
         self.anti.changed.connect(lambda v: self._tune(STICK_OF[self.name], anti=r3(v / 100)))
         for wd in (self.dz, self.outer, self.curve, self.anti):
             lay.addWidget(wd)
-        self.sdef = button("Default response", small=True)
+        self.sdef = button(_("Domyślna reakcja"), small=True)
         self.sdef.clicked.connect(lambda: self._reset_tuning(STICK_OF[self.name]))
         lay.addWidget(self.sdef, 0, Qt.AlignmentFlag.AlignLeft)
         lay.addStretch(1)
@@ -261,13 +264,13 @@ class PartPage(QWidget):
         if name in STICK_OF:
             out = STICK_OF[name]
             e, t = ed.stick(out), ed.tuning(out)
-            self.stick_title.setText(STICK_NAME[out])
+            self.stick_title.setText(_(STICK_NAME[out]))
             self.ssrc.set_data(e["src"])
             for cb, on in ((self.invx, e["inv_x"]), (self.invy, e["inv_y"])):
                 cb.blockSignals(True)
                 cb.setChecked(on)
                 cb.blockSignals(False)
-            self.l3_caption.setText(f"Stick click ({SHORT[L3_OF[name]]}) acts as")
+            self.l3_caption.setText(_("Klik gałki ({b}) działa jak").format(b=SHORT[L3_OF[name]]))
             self.l3.set_data(self._target(L3_OF[name]))
             self.dz.set(t["dz"] * 100)
             self.outer.set(t["outer"] * 100)
@@ -276,7 +279,7 @@ class PartPage(QWidget):
             self.stack.setCurrentIndex(2)
             return
         trig = name in B.TRIGGERS
-        self.title.setText(B.LABELS[name])
+        self.title.setText(_(B.LABELS[name]))
         pm = pixmap(name, 56)
         pm.setDevicePixelRatio(2)
         self.title_icon.setPixmap(pm)
@@ -284,7 +287,7 @@ class PartPage(QWidget):
         self.trig.setVisible(trig)
         if trig:
             t = ed.tuning(name)
-            self.trig_title.setText(f"{SHORT[name]} RESPONSE (WHAT THE GAME GETS)")
+            self.trig_title.setText(_("REAKCJA {b} (TO, CO DOSTAJE GRA)").format(b=SHORT[name]))
             self.tdz.set(t["dz"])
             self.tmax.set(t["max"])
         self.stack.setCurrentIndex(1)
@@ -301,29 +304,29 @@ class GyroPage(QWidget):
         w = QWidget()
         lay = _vbox(w)
         _vbox(self).addWidget(scrolled(w))
-        lay.addWidget(label("GYRO AIM", "h2"))
-        self.mode = Combo(list(GYRO_MODES.items()))
+        lay.addWidget(label(_("CELOWANIE ŻYROSKOPEM"), "h2"))
+        self.mode = Combo([(k, _(v)) for k, v in GYRO_MODES.items()])
         self.mode.changed.connect(lambda v: self._set(mode=v, relayout=True))
-        lay.addWidget(field("Mode", self.mode))
-        self.off_hint = label("Turn the pad to aim: as the right stick (any game) or as a mouse.", "dim", wrap=True)
+        lay.addWidget(field(_("Tryb"), self.mode))
+        self.off_hint = label(_("Obracaj padem, aby celować: jako prawa gałka (każda gra) albo jako mysz."), "dim", wrap=True)
         lay.addWidget(self.off_hint)
         self.body = QWidget()
         bl = _vbox(self.body)
-        self.hold = Combo([("always", "Always")] + input_items(B.INPUTS))
+        self.hold = Combo([("always", _("Zawsze"))] + input_items(B.INPUTS))
         self.hold.changed.connect(lambda v: self._set(hold=v))
-        bl.addWidget(field("Active (always, or while holding the button)", self.hold))
-        self.sens = SliderRow("Sensitivity", 0.1, 5, 0.05, "x")
+        bl.addWidget(field(_("Aktywne (zawsze albo przy trzymanym przycisku)"), self.hold))
+        self.sens = SliderRow(_("Czułość"), 0.1, 5, 0.05, "x")
         self.sens.changed.connect(lambda v: self._set(sens=round(v, 2)))
         bl.addWidget(self.sens)
         inv = QHBoxLayout()
-        self.invx, self.invy = QCheckBox("Invert horizontal"), QCheckBox("Invert vertical")
+        self.invx, self.invy = QCheckBox(_("Odwróć w poziomie")), QCheckBox(_("Odwróć w pionie"))
         self.invx.toggled.connect(lambda on: self._set(inv_x=on))
         self.invy.toggled.connect(lambda on: self._set(inv_y=on))
         inv.addWidget(self.invx)
         inv.addWidget(self.invy)
         inv.addStretch(1)
         bl.addLayout(inv)
-        self.anti = SliderRow("Anti-deadzone (small turns still move the view)", 0, 50, 1, "%")
+        self.anti = SliderRow(_("Anty-strefa martwa (małe obroty też ruszają widokiem)"), 0, 50, 1, "%")
         self.anti.changed.connect(lambda v: self._set(anti=r3(v / 100)))
         bl.addWidget(self.anti)
         self.live = label("", "dim")
@@ -358,11 +361,12 @@ class GyroPage(QWidget):
         if g["mode"] == "off":
             return
         if not in_use:
-            text = "This profile is not in use right now."
+            text = _("Ten profil nie jest teraz używany.")
         elif active:
-            text = "● Gyro active"
+            text = _("● Gyro aktywne")
         else:
-            text = "Gyro idle" if g["hold"] == "always" else f"Gyro idle — hold {B.LABELS[g['hold']]}"
+            text = _("Gyro nieaktywne") if g["hold"] == "always" else _("Gyro nieaktywne — przytrzymaj {b}").format(
+                b=_(B.LABELS[g["hold"]]))
         self.live.setText(text)
         set_prop(self.live, "level", "ok" if in_use and active else "")
 
@@ -394,7 +398,7 @@ class ChangesPage(QWidget):
             for text, undo in changes:
                 self.lay.addWidget(self._row(text, undo))
             if not changes:
-                self.lay.addWidget(label("No changes - everything works as default.", "dim", wrap=True))
+                self.lay.addWidget(label(_("Brak zmian - wszystko działa domyślnie."), "dim", wrap=True))
             self.lay.addStretch(1)
         return len(changes)
 
@@ -406,7 +410,7 @@ class ChangesPage(QWidget):
         hl.addWidget(label(text, wrap=True), 1)
         x = QToolButton()
         x.setText("×")
-        x.setToolTip("Remove this change")
+        x.setToolTip(_("Usuń tę zmianę"))
         x.setCursor(Qt.CursorShape.PointingHandCursor)
         x.clicked.connect(lambda: self._undo(undo))
         hl.addWidget(x)

@@ -40,6 +40,9 @@ DualSense ──Bluetooth──> telefon: sender/ ──UDP 5005──> PC: rece
   podwójnego kliknięcia) i tylko samo: R2 razem z innym przyciskiem (typowo w grze) nie przełącza. **Po połączeniu pada
   master tryb włącza się sam** (`auto_on_master`); podwójne R2 go wyłącza i zostaje wyłączony do następnego połączenia
   mastera. Restart receivera z okna zachowuje stan trybu. Stary `console.json` z PS / mute zmienia się sam na R2.
+  **W grze tryb się nie przełącza:** podwójne R2 działa tylko, gdy na pierwszym planie jest program z listy
+  `allowed_apps` (pulpit, Steam / Big Picture, launchery - lista do edycji w Ustawieniach); w grze pad mignie na
+  czerwono, a włączenie po połączeniu mastera czeka, aż gra zejdzie z pierwszego planu.
 
   | | Ekran (`DisplaySwitch.exe`) | Dźwięk | Powiadomienie |
   |---|---|---|---|
@@ -71,9 +74,13 @@ DualSense ──Bluetooth──> telefon: sender/ ──UDP 5005──> PC: rece
   - **Mysz:** czułość i stabilizacja kliknięcia touchpada;
   - **Master:** pad master, co wolno tylko jemu, przyciski akcji. Mysz i master działają od razu, bez restartu
     (`settings.json`);
-  - **Okno:** ekran, na którym pojawia się okno (na środku; gdy ekranu nie ma, okno zostaje na dostępnym).
+  - **Okno:** ekran, na którym pojawia się okno (na środku; gdy ekranu nie ma, okno zostaje na dostępnym), okno albo
+    pełny ekran (też F11 i przycisk w nagłówku), język: polski / English (zmiana po restarcie).
 - **Edytor w przeglądarce** (opcjonalny, `remap_ui = true`): to samo co w oknie, w Edge/Chrome.
 - **Wyłączanie pada** z PC albo samo po bezczynności (domyślnie 15 min).
+- **Wibracja:** przez sterownik (evdev FF), a gdy jądro telefonu nie ma `CONFIG_PLAYSTATION_FF` - bezpośrednio
+  raportem HID przez `/dev/hidrawN` (nadajnik przez `doas`); ustawienie `rumble` w `sender.toml`. Przycisk wibracji
+  na karcie pada w oknie sprawdza, czy wibracja dochodzi do pada.
 - **Stała kolejność graczy:** nadajnik pamięta, który pad (MAC) był w którym slocie (`slots.json`), a receiver podłącza
   wirtualne DS4 w kolejności slotów, więc pad 1 zostaje graczem 1 w Steam / grze niezależnie od tego, który włączysz
   pierwszy.
@@ -152,6 +159,7 @@ Najczęściej zmieniane:
 | `host` | sender | 192.168.1.4 | IP komputera z receiverem |
 | `pad_min_dt` | sender | 0.004 | min. odstęp pakietów stanu (4 ms = 250 Hz) |
 | `idle_off_min` | sender | 15 | wyłącz pada po tylu minutach bez użycia, 0 = nigdy |
+| `rumble` | sender | auto | wibracja: `auto` (sterownik, bez niego raport HID), `evdev`, `hidraw`, `off` |
 | `key` | oba | "" | wspólny klucz HMAC (opcjonalne uwierzytelnianie pakietów) |
 | `mouse_sens`, `scroll_sens` | receiver | 0.5, 0.6 | czułość myszy i przewijania touchpadem |
 | `ps_modifier` | receiver | true | PS jako klawisz skrótów (PS idzie do gry po puszczeniu) |
@@ -173,6 +181,7 @@ Tryb konsoli ma własny plik `receiver/console.json` (obok skryptu). Brak pliku 
 | `timeout_s` | 60 | brak pakietów z pada przez tyle sekund = automatyczne OFF (5-3600) |
 | `startup_mode` | `extend` | ekran przy starcie receivera: `extend` albo `internal` |
 | `auto_on_master` | true | połączenie pada master włącza tryb konsoli |
+| `allowed_apps` | pulpit, Steam, launchery | przełączanie trybu tylko przy tych programach na pierwszym planie |
 | `tv_width`, `tv_height` | 2560, 1440 | rozdzielczość TV po włączeniu trybu (najwyższe odświeżanie dla niej; 0 = bez zmiany) |
 | `tv_scale` | 200 | skalowanie TV w %: 100, 125, 150, 175, 200, 225, 250, 300... (0 = bez zmiany) |
 
@@ -189,6 +198,7 @@ Nadajnik zapisuje stały przydział pad → slot w `sender/slots.json` (`slots_f
 | Ruch odwrócony w emulatorze (DSU) | `acc_sign` / `gyro_sign` w konfiguracji receivera |
 | Profil gry się nie włącza | gry z anti-cheatem mogą blokować odczyt nazwy procesu; przełącz ręcznie PS + d-pad |
 | `virtual DS4 error ... ViGEmBus` | zainstaluj sterownik ViGEmBus |
+| Pad nie wibruje | przycisk wibracji na karcie pada; log nadajnika `rumble via ...` - „unavailable” = uruchom przez `doas`; w Steam włącz/wyłącz Steam Input dla gry |
 | Tryb konsoli nie reaguje | log receivera: `Console: double ... on controller N` = wykryte; `only the master pad can do that` = funkcja zastrzeżona dla mastera (Ustawienia → Master) |
 | Gra w co-op widzi pady dziwnie (Steam) | Steam → biblioteka → gra → Właściwości → Kontroler: spróbuj „Wyłącz Steam Input” (gra czyta dwa DS4 sama) albo odwrotnie; kolejność graczy w Big Picture → Ustawienia → Kontroler |
 

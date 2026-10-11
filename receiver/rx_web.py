@@ -13,6 +13,7 @@ chroni przed obcymi stronami w przeglądarce (CSRF) i DNS rebinding.
   POST /api/delete      {"slot": n, "key": "pad@gra.exe"}  - usuwa profil gry
   POST /api/power       {"slot": n}                       - wyłącza pada (nadajnik rozłącza Bluetooth)
 """
+from rx_i18n import _
 import hmac
 import json
 import os
@@ -44,7 +45,7 @@ def _pads():
         pads.append({"slot": i, "id": S.pad_id[i], "base": base, "active": S.active[i],
                      "connected": bool(S.alive[i]), "mouse": bool(S.mouse_mode[i]), "mouse_sens": rx_mouse.sens[i],
                      "profiles": [P.info(k) for k in S.store.keys_for(base)]})
-    return {"inputs": [{"name": n, "label": B.LABELS[n]} for n in B.INPUTS], "pads": pads,
+    return {"inputs": [{"name": n, "label": _(B.LABELS[n])} for n in B.INPUTS], "pads": pads,
             "game": S.game, "recent": list(rx_games.recent), "game_profiles": C.GAME_PROFILES}
 
 

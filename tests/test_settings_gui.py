@@ -57,7 +57,7 @@ dlg.absent.set_data("nobody"); dlg.claim.setChecked(False)
 dlg.actions["sleep"].set_data("square")
 icons = [dlg.actions["sleep"].itemIcon(i).isNull() for i in range(1, dlg.actions["sleep"].count())]
 assert not any(icons), "lista przycisków akcji to ikony"
-assert dlg.actions["sleep"].toolTip() == "Square", dlg.actions["sleep"].toolTip()
+assert dlg.actions["sleep"].toolTip() == "Kwadrat", dlg.actions["sleep"].toolTip()
 
 S.restart = False; closed = []
 QApplication.instance().quit = lambda: closed.append(True)
@@ -88,7 +88,7 @@ ok("zmiana trybu konsoli: zapis + restart jak wcześniej")
 
 # ---------- ikony w remapowaniu ----------
 win.on_part("r2"); pump()
-assert win.part_page.title.text() == "R2 (trigger)" and not win.part_page.title_icon.pixmap().isNull()
+assert win.part_page.title.text() == "R2 (spust)" and not win.part_page.title_icon.pixmap().isNull()
 targets = [win.part_page.dst.itemData(i) for i in range(win.part_page.dst.count())]
 assert "mute" not in targets and "ps" in targets and len(targets) == 18, targets
 assert win.part_page.dst.itemText(0) == "" and not win.part_page.dst.itemIcon(0).isNull(), "cele jako ikony"
@@ -109,6 +109,43 @@ assert dlg.screen_box.currentData() == "NIE-MA-TAKIEGO" and "niepodłączony" in
 assert win.place_on_screen() is False, "brak wybranego ekranu -> okno zostaje"
 win.set_screen_choice("")
 ok("ekran okna: lista ekranów, zapis, przeniesienie, brak ekranu")
+
+# ---------- pełny ekran, język, dozwolone programy, test wibracji ----------
+assert not win.fullscreen()
+win.toggle_fullscreen(); pump(100)
+assert win.fullscreen() and win.isFullScreen() and win.settings.value("fullscreen") in (True, "true")
+win.fs_btn.click(); pump(100)
+assert not win.fullscreen() and not win.isFullScreen(), "F11 / przycisk: z powrotem okno"
+dlg.hide(); dlg.present(); pump()
+assert dlg.win_mode.currentData() == "window" and dlg.lang.currentData() == "pl"
+dlg.win_mode.set_data("full"); dlg.save_btn.click(); pump(100)
+assert win.fullscreen() and win.isFullScreen(), "Ustawienia -> Okno -> Pełny ekran"
+win.set_fullscreen(False); pump(100)
+assert "steam.exe" in dlg.apps.toPlainText().split()
+dlg.hide(); dlg.present(); pump()
+dlg.apps.setPlainText("Steam.exe\n  Moja Gra.exe \n\nsteam.exe")
+S.restart = False; closed.clear()
+dlg.save_btn.click(); pump()
+assert S.restart is True and json.load(open(C.CONSOLE_PATH))["allowed_apps"] == ["steam.exe", "moja gra.exe"], \
+    "lista programów: małe litery, bez pustych i powtórek, nazwy ze spacją; zmiana = restart"
+S.restart = False; closed.clear()
+rx_console.ctl.cfg = rx_console.load(C.CONSOLE_PATH)       # jak po restarcie
+dlg.hide(); dlg.present(); pump()
+dlg.lang.set_data("en"); dlg.save_btn.click(); pump()
+assert S.restart is True and json.load(open(C.SETTINGS_PATH))["ui"]["lang"] == "en", "zmiana języka = zapis + restart"
+S.restart = False; closed.clear()
+import rx_i18n
+rx_i18n.set_lang("en"); w2 = rx_qt.create_window(os.path.join(TMP, "ui2.ini")); w2.show(); pump(100)
+from PySide6.QtWidgets import QPushButton as _QPB
+texts = {b.text() for b in w2.findChildren(_QPB)}
+assert {"Save", "Revert", "Settings", "Quit"} <= texts, texts
+assert w2.tabs.tabText(0) == "Selected" and w2.cards[0].off.text() == "Power off"
+w2.hide(); rx_i18n.set_lang("pl")
+pulses = []
+F.pulse = lambda i, kind, force=False: pulses.append((i, kind, force))
+card0.rumble.click(); pump()
+assert pulses == [(0, "test", True)], pulses
+ok("pełny ekran (F11, przycisk, ustawienia), język (restart, okno po angielsku), lista programów, test wibracji")
 
 # ---------- przycisk Restart w nagłówku i ikona okna ----------
 from PySide6.QtWidgets import QPushButton

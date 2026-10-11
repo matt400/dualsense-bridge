@@ -46,7 +46,8 @@ cfg = rx_console.load(PATH)
 check(cfg == ConsoleConfig() and os.path.exists(PATH), "brak pliku -> domyślne i utworzony console.json")
 check(json.load(open(PATH)) == {"toggle_button": "r2", "double_click_ms": 400, "audio_tv": "", "audio_pc": "",
                                 "timeout_s": 60, "startup_mode": "extend", "tv_width": 2560, "tv_height": 1440,
-                                "tv_scale": 200, "auto_on_master": True, "version": 3}, "domyślne wartości w pliku (R2, TV 1440p / 200 %)")
+                                "tv_scale": 200, "auto_on_master": True, "allowed_apps": list(rx_console.DEFAULT_APPS),
+                                "version": 3}, "domyślne wartości w pliku (R2, TV 1440p / 200 %)")
 json.dump({"toggle_button": "ps", "double_click_ms": 300, "audio_tv": "", "audio_pc": "", "timeout_s": 60,
            "startup_mode": "extend"}, open(PATH, "w"))
 cfg = rx_console.load(PATH)
@@ -340,6 +341,43 @@ check(wait_for(lambda: c.on) and ("display", "tv") in calls, f"restart z włącz
 c.close(restart=True)
 rx_settings.apply(replace(rx_settings.cur, master=replace(rx_settings.cur.master, pad="")))
 ok("auto-ON: połączenie mastera, ręczne OFF, ponowne połączenie, wyłączalne, restart zachowuje stan")
+
+# ---------- gra na pierwszym planie: przełączanie zablokowane, auto-ON czeka ----------
+import rxenv
+pulses = []
+F.pulse = lambda i, kind, force=False: pulses.append((i, kind))
+c = new_console(toggle_button="r2"); calls.clear()
+rxenv.FG[0] = "ittakestwo.exe"
+for v in (255, 0, 255, 0):
+    state(0, rt=v); time.sleep(0.03)
+time.sleep(0.3)
+check(not c.on and (0, "denied") in pulses, f"gra na pierwszym planie: podwójne R2 nic nie robi, czerwone mignięcie: {pulses}")
+rxenv.FG[0] = "steamwebhelper.exe"; time.sleep(0.5)
+for v in (255, 0, 255, 0):
+    state(0, rt=v); time.sleep(0.03)
+check(wait_for(lambda: c.on), "Steam / Big Picture na pierwszym planie: przełącza")
+c.close(restart=True)
+rx_settings.apply(replace(rx_settings.cur, master=replace(rx_settings.cur.master, pad=MAC)))
+c = new_console(toggle_button="r2"); calls.clear()
+rxenv.FG[0] = "ittakestwo.exe"
+feed(T_BYE, 1); time.sleep(1.1); feed(T_IDENT, 1, MAC.encode())
+for _ in range(15):
+    state(1); time.sleep(0.1)                               # pad żyje, gra dalej na pierwszym planie
+check(not c.on and c._pending == 1, "auto-ON w trakcie gry czeka")
+rxenv.FG[0] = "explorer.exe"
+for _ in range(15):
+    state(1); time.sleep(0.1)
+check(c.on, "gra zamknięta (pulpit na pierwszym planie) -> auto-ON")
+c.close(restart=True)
+c = new_console(toggle_button="r2", allowed_apps=("explorer.exe",)); rxenv.FG[0] = "steam.exe"
+for v in (255, 0, 255, 0):
+    state(0, rt=v); time.sleep(0.03)
+time.sleep(0.3)
+check(not c.on, "lista dozwolonych z ustawień (steam.exe usunięty) obowiązuje")
+c.close(restart=True)
+rxenv.FG[0] = None
+rx_settings.apply(replace(rx_settings.cur, master=replace(rx_settings.cur.master, pad="")))
+ok("gra na pierwszym planie: R2 zablokowane, auto-ON czeka do wyjścia z gry, lista z ustawień")
 
 # ---------- rx_audio.find ----------
 devs = [("1", "Speakers (Realtek)"), ("2", "LG TV (NVIDIA High Definition Audio)"), ("3", "Headphones (USB)")]

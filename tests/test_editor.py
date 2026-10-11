@@ -1,6 +1,7 @@
 import sys, os, time, json
 sys.path.insert(0, os.path.dirname(__file__))
 from rxenv import *                              # noqa
+import rx_i18n; rx_i18n.set_lang("en")              # asercje na angielskich tekstach okna
 import rx_editor, rx_profiles as P, rx_status as ST
 from proto import T_CMD
 
@@ -51,7 +52,7 @@ assert S.active[0] == key, "wybrany profil działa od razu na padzie"
 ed.set_gyro(mode="stick"); ed.apply(True); assert store.in_file(key) and ed.status()[0] == "ok"
 okk, _ = ed.new_game("doom.exe", copy_current=False); assert okk and ed.prof["buttons"] == {}
 assert ed.status() == ("warn", "● Game profile not saved yet"), "pusty profil gry też trzeba zapisać"
-assert [n for _, n, _ in ed.profiles()] == ["Default (all games)", "doom.exe", "eldenring.exe"]
+assert [n for _, n, _ in ed.profiles()] == ["Default", "doom.exe", "eldenring.exe"]
 assert [u for _, _, u in ed.profiles()] == [False, True, False]
 ed.select(base); assert ed.key == base and ed.prof["buttons"] == {"cross": "circle"} and S.active[0] == base
 assert ed.info().startswith("In use right now.")

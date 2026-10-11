@@ -38,6 +38,7 @@ DEFAULTS = {
     "touch_deadzone": 2,           # ignoruj zmiany palca mniejsze niż tyle jednostek (szum czujnika)
     "touch_start_move": 5,         # mysz: kursor rusza dopiero po przesunięciu o tyle (brak drgania przy tapie)
     "gestures": True,              # 2 palce = przewijanie, tap 2 palcami = prawy przycisk myszy
+    "rumble": "auto",              # wibracja: auto (sterownik, a bez niego raport HID przez hidraw) | evdev | hidraw | off
     "idle_off_min": 15,            # wyłącz pada (rozłącz Bluetooth) po tylu minutach bez użycia; 0 = nigdy
     "rt_priority": 0,              # >0 = SCHED_FIFO z tym priorytetem (1-99, sensownie 10-20); wymaga doas
     "key": "",
@@ -101,6 +102,7 @@ def init(argv=None):
     C.TOUCH_DEADZONE = int(cfg["touch_deadzone"])
     C.TOUCH_START_MOVE = max(0, int(cfg["touch_start_move"]))
     C.GESTURES = bool(cfg["gestures"])
+    C.RUMBLE = cfg["rumble"] if cfg["rumble"] in ("auto", "evdev", "hidraw", "off") else "auto"
     C.IDLE_OFF_S = max(0.0, float(cfg["idle_off_min"])) * 60
     C.RT_PRIORITY = max(0, min(99, int(cfg["rt_priority"])))
     C.KEY = str(cfg["key"]).encode() if cfg["key"] else b""

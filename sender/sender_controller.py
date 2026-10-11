@@ -5,7 +5,7 @@
   doas python3 sender_controller.py --config sender.toml
 
 Pliki: proto.py (wspólny), sender_config.py, sender_state.py, sender_net.py,
-       sender_ctrl.py, sender_streams.py, sender_supervisor.py, sender_control.py.
+       sender_ctrl.py, sender_streams.py, sender_supervisor.py, sender_control.py, sender_rumble.py (wibracja).
 Konfiguracja: --config plik.toml|json (klucze jak w DEFAULTS), flagi CLI nadpisują plik.
 --stats pokazuje też realną częstotliwość raportów pada i ruchu (Hz, przerwy p99/max).
 Wyłączanie pada: przyciskiem "Off" w oknie receivera albo samo po idle_off_min minutach bez użycia

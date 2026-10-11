@@ -1,6 +1,7 @@
 import sys, os, time, json, urllib.request
 sys.path.insert(0, os.path.dirname(__file__))
 from rxenv import *                              # noqa
+import rx_i18n; rx_i18n.set_lang("en")              # asercje na angielskich tekstach okna
 import rx_web, rx_games
 from proto import T_CMD
 C.REMAP_UI = True; C.REMAP_UI_PORT = 0
