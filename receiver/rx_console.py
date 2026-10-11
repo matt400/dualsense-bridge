@@ -4,7 +4,7 @@ między monitorem a TV.
   auto-ON   po połączeniu pada master (auto_on_master) tryb włącza się sam; wyłączasz go ręcznie podwójnym R2
             i zostaje wyłączony do następnego połączenia mastera
   w grze    przełączanie (ręczne i auto-ON) działa tylko, gdy na pierwszym planie jest program z allowed_apps
-            (pulpit, Steam / Big Picture, launchery); w grze podwójne R2 nic nie robi (czerwone mignięcie), a auto-ON
+            (pulpit, Steam / Big Picture, launchery); w grze podwójne R2 nic nie robi (bez mignięcia), a auto-ON
             czeka, aż gra przestanie być na pierwszym planie
 
   ON   ekran tylko TV (DisplaySwitch /external), na TV tv_width x tv_height i skalowanie tv_scale % (rx_display),
@@ -35,7 +35,6 @@ from dataclasses import asdict, dataclass, fields
 
 import rx_audio
 import rx_display
-import rx_feedback as F
 import rx_master as master
 import rx_state as S
 import rx_winapi as W
@@ -274,11 +273,11 @@ class Console:
         now = time.monotonic()
         if now - self._last_click[i] <= self.cfg.double_click_ms / 1000:
             self._last_click[i] = 0.0       # trzecie kliknięcie zaczyna od nowa, nie przełącza drugi raz
-            if not master.check(i, "console"):   # może być zastrzeżone dla pada master
-                return
             if (exe := self.blocked_by()) is not None:
+                # w grze podwójne R2 to zwykła rozgrywka (gaz, strzał) - po cichu, bez czerwonego mignięcia
                 print(f"Console: double {self.cfg.toggle_button} on controller {i} ignored - {exe} in the foreground")
-                F.pulse(i, "denied")
+                return
+            if not master.check(i, "console"):   # może być zastrzeżone dla pada master
                 return
             print(f"Console: double {self.cfg.toggle_button} on controller {i}")
             self._jobs.put(self._toggle)

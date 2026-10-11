@@ -41,8 +41,9 @@ DualSense ──Bluetooth──> telefon: sender/ ──UDP 5005──> PC: rece
   master tryb włącza się sam** (`auto_on_master`); podwójne R2 go wyłącza i zostaje wyłączony do następnego połączenia
   mastera. Restart receivera z okna zachowuje stan trybu. Stary `console.json` z PS / mute zmienia się sam na R2.
   **W grze tryb się nie przełącza:** podwójne R2 działa tylko, gdy na pierwszym planie jest program z listy
-  `allowed_apps` (pulpit, Steam / Big Picture, launchery - lista do edycji w Ustawieniach); w grze pad mignie na
-  czerwono, a włączenie po połączeniu mastera czeka, aż gra zejdzie z pierwszego planu.
+  `allowed_apps` (pulpit, Steam / Big Picture, launchery - lista do edycji w Ustawieniach); w grze podwójne R2 jest
+  po prostu ignorowane (bez mignięcia - to zwykła rozgrywka), a włączenie po połączeniu mastera czeka, aż gra zejdzie
+  z pierwszego planu.
 
   | | Ekran (`SetDisplayConfig`, awaryjnie `DisplaySwitch.exe`) | Dźwięk | Powiadomienie |
   |---|---|---|---|
