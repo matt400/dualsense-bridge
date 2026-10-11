@@ -5,6 +5,7 @@ import time
 import rx_console
 import rx_feedback as F
 import rx_hotkeys as hotkeys
+import rx_master as master
 import rx_mouse as mouse
 import rx_state as S
 from proto import (BODY, RTT_NONE, Codec, T_BYE, T_CLICK, T_CMD, T_FB, T_IDENT, T_INFO, T_MOUSE, T_PING, T_PONG,
@@ -107,6 +108,7 @@ def clear_slot(i, forget_id=False):
     S.info[i] = None
     S.seen.forget(lambda k: k[1] == i)
     hotkeys.reset(i)
+    master.reset(i)
     if forget_id:                      # pad fizycznie odszedł - następny w tym slocie przyśle swój ident
         with S.profile_lock:
             S.pad_id[i] = None
@@ -144,6 +146,7 @@ def handle(t, i, data):
         S.batt_info[i] = (v[9], v[10])
         lx, ly, lt, rx, ry, rt = v[:6]
         hx, hy = clamp(v[6], -1, 1), clamp(v[7], -1, 1)
+        master.on_state(i, mask, hx, hy, lt, rt)       # przed skrótami PS: filtr wejść używa stanu kombinacji
         hotkeys.on_state(i, mask, hx, hy)
         rx_console.on_state(i, mask, hx, hy, lt, rt)
         with S.lock:
@@ -182,8 +185,10 @@ def handle(t, i, data):
             rx_console.on_touch_click(i)
         if down and S.states[i]["raw"][0] & PS_BIT:   # PS + klik touchpada = zmiana trybu (na surowym PS)
             S.swallow[i] = True
-            S.mouse_mode[i] = not S.mouse_mode[i]
             hotkeys.mark_used(i)
+            if not master.check(i, "mouse"):
+                return
+            S.mouse_mode[i] = not S.mouse_mode[i]
             F.pulse(i, "mouse" if S.mouse_mode[i] else "ds4")
             mouse.reset(i)
             with S.lock:

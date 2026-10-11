@@ -7,7 +7,7 @@
   PS + D-pad lewo / prawo  -> poprzedni / następny profil remapowania tego pada
   PS + klik touchpada      -> mysz / dotyk DS4 (obsługa w rx_net, tu tylko mark_used)
 
-Wejścia użyte w skrócie nie trafiają do gry, dopóki nie zostaną puszczone. Działa na SUROWYCH wejściach,
+Każdy skrót może być zastrzeżony dla pada master (rx_master.allowed). Wejścia użyte w skrócie nie trafiają do gry, dopóki nie zostaną puszczone. Działa na SUROWYCH wejściach,
 przed remapowaniem, więc zremapowanie PS nie wyłącza skrótów. ps_modifier = False wyłącza całość
 (PS idzie wtedy do gry od razu, jak wcześniej).
 """
@@ -15,6 +15,7 @@ import os
 import threading
 
 import rx_feedback as F
+import rx_master as master
 import rx_mouse
 import rx_state as S
 import rx_winapi as W
@@ -52,16 +53,16 @@ def reset(i):
 
 
 def forward(i, mask, hx, hy):
-    """Surowe wejścia -> wejścia dla gry (bez PS i wejść zużytych w skrótach). Wołać pod S.lock."""
+    """Surowe wejścia -> wejścia dla gry (bez PS i wejść zużytych w skrótach PS i kombinacjach mastera)."""
     if not C.PS_MODIFIER:
-        return mask, hx, hy
+        return master.filter_inputs(i, mask, hx, hy)
     h = slots[i]
     mask = (mask & ~PS_BIT) | (PS_BIT if h.out else 0)
     if h.sup_share:
         mask &= ~SHARE_BIT
     if h.sup_dpad:
         hx = hy = 0
-    return mask, hx, hy
+    return master.filter_inputs(i, mask, hx, hy)
 
 
 def mark_used(i):
@@ -86,7 +87,7 @@ def on_state(i, mask, hx, hy):
     elif not ps and h.down:
         h.down = False
         h.timer.cancel()
-        if not h.used:
+        if not h.used and master.check(i, "ps_game"):
             _tap(i, refresh=False)     # wołający (rx_net) i tak zaraz przelicza stan - już z nowymi wejściami
     if h.down:
         if mask & SHARE_BIT and not pm & SHARE_BIT:
@@ -150,6 +151,8 @@ def _hold(i, gen):
     if h.gen != gen or not h.down or h.used or C.PS_HOLD_ACTION == "none":
         return                         # "none": długie PS zostaje zwykłym PS dla gry (impuls po puszczeniu)
     h.used = True
+    if not master.check(i, "ps_hold"):
+        return
     if C.PS_HOLD_ACTION == "gamebar":
         W.send_keys(W.VK_LWIN, W.VK_G)
     elif C.PS_HOLD_ACTION == "bigpicture":
@@ -162,6 +165,8 @@ def _hold(i, gen):
 
 
 def _share(i):
+    if not master.check(i, "screenshot"):
+        return
     if C.PS_SHARE_ACTION == "screenshot":
         W.send_keys(W.VK_LWIN, W.VK_SNAPSHOT)
     elif C.PS_SHARE_ACTION == "capture":
@@ -173,13 +178,17 @@ def _share(i):
 
 
 def _sens(i, factor):
+    if not master.check(i, "sens"):
+        return
     old = rx_mouse.sens[i]
     rx_mouse.sens[i] = new = round(min(SENS_MAX, max(SENS_MIN, old * factor)), 3)
-    print(f"Controller {i}: touchpad mouse sensitivity {old:g} -> {new:g} (mouse_sens in config to keep it)")
+    print(f"Controller {i}: touchpad mouse sensitivity {old:g} -> {new:g} (Settings → Mouse to keep it)")
     F.pulse(i, "up" if new > old else "down")
 
 
 def _profile(i, step):
+    if not master.check(i, "profile"):
+        return
     key = S.cycle_profile(i, step)
     label = S.profile_label(key)
     print(f"Controller {i}: profile -> {label} (manual, until the game changes)")

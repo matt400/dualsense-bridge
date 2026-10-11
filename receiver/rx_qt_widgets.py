@@ -22,6 +22,18 @@ def button(text, primary=False, small=False):
     return b
 
 
+def icon_label(name, size=22):
+    """Ikona przycisku pada jako QLabel (z pełną nazwą w podpowiedzi)."""
+    from rx_qt_icons import pixmap, tip
+    lb = QLabel()
+    pm = pixmap(name, size * 2)
+    pm.setDevicePixelRatio(2)          # ostra także przy skalowaniu ekranu 150-200 %
+    lb.setPixmap(pm)
+    lb.setFixedSize(size, size)
+    lb.setToolTip(tip(name))
+    return lb
+
+
 def field(caption, widget):
     """Mały podpis nad widżetem (jak w edytorze w przeglądarce)."""
     w = QWidget()
@@ -33,29 +45,45 @@ def field(caption, widget):
     return w
 
 
+def input_items(names, text=False):
+    """Wejścia pada jako pozycje listy: ikona przycisku (pełna nazwa w podpowiedzi); text=True dodaje nazwę obok."""
+    from rx_qt_icons import tip
+    return [(n, tip(n) if text else "", n) for n in names]
+
+
 class Combo(QComboBox):
-    """Lista z wartościami (userData) - wybór po wartości, a nie po numerze; set_data nie wywołuje sygnałów."""
+    """Lista z wartościami (userData) - wybór po wartości, a nie po numerze; set_data nie wywołuje sygnałów.
+    Pozycja: (wartość, tekst) albo (wartość, tekst, ikona) - ikona to nazwa z rx_qt_icons (przycisk pada itp.)."""
 
     changed = Signal(object)     # nowa wartość (userData)
 
     def __init__(self, items=()):
         super().__init__()
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setIconSize(QSize(22, 22))
         self.set_items(items)
         self.activated.connect(lambda i: self.changed.emit(self.itemData(i)))
+        self.currentIndexChanged.connect(lambda i: self.setToolTip(self.itemData(i, Qt.ItemDataRole.ToolTipRole) or ""))
 
     def set_items(self, items):
+        from rx_qt_icons import icon, tip
         self.blockSignals(True)
         self.clear()
-        for value, text in items:
-            self.addItem(text, value)
+        for value, text, *ic in items:
+            if ic and ic[0]:
+                self.addItem(icon(ic[0]), text, value)
+                self.setItemData(self.count() - 1, tip(ic[0]), Qt.ItemDataRole.ToolTipRole)
+            else:
+                self.addItem(text, value)
         self.blockSignals(False)
+        self.setToolTip(self.itemData(self.currentIndex(), Qt.ItemDataRole.ToolTipRole) or "")
 
     def set_data(self, value):
         i = self.findData(value)
         self.blockSignals(True)
         self.setCurrentIndex(i if i >= 0 else 0)
         self.blockSignals(False)
+        self.setToolTip(self.itemData(self.currentIndex(), Qt.ItemDataRole.ToolTipRole) or "")
 
     def wheelEvent(self, e):      # kółko ma przewijać panel, a nie przestawiać listę pod kursorem
         e.ignore()

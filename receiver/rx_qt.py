@@ -7,23 +7,27 @@ Zmiany profilu działają na pad na żywo po 150 ms od ostatniego ruchu suwaka, 
 """
 import os
 import signal
+from functools import cache
 import sys
 import time
 
-from PySide6.QtCore import QEvent, QSettings, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QSettings, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QIcon, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QMainWindow, QMenu, QSystemTrayIcon, QTabWidget,
-                               QVBoxLayout, QWidget)
+                               QToolButton, QVBoxLayout, QWidget)
 
 import rx_games
+import rx_master
 import rx_profiles as P
 import rx_state as S
 import rx_status as ST
+import rx_winapi as W
 from rx_buttons import profile_size
 from rx_config import C
 from rx_editor import Editor
 from rx_icon import ICON_LOW, ICON_OK, icon_png, render_icon
 from rx_qt_console import ConsoleSettings
+from rx_qt_icons import icon, pixmap
 from rx_qt_pad import PadView
 from rx_qt_panels import ChangesPage, GyroPage, PartPage, ProfileBar
 from rx_qt_style import LEVEL, apply_theme, set_prop
@@ -34,16 +38,23 @@ NOTE_S = 6.0           # tyle sekund komunikat (np. "Saved") zasłania status pr
 VIEWS = (("out", "Result"), ("in", "Physical"))
 
 
+@cache
 def make_icon(rgb):
-    pm = QPixmap()
-    pm.loadFromData(icon_png(render_icon(rgb)))
-    return QIcon(pm)
+    """Ikona pada w kilku rozmiarach - ostra w zasobniku, na pasku zadań i przy skalowaniu 150-200 %."""
+    ic = QIcon()
+    for size in (16, 24, 32, 48, 64):
+        pm = QPixmap()
+        pm.loadFromData(icon_png(render_icon(rgb, size)))
+        ic.addPixmap(pm)
+    return ic
 
 
 class PadCard(QFrame):
-    """Karta pada po lewej: stan połączenia, bateria, jakość łącza, profil, wyłączenie. Klik = edytuj ten pad."""
+    """Karta pada po lewej: stan połączenia, bateria, jakość łącza, profil, wyłączenie, korona mastera.
+    Klik = edytuj ten pad; klik w koronę = ten pad zostaje masterem (drugi klik - bez mastera)."""
 
     clicked = Signal(int)
+    master_changed = Signal()
 
     def __init__(self, slot):
         super().__init__()
@@ -55,7 +66,13 @@ class PadCard(QFrame):
         lay.setSpacing(6)
         head = QHBoxLayout()
         self.status = label("")
+        self.crown = QToolButton()
+        self.crown.setObjectName("crown")
+        self.crown.setIconSize(QSize(20, 20))
+        self.crown.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.crown.clicked.connect(self.toggle_master)
         head.addWidget(label(f"Pad {slot + 1}", "name"))
+        head.addWidget(self.crown)
         head.addStretch(1)
         head.addWidget(self.status)
         lay.addLayout(head)
@@ -68,8 +85,15 @@ class PadCard(QFrame):
         lay.addLayout(batt)
         self.net, self.rate = label("", "dim"), label("", "dim")        # jakość łącza: sieć / tempo
         self.mode, self.profile = label("", "dim"), label("", "dim")    # DS4 i touchpad / profil
-        for lb in (self.net, self.rate, self.mode, self.profile):
+        self.mode_icon = label("")
+        mode_row = QHBoxLayout()
+        mode_row.setSpacing(6)
+        mode_row.addWidget(self.mode_icon)
+        mode_row.addWidget(self.mode, 1)
+        for lb in (self.net, self.rate):
             lay.addWidget(lb)
+        lay.addLayout(mode_row)
+        lay.addWidget(self.profile)
         row = QHBoxLayout()
         self.off = ConfirmButton("Power off", "Turn off?", small=True)
         self.off.setToolTip("Disconnects the pad over Bluetooth - it switches off")
@@ -81,6 +105,13 @@ class PadCard(QFrame):
     def mousePressEvent(self, e):
         if e.button() == Qt.MouseButton.LeftButton:
             self.clicked.emit(self.slot)
+
+    def toggle_master(self):
+        ok, msg = rx_master.set_master(None if rx_master.is_master(self.slot) else self.slot)
+        if not ok:
+            print(f"Master: {msg}")
+        self._key = None
+        self.master_changed.emit()
 
     def set_selected(self, on):
         set_prop(self, "selected", on)
@@ -98,10 +129,15 @@ class PadCard(QFrame):
         pct, flags = S.batt_info[i]
         low = ST.is_low(i, C.LOW_BATT)
         alive, want = bool(S.alive[i]), S.want[i].is_set()
-        key = (alive, want, pct, flags, S.plugged[i], S.mouse_mode[i], profile_size(S.remap_maps[i]), S.active[i])
+        master = rx_master.is_master(i)
+        key = (alive, want, pct, flags, S.plugged[i], S.mouse_mode[i], profile_size(S.remap_maps[i]), S.active[i],
+               master, S.pad_id[i])
         if key == self._key:
             return low                        # nic się nie zmieniło - nie dotykaj widżetów
         self._key = key
+        self.crown.setIcon(icon("crown", dim=not master))
+        self.crown.setToolTip("Pad master - kliknij, aby zdjąć" if master else "Kliknij: ten pad zostaje masterem")
+        self.crown.setEnabled(master or alive or want)
         self.off.setEnabled(alive)
         set_prop(self, "low", low)
         self.status.setText("●  connected" if alive else "●  no signal" if want else "○  not connected")
@@ -116,6 +152,10 @@ class PadCard(QFrame):
         set_prop(self.pct, "level", "bad" if low else "")
         n = profile_size(S.remap_maps[i])
         self.mode.setText(f"DS4: {'on' if S.plugged[i] else 'off'}  ·  touchpad: {'mouse' if S.mouse_mode[i] else 'DS4'}")
+        pm = pixmap("mouse" if S.mouse_mode[i] else "touchpad", 32)
+        pm.setDevicePixelRatio(2)
+        self.mode_icon.setPixmap(pm)
+        self.mode_icon.setToolTip("Touchpad jako mysz" if S.mouse_mode[i] else "Touchpad jako dotyk DS4")
         self.profile.setText(f"profile: {S.profile_label(S.active[i])}" + (f" ({n})" if n else ""))
         return low
 
@@ -190,8 +230,12 @@ class MainWindow(QMainWindow):
         title.setObjectName("title")
         self.sender = label("")
         settings_btn = button("Ustawienia", small=True)
-        settings_btn.setToolTip("Tryb konsoli: przycisk pada, urządzenia audio, czasy")
+        settings_btn.setToolTip("Tryb konsoli, mysz touchpada, pad master")
         settings_btn.clicked.connect(self.open_settings)
+        restart_btn = ConfirmButton("Restart", "Restart?", small=True)
+        restart_btn.setIcon(icon("restart"))
+        restart_btn.setToolTip("Uruchamia receiver od nowa (pady na chwilę znikną, niezapisane zmiany profilu przepadną)")
+        restart_btn.confirmed.connect(self.restart)
         quit_btn = ConfirmButton("Quit", "Quit?", small=True)
         quit_btn.setToolTip("Stops the receiver - the virtual pads disappear")
         quit_btn.confirmed.connect(self.quit)
@@ -200,6 +244,7 @@ class MainWindow(QMainWindow):
         lay.addWidget(self.sender)
         lay.addSpacing(12)
         lay.addWidget(settings_btn)
+        lay.addWidget(restart_btn)
         lay.addWidget(quit_btn)
         return bar
 
@@ -212,6 +257,7 @@ class MainWindow(QMainWindow):
         self.cards = [PadCard(i) for i in range(C.NUM_PADS)]
         for c in self.cards:
             c.clicked.connect(self.select_pad)
+            c.master_changed.connect(self.slow_tick)
             lay.addWidget(c)
         lay.addStretch(1)
         return w
@@ -283,6 +329,7 @@ class MainWindow(QMainWindow):
         menu = QMenu()
         menu.addAction("Show window", self.bring_to_front)
         menu.addAction("Ustawienia", self.open_settings)
+        menu.addAction(icon("restart"), "Restart", self.restart)
         menu.addAction("Quit", self.quit)
         tray.setContextMenu(menu)
         self._tray_menu = menu                 # Qt nie przejmuje własności menu - trzeba je trzymać
@@ -337,10 +384,13 @@ class MainWindow(QMainWindow):
         if self.settings_dlg is None:
             self.settings_dlg = ConsoleSettings(self)
             self.settings_dlg.saved.connect(self.restart)
+            self.settings_dlg.applied.connect(self.slow_tick)
         self.settings_dlg.present()
 
     def restart(self):
-        """Zapisane ustawienia: zwykłe zamknięcie okna, a receiver sam startuje od nowa po zwolnieniu portów i ViGEm."""
+        """Restart (przycisk, zasobnik, zapisane ustawienia): zwykłe zamknięcie okna, a receiver sam startuje od nowa
+        po zwolnieniu portów i ViGEm."""
+        print("Restart requested from the window")
         S.restart = True
         self.quit()
 
@@ -524,8 +574,10 @@ def _int(v, default):
 
 def create_window(settings_path=None):
     """QApplication (jeśli jeszcze nie ma) + okno. Osobno od run_gui, żeby testy mogły sterować oknem bez pętli."""
+    W.set_app_id()                             # ikona pada na pasku zadań zamiast ikony Pythona
     app = QApplication.instance() or QApplication(sys.argv[:1])
     app.setApplicationName("DualSense bridge")
+    app.setWindowIcon(make_icon(ICON_OK))      # także okno ustawień i powiadomienia
     app.setQuitOnLastWindowClosed(False)       # zamknięcie okna = do zasobnika
     apply_theme(app)
     path = settings_path or os.path.join(os.path.dirname(C.REMAP_PATH), "receiver_ui.ini")

@@ -1,11 +1,13 @@
 """Sender: wykrywanie padów (evdev), przydział slotów, cykl życia kontrolera."""
 import asyncio
+import json
 import os
 import re
 import time
 
 import evdev
 
+import sender_hidraw
 import sender_state as state
 import sender_streams as streams
 from proto import T_BYE
@@ -13,6 +15,7 @@ from sender_config import C, IDLE_TP, SETTLE_S
 from sender_ctrl import Ctrl
 from sender_net import emit
 
+_MAC = re.compile(r"^[0-9a-f]{2}(:[0-9a-f]{2}){5}$", re.IGNORECASE)
 _not_pads = {}       # ścieżka -> identyfikator węzła (inode, ctime) urządzenia, które nie jest padem
 
 
@@ -70,17 +73,57 @@ def close_group(g):
             pass
 
 
+def _load_slots():
+    """Zapamiętany przydział pad (MAC) -> slot z poprzednich uruchomień (slots_file)."""
+    if state.saved_slots is None:
+        state.saved_slots = {}
+        if C.SLOTS_FILE:
+            try:
+                with open(C.SLOTS_FILE, encoding="utf-8") as f:
+                    raw = json.load(f)
+                state.saved_slots = {str(k): int(v) for k, v in raw.items() if 0 <= int(v) < C.MAX_PADS}
+            except FileNotFoundError:
+                pass
+            except (OSError, ValueError, TypeError, AttributeError) as e:
+                print(f"Slots file {C.SLOTS_FILE} ignored: {e!r}")
+    return state.saved_slots
+
+
+def _save_slots():
+    if not C.SLOTS_FILE:
+        return
+    tmp = C.SLOTS_FILE + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(state.saved_slots, f, indent=1, sort_keys=True)
+        os.replace(tmp, C.SLOTS_FILE)
+    except OSError as e:
+        print(f"Cannot write {C.SLOTS_FILE}: {e!r}")
+
+
 def pick_slot(key):
+    """Stały slot pada: ten sam pad (MAC) dostaje ten sam numer także po restarcie nadajnika, więc w grze
+    (Steam, XInput) pozostaje tym samym graczem niezależnie od kolejności włączania padów."""
     if key in state.slots:
         return state.slots[key]
+    saved = _load_slots()
     taken = {i for k, i in state.slots.items() if k in state.active}
-    for i in range(C.MAX_PADS):
-        if i not in taken:
-            for k in [k for k, v in state.slots.items() if v == i]:
-                del state.slots[k]
-            state.slots[key] = i
-            return i
-    return None
+    pref = saved.get(key)
+    free = [i for i in range(C.MAX_PADS) if i not in taken]
+    if not free:
+        return None
+    # najpierw zapamiętany slot; potem wolny, którego nie "rezerwuje" inny znany pad; na końcu dowolny wolny
+    reserved = {v for k, v in saved.items() if k != key}
+    i = pref if pref in free else next((n for n in free if n not in reserved), free[0])
+    for k in [k for k, v in state.slots.items() if v == i]:
+        del state.slots[k]
+    state.slots[key] = i
+    if saved.get(key) != i and _MAC.match(key):   # pamiętamy tylko pady z MAC (USB bez uniq ma zmienny klucz)
+        for k in [k for k, v in saved.items() if v == i]:
+            del saved[k]
+        saved[key] = i
+        _save_slots()
+    return i
 
 
 def dispatch_feedback(idx, vals):
@@ -140,6 +183,15 @@ async def _run_extra(c, kind, dev, coro):
             print(f"Controller {c.idx}: {kind} device lost - waiting for it to come back")
 
 
+async def _run_mute(c):
+    try:
+        await sender_hidraw.stream_mute(c)
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        print(f"Controller {c.idx} mute button error: {e!r}")
+
+
 def incomplete(c):
     return c.motion_dev is None or c.touch_dev is None
 
@@ -163,6 +215,10 @@ async def run_ctrl(c):
             if dev is not None:
                 setattr(c, KIND_ATTR[kind], None)
                 attach(c, kind, dev)
+        if C.MUTE_BUTTON:                         # mute z hidraw - też osobno, brak dostępu nie rozłącza pada
+            t = asyncio.create_task(_run_mute(c))
+            c.extra.add(t)
+            t.add_done_callback(c.extra.discard)
 
         done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         for t in pending:

@@ -6,8 +6,9 @@ Pliki: proto.py (wspólny), rx_config.py, rx_state.py, rx_buttons.py (remap + re
        rx_gyro.py (gyro jako mysz), rx_feedback.py (wibracja, lightbar, potwierdzenia),
        rx_winapi.py, rx_mouse.py, rx_report.py, rx_net.py, rx_dsu.py, rx_ds4.py,
        rx_console.py + rx_audio.py (tryb konsoli: monitor / TV, console.json),
+       rx_settings.py (settings.json: mysz, pad master), rx_master.py (pad master: uprawnienia, mute + przycisk),
        okno: rx_qt.py (okno, zasobnik), rx_qt_pad.py (rysunek pada), rx_qt_panels.py, rx_qt_widgets.py, rx_qt_style.py,
-       rx_qt_console.py (okno ustawień trybu konsoli),
+       rx_qt_console.py (okno ustawień: konsola, mysz, master), rx_qt_icons.py (ikony przycisków),
        rx_editor.py (model edycji profilu), rx_profiles.py, rx_status.py, rx_icon.py;
        opcjonalnie rx_web.py + rx_remap_ui.html (edytor w przeglądarce, remap_ui = true).
 
@@ -23,8 +24,10 @@ PS + d-pad góra/dół = czułość myszy, PS + d-pad lewo/prawo = zmiana profil
 Profile gier: profil "pad@gra.exe" włącza się sam, gdy ta gra jest na pierwszym planie (zakładka w edytorze).
 Gyro: celowanie żyroskopem jako prawa gałka albo mysz, ustawiane w profilu (edytor -> Gyro aim).
 W trybie myszy: 1 palec = kursor, tap = LPM, 2 palce = przewijanie, tap 2 palcami = PPM (scroll_sens, scroll_natural).
-Tryb konsoli: podwójne kliknięcie wybranego przycisku (domyślnie PS) przełącza ekran i dźwięk monitor <-> TV, po ciszy
+Tryb konsoli: podwójne kliknięcie wybranego przycisku (domyślnie mute) przełącza ekran i dźwięk monitor <-> TV, po ciszy
 z pada samo wraca na monitor; start ustawia startup_mode (extend / internal). Ustawienia: tray -> Ustawienia (console.json).
+Pad master (rx_master): wybrane funkcje tylko dla jednego pada; mute + przycisk = pauza / zamknij grę / uśpij /
+wyłącz PC; mute przytrzymany 3 s = ten pad zostaje masterem. Ustawienia: okno -> Ustawienia -> Master (settings.json).
 Konfiguracja: --config plik.toml|json (klucze jak w DEFAULTS), flagi CLI nadpisują plik.
 Autostart z Windows: --autostart on|off (wpis w HKCU\\...\\Run, uruchamia pythonw bez konsoli).
 """
@@ -52,14 +55,18 @@ def main():
     import rx_games
     import rx_gyro
     import rx_hotkeys
+    import rx_master
     import rx_mouse
     import rx_net
+    import rx_settings
     import rx_state as S
     import rx_web
 
     S.init(rx_buttons.RemapStore(C.REMAP_PATH))
+    rx_settings.apply(rx_settings.load(C.SETTINGS_PATH, rx_settings.defaults(C.MOUSE_SENS)))
     rx_mouse.init(C.NUM_PADS)
     rx_hotkeys.init(C.NUM_PADS)
+    rx_master.init(C.NUM_PADS)
     rx_ds4.init()
     rx_net.init()
     rx_dsu.start()

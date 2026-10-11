@@ -44,6 +44,8 @@ QPushButton[seg="right"] {{ border-top-right-radius: 8px; border-bottom-right-ra
 QPushButton[seg]:checked {{ background: #3a4054; color: #ffffff; font-weight: 600; }}
 QToolButton {{ background: transparent; border: none; color: {DIM}; font-size: 16px; padding: 0 4px; }}
 QToolButton:hover {{ color: {BAD}; }}
+QToolButton#crown {{ padding: 0 2px; border-radius: 6px; }}
+QToolButton#crown:hover {{ background: {TRACK}; }}
 
 QComboBox, QLineEdit, QSpinBox {{ background: {TRACK}; border: 1px solid #343a4a; border-radius: 8px; padding: 6px 10px;
                        selection-background-color: {ACCENT}; selection-color: {BG}; }}

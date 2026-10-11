@@ -17,6 +17,7 @@ calls = []
 rx_console._display = lambda mode: calls.append(("display", mode))
 rx_console._audio = lambda name: calls.append(("audio", name))
 rx_console._toast = lambda title, msg="": calls.append(("toast", title, msg))
+rx_console._tv_mode = lambda w, h, sc: calls.append(("tv", w, h, sc))
 
 def wait_for(pred, timeout=2.5):
     end = time.monotonic() + timeout
@@ -27,7 +28,9 @@ def wait_for(pred, timeout=2.5):
     return pred()
 
 def new_console(**kw):
-    """Console z wątkiem roboczym; startup (extend) już przetworzony i wyczyszczony z rejestru."""
+    """Console z wątkiem roboczym; startup (extend) już przetworzony i wyczyszczony z rejestru.
+    Testy kliknięć używają PS (trudniejszy przypadek: PS jest też modyfikatorem skrótów)."""
+    kw.setdefault("toggle_button", "ps")
     c = Console(ConsoleConfig(**kw)); calls.clear(); c.start()
     wait_for(lambda: ("display", c.cfg.startup_mode) in calls); calls.clear()
     rx_console.ctl = c
@@ -41,8 +44,16 @@ PS, SHARE = 316, 314
 # ---------- config: brak pliku, błędne wartości, uszkodzony plik ----------
 cfg = rx_console.load(PATH)
 check(cfg == ConsoleConfig() and os.path.exists(PATH), "brak pliku -> domyślne i utworzony console.json")
-check(json.load(open(PATH)) == {"toggle_button": "ps", "double_click_ms": 400, "audio_tv": "", "audio_pc": "",
-                                "timeout_s": 60, "startup_mode": "extend"}, "domyślne wartości w pliku")
+check(json.load(open(PATH)) == {"toggle_button": "mute", "double_click_ms": 400, "audio_tv": "", "audio_pc": "",
+                                "timeout_s": 60, "startup_mode": "extend", "tv_width": 2560, "tv_height": 1440,
+                                "tv_scale": 200, "version": 2}, "domyślne wartości w pliku (mute, TV 1440p / 200 %)")
+json.dump({"toggle_button": "ps", "double_click_ms": 300, "audio_tv": "", "audio_pc": "", "timeout_s": 60,
+           "startup_mode": "extend"}, open(PATH, "w"))
+cfg = rx_console.load(PATH)
+check(cfg.toggle_button == "mute" and cfg.double_click_ms == 300 and json.load(open(PATH))["version"] == 2,
+      f"stary plik (bez wersji) z PS -> mute, reszta zostaje: {cfg}")
+json.dump({**json.load(open(PATH)), "toggle_button": "ps"}, open(PATH, "w"))
+check(rx_console.load(PATH).toggle_button == "ps", "PS wybrany świadomie w nowym pliku (wersja 2) zostaje")
 json.dump({"toggle_button": "share", "double_click_ms": 250, "audio_tv": " LG TV ", "audio_pc": "Głośniki",
            "timeout_s": 90, "startup_mode": "internal"}, open(PATH, "w"))
 cfg = rx_console.load(PATH)
@@ -74,7 +85,8 @@ ok("detector: przyciski, d-pad, spusty")
 c = new_console(audio_tv="LG TV", audio_pc="Głośniki", double_click_ms=400)
 click(); time.sleep(0.05); click()
 check(wait_for(lambda: c.on), "podwójne kliknięcie PS -> ON")
-check(calls == [("display", "tv"), ("audio", "LG TV"), ("toast", "Tryb konsoli włączony", "")], f"ON: ekran, dźwięk TV, toast: {calls}")
+check(calls == [("display", "tv"), ("tv", 2560, 1440, 200), ("audio", "LG TV"), ("toast", "Tryb konsoli włączony", "")],
+      f"ON: ekran, rozdzielczość i skala TV, dźwięk TV, toast: {calls}")
 check(S.states[0]["raw"][0] == 0, "stan pada dalej śledzony (przyciski trafiają do gry)")
 calls.clear()
 click(); time.sleep(0.05); click()
@@ -149,7 +161,7 @@ ok("start: DisplaySwitch /extend lub /internal + audio_pc")
 
 # ---------- błędy poleceń nie wywalają skryptu ----------
 def boom(*a, **k): raise OSError("brak polecenia")
-rx_console._display, rx_console._audio, rx_console._toast = boom, boom, boom
+rx_console._display, rx_console._audio, rx_console._toast, rx_console._tv_mode = boom, boom, boom, boom
 c = new_console(audio_tv="X", audio_pc="Y"); calls.clear()
 c._jobs.put(c._toggle)
 check(wait_for(lambda: c.on), "wszystkie polecenia rzucają wyjątek, a tryb i tak się przełącza")
@@ -160,6 +172,7 @@ rx_console._audio = lambda name: calls.append(("audio", name))
 rx_console._toast = lambda title, msg="": calls.append(("toast", title, msg))
 c._jobs.put(c._toggle)
 check(wait_for(lambda: ("display", "tv") in calls and ("audio", "X") in calls), "po naprawie polecenia działają dalej")
+rx_console._tv_mode = lambda w, h, sc: calls.append(("tv", w, h, sc))
 c.close(restart=True)
 ok("błędy ekranu / dźwięku / toastu logowane, nic się nie wywala")
 
@@ -230,6 +243,53 @@ click(); time.sleep(0.05); click()
 check(wait_for(lambda: c.on), "zwykłe podwójne kliknięcie po skrótach dalej działa")
 c.close(restart=True)
 ok("skróty z PS (Share, d-pad, touchpad) nie liczą się jako kliknięcia")
+
+# ---------- rozdzielczość / skala TV ----------
+c = new_console(tv_width=0, tv_height=0, tv_scale=0); calls.clear()
+c._apply(True); c._apply(False)
+check(not any(x[0] == "tv" for x in calls), f"0 = bez zmiany rozdzielczości i skali: {calls}")
+c.close(restart=True)
+c = new_console(tv_width=3840, tv_height=2160, tv_scale=0); calls.clear()
+c._apply(True); c._apply(False)
+check([x for x in calls if x[0] == "tv"] == [("tv", 3840, 2160, 0)], f"tylko przy ON, z wartościami z configu: {calls}")
+c.close(restart=True)
+json.dump({"tv_width": 2560, "tv_height": 1440, "tv_scale": 130, "version": 2}, open(PATH, "w"))
+check(rx_console.load(PATH).tv_scale == 200, "skala spoza kroków Windows -> domyślna")
+import rx_display as D
+check(D.pick_mode([(2560, 1440, 32, 60), (2560, 1440, 32, 120), (1920, 1080, 32, 144), (2560, 1440, 16, 144)], 2560, 1440)
+      == (2560, 1440, 32, 120) and D.pick_mode([(1920, 1080, 32, 60)], 2560, 1440) is None, "wybór trybu: 32 bpp, najwyższe Hz")
+check(D.scale_relative(200, -2, 0, 7) == (2, False) and D.scale_relative(150, -2, 0, 7) == (0, True),
+      "skala względem zalecanej (zalecana 150 %: 200 % = +2)")
+try:
+    D.scale_relative(500, -1, 0, 3); check(False, "skala poza zakresem ekranu -> błąd")
+except ValueError as e:
+    check("not supported" in str(e), str(e))
+steps = iter([[1, 2], [1, 2], [("luid", 3, "DISPLAY2")]])      # Windows przełącza układ ekranów z opóźnieniem
+D.active_sources = lambda: next(steps)
+D.set_resolution = lambda dev, w, h: f"{w}x{h}"
+D.set_scale = lambda a, sid, p: f"scale {p}%"
+sleep = D.time.sleep
+D.time.sleep = lambda s: None
+check(D.apply_tv(2560, 1440, 200, settle_s=5) == "DISPLAY2: 2560x1440, scale 200%", "apply_tv: czeka na jeden ekran, potem tryb i skala")
+D.active_sources = lambda: [1, 2]
+try:
+    D.apply_tv(2560, 1440, 200, settle_s=0); check(False, "dwa ekrany -> nie zmienia")
+except RuntimeError:
+    pass
+D.time.sleep = sleep                                             # moduł time jest wspólny - przywróć
+ok("TV: rozdzielczość i skala tylko przy ON, wybór trybu, skala względna, czekanie na ekran")
+
+# ---------- mute jako przycisk trybu (domyślny) ----------
+MUTE = 248
+c = new_console(toggle_button="mute"); calls.clear()
+click(0, MUTE); time.sleep(0.05); click(0, MUTE)
+check(wait_for(lambda: c.on), "podwójne mute -> ON")
+c.on = False; calls.clear()
+state(0, mask=BIT[MUTE]); state(0, mask=BIT[MUTE] | BIT[304]); state(0, mask=0); time.sleep(0.03)
+state(0, mask=BIT[MUTE]); state(0, mask=BIT[MUTE] | BIT[304]); state(0, mask=0); time.sleep(0.2)
+check(not c.on, "mute + przycisk (akcja mastera) dwa razy to nie podwójne kliknięcie")
+c.close(restart=True)
+ok("mute: podwójne kliknięcie przełącza, kombinacje z mute nie")
 
 # ---------- rx_audio.find ----------
 devs = [("1", "Speakers (Realtek)"), ("2", "LG TV (NVIDIA High Definition Audio)"), ("3", "Headphones (USB)")]
