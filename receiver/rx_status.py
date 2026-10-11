@@ -72,7 +72,9 @@ def rumble_status(i):
     if not bits:
         text, tip = {
             WHY_OFF: (_("wibracja: wyłączona"), _("W sender.toml ustaw rumble = \"auto\".")),
-            WHY_ACCESS: (_("wibracja: brak uprawnień"), _("Nadajnik nie może otworzyć /dev/hidraw - uruchom go przez doas albo zainstaluj usługę: doas ./install-service.sh")),
+            WHY_ACCESS: (_("wibracja: brak uprawnień"),
+                         _("Nadajnik nie może otworzyć /dev/hidraw - uruchom go przez doas albo zainstaluj usługę: "
+                           "doas ./install-service.sh")),
             WHY_NO_HIDRAW: (_("wibracja: brak w jądrze"),
                             _("Jądro telefonu nie ma CONFIG_PLAYSTATION_FF ani CONFIG_HIDRAW - bez jednej z nich pad nie wibruje.")),
             WHY_NOT_FOUND: (_("wibracja: nie znaleziono pada"),
