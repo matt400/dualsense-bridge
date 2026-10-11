@@ -1,0 +1,20 @@
+# Konfiguracja narzędzi (projekt nie jest pakietem pip - receiver/ i sender/ uruchamia się bezpośrednio).
+[tool.ruff]
+target-version = "py311"
+line-length = 140
+extend-exclude = ["tests/fakebin"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "UP", "SIM", "RUF", "PERF", "C4", "PIE", "ISC"]
+ignore = [
+    "RUF001", "RUF002", "RUF003",   # polskie komentarze i teksty (×, –, „”) są zamierzone
+    "SIM105",                       # try/except/pass czytelniejsze niż contextlib.suppress w gorących ścieżkach
+    "SIM108",                       # if/else zamiast wymuszonego wyrażenia warunkowego
+    "E741",                         # krótkie nazwy (l, i) w pętlach po danych pada
+    "RUF023",                       # __slots__ w kolejności pól, nie alfabetycznej
+    "SIM112",
+    "SIM905",                       # lista nazw programów jako tekst z .split() - czytelniej niż długa lista                       # %SystemRoot% - zmienne środowiska Windows nie rozróżniają wielkości liter
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E401", "E501", "F401", "E402", "E701", "E702", "E731", "B011", "F403", "F405", "SIM", "PERF", "RUF", "B"]
