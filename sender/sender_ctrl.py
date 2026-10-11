@@ -178,6 +178,9 @@ class Ctrl:
 
     # ---- feedback z PC ----
     def apply_feedback(self, small, large, r, g, b):
+        if self.rumble is not None and self.rumble.owns_lightbar:
+            self.rumble.set(small, large, (r, g, b))     # wibracja i kolor w jednym raporcie HID
+            return
         if self.rumble is not None:
             self.rumble.set(small, large)
         if self.led and (r, g, b) != self.led_color:
