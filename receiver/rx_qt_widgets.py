@@ -1,7 +1,8 @@
 """Receiver: małe widżety okna - suwak z wartością, przycisk z potwierdzeniem, pasek baterii, przełącznik."""
 from PySide6.QtCore import QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter
-from PySide6.QtWidgets import QButtonGroup, QComboBox, QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (QButtonGroup, QComboBox, QFrame, QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout,
+                               QWidget)
 
 from rx_qt_style import OK, TRACK, set_prop
 
@@ -34,6 +35,41 @@ def icon_label(name, size=22):
     return lb
 
 
+def group(title, *items):
+    """Sekcja okna ustawień: ramka z tytułem i zawartością (widżety albo układy) jedna pod drugą."""
+    box = QFrame()
+    box.setObjectName("group")
+    lay = QVBoxLayout(box)
+    lay.setContentsMargins(14, 12, 14, 14)
+    lay.setSpacing(10)
+    if title:
+        lay.addWidget(label(title, "h2"))
+    for it in items:
+        if isinstance(it, QWidget):
+            lay.addWidget(it)
+        else:
+            lay.addLayout(it)
+    return box
+
+
+def pair(a, b):
+    """Dwa pola obok siebie, po równo."""
+    row = QHBoxLayout()
+    row.setSpacing(12)
+    row.addWidget(a, 1)
+    row.addWidget(b, 1)
+    return row
+
+
+def left(widget):
+    """Widżet (np. mały przycisk) w naturalnej szerokości, przy lewej krawędzi - nie rozciągnięty na cały wiersz."""
+    row = QHBoxLayout()
+    row.setContentsMargins(0, 0, 0, 0)
+    row.addWidget(widget)
+    row.addStretch(1)
+    return row
+
+
 def field(caption, widget):
     """Mały podpis nad widżetem (jak w edytorze w przeglądarce)."""
     w = QWidget()
@@ -61,6 +97,9 @@ class Combo(QComboBox):
         super().__init__()
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setIconSize(QSize(22, 22))
+        # długa pozycja nie rozpycha okna - lista zajmuje szerokość z układu, tekst jest skracany
+        self.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.setMinimumContentsLength(6)
         self.set_items(items)
         self.activated.connect(lambda i: self.changed.emit(self.itemData(i)))
         self.currentIndexChanged.connect(lambda i: self.setToolTip(self.itemData(i, Qt.ItemDataRole.ToolTipRole) or ""))

@@ -304,8 +304,22 @@ EN = {
     "połączono pad master (pad {n})": "master pad connected (pad {n})",
     "po restarcie receivera": "after receiver restart",
     "zamknięcie receivera": "receiver closing",
+    # ---------- układ okna (sekcje, przyciski) ----------
+    "PRZEŁĄCZANIE": "SWITCHING",
+    "TELEWIZOR I DŹWIĘK": "TV AND SOUND",
+    "BLOKADA W GRZE": "IN-GAME LOCK",
+    "KURSOR": "CURSOR",
+    "KLIKNIĘCIE": "CLICK",
+    "OKNO": "WINDOW",
+    "JĘZYK": "LANGUAGE",
+    "PAD MASTER": "MASTER PAD",
+    "Włącz po połączeniu pada master": "Turn on when the master pad connects",
+    "Wyłączasz go tym samym podwójnym kliknięciem; zostaje wyłączony do następnego połączenia mastera.":
+        "Turn it off with the same double press; it stays off until the master connects again.",
+    "Zmiana języka działa po restarcie receivera.": "The language changes after the receiver restarts.",
+    "Przejęcie na padzie: PS + R3 przez {s} s": "Take over on the pad: PS + R3 for {s} s",
+    "Wibracja": "Rumble",
     # ---------- ikony ----------
     "Ekran": "Screen",
     "Uruchom ponownie": "Restart",
-    "Wibracja": "Rumble",
 }

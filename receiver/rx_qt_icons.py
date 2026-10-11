@@ -18,7 +18,7 @@ FACE = {"triangle": "#4cd08a", "circle": "#ff6b6b", "cross": "#5b9bff", "square"
 BADGES = {"l1": "L1", "r1": "R1", "l2": "L2", "r2": "R2", "l3": "L3", "r3": "R3"}
 EXTRA_TIPS = {"crown": "Pad master", "mouse": "Touchpad jako mysz", "touchpad": "Touchpad jako dotyk DS4",
               "tv": "Tryb konsoli", "power": "Wyłącz", "restart": "Uruchom ponownie", "window": "Ekran",
-              "fullscreen": "Pełny ekran", "rumble": "Wibracja"}
+              "fullscreen": "Pełny ekran", "rumble": "Wibracja", "gear": "Ustawienia"}
 SIZES = (16, 20, 24, 32, 48)
 
 
@@ -178,6 +178,21 @@ def _rumble(p):
         p.drawPath(path)
 
 
+def _gear(p):
+    import math
+    p.setPen(_pen(FG, 1.6))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    path = QPainterPath()
+    for k in range(16):
+        a = math.pi * 2 * k / 16
+        r = 9 if k % 2 == 0 else 6.8
+        pt = QPointF(12 + r * math.cos(a), 12 + r * math.sin(a))
+        path.moveTo(pt) if k == 0 else path.lineTo(pt)
+    path.closeSubpath()
+    p.drawPath(path)
+    p.drawEllipse(QPointF(12, 12), 2.8, 2.8)
+
+
 def _tv(p):
     p.setPen(_pen(FG, 1.6))
     p.setBrush(Qt.BrushStyle.NoBrush)
@@ -201,7 +216,7 @@ def _draw(p, name):
         _dpad(p, name)
     else:
         {"ps": _ps, "share": _share, "options": _options, "crown": _crown, "mouse": _mouse,
-         "tv": _tv, "power": _power, "touchpad": _touchpad, "restart": _restart, "window": _window, "fullscreen": _fullscreen, "rumble": _rumble}[name](p)
+         "tv": _tv, "power": _power, "touchpad": _touchpad, "restart": _restart, "window": _window, "fullscreen": _fullscreen, "rumble": _rumble, "gear": _gear}[name](p)
 
 
 def pixmap(name, size=24, dim=False):
@@ -228,4 +243,4 @@ def icon(name, dim=False):
 
 def has_icon(name):
     return name in FACE or name in BADGES or name.startswith("dpad_") or name in (
-        "ps", "share", "options", "crown", "mouse", "touchpad", "tv", "power", "restart", "window", "fullscreen", "rumble")
+        "ps", "share", "options", "crown", "mouse", "touchpad", "tv", "power", "restart", "window", "fullscreen", "rumble", "gear")

@@ -16,7 +16,7 @@ from rx_qt_widgets import Combo, ConfirmButton, SliderRow, button, field, input_
 
 NONE = "__none"
 def targets():
-    return input_items(B.INPUTS) + [(NONE, _("— wyłączony —"))]       # ikony przycisków (nazwa w podpowiedzi)
+    return input_items(B.INPUTS, text=True) + [(NONE, _("— wyłączony —"))]   # ikona + nazwa: wybór widać od razu       # ikony przycisków (nazwa w podpowiedzi)
 
 
 def r3(v):
@@ -146,7 +146,6 @@ class PartPage(QWidget):
     def _hint_page():
         w = QWidget()
         lay = _vbox(w)
-        lay.addWidget(label(_("WYBRANE"), "h2"))
         lay.addWidget(label(_("Kliknij przycisk, spust albo gałkę na rysunku pada, aby ją zremapować lub dostroić."), "dim", wrap=True))
         lay.addStretch(1)
         return scrolled(w)
@@ -154,7 +153,6 @@ class PartPage(QWidget):
     def _button_page(self):
         w = QWidget()
         lay = _vbox(w)
-        lay.addWidget(label(_("WYBRANE"), "h2"))
         head = QHBoxLayout()
         self.title_icon = label("")
         self.title = label("", "h3")
@@ -186,7 +184,6 @@ class PartPage(QWidget):
     def _stick_page(self):
         w = QWidget()
         lay = _vbox(w)
-        lay.addWidget(label(_("WYBRANE"), "h2"))
         self.stick_title = label("", "h3")
         lay.addWidget(self.stick_title)
         self.ssrc = Combo([(k, _(STICK_NAME[k])) for k in ("left", "right", "none")])
@@ -312,7 +309,7 @@ class GyroPage(QWidget):
         lay.addWidget(self.off_hint)
         self.body = QWidget()
         bl = _vbox(self.body)
-        self.hold = Combo([("always", _("Zawsze"))] + input_items(B.INPUTS))
+        self.hold = Combo([("always", _("Zawsze"))] + input_items(B.INPUTS, text=True))
         self.hold.changed.connect(lambda v: self._set(hold=v))
         bl.addWidget(field(_("Aktywne (zawsze albo przy trzymanym przycisku)"), self.hold))
         self.sens = SliderRow(_("Czułość"), 0.1, 5, 0.05, "x")
