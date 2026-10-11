@@ -27,7 +27,7 @@ link_loss = None                # utrata pakietów od nadajnika w ostatniej seku
 states = wake = want = plugged = last_seen = alive = ignore_until = None
 mouse_mode = tp_down = swallow = last_v = last_touch = batt_info = None
 pad_id = remap_maps = None
-override = active = info = pps = None
+override = active = info = pps = sender_info = None
 
 
 def new_state():
@@ -50,7 +50,7 @@ def new_state():
 def init(store_):
     global states, wake, want, plugged, last_seen, alive, ignore_until, mouse_mode
     global tp_down, swallow, last_v, last_touch, batt_info, pad_id, remap_maps, store
-    global override, active, info, pps
+    global override, active, info, pps, sender_info
     n = C.NUM_PADS
     store = store_
     states = [new_state() for _ in range(n)]
@@ -72,6 +72,7 @@ def init(store_):
     override = [None] * n                            # profil wybrany ręcznie (PS + d-pad), None = automatycznie
     info = [None] * n                                # (ping ms | None, Hz pada, Hz ruchu, czas) z pakietu info
     pps = [0.0] * n                                  # pakiety stanu na sekundę
+    sender_info = [None] * n                         # (wersja nadajnika, sposoby wibracji) z pakietu version; None = stary
 
 
 def run_forever(name, fn, *args):

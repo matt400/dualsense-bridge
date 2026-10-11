@@ -6,7 +6,7 @@ import time
 import zlib
 
 import sender_net as net
-from proto import (KEY_BIT, T_CLICK, T_IDENT, T_MOUSE, T_STATE, T_TOUCH, clamp)
+from proto import (KEY_BIT, SENDER_VERSION, T_CLICK, T_IDENT, T_MOUSE, T_STATE, T_TOUCH, T_VERSION, clamp)
 from sender_config import BURST_DELAYS, C, IDLE_TP, NEUTRAL_PAD, PAD_ABS, STICK_AXES
 
 
@@ -99,6 +99,7 @@ class Ctrl:
     # ---- wysyłanie ----
     def send_ident(self):
         net.emit(T_IDENT, self.idx, pad_ident(self.key).encode("ascii", "replace")[:17])
+        net.emit(T_VERSION, self.idx, SENDER_VERSION, self.rumble.bits if self.rumble is not None else 0)
 
     def send_state(self, force=False):
         key = (*self.pad, *self.hat, self.mask, self.batt, self.flags, *self.motion)

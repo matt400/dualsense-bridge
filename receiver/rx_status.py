@@ -1,6 +1,7 @@
 """Receiver: teksty i poziomy jakości do okna (łącze, bateria) - czyste funkcje, bez Qt, łatwe do przetestowania."""
 from rx_i18n import _
 import rx_state as S
+from proto import RUMBLE_EVDEV, RUMBLE_HIDRAW
 
 INFO_MAX_AGE = 3.0   # pakiet "info" starszy niż tyle = brak danych o pingu i Hz
 
@@ -59,3 +60,17 @@ def is_low(i, low_batt):
     pct, flags = S.batt_info[i]
     return bool(S.alive[i]) and pct <= 100 and not flags & 1 and pct <= low_batt
 
+
+
+def rumble_status(i):
+    """Wibracja pada wg nadajnika -> (tekst, poziom, podpowiedź) dla karty w oknie."""
+    info = S.sender_info[i]
+    if info is None:
+        return (_("wibracja: stary nadajnik"), "warn",
+                _("Skopiuj nowe pliki sender/ na telefon - starszy nadajnik nie wibruje bez obsługi wibracji w jądrze."))
+    bits = info[1]
+    if not bits:
+        return (_("wibracja: niedostępna"), "bad",
+                _("Nadajnik nie ma dostępu do wibracji - uruchom go przez doas."))
+    ways = [w for b, w in ((RUMBLE_EVDEV, _("sterownik")), (RUMBLE_HIDRAW, "HID")) if bits & b]
+    return _("wibracja: {ways}").format(ways=" + ".join(ways)), "", ""

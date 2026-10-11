@@ -319,6 +319,14 @@ EN = {
     "Zmiana języka działa po restarcie receivera.": "The language changes after the receiver restarts.",
     "Przejęcie na padzie: PS + R3 przez {s} s": "Take over on the pad: PS + R3 for {s} s",
     "Wibracja": "Rumble",
+    # ---------- wibracja ----------
+    "wibracja: stary nadajnik": "rumble: old sender",
+    "Skopiuj nowe pliki sender/ na telefon - starszy nadajnik nie wibruje bez obsługi wibracji w jądrze.":
+        "Copy the new sender/ files to the phone - an older sender cannot rumble without kernel rumble support.",
+    "wibracja: niedostępna": "rumble: unavailable",
+    "Nadajnik nie ma dostępu do wibracji - uruchom go przez doas.": "The sender has no access to rumble - run it with doas.",
+    "sterownik": "driver",
+    "wibracja: {ways}": "rumble: {ways}",
     # ---------- ikony ----------
     "Ekran": "Screen",
     "Uruchom ponownie": "Restart",

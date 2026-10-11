@@ -108,6 +108,8 @@ class PadCard(QFrame):
             lay.addWidget(lb)
         lay.addLayout(mode_row)
         lay.addWidget(self.profile)
+        self.rumble_info = label("", "dim")              # czy nadajnik umie wibrować (pakiet version)
+        lay.addWidget(self.rumble_info)
         lay.addSpacing(4)
         row = QHBoxLayout()
         row.setSpacing(8)
@@ -158,7 +160,7 @@ class PadCard(QFrame):
         alive, want = bool(S.alive[i]), S.want[i].is_set()
         master = rx_master.is_master(i)
         key = (alive, want, pct, flags, S.plugged[i], S.mouse_mode[i], profile_size(S.remap_maps[i]), S.active[i],
-               master, S.pad_id[i])
+               master, S.pad_id[i], S.sender_info[i])
         if key == self._key:
             return low                        # nic się nie zmieniło - nie dotykaj widżetów
         self._key = key
@@ -186,6 +188,11 @@ class PadCard(QFrame):
         self.mode_icon.setPixmap(pm)
         self.mode_icon.setToolTip(_("Touchpad jako mysz") if S.mouse_mode[i] else _("Touchpad jako dotyk DS4"))
         self.profile.setText(_("profil: {name}").format(name=_profile_label(S.active[i])) + (f" ({n})" if n else ""))
+        text, level, tip = ST.rumble_status(i)
+        self.rumble_info.setText(text)
+        self.rumble_info.setToolTip(tip)
+        self.rumble_info.setVisible(alive)
+        set_prop(self.rumble_info, "level", level)
         return low
 
 

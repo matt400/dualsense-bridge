@@ -8,14 +8,14 @@ import rx_hotkeys as hotkeys
 import rx_master as master
 import rx_mouse as mouse
 import rx_state as S
-from proto import (BODY, RTT_NONE, Codec, T_BYE, T_CLICK, T_CMD, T_FB, T_IDENT, T_INFO, T_MOUSE, T_PING, T_PONG,
+from proto import (BODY, RTT_NONE, Codec, T_BYE, T_CLICK, T_CMD, T_FB, T_IDENT, T_INFO, T_MOUSE, T_PING, T_PONG, T_VERSION,
                    T_STATE, T_TOUCH, clamp)
 from rx_buttons import MASK_ALL, PS_BIT, profile_size
 
 from rx_config import C
 from rx_winapi import bind_udp, boost_thread
 
-RX_TYPES = {T_STATE, T_TOUCH, T_CLICK, T_MOUSE, T_PING, T_BYE, T_IDENT, T_INFO}   # typy, które receiver przyjmuje
+RX_TYPES = {T_STATE, T_TOUCH, T_CLICK, T_MOUSE, T_PING, T_BYE, T_IDENT, T_INFO, T_VERSION}   # typy, które receiver przyjmuje
 ST_STATE, ST_TOUCH, ST_MOUSE, ST_INFO = BODY[T_STATE], BODY[T_TOUCH], BODY[T_MOUSE], BODY[T_INFO]
 
 
@@ -113,6 +113,7 @@ def clear_slot(i, forget_id=False):
     hotkeys.reset(i)
     master.reset(i)
     if forget_id:                      # pad fizycznie odszedł - następny w tym slocie przyśle swój ident
+        S.sender_info[i] = None
         with S.profile_lock:
             S.pad_id[i] = None
             S.override[i] = None
@@ -228,6 +229,11 @@ def handle(t, i, data):
             n = profile_size(S.remap_maps[i])
             print(f"Controller {i}: id {pid}, profile {S.profile_label(S.active[i])}"
                   + (f" ({n} changes)" if n else ""))
+    elif t == T_VERSION:
+        v = BODY[T_VERSION].unpack_from(data, 4)
+        if v != S.sender_info[i]:
+            S.sender_info[i] = v
+            print(f"Controller {i}: sender v{v[0]}, rumble methods {v[1]}")
     elif t == T_INFO:
         rtt, pad_hz, motion_hz = ST_INFO.unpack_from(data, 4)
         S.info[i] = (None if rtt == RTT_NONE else rtt / 10, pad_hz, motion_hz, time.monotonic())

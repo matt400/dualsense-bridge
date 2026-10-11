@@ -14,6 +14,8 @@ opcjonalnie 8 B HMAC-SHA256 (gdy ustawiony klucz).
   9 ident   "17s"        nadajnik: stały identyfikator pada (MAC) - klucz profilu remapowania
  10 cmd     "BB"         PC -> nadajnik: polecenie, argument (CMD_POWER_OFF = wyłącz pada)
  11 info    "HHH"        nadajnik -> PC co 1 s: ping x10 [ms] (0xFFFF = brak), Hz raportów pada, Hz ruchu
+ 12 version "BB"         nadajnik -> PC razem z ident: wersja nadajnika, sposoby wibracji (bit 1 = sterownik evdev FF,
+                         bit 2 = raport HID przez hidraw; 0 = brak); starszy receiver ignoruje nieznany typ
 """
 import hmac
 import json
@@ -24,7 +26,9 @@ import threading
 VER = 2
 HDR0 = VER << 4
 
-T_STATE, T_TOUCH, T_CLICK, T_MOUSE, T_PING, T_FB, T_PONG, T_BYE, T_IDENT, T_CMD, T_INFO = range(1, 12)
+T_STATE, T_TOUCH, T_CLICK, T_MOUSE, T_PING, T_FB, T_PONG, T_BYE, T_IDENT, T_CMD, T_INFO, T_VERSION = range(1, 13)
+SENDER_VERSION = 4
+RUMBLE_EVDEV, RUMBLE_HIDRAW = 1, 2
 CMD_POWER_OFF = 1
 RTT_NONE = 0xFFFF
 
@@ -41,9 +45,10 @@ BODY = {
     T_IDENT: struct.Struct("!17s"),
     T_CMD: struct.Struct("!BB"),
     T_INFO: struct.Struct("!HHH"),
+    T_VERSION: struct.Struct("!BB"),
 }
 BODY_LEN = {t: s.size for t, s in BODY.items()}
-assert BODY_LEN == {1: 36, 2: 12, 3: 1, 4: 5, 5: 8, 6: 5, 7: 8, 8: 0, 9: 17, 10: 2, 11: 6}, BODY_LEN
+assert BODY_LEN == {1: 36, 2: 12, 3: 1, 4: 5, 5: 8, 6: 5, 7: 8, 8: 0, 9: 17, 10: 2, 11: 6, 12: 2}, BODY_LEN
 
 # kody evdev przycisków DualSense -> bit w masce (kolejność = pozycja bitu w pakiecie stanu)
 PAD_KEYS = (304, 305, 307, 308, 310, 311, 314, 315, 316, 317, 318)
