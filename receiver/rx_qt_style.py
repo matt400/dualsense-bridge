@@ -40,10 +40,10 @@ QPushButton[primary="true"] {{ background: {ACCENT}; color: {BG}; border-color: 
 QPushButton[primary="true"]:disabled {{ background: {TRACK}; color: {MUTED}; border-color: #343a4a; }}
 QPushButton[armed="true"] {{ background: {BAD}; color: {BG}; border-color: {BAD}; font-weight: 600; }}
 QPushButton[small="true"] {{ padding: 3px 10px; font-size: 12px; }}
-QPushButton[seg="true"] {{ border-radius: 0; padding: 6px 14px; font-size: 12px; }}
-QPushButton[seg="left"] {{ border-top-left-radius: 8px; border-bottom-left-radius: 8px; }}
-QPushButton[seg="right"] {{ border-top-right-radius: 8px; border-bottom-right-radius: 8px; border-left: none; }}
-QPushButton[seg]:checked {{ background: #3a4054; color: #ffffff; font-weight: 600; }}
+QFrame#segment {{ background: {TRACK}; border: 1px solid #343a4a; border-radius: 10px; }}
+QPushButton[seg="true"] {{ background: transparent; border: none; border-radius: 7px; padding: 5px 12px; color: {DIM}; }}
+QPushButton[seg="true"]:hover:!checked {{ color: {FG}; background: #2c3140; }}
+QPushButton[seg="true"]:checked {{ background: #454c63; color: #ffffff; font-weight: 600; }}
 QToolButton {{ background: transparent; border: none; color: {DIM}; font-size: 16px; padding: 0 4px; }}
 QToolButton:hover {{ color: {BAD}; }}
 QToolButton#crown {{ padding: 0 2px; border-radius: 6px; }}

@@ -1,6 +1,6 @@
 """Receiver: małe widżety okna - suwak z wartością, przycisk z potwierdzeniem, pasek baterii, przełącznik."""
 from PySide6.QtCore import QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QPainter
+from PySide6.QtGui import QColor, QFontMetrics, QPainter
 from PySide6.QtWidgets import (QButtonGroup, QComboBox, QFrame, QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout,
                                QWidget)
 
@@ -237,27 +237,42 @@ class BatteryBar(QWidget):
             p.drawRoundedRect(QRectF(0, 0, max(w * self.pct / 100, h), h), h / 2, h / 2)   # min. szerokość = kropka
 
 
-class Segmented(QWidget):
-    """Przełącznik z dwoma opcjami obok siebie ([Result | Physical])."""
+class Segmented(QFrame):
+    """Przełącznik opcji w jednej "szynie" ([ Wynik ][ Fizycznie ]): wybrana opcja to wypukła pigułka, opcje mają
+    równą szerokość i odstęp, więc nie zlewają się w jeden przycisk."""
 
     changed = Signal(str)
+    GAP = 4
 
     def __init__(self, options):
         super().__init__()
+        self.setObjectName("segment")
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(0)
+        lay.setContentsMargins(3, 3, 3, 3)
+        lay.setSpacing(self.GAP)
         self.group = QButtonGroup(self)
         self.buttons = {}
-        for n, (key, text) in enumerate(options):
+        for key, text in options:
             b = QPushButton(text)
             b.setCheckable(True)
             b.setCursor(Qt.CursorShape.PointingHandCursor)
-            b.setProperty("seg", "left" if n == 0 else "right" if n == len(options) - 1 else "true")
+            b.setProperty("seg", "true")
             self.group.addButton(b)
             self.buttons[key] = b
             lay.addWidget(b)
             b.clicked.connect(lambda _c=False, k=key: self.changed.emit(k))
+        self._equalize()
+
+    def _equalize(self):
+        """Równa szerokość opcji (szerokość najdłuższego tekstu, liczona dla pogrubionej - zaznaczonej - wersji)."""
+        widths = []
+        for b in self.buttons.values():
+            f = b.font()
+            f.setBold(True)
+            widths.append(QFontMetrics(f).horizontalAdvance(b.text()))
+        w = max(widths, default=0) + 36
+        for b in self.buttons.values():
+            b.setMinimumWidth(w)
 
     def set(self, key):
         self.buttons[key].setChecked(True)

@@ -351,7 +351,7 @@ rxenv.FG[0] = "ittakestwo.exe"
 for v in (255, 0, 255, 0):
     state(0, rt=v); time.sleep(0.03)
 time.sleep(0.3)
-check(not c.on and (0, "denied") in pulses, f"gra na pierwszym planie: podwójne R2 nic nie robi, czerwone mignięcie: {pulses}")
+check(not c.on and (0, "denied") not in pulses, f"gra na pierwszym planie: podwójne R2 nic nie robi i nie miga na czerwono: {pulses}")
 rxenv.FG[0] = "steamwebhelper.exe"; time.sleep(0.5)
 for v in (255, 0, 255, 0):
     state(0, rt=v); time.sleep(0.03)
