@@ -1,5 +1,5 @@
 """Tryb konsoli (rx_console): config, podwójne kliknięcie, ON/OFF, auto-OFF, start, błędy poleceń, wybór przycisku."""
-import json, os, sys, time
+import json, os, sys, time, types
 sys.path.insert(0, os.path.dirname(__file__))
 from rxenv import *                                              # noqa
 import rx_audio, rx_console
@@ -378,6 +378,35 @@ c.close(restart=True)
 rxenv.FG[0] = None
 rx_settings.apply(replace(rx_settings.cur, master=replace(rx_settings.cur.master, pad="")))
 ok("gra na pierwszym planie: R2 zablokowane, auto-ON czeka do wyjścia z gry, lista z ustawień")
+
+# ---------- wyłączenie / uśpienie PC z włączonym trybem konsoli ----------
+c = new_console(audio_pc="Speakers"); calls.clear()
+check(rx_console.power_off("x") is False and not calls, "tryb wyłączony: nic nie przełącza")
+c._jobs.put(lambda: c._apply(True, toast=False)); wait_for(lambda: c.on); calls.clear()
+check(rx_console.power_off("wyłączanie komputera") is True, "tryb włączony -> True")
+check(not c.on and ("display", "extend") in calls and ("audio", "Speakers") in calls and not any(x[0] == "toast" for x in calls),
+      f"przed wyłączeniem: oba ekrany (Windows zapamięta układ), dźwięk PC, bez toastu: {calls}")
+calls.clear()
+c._jobs.put(lambda: c._apply(True, toast=False)); wait_for(lambda: c.on)
+c._jobs.put(lambda: time.sleep(1.0)); calls.clear()           # wątek roboczy zajęty
+rx_console.POWER_WAIT_S, wait = 0.2, rx_console.POWER_WAIT_S
+t0 = time.monotonic(); rx_console.power_off("x")
+check(time.monotonic() - t0 < 0.8 and not c.on and calls == [("display", "extend")], f"zajęty wątek: przełącza od razu: {calls}")
+rx_console.POWER_WAIT_S = wait
+time.sleep(1.2)
+check(calls.count(("display", "extend")) == 1, f"zaległe zadanie nie przełącza drugi raz: {calls}")
+c.close(restart=True)
+import rx_display
+topo = []
+rx_display._user32 = lambda: types.SimpleNamespace(SetDisplayConfig=lambda *a: topo.append(a) or 0)
+rx_display.set_topology("extend"); rx_display.set_topology("tv")
+check([a[-1] for a in topo] == [0x84, 0x88] and topo[0][:4] == (0, None, 0, None), f"SetDisplayConfig: APPLY | TOPOLOGY: {topo}")
+rx_display._user32 = lambda: types.SimpleNamespace(SetDisplayConfig=lambda *a: 87)
+try:
+    rx_display.set_topology("extend"); check(False, "błąd SetDisplayConfig -> wyjątek")
+except OSError:
+    pass
+ok("wyłączenie / uśpienie PC: najpierw OFF (extend), także przy zajętym wątku; SetDisplayConfig")
 
 # ---------- rx_audio.find ----------
 devs = [("1", "Speakers (Realtek)"), ("2", "LG TV (NVIDIA High Definition Audio)"), ("3", "Headphones (USB)")]

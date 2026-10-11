@@ -12,6 +12,8 @@ między monitorem a TV.
   OFF  ekran extend (DisplaySwitch /extend: oba ekrany), dźwięk audio_pc, toast "Tryb konsoli wyłączony"
   auto-OFF  brak pakietów z pada przez timeout_s -> samo OFF (oba ekrany aktywne, nie zostajesz bez obrazu)
   start     startup_mode: extend (oba ekrany) albo internal (tylko monitor) + dźwięk audio_pc
+  wyłączenie / uśpienie PC  (akcja mastera albo Windows: Start, Big Picture, shutdown) z włączonym trybem -> najpierw
+            OFF (extend): Windows zapamiętuje układ ekranów, więc bez tego po starcie obraz byłby tylko na TV
 
 Ustawienia: console.json obok skryptu (brak pliku / błędna wartość -> domyślne, plik jest tworzony). Edycja w oknie:
 rx_qt_console.py. Przyciski pada nadal trafiają do gry - wykrywanie podwójnego kliknięcia tylko je obserwuje.
@@ -26,6 +28,7 @@ import json
 import os
 import queue
 import subprocess
+import threading
 import time
 import traceback
 from dataclasses import asdict, dataclass, fields
@@ -53,6 +56,7 @@ TRIG_HI, TRIG_LO = 192, 96     # spust jako przycisk trybu: wciśnięty od głę
                                # (histereza - drżenie spustu w okolicy progu nie daje "podwójnego kliknięcia")
 RESTART_ENV = "DSB_CONSOLE_ON" # restart z okna: "1" / "0" = tryb konsoli przed restartem (zostaje taki sam)
 DISPLAY_ARG = {"extend": "/extend", "internal": "/internal", "tv": "/external"}
+POWER_WAIT_S = 8.0             # tyle najwyżej czeka wyłączenie / uśpienie PC na powrót ekranów do extend
 _STOP = object()
 
 
@@ -192,6 +196,10 @@ def detector(name):
 
 # ---------------- polecenia systemowe (każde osobno, żeby testy mogły je podmienić) ----------------
 def _display(mode):
+    try:
+        return rx_display.set_topology(mode)
+    except (OSError, AttributeError) as e:          # stary Windows / brak API -> DisplaySwitch
+        print(f"Console: SetDisplayConfig failed ({e!r}) - using DisplaySwitch")
     exe = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "DisplaySwitch.exe")
     subprocess.run([exe, DISPLAY_ARG[mode]], timeout=15, check=False,
                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
@@ -384,6 +392,26 @@ class Console:
         self._apply(True, cfg)
         self._revert = (time.monotonic() + TEST_S, cfg)
 
+    def power_off(self, why):
+        """Przed wyłączeniem / uśpieniem PC (też koniec sesji Windows): włączony tryb konsoli -> OFF i czekamy na
+        wykonanie (najwyżej POWER_WAIT_S). Windows zapamiętuje układ ekranów, więc bez tego po starcie komputera
+        obraz byłby tylko na TV. Woła się z dowolnego wątku; -> True, gdy tryb był włączony."""
+        if not self.on:
+            return False
+        done = threading.Event()
+        def job():
+            try:
+                if self.on:
+                    self._apply(False, why=why, toast=False)
+            finally:
+                done.set()
+        self._jobs.put(job)
+        if not done.wait(POWER_WAIT_S) and self.on:  # wątek roboczy zajęty / zatrzymany - przełącz od razu
+            self.on = False
+            _step("display", _display, "extend")
+            print(f"Console: OFF ({why}, direct)")
+        return True
+
     # ---------- dla okna ustawień ----------
     def test(self, cfg):
         """ON z podanymi (jeszcze niezapisanymi) ustawieniami, po TEST_S sekund OFF z tymi samymi."""
@@ -423,6 +451,11 @@ def pad_connected(i):
 
 def is_on():
     return ctl is not None and ctl.on
+
+
+def power_off(why):
+    """Przed wyłączeniem / uśpieniem PC - patrz Console.power_off."""
+    return ctl is not None and ctl.power_off(why)
 
 
 def on_touch_click(i):

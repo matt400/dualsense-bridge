@@ -304,6 +304,9 @@ EN = {
     "połączono pad master (pad {n})": "master pad connected (pad {n})",
     "po restarcie receivera": "after receiver restart",
     "zamknięcie receivera": "receiver closing",
+    "wyłączanie komputera": "shutting down the PC",
+    "usypianie komputera": "putting the PC to sleep",
+    "wyłączanie Windows": "Windows shutting down",
     # ---------- układ okna (sekcje, przyciski) ----------
     "PRZEŁĄCZANIE": "SWITCHING",
     "TELEWIZOR I DŹWIĘK": "TV AND SOUND",

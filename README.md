@@ -44,15 +44,17 @@ DualSense ──Bluetooth──> telefon: sender/ ──UDP 5005──> PC: rece
   `allowed_apps` (pulpit, Steam / Big Picture, launchery - lista do edycji w Ustawieniach); w grze pad mignie na
   czerwono, a włączenie po połączeniu mastera czeka, aż gra zejdzie z pierwszego planu.
 
-  | | Ekran (`DisplaySwitch.exe`) | Dźwięk | Powiadomienie |
+  | | Ekran (`SetDisplayConfig`, awaryjnie `DisplaySwitch.exe`) | Dźwięk | Powiadomienie |
   |---|---|---|---|
   | ON | tylko TV (`/external`), na TV 2560×1440 i skalowanie 200 % (`tv_width`, `tv_height`, `tv_scale`) | `audio_tv` | „Tryb konsoli włączony” |
   | OFF | oba ekrany (`/extend`) | `audio_pc` | „Tryb konsoli wyłączony” |
   | brak pakietów z pada przez `timeout_s` | jak OFF | jak OFF | jak OFF |
+  | wyłączenie / uśpienie PC (akcja mastera, Start, Big Picture) | jak OFF, przed wyłączeniem | jak OFF | brak |
   | start receivera (autostart) | `startup_mode`: `extend` (oba ekrany) albo `internal` | `audio_pc` | brak |
 
   Przy starcie domyślnie oba ekrany są aktywne, więc nie zostajesz bez obrazu. Zwykłe zamknięcie receivera przy
-  włączonym trybie konsoli wraca do extend. Błąd polecenia ekranu, dźwięku albo powiadomienia trafia do logu i nie
+  włączonym trybie konsoli wraca do extend, tak samo wyłączenie Windows (Windows zapamiętuje układ ekranów - bez tego
+  po starcie obraz, także ekran logowania, byłby tylko na TV). Błąd polecenia ekranu, dźwięku albo powiadomienia trafia do logu i nie
   przerywa działania.
 - **Pad master** (np. gdy grają dzieci): wybrane funkcje działają tylko na jednym padzie - tryb konsoli, akcje
   systemowe, długie PS, PS w grze / Steam, zrzut ekranu, zmiana profilu, mysz, czułość. Inny pad dostaje czerwone

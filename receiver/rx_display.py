@@ -20,6 +20,8 @@ CDS_UPDATEREGISTRY = 0x1
 ERROR_INSUFFICIENT_BUFFER = 122
 DISP_CHANGE_SUCCESSFUL, DISP_CHANGE_RESTART = 0, 1
 SETTLE_S = 6.0          # tyle czekamy, aż Windows przełączy układ ekranów na "tylko TV"
+SDC_APPLY = 0x80
+TOPOLOGY = {"internal": 0x1, "clone": 0x2, "extend": 0x4, "tv": 0x8}     # SDC_TOPOLOGY_* (jak DisplaySwitch)
 
 
 # ---------------- czysta logika (testowalna bez Windows) ----------------
@@ -133,6 +135,15 @@ def active_sources():
             raise OSError("DisplayConfigGetDeviceInfo(source name) failed")
         out.append((src.adapterId, src.id, name.viewGdiDeviceName))
     return out
+
+
+def set_topology(mode):
+    """Układ ekranów ("extend" / "internal" / "tv") przez SetDisplayConfig - to samo co DisplaySwitch, ale bez
+    uruchamiania programu i synchronicznie (działa też w trakcie wyłączania Windows). Windows zapamiętuje układ,
+    więc po ponownym uruchomieniu ekran logowania pokazuje się tam, gdzie ustawiono."""
+    r = _user32().SetDisplayConfig(0, None, 0, None, SDC_APPLY | TOPOLOGY[mode])
+    if r:
+        raise OSError(f"SetDisplayConfig({mode}) = {r}")
 
 
 def set_resolution(device, w, h):

@@ -222,9 +222,9 @@ def _do(i, action):
             W.send_keys(W.VK_ESCAPE)
         elif action == "close_game":
             W.close_foreground()
-        elif action == "sleep":
-            W.sleep_pc()
-        elif action == "shutdown":
-            W.shutdown_pc()
+        elif action in ("sleep", "shutdown"):
+            import rx_console                # rx_console importuje rx_master - import tutaj
+            rx_console.power_off(_("wyłączanie komputera") if action == "shutdown" else _("usypianie komputera"))
+            W.sleep_pc() if action == "sleep" else W.shutdown_pc()
     except Exception as e:
         print(f"Controller {i}: master action {action} failed: {e!r}")
