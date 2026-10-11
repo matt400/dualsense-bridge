@@ -16,6 +16,7 @@ import asyncio
 import gc
 import os
 import signal
+import socket
 import traceback
 
 import sender_config
@@ -64,8 +65,28 @@ async def main():
         net.close_sock()
 
 
+LOCK_NAME = b"\0dualsense-bridge-sender"
+_lock = None
+
+
+def single_instance(name=LOCK_NAME):
+    """Jeden nadajnik na telefonie (np. usługa root i stary autostart użytkownika naraz walczyłyby o pady).
+    Abstrakcyjne gniazdo Unix: wspólne dla wszystkich użytkowników, znika samo, gdy proces się kończy."""
+    global _lock
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    try:
+        s.bind(name)
+    except OSError:
+        s.close()
+        return False
+    _lock = s
+    return True
+
+
 if __name__ == "__main__":
     sender_config.init()
+    if not single_instance():
+        raise SystemExit("Another sender is already running (service or autostart) - stop it first.")
     net.init()
     net.on_feedback = sup.dispatch_feedback
     net.on_command = control.on_command

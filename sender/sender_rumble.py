@@ -135,7 +135,7 @@ def has_ff(dev):
 
 
 WHY_TEXT = {WHY_OK: "ok", WHY_OFF: "rumble = off / evdev in config",
-            WHY_ACCESS: "no permission for /dev/hidraw - run with doas",
+            WHY_ACCESS: "no permission for /dev/hidraw - run with doas or install the service (doas ./install-service.sh)",
             WHY_NO_HIDRAW: "kernel without CONFIG_HIDRAW",
             WHY_NOT_FOUND: "hidraw of this pad not found", WHY_OPEN: "cannot open hidraw"}
 

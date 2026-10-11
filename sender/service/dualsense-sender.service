@@ -1,0 +1,15 @@
+# Nadajnik DualSense bridge jako usługa systemd - działa jako root: wibracja przez /dev/hidraw, tryb niskich
+# opóźnień. Instalacja: doas ./install-service.sh (podstawia @DIR@ i @ARGS@)
+[Unit]
+Description=DualSense bridge sender
+After=bluetooth.target network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=@DIR@
+ExecStart=/usr/bin/python3 -u @DIR@/sender_controller.py @ARGS@
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
