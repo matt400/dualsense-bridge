@@ -2,8 +2,9 @@
 
 Sterownik hid-playstation obsługuje wibrację tylko z opcją jądra CONFIG_PLAYSTATION_FF - jądra telefonów
 (np. postmarketOS) często jej nie mają i wtedy pad nie wibruje wcale. Tryb "hidraw" wysyła do pada ten sam raport
-wyjściowy, który wysłałby sterownik (tryb zgodności z DS4: dwa silniki), ustawiając w nim TYLKO flagi wibracji -
-lightbar i diody, którymi steruje sterownik, zostają nietknięte.
+wyjściowy, który wysłałby sterownik (tryb zgodności z DS4: dwa silniki), z flagami wibracji i koloru lightbara -
+kolor idzie w tym samym raporcie, bo osobny raport sterownika (zmiana koloru przez sysfs) w tej samej chwili
+sprawiał, że pad przyjmował tylko jeden z nich. Diody gracza zostają nietknięte.
 
   rumble = "auto"    oba naraz: evdev FF (jeśli pad go ma) i raport HID (domyślnie)
            "evdev" / "hidraw" / "off"
@@ -28,6 +29,9 @@ from proto import WHY_ACCESS, WHY_NO_HIDRAW, WHY_NOT_FOUND, WHY_OFF, WHY_OK, WHY
 
 FLAG0_COMPAT_VIBRATION, FLAG0_HAPTICS_SELECT = 0x01, 0x02
 FLAG2_COMPAT_VIBRATION2 = 0x04            # nowsze oprogramowanie pada (jak use_vibration_v2 w jądrze)
+FLAG1_LIGHTBAR = 0x04                     # valid_flag1: kolor lightbara z tego raportu
+LIGHTBAR_AT = 44                          # lightbar_red / green / blue we wspólnej części raportu
+REPEAT_S = 0.02                           # zmiana wibracji / koloru wysyłana drugi raz po tylu sekundach
 OUT_TAG = 0x10
 CRC_SEED = b"\xa2"
 WATCHDOG_S = 1.5
@@ -54,14 +58,17 @@ def firmware_version(fd):
     return buf[FW_VERSION_AT] | buf[FW_VERSION_AT + 1] << 8 if buf[0] == FW_REPORT else None
 
 
-def output_report(bt, seq, small, large, v2=None):
-    """Raport wyjściowy DualSense z samą wibracją. small = silnik prawy (słaby), large = lewy (mocny), 0..255.
-    v2: True = oprogramowanie pada >= 2.21 (flaga "vibration v2"), False = starsze, None = nieznane -> obie flagi
-    (jak sterownik jądra: starsze pady wymagają flagi v1, nowsze v2)."""
+def output_report(bt, seq, small, large, v2=None, rgb=None):
+    """Raport wyjściowy DualSense: wibracja i (opcjonalnie) kolor lightbara. small = silnik prawy (słaby),
+    large = lewy (mocny), 0..255. v2: True = oprogramowanie pada >= 2.21 (flaga "vibration v2"), False = starsze,
+    None = nieznane -> obie flagi (jak sterownik jądra: starsze pady wymagają flagi v1, nowsze v2)."""
     common = bytearray(47)
     common[0] = FLAG0_HAPTICS_SELECT | (0 if v2 else FLAG0_COMPAT_VIBRATION)
     common[2], common[3] = small & 0xFF, large & 0xFF        # motor_right, motor_left
     common[38] = FLAG2_COMPAT_VIBRATION2 if v2 is not False else 0   # valid_flag2
+    if rgb is not None:
+        common[1] = FLAG1_LIGHTBAR
+        common[LIGHTBAR_AT:LIGHTBAR_AT + 3] = bytes(v & 0xFF for v in rgb)
     if not bt:
         return bytes([0x02]) + bytes(common) + bytes(15)
     rep = bytearray([0x31, (seq & 0x0F) << 4, OUT_TAG]) + common + bytes(24)
@@ -156,8 +163,10 @@ class Rumble:
         self.why = WHY_OFF if mode in ("off", "evdev") else WHY_OK   # powód braku raportu HID (pakiet do receivera)
         self.logged = 0               # ile pierwszych poleceń wibracji zapisać w logu (diagnostyka)
         self.cur = (0, 0)
+        self.rgb = None               # kolor lightbara wysyłany razem z wibracją (tylko raport HID)
         self.t_set = 0.0
         self._watch = None
+        self._repeat = None
         if mode in ("auto", "evdev") and has_ff(pad_dev):
             self.methods.append("evdev")
         if mode in ("auto", "hidraw") and self._open_hidraw(hidraw):
@@ -170,6 +179,13 @@ class Rumble:
     def mode(self):
         """Główny sposób (do logów i testów): pierwszy działający albo None."""
         return self.methods[0] if self.methods else None
+
+    @property
+    def owns_lightbar(self):
+        """Raport HID niesie też kolor lightbara. Kolor przez sterownik (sysfs) wysyła WŁASNY raport wyjściowy pada
+        w osobnym momencie - pad przyjmował wtedy tylko jeden z nich i wibracja z przycisku testu (zmienia kolor)
+        działała co którymś naciśnięciem. Jeden raport z oboma = brak wyścigu."""
+        return "hidraw" in self.methods
 
     @property
     def bits(self):
@@ -206,21 +222,43 @@ class Rumble:
         return True
 
     # ---------- sterowanie ----------
-    def set(self, small, large):
+    def set(self, small, large, rgb=None):
+        """Wibracja (i kolor lightbara, gdy owns_lightbar). Zmiana idzie od razu i drugi raz po REPEAT_S
+        (zgubiony / nadpisany raport nie zostawia pada bez wibracji); bez zmian - odświeżenie najwyżej co 0.4 s."""
         now = time.monotonic()
         if not self.methods:
             return
-        if (small, large) == self.cur and now - self.t_set < 0.4:
+        rgb = rgb if rgb is not None else self.rgb
+        changed = (small, large) != self.cur or rgb != self.rgb
+        if not changed and now - self.t_set < 0.4:
             return                                   # bez zmian i świeże - nic nie wysyłaj
         if self.logged < 3 and (small or large):
             self.logged += 1
             print(f"Controller {self.idx}: rumble {small}/{large} from PC {self.describe()}")
+        self.rgb = rgb
         self._send(small, large)
         self.cur, self.t_set = (small, large), now
         self._arm_watchdog()
+        if changed:
+            self._arm_repeat()
 
-    def _send(self, small, large):
+    def _arm_repeat(self):
+        if self._repeat is not None:
+            self._repeat.cancel()
+        try:
+            self._repeat = asyncio.get_running_loop().call_later(REPEAT_S, self._send_again)
+        except RuntimeError:
+            self._repeat = None
+
+    def _send_again(self):
+        self._repeat = None
+        if self.methods:
+            self._send(*self.cur, only="hidraw")
+
+    def _send(self, small, large, only=None):
         for m in list(self.methods):
+            if only and m != only:
+                continue
             try:
                 (self._send_hidraw if m == "hidraw" else self._send_evdev)(small, large)
             except OSError as e:
@@ -232,7 +270,7 @@ class Rumble:
 
     def _send_hidraw(self, small, large):
         self.seq = (self.seq + 1) & 0x0F
-        os.write(self.fd, output_report(self.bt, self.seq, small, large, self.v2))
+        os.write(self.fd, output_report(self.bt, self.seq, small, large, self.v2, self.rgb))
 
     def _send_evdev(self, small, large):
         if small or large:
@@ -261,9 +299,11 @@ class Rumble:
             self.set(0, 0)                           # receiver przestał odświeżać - zatrzymaj silniki
 
     def close(self):
-        if self._watch is not None:
-            self._watch.cancel()
-            self._watch = None
+        for name in ("_watch", "_repeat"):
+            t = getattr(self, name)
+            if t is not None:
+                t.cancel()
+                setattr(self, name, None)
         if self.cur != (0, 0):
             self._send(0, 0)
         if "evdev" in self.methods and self.ff_id is not None:

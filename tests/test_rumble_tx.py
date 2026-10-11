@@ -22,6 +22,9 @@ assert int.from_bytes(bt[-4:], "little") == zlib.crc32(b"\xa2" + bt[:-4]) & 0xFF
 assert usb[0] == 0x02 and usb[1:48] == c[:47]
 assert R.output_report(True, 0x13, 0, 0)[1] == 0x30, "numer sekwencji 4 bity"
 ok("raport: USB 63 B / BT 78 B, tylko flagi wibracji, CRC32")
+lb = R.output_report(True, 1, 200, 255, None, (255, 128, 0))[3:]
+assert lb[1] == 0x04 and lb[44:47] == bytes([255, 128, 0]) and lb[2:4] == bytes([200, 255]) and not any(lb[41:44])
+ok("raport z kolorem lightbara: flaga + RGB w tym samym raporcie co wibracja")
 
 # ---------- sysfs: hidraw i rodzaj połączenia ----------
 root = os.path.join(TMP, "sys")
@@ -108,6 +111,42 @@ async def main():
     r.close()
     assert frames(path)[-1][5:7] == b"\x00\x00" and r.fd is None, "zamknięcie zatrzymuje wibrację"
     ok("hidraw: raport przy zmianie, stop, strażnik po ciszy, zamknięcie")
+
+    # ---------- wibracja i kolor w jednym raporcie, powtórka zmiany ----------
+    path4 = os.path.join(TMP, "hidraw-lightbar")
+    open(path4, "wb").close()
+    r = R.Rumble(7, FFDev(ff=False), "auto", hidraw=(path4, True))
+    assert r.owns_lightbar
+    r.set(200, 255, (255, 255, 255))
+    await asyncio.sleep(R.REPEAT_S + 0.03)
+    f = frames(path4)
+    assert len(f) == 2 and all(x[5:7] == bytes([200, 255]) and x[3 + 44:3 + 47] == b"\xff\xff\xff" for x in f), \
+        "zmiana: raport od razu i drugi raz po REPEAT_S, kolor w tym samym raporcie"
+    assert f[0][1] != f[1][1], "powtórka z nowym numerem sekwencji"
+    r.set(200, 255, (255, 255, 255)); await asyncio.sleep(R.REPEAT_S + 0.03)
+    assert len(frames(path4)) == 2, "bez zmian (świeże) - nic"
+    r.set(0, 0, (0, 0, 64)); await asyncio.sleep(R.REPEAT_S + 0.03)
+    f = frames(path4)
+    assert len(f) == 4 and f[-1][5:7] == b"\0\0" and f[-1][3 + 44:3 + 47] == bytes([0, 0, 64])
+    r.set(0, 0)
+    assert r.rgb == (0, 0, 64), "set bez koloru zostawia ostatni kolor"
+    r.close()
+
+    import sender_ctrl
+    c = sender_ctrl.Ctrl(0, "aa:bb:cc:dd:ee:ff", FFDev(ff=False), None, None)
+    led = os.path.join(TMP, "led"); os.makedirs(led)
+    c.led = led
+    path5 = os.path.join(TMP, "hidraw-ctrl"); open(path5, "wb").close()
+    c.rumble = R.Rumble(8, c.pad_dev, "auto", hidraw=(path5, False))
+    c.apply_feedback(10, 20, 1, 2, 3)
+    rep = open(path5, "rb").read()[:63]
+    assert rep[0] == 0x02 and rep[3:5] == bytes([10, 20]) and rep[1 + 44:1 + 47] == bytes([1, 2, 3])
+    assert not os.path.exists(os.path.join(led, "multi_intensity")), "kolor nie idzie przez sterownik (osobny raport = wyścig)"
+    c.rumble.close()
+    c.rumble = R.Rumble(9, c.pad_dev, "off")
+    c.apply_feedback(0, 0, 9, 8, 7)
+    assert open(os.path.join(led, "multi_intensity")).read() == "9 8 7", "bez raportu HID - kolor przez sterownik jak dawniej"
+    ok("lightbar razem z wibracją w raporcie HID (bez wyścigu ze sterownikiem), powtórka zmiany, sysfs bez hidraw")
 
     path2 = os.path.join(TMP, "hidraw-fallback")
     open(path2, "wb").close()
