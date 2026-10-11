@@ -91,9 +91,9 @@ win.on_part("r2"); pump()
 assert win.part_page.title.text() == "R2 (spust)" and not win.part_page.title_icon.pixmap().isNull()
 targets = [win.part_page.dst.itemData(i) for i in range(win.part_page.dst.count())]
 assert "mute" not in targets and "ps" in targets and len(targets) == 18, targets
-assert win.part_page.dst.itemText(0) == "" and not win.part_page.dst.itemIcon(0).isNull(), "cele jako ikony"
+assert win.part_page.dst.itemText(0) == "Krzyżyk (X)" and not win.part_page.dst.itemIcon(0).isNull(), "cele: ikona + nazwa"
 win.grab().save(os.path.join(os.path.dirname(__file__), "gui_master2.png"))
-ok("remap: tytuł z ikoną, cele jako ikony z podpowiedzią")
+ok("remap: tytuł z ikoną, cele z ikoną i nazwą")
 # ---------- ekran okna ----------
 dlg.present(); pump()
 scr = [dlg.screen_box.itemData(i) for i in range(dlg.screen_box.count())]
@@ -144,7 +144,7 @@ w2.hide(); rx_i18n.set_lang("pl")
 pulses = []
 F.pulse = lambda i, kind, force=False: pulses.append((i, kind, force))
 card0.rumble.click(); pump()
-assert pulses == [(0, "test", True)], pulses
+assert pulses == [(0, "test", True)] and card0.rumble.text() == "Wibracja", pulses
 ok("pełny ekran (F11, przycisk, ustawienia), język (restart, okno po angielsku), lista programów, test wibracji")
 
 # ---------- przycisk Restart w nagłówku i ikona okna ----------

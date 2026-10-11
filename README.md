@@ -198,7 +198,7 @@ Nadajnik zapisuje stały przydział pad → slot w `sender/slots.json` (`slots_f
 | Ruch odwrócony w emulatorze (DSU) | `acc_sign` / `gyro_sign` w konfiguracji receivera |
 | Profil gry się nie włącza | gry z anti-cheatem mogą blokować odczyt nazwy procesu; przełącz ręcznie PS + d-pad |
 | `virtual DS4 error ... ViGEmBus` | zainstaluj sterownik ViGEmBus |
-| Pad nie wibruje | przycisk wibracji na karcie pada; log nadajnika `rumble via ...` - „unavailable” = uruchom przez `doas`; w Steam włącz/wyłącz Steam Input dla gry |
+| Pad nie wibruje | na telefonie: `doas python3 sender_rumble.py --test` (wibruje każdym sposobem po kolei, bez sieci) i ustaw w `sender.toml` `rumble` na ten, który działa; log nadajnika `rumble via ...` i `rumble N/N from PC` (czy polecenie z PC dochodzi); przycisk „Wibracja” na karcie pada |
 | Tryb konsoli nie reaguje | log receivera: `Console: double ... on controller N` = wykryte; `only the master pad can do that` = funkcja zastrzeżona dla mastera (Ustawienia → Master) |
 | Gra w co-op widzi pady dziwnie (Steam) | Steam → biblioteka → gra → Właściwości → Kontroler: spróbuj „Wyłącz Steam Input” (gra czyta dwa DS4 sama) albo odwrotnie; kolejność graczy w Big Picture → Ustawienia → Kontroler |
 

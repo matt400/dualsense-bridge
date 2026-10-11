@@ -15,6 +15,8 @@ assert len(bt) == 78 and len(usb) == 63, (len(bt), len(usb))
 assert bt[0] == 0x31 and bt[1] == 0x30 and bt[2] == 0x10, bt[:3].hex()
 c = bt[3:]
 assert c[0] == 0x03 and c[2] == 40 and c[3] == 200 and c[38] == 0x04, "flagi wibracji, silnik prawy (słaby) / lewy (mocny)"
+v1, v2 = R.output_report(False, 0, 1, 1, False), R.output_report(False, 0, 1, 1, True)
+assert v1[1] == 0x03 and v1[39] == 0 and v2[1] == 0x02 and v2[39] == 0x04, "v1: flaga zgodności w flag0, v2: w flag2 (jak jądro)"
 assert c[1] == 0 and not any(c[41:47]), "bez flag i wartości lightbara / diod - nimi steruje sterownik"
 assert int.from_bytes(bt[-4:], "little") == zlib.crc32(b"\xa2" + bt[:-4]) & 0xFFFFFFFF, "CRC32 z ziarnem 0xA2"
 assert usb[0] == 0x02 and usb[1:48] == c[:47]

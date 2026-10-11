@@ -30,6 +30,8 @@ QFrame#card[selected="true"] {{ border: 1px solid {ACCENT}; }}
 QFrame#card[low="true"] {{ border: 1px solid {BAD}; }}
 QFrame#row {{ background: {TRACK}; border-radius: 8px; }}
 QFrame#panel {{ background: {CARD}; border: 1px solid {BORDER}; border-radius: 12px; }}
+QFrame#group {{ background: {CARD}; border: 1px solid {BORDER}; border-radius: 10px; }}
+QFrame#hsep {{ background: {BORDER}; min-width: 1px; max-width: 1px; }}
 
 QPushButton {{ background: {TRACK}; border: 1px solid #343a4a; border-radius: 8px; padding: 6px 12px; }}
 QPushButton:hover:!disabled {{ border-color: {ACCENT}; }}
@@ -47,9 +49,10 @@ QToolButton:hover {{ color: {BAD}; }}
 QToolButton#crown {{ padding: 0 2px; border-radius: 6px; }}
 QToolButton#crown:hover {{ background: {TRACK}; }}
 
-QComboBox, QLineEdit, QSpinBox {{ background: {TRACK}; border: 1px solid #343a4a; border-radius: 8px; padding: 6px 10px;
+QComboBox, QLineEdit, QSpinBox, QPlainTextEdit {{ background: {TRACK}; border: 1px solid #343a4a; border-radius: 8px; padding: 6px 10px;
                        selection-background-color: {ACCENT}; selection-color: {BG}; }}
-QComboBox:hover, QLineEdit:focus, QSpinBox:focus {{ border-color: {ACCENT}; }}
+QComboBox:hover, QLineEdit:focus, QSpinBox:focus, QPlainTextEdit:focus {{ border-color: {ACCENT}; }}
+QSpinBox::up-button, QSpinBox::down-button {{ width: 18px; border: none; background: transparent; }}
 QComboBox::drop-down {{ border: none; width: 22px; }}
 QComboBox QAbstractItemView {{ background: {CARD}; border: 1px solid {BORDER}; selection-background-color: {ACCENT};
                               selection-color: {BG}; outline: none; padding: 2px; }}
