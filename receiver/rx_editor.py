@@ -11,7 +11,7 @@ import rx_state as S
 from rx_shape import GYRO_DEF, STICK_DEF, TRIG_DEF
 
 SHORT = {"cross": "✕", "circle": "○", "triangle": "△", "square": "□", "l1": "L1", "r1": "R1", "share": "SHARE",
-         "options": "OPT", "ps": "PS", "l3": "L3", "r3": "R3", "dpad_up": "↑", "dpad_down": "↓", "dpad_left": "←",
+         "options": "OPT", "ps": "PS", "l3": "L3", "r3": "R3", "mute": "MIC", "dpad_up": "↑", "dpad_down": "↓", "dpad_left": "←",
          "dpad_right": "→", "l2": "L2", "r2": "R2"}
 STICK_NAME = {"left": "Left stick", "right": "Right stick", "none": "Disabled (centered)"}
 STICK_OF = {"left_stick": "left", "right_stick": "right"}     # część rysunku -> wyjście gałki

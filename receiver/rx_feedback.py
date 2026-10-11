@@ -17,6 +17,9 @@ PULSES = {
     "action": (0.10, 130, 0, None),               # zrzut ekranu, Game Bar itp.
     "auto_profile": (0.30, 0, 0, (0, 220, 90)),   # profil gry włączony sam (alt-tab) - tylko kolor, bez wibracji
     "auto_default": (0.30, 0, 0, (255, 170, 0)),
+    "master": (0.60, 0, 200, (255, 200, 0)),      # ten pad został masterem - złoty błysk
+    "hold": (0.06, 90, 0, None),                  # akcja mastera: trzymaj dalej
+    "denied": (0.25, 0, 0, (255, 0, 0)),          # tylko master może - czerwone mignięcie
 }
 fb = []
 fb_event = threading.Event()

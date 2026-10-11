@@ -1,4 +1,5 @@
-"""Receiver: tryb konsoli - jedno podwójne kliknięcie przycisku pada przełącza ekran i dźwięk między monitorem a TV.
+"""Receiver: tryb konsoli - jedno podwójne kliknięcie przycisku pada (domyślnie mute) przełącza ekran i dźwięk
+między monitorem a TV.
 
   ON   ekran tylko TV (DisplaySwitch /external), dźwięk audio_tv, toast "Tryb konsoli włączony"
   OFF  ekran extend (DisplaySwitch /extend: oba ekrany), dźwięk audio_pc, toast "Tryb konsoli wyłączony"
@@ -22,11 +23,13 @@ import traceback
 from dataclasses import asdict, dataclass, fields
 
 import rx_audio
+import rx_master as master
 import rx_state as S
 from rx_buttons import BIT, BUTTON_CODES, DIRS, INPUTS, TRIG_ON, pressed_inputs
 from rx_config import C
 
 STARTUP_MODES = ("extend", "internal")
+CONFIG_VERSION = 2
 TEST_S = 10.0              # "Przetestuj": tyle sekund w trybie ON, potem samo OFF (extend, monitor nie zostaje czarny)
 APP_NAME = "DualSense bridge"
 DISPLAY_ARG = {"extend": "/extend", "internal": "/internal", "tv": "/external"}
@@ -57,18 +60,26 @@ def _text(v):
 
 @dataclass(frozen=True, slots=True)
 class ConsoleConfig:
-    toggle_button: str = "ps"       # przycisk pada (nazwa jak w remapowaniu: "ps", "share", "cross", "dpad_up"...)
+    toggle_button: str = "mute"     # przycisk pada (nazwa jak w remapowaniu: "mute", "share", "cross", "dpad_up"...);
+                                    # nie "ps": podwójne PS otwiera też Steam Big Picture
     double_click_ms: int = 400      # okno między dwoma naciśnięciami
     audio_tv: str = ""              # nazwa urządzenia audio TV; puste = nie zmieniaj dźwięku
     audio_pc: str = ""              # nazwa urządzenia audio PC; puste = nie zmieniaj dźwięku
     timeout_s: int = 60             # cisza z pada dłuższa niż tyle = auto-OFF
     startup_mode: str = "extend"    # extend | internal
+    version: int = CONFIG_VERSION   # wersja pliku (migracje)
 
     @classmethod
     def from_dict(cls, raw):
         """-> (config, poprawiono): zła albo brakująca wartość = domyślna (poprawiono=True, wtedy warto zapisać plik)."""
-        raw = raw if isinstance(raw, dict) else {}
+        raw = dict(raw) if isinstance(raw, dict) else {}
         fixed = not raw
+        if raw and raw.get("version") != CONFIG_VERSION:
+            fixed = True                    # plik sprzed wersji 2: PS jako przycisk trybu konsoli -> mute (kolizja z Big Picture)
+            raw["version"] = CONFIG_VERSION
+            if raw.get("toggle_button") == "ps":
+                print("Console: toggle button ps -> mute (double PS also opens Steam Big Picture)")
+                raw["toggle_button"] = "mute"
         values = {}
         for f in fields(cls):
             if f.name not in raw:
@@ -89,6 +100,7 @@ _VALIDATORS = {
     "audio_pc": _text,
     "timeout_s": _number(5, 3600),
     "startup_mode": _choice(STARTUP_MODES),
+    "version": _number(1, CONFIG_VERSION),
 }
 
 
@@ -190,7 +202,8 @@ class Console:
         now = time.monotonic()
         if now - self._last_click[i] <= self.cfg.double_click_ms / 1000:
             self._last_click[i] = 0.0       # trzecie kliknięcie zaczyna od nowa, nie przełącza drugi raz
-            self._jobs.put(self._toggle)
+            if master.check(i, "console"):  # może być zastrzeżone dla pada master
+                self._jobs.put(self._toggle)
         else:
             self._last_click[i] = now
 

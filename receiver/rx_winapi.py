@@ -130,7 +130,7 @@ def send_mouse(flags, dx=0, dy=0, data=0):
     user32.SendInput(1, ctypes.byref(inp), INPUT_SIZE)
 
 
-VK_LWIN, VK_MENU, VK_SNAPSHOT, VK_G = 0x5B, 0x12, 0x2C, 0x47
+VK_LWIN, VK_MENU, VK_SNAPSHOT, VK_G, VK_ESCAPE = 0x5B, 0x12, 0x2C, 0x47, 0x1B
 KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP = 0x1, 0x2
 _EXTENDED = {VK_LWIN, VK_SNAPSHOT}
 
@@ -179,6 +179,25 @@ def _declare_foreground_api():
 
 
 _declare_foreground_api()
+
+
+def close_foreground():
+    """WM_CLOSE do aktywnego okna (to samo, co krzyżyk / Alt+F4, ale bez klawiatury - działa też z grą jako admin
+    nie przez SendInput). -> True, gdy wysłano."""
+    hwnd = user32.GetForegroundWindow()
+    return bool(hwnd) and bool(user32.PostMessageW(hwnd, 0x0010, 0, 0))     # WM_CLOSE
+
+
+def sleep_pc():
+    """Uśpienie (S3 / nowoczesne wstrzymanie); hibernacja tylko, jeśli tak ustawiono w Windows."""
+    ctypes.windll.powrprof.SetSuspendState(False, False, False)
+
+
+def shutdown_pc(delay_s=10):
+    """Wyłączenie z opóźnieniem - do tego czasu "shutdown /a" w konsoli przerywa."""
+    exe = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "shutdown.exe")
+    subprocess.run([exe, "/s", "/t", str(int(delay_s))], timeout=15, check=False,
+                   creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
 
 def send_click(down_flag, up_flag):

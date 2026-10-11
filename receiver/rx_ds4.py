@@ -16,11 +16,25 @@ try:
 except ImportError:
     DS4_REPORT_EX = vg.DS4_REPORT_EX
 
+PLUG_ORDER_WAIT = 2.0   # max tyle slot czeka, aż wcześniejsze sloty podłączą swoje DS4 (kolejność graczy w grze)
+
 
 def init():
     F.init()
     if ctypes.sizeof(DS4_REPORT_EX) < 63:
         print("WARNING: DS4_REPORT_EX smaller than 63 bytes - report may not work")
+
+
+def wait_turn(idx, timeout=PLUG_ORDER_WAIT):
+    """Wirtualne pady są podłączane w kolejności slotów: Windows / Steam / XInput numerują graczy wg kolejności
+    pojawienia się urządzeń, więc slot 0 (ten sam pad dzięki slots.json nadajnika) zostaje graczem 1 także wtedy,
+    gdy pakiety slotu 1 przyszły ułamek sekundy wcześniej. Czeka tylko na sloty, które też chcą pada, max timeout."""
+    end = time.monotonic() + timeout
+    while not S.stop.is_set() and time.monotonic() < end:
+        if not any(S.want[j].is_set() and not S.plugged[j] for j in range(idx)):
+            return True
+        time.sleep(0.02)
+    return False
 
 
 def slot_thread(idx):
@@ -35,6 +49,8 @@ def slot_thread(idx):
         if S.stop.is_set():
             break
         pad = None
+        if idx and not wait_turn(idx):
+            print(f"Controller {idx}: earlier slot not ready - plugging in anyway (player order may differ)")
         try:
             pad = vg.VDS4Gamepad()
             F.reset(idx)

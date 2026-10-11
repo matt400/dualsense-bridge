@@ -27,7 +27,9 @@ def wait_for(pred, timeout=2.5):
     return pred()
 
 def new_console(**kw):
-    """Console z wątkiem roboczym; startup (extend) już przetworzony i wyczyszczony z rejestru."""
+    """Console z wątkiem roboczym; startup (extend) już przetworzony i wyczyszczony z rejestru.
+    Testy kliknięć używają PS (trudniejszy przypadek: PS jest też modyfikatorem skrótów)."""
+    kw.setdefault("toggle_button", "ps")
     c = Console(ConsoleConfig(**kw)); calls.clear(); c.start()
     wait_for(lambda: ("display", c.cfg.startup_mode) in calls); calls.clear()
     rx_console.ctl = c
@@ -41,8 +43,15 @@ PS, SHARE = 316, 314
 # ---------- config: brak pliku, błędne wartości, uszkodzony plik ----------
 cfg = rx_console.load(PATH)
 check(cfg == ConsoleConfig() and os.path.exists(PATH), "brak pliku -> domyślne i utworzony console.json")
-check(json.load(open(PATH)) == {"toggle_button": "ps", "double_click_ms": 400, "audio_tv": "", "audio_pc": "",
-                                "timeout_s": 60, "startup_mode": "extend"}, "domyślne wartości w pliku")
+check(json.load(open(PATH)) == {"toggle_button": "mute", "double_click_ms": 400, "audio_tv": "", "audio_pc": "",
+                                "timeout_s": 60, "startup_mode": "extend", "version": 2}, "domyślne wartości w pliku (mute)")
+json.dump({"toggle_button": "ps", "double_click_ms": 300, "audio_tv": "", "audio_pc": "", "timeout_s": 60,
+           "startup_mode": "extend"}, open(PATH, "w"))
+cfg = rx_console.load(PATH)
+check(cfg.toggle_button == "mute" and cfg.double_click_ms == 300 and json.load(open(PATH))["version"] == 2,
+      f"stary plik (bez wersji) z PS -> mute, reszta zostaje: {cfg}")
+json.dump({**json.load(open(PATH)), "toggle_button": "ps"}, open(PATH, "w"))
+check(rx_console.load(PATH).toggle_button == "ps", "PS wybrany świadomie w nowym pliku (wersja 2) zostaje")
 json.dump({"toggle_button": "share", "double_click_ms": 250, "audio_tv": " LG TV ", "audio_pc": "Głośniki",
            "timeout_s": 90, "startup_mode": "internal"}, open(PATH, "w"))
 cfg = rx_console.load(PATH)
@@ -230,6 +239,18 @@ click(); time.sleep(0.05); click()
 check(wait_for(lambda: c.on), "zwykłe podwójne kliknięcie po skrótach dalej działa")
 c.close(restart=True)
 ok("skróty z PS (Share, d-pad, touchpad) nie liczą się jako kliknięcia")
+
+# ---------- mute jako przycisk trybu (domyślny) ----------
+MUTE = 248
+c = new_console(toggle_button="mute"); calls.clear()
+click(0, MUTE); time.sleep(0.05); click(0, MUTE)
+check(wait_for(lambda: c.on), "podwójne mute -> ON")
+c.on = False; calls.clear()
+state(0, mask=BIT[MUTE]); state(0, mask=BIT[MUTE] | BIT[304]); state(0, mask=0); time.sleep(0.03)
+state(0, mask=BIT[MUTE]); state(0, mask=BIT[MUTE] | BIT[304]); state(0, mask=0); time.sleep(0.2)
+check(not c.on, "mute + przycisk (akcja mastera) dwa razy to nie podwójne kliknięcie")
+c.close(restart=True)
+ok("mute: podwójne kliknięcie przełącza, kombinacje z mute nie")
 
 # ---------- rx_audio.find ----------
 devs = [("1", "Speakers (Realtek)"), ("2", "LG TV (NVIDIA High Definition Audio)"), ("3", "Headphones (USB)")]

@@ -236,3 +236,8 @@ tests/*.png
 console.json
 console.json.tmp
 console.json.bad
+# ustawienia z okna (mysz, pad master) i stały przydział padów do slotów nadajnika
+settings.json
+settings.json.tmp
+slots.json
+slots.json.tmp

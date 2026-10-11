@@ -5,6 +5,7 @@
 # host = "192.168.1.4"
 # port = 5005
 # max_pads = 2
+# slots_file = "slots.json"   # pad (MAC) -> stały slot także po restarcie (gracz 1 / 2 w grze); "" = bez pamięci
 # grab_pad = true
 # grab_touch = true
 # tap_click = true
@@ -28,6 +29,7 @@
 # touch_deadzone = 2   # ignoruj zmiany palca mniejsze niż tyle jednostek (szum czujnika)
 # touch_start_move = 5   # mysz: kursor rusza dopiero po przesunięciu o tyle (brak drgania przy tapie)
 # gestures = true   # 2 palce = przewijanie, tap 2 palcami = prawy przycisk myszy
+# mute_button = true   # przycisk mute (mikrofon) z /dev/hidrawN - domyślny przycisk trybu konsoli w receiverze
 # idle_off_min = 15   # wyłącz pada (rozłącz Bluetooth) po tylu minutach bez użycia; 0 = nigdy
 # rt_priority = 0   # >0 = SCHED_FIFO z tym priorytetem (1-99, sensownie 10-20); wymaga doas
 # key = ""

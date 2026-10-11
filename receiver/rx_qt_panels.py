@@ -10,10 +10,11 @@ from PySide6.QtWidgets import (QCheckBox, QCompleter, QFrame, QHBoxLayout, QLine
 import rx_buttons as B
 from rx_editor import GYRO_MODES, L3_OF, SHORT, STICK_NAME, STICK_OF
 from rx_qt_style import set_prop
-from rx_qt_widgets import Combo, ConfirmButton, SliderRow, button, field, label
+from rx_qt_icons import pixmap
+from rx_qt_widgets import Combo, ConfirmButton, SliderRow, button, field, input_items, label
 
 NONE = "__none"
-TARGETS = [(n, B.LABELS[n]) for n in B.INPUTS] + [(NONE, "— disabled —")]
+TARGETS = input_items(B.TARGET_INPUTS) + [(NONE, "— disabled —")]       # ikony przycisków (nazwa w podpowiedzi)
 
 
 def r3(v):
@@ -151,8 +152,12 @@ class PartPage(QWidget):
         w = QWidget()
         lay = _vbox(w)
         lay.addWidget(label("SELECTED", "h2"))
+        head = QHBoxLayout()
+        self.title_icon = label("")
         self.title = label("", "h3")
-        lay.addWidget(self.title)
+        head.addWidget(self.title_icon)
+        head.addWidget(self.title, 1)
+        lay.addLayout(head)
         self.dst = Combo(TARGETS)
         self.dst.changed.connect(lambda v: self._set_button(self.name, v))
         lay.addWidget(field("Acts as", self.dst))
@@ -245,7 +250,7 @@ class PartPage(QWidget):
 
     def _target(self, src):
         t = self.ed.target_of(src)
-        return NONE if t is None else t
+        return NONE if t is None or t not in B.TARGET_INPUTS else t   # mute bez zmian = nic w grze (DS4 go nie ma)
 
     def refresh(self):
         """Wczytuje wartości wybranej części z profilu do widżetów (bez wywoływania zmian)."""
@@ -272,6 +277,9 @@ class PartPage(QWidget):
             return
         trig = name in B.TRIGGERS
         self.title.setText(B.LABELS[name])
+        pm = pixmap(name, 56)
+        pm.setDevicePixelRatio(2)
+        self.title_icon.setPixmap(pm)
         self.dst.set_data(self._target(name))
         self.trig.setVisible(trig)
         if trig:
@@ -301,9 +309,9 @@ class GyroPage(QWidget):
         lay.addWidget(self.off_hint)
         self.body = QWidget()
         bl = _vbox(self.body)
-        self.hold = Combo([("always", "Always")] + [(n, f"While holding {B.LABELS[n]}") for n in B.INPUTS])
+        self.hold = Combo([("always", "Always")] + input_items(B.INPUTS))
         self.hold.changed.connect(lambda v: self._set(hold=v))
-        bl.addWidget(field("Active", self.hold))
+        bl.addWidget(field("Active (always, or while holding the button)", self.hold))
         self.sens = SliderRow("Sensitivity", 0.1, 5, 0.05, "x")
         self.sens.changed.connect(lambda v: self._set(sens=round(v, 2)))
         bl.addWidget(self.sens)

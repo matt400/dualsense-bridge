@@ -79,7 +79,7 @@ dlg.set_button("cross"); dlg.tv.set_data("Speakers (Realtek)"); dlg.pc.set_data(
 dlg.save_btn.click(); pump()
 saved = json.load(open(C.CONSOLE_PATH))
 assert saved == {"toggle_button": "cross", "double_click_ms": 500, "audio_tv": "Speakers (Realtek)",
-                 "audio_pc": "Headphones (USB)", "timeout_s": 120, "startup_mode": "extend"}, saved
+                 "audio_pc": "Headphones (USB)", "timeout_s": 120, "startup_mode": "extend", "version": 2}, saved
 assert S.restart is True and closed, "zapis prosi o restart (zamknięcie okna, S.restart)"
 assert rx_console.load(C.CONSOLE_PATH) == ConsoleConfig("cross", 500, "Speakers (Realtek)", "Headphones (USB)", 120, "extend")
 S.restart = False
