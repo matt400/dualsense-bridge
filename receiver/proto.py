@@ -27,8 +27,11 @@ VER = 2
 HDR0 = VER << 4
 
 T_STATE, T_TOUCH, T_CLICK, T_MOUSE, T_PING, T_FB, T_PONG, T_BYE, T_IDENT, T_CMD, T_INFO, T_VERSION = range(1, 13)
-SENDER_VERSION = 4
+SENDER_VERSION = 5
 RUMBLE_EVDEV, RUMBLE_HIDRAW = 1, 2
+# dlaczego nie ma wibracji przez raport HID (pakiet version): ok, rumble=off, brak uprawnień, jądro bez hidraw,
+# nie znaleziono hidraw pada, inny błąd otwarcia
+WHY_OK, WHY_OFF, WHY_ACCESS, WHY_NO_HIDRAW, WHY_NOT_FOUND, WHY_OPEN = range(6)
 CMD_POWER_OFF = 1
 RTT_NONE = 0xFFFF
 
@@ -45,10 +48,10 @@ BODY = {
     T_IDENT: struct.Struct("!17s"),
     T_CMD: struct.Struct("!BB"),
     T_INFO: struct.Struct("!HHH"),
-    T_VERSION: struct.Struct("!BB"),
+    T_VERSION: struct.Struct("!BBB"),           # wersja nadajnika, sposoby wibracji (bity), powód WHY_*
 }
 BODY_LEN = {t: s.size for t, s in BODY.items()}
-assert BODY_LEN == {1: 36, 2: 12, 3: 1, 4: 5, 5: 8, 6: 5, 7: 8, 8: 0, 9: 17, 10: 2, 11: 6, 12: 2}, BODY_LEN
+assert BODY_LEN == {1: 36, 2: 12, 3: 1, 4: 5, 5: 8, 6: 5, 7: 8, 8: 0, 9: 17, 10: 2, 11: 6, 12: 3}, BODY_LEN
 
 # kody evdev przycisków DualSense -> bit w masce (kolejność = pozycja bitu w pakiecie stanu)
 PAD_KEYS = (304, 305, 307, 308, 310, 311, 314, 315, 316, 317, 318)

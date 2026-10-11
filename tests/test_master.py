@@ -220,10 +220,13 @@ import rx_status
 from proto import T_VERSION
 S.sender_info[0] = None
 check(rx_status.rumble_status(0)[1] == "warn", "brak pakietu version = stary nadajnik")
-feed(T_VERSION, 0, 4, 3)
-check(S.sender_info[0] == (4, 3) and "HID" in rx_status.rumble_status(0)[0], rx_status.rumble_status(0))
-feed(T_VERSION, 0, 4, 0)
-check(rx_status.rumble_status(0)[1] == "bad", "nadajnik bez dostępu do wibracji")
+from proto import WHY_ACCESS, WHY_NO_HIDRAW, WHY_NOT_FOUND, WHY_OK, WHY_OPEN
+feed(T_VERSION, 0, 5, 3, WHY_OK)
+check(S.sender_info[0] == (5, 3, WHY_OK) and "HID" in rx_status.rumble_status(0)[0], rx_status.rumble_status(0))
+for why, word in ((WHY_ACCESS, "uprawnień"), (WHY_NO_HIDRAW, "jądrze"), (WHY_NOT_FOUND, "nie znaleziono"), (WHY_OPEN, "niedostępna")):
+    feed(T_VERSION, 0, 5, 0, why)
+    st = rx_status.rumble_status(0)
+    check(st[1] == "bad" and word in st[0] and st[2], f"powód braku wibracji na karcie: {st}")
 ok("pakiet version: wersja nadajnika i sposoby wibracji")
 
 print("FAIL" if fails else "PASS", "master:", len(fails), "błędów" if fails else "wszystko OK")

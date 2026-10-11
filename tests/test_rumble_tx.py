@@ -34,7 +34,21 @@ for bus, ev, raw in (("0005", "event9", "hidraw3"), ("0003", "event4", "hidraw1"
 assert R.find_hidraw(types.SimpleNamespace(path="/dev/input/event9"), root) == ("/dev/hidraw3", True)
 assert R.find_hidraw(types.SimpleNamespace(path="/dev/input/event4"), root) == ("/dev/hidraw1", False)
 assert R.find_hidraw(types.SimpleNamespace(path="/dev/input/event7"), root) == (None, False)
-ok("hidraw pada i Bluetooth / USB z sysfs")
+raw5 = os.path.join(root, "class/hidraw/hidraw5/device")
+os.makedirs(raw5)
+open(os.path.join(raw5, "uevent"), "w").write("HID_ID=0005:0000054C:00000CE6\nHID_NAME=DualSense Wireless Controller\nHID_UNIQ=AA:BB:CC:00:11:22\n")
+assert R.find_hidraw(types.SimpleNamespace(path="/dev/input/event7", uniq="aa:bb:cc:00:11:22"), root) == ("/dev/hidraw5", True), \
+    "nietypowa ścieżka w sysfs: hidraw po adresie MAC pada"
+assert R.find_hidraw(types.SimpleNamespace(path="/dev/input/event7", uniq="ff:ff:ff:ff:ff:ff"), root) == (None, False)
+assert R.kernel_has_hidraw(root) and not R.kernel_has_hidraw(os.path.join(TMP, "nie-ma"))
+os.makedirs(os.path.join(root, "class/hidraw/hidraw97"))
+open(os.path.join(root, "class/hidraw/hidraw97/dev"), "w").write("240:5\n")
+made = []
+R.os.mknod, mknod = (lambda p, mode, dev: made.append((p, os.major(dev), os.minor(dev)))), R.os.mknod
+R.ensure_node("/dev/hidraw97", root)
+R.os.mknod = mknod
+assert made == [("/dev/hidraw97", 240, 5)], made
+ok("hidraw pada i Bluetooth / USB z sysfs, zapas po MAC, brak węzła /dev -> mknod")
 
 
 # ---------- evdev FF ----------
@@ -117,6 +131,24 @@ async def main():
     assert r.methods == ["hidraw"] and frames(path3)[-1][5:7] == bytes([10, 20]), "błąd sterownika - zostaje raport HID"
     r.close()
     ok("auto: sterownik i raport HID jednocześnie; błąd jednej drogi wyłącza tylko ją")
+    from proto import WHY_ACCESS, WHY_NO_HIDRAW, WHY_NOT_FOUND, WHY_OFF, WHY_OK, WHY_OPEN
+    find, has = R.find_hidraw, R.kernel_has_hidraw
+    R.find_hidraw = lambda dev, root="/sys": (None, False)
+    R.kernel_has_hidraw = lambda root="/sys": False
+    r = R.Rumble(6, FFDev(ff=False), "auto")
+    assert r.bits == 0 and r.why == WHY_NO_HIDRAW, "jądro bez hidraw i bez FF"
+    R.kernel_has_hidraw = lambda root="/sys": True
+    assert R.Rumble(6, FFDev(ff=False), "auto").why == WHY_NOT_FOUND
+    R.find_hidraw, R.kernel_has_hidraw = find, has
+    assert R.Rumble(6, FFDev(ff=False), "auto", hidraw=(os.path.join(TMP, "nie-ma", "hidraw9"), True)).why == WHY_OPEN
+    def denied(*a):
+        raise PermissionError(13, "Permission denied")
+    R.os.open, real_open = denied, R.os.open
+    assert R.Rumble(6, FFDev(ff=False), "auto", hidraw=(path3, True)).why == WHY_ACCESS, "bez doas"
+    R.os.open = real_open
+    assert R.Rumble(6, FFDev(ff=False), "auto", hidraw=(path3, True)).why == WHY_OK
+    assert R.Rumble(3, FFDev(ff=False), "off").why == WHY_OFF
+    ok("powód braku wibracji: jądro bez hidraw, nie znaleziono, brak uprawnień, błąd otwarcia, off")
     assert R.Rumble(3, FFDev(ff=False), "off").mode is None
     assert R.Rumble(4, FFDev(ff=False), "evdev").mode is None
     ok("błąd evdev FF przełącza na hidraw; off / evdev bez FF = bez wibracji")

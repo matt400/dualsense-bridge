@@ -82,8 +82,8 @@ DualSense ──Bluetooth──> telefon: sender/ ──UDP 5005──> PC: rece
 - **Wyłączanie pada** z PC albo samo po bezczynności (domyślnie 15 min).
 - **Wibracja:** jednocześnie przez sterownik (evdev FF) i bezpośrednio raportem HID przez `/dev/hidrawN`
   (nadajnik przez `doas`), z flagami zależnymi od firmware pada; ustawienie `rumble` w `sender.toml`. Karta pada
-  pokazuje „wibracja: sterownik + HID” / „niedostępna” (brak `doas`) / „stary nadajnik” (skopiuj nowy `sender/`
-  na telefon). Przycisk wibracji na karcie pada sprawdza, czy wibracja dochodzi do pada.
+  pokazuje „wibracja: sterownik + HID” albo powód jej braku (brak uprawnień / brak w jądrze / nie znaleziono pada /
+  stary nadajnik). Przycisk wibracji na karcie pada sprawdza, czy wibracja dochodzi do pada.
 - **Stała kolejność graczy:** nadajnik pamięta, który pad (MAC) był w którym slocie (`slots.json`), a receiver podłącza
   wirtualne DS4 w kolejności slotów, więc pad 1 zostaje graczem 1 w Steam / grze niezależnie od tego, który włączysz
   pierwszy.
@@ -201,7 +201,7 @@ Nadajnik zapisuje stały przydział pad → slot w `sender/slots.json` (`slots_f
 | Ruch odwrócony w emulatorze (DSU) | `acc_sign` / `gyro_sign` w konfiguracji receivera |
 | Profil gry się nie włącza | gry z anti-cheatem mogą blokować odczyt nazwy procesu; przełącz ręcznie PS + d-pad |
 | `virtual DS4 error ... ViGEmBus` | zainstaluj sterownik ViGEmBus |
-| Pad nie wibruje | karta pada: „stary nadajnik” = skopiuj nowe pliki `sender/` na telefon, „niedostępna” = uruchom nadajnik przez `doas`; na telefonie: `doas python3 sender_rumble.py --test` (wibruje każdym sposobem po kolei, bez sieci) i ustaw w `sender.toml` `rumble` na ten, który działa; log nadajnika `rumble via ...` i `rumble N/N from PC` (czy polecenie z PC dochodzi); przycisk „Wibracja” na karcie pada |
+| Pad nie wibruje | karta pada: „stary nadajnik” = skopiuj nowe pliki `sender/` na telefon, „brak uprawnień” = uruchom nadajnik przez `doas`, „brak w jądrze” = jądro telefonu bez `CONFIG_PLAYSTATION_FF` i `CONFIG_HIDRAW`, „nie znaleziono pada” = brak `/dev/hidraw` tego pada; na telefonie: `doas python3 sender_rumble.py --test` (wibruje każdym sposobem po kolei, bez sieci) i ustaw w `sender.toml` `rumble` na ten, który działa; log nadajnika `rumble via ...` i `rumble N/N from PC` (czy polecenie z PC dochodzi); przycisk „Wibracja” na karcie pada |
 | Tryb konsoli nie reaguje | log receivera: `Console: double ... on controller N` = wykryte; `only the master pad can do that` = funkcja zastrzeżona dla mastera (Ustawienia → Master) |
 | Gra w co-op widzi pady dziwnie (Steam) | Steam → biblioteka → gra → Właściwości → Kontroler: spróbuj „Wyłącz Steam Input” (gra czyta dwa DS4 sama) albo odwrotnie; kolejność graczy w Big Picture → Ustawienia → Kontroler |
 
