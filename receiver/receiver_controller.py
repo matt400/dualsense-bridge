@@ -28,7 +28,8 @@ W trybie myszy: 1 palec = kursor, tap = LPM, 2 palce = przewijanie, tap 2 palcam
 Tryb konsoli: podwójne kliknięcie wybranego przycisku (domyślnie R2) przełącza ekran i dźwięk monitor <-> TV, po ciszy
 z pada samo wraca na monitor; start ustawia startup_mode (extend / internal). Ustawienia: tray -> Ustawienia (console.json).
 Pad master (rx_master): wybrane funkcje tylko dla jednego pada; PS + przycisk = pauza / zamknij grę / uśpij /
-wyłącz PC; PS + R3 przytrzymane 3 s = ten pad zostaje masterem; połączenie mastera włącza tryb konsoli. Ustawienia: okno -> Ustawienia -> Master (settings.json).
+wyłącz PC; PS + R3 przytrzymane 3 s = ten pad zostaje masterem; połączenie mastera włącza tryb konsoli.
+Ustawienia: okno -> Ustawienia -> Master (settings.json).
 Konfiguracja: --config plik.toml|json (klucze jak w DEFAULTS), flagi CLI nadpisują plik.
 Autostart z Windows: --autostart on|off (wpis w HKCU\\...\\Run, uruchamia pythonw bez konsoli).
 """

@@ -1,5 +1,4 @@
 """Receiver: odbiór pakietów z nadajnika, obsługa zdarzeń, wykrywanie ciszy."""
-import socket
 import time
 
 import rx_console
@@ -261,7 +260,7 @@ def net_loop():
     while not S.stop.is_set():
         try:
             data, addr = in_sock.recvfrom(2048)
-        except socket.timeout:
+        except TimeoutError:
             data = None
         except OSError as e:
             # obcy, za duży datagram (WSAEMSGSIZE) albo ICMP nie mogą zatrzymywać odbioru na 10 ms

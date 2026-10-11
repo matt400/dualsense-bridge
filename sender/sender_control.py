@@ -44,7 +44,7 @@ async def power_off(c, reason):
         return
     try:
         _, err = await asyncio.wait_for(proc.communicate(), 10)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         proc.kill()
         await proc.wait()              # bez tego zostaje proces-zombie
         print(f"Controller {c.idx}: power off timed out")

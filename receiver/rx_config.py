@@ -101,7 +101,7 @@ def set_autostart(on):
                 extra.append(a)
                 i += 1
 
-            cmd = subprocess.list2cmdline([exe, script] + extra)
+            cmd = subprocess.list2cmdline([exe, script, *extra])
             winreg.SetValueEx(key, name, 0, winreg.REG_SZ, cmd)
             print("Autostart enabled:")
             print(cmd)
@@ -153,7 +153,7 @@ def init(argv=None):
             # bez rotacji, ale logowanie musi działać dalej
             pass
         try:
-            C.log_handle = open(lf, "a", buffering=1, encoding="utf-8")
+            C.log_handle = open(lf, "a", buffering=1, encoding="utf-8")  # noqa: SIM115 - log do końca procesu
             sys.stdout = sys.stderr = C.log_handle
         except OSError:
             C.log_handle = None
@@ -198,7 +198,7 @@ def init(argv=None):
     C.PS_HOLD_S = max(0.3, float(cfg["ps_hold_s"]))
     C.PS_HOLD_ACTION, C.PS_SHARE_ACTION = cfg["ps_hold_action"], cfg["ps_share_action"]
     C.CONFIRM = bool(cfg["confirm"])
-    C.IDLE_RGB = tuple(max(0, min(255, int(v))) for v in (list(cfg["idle_lightbar"]) + [0, 0, 0])[:3])
+    C.IDLE_RGB = tuple(max(0, min(255, int(v))) for v in ([*list(cfg["idle_lightbar"]), 0, 0, 0])[:3])
     C.GAME_PROFILES = bool(cfg["game_profiles"])
     C.GAME_IGNORE = {str(x).lower() for x in cfg["game_ignore"]}
     return C

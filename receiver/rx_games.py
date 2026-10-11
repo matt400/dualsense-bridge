@@ -30,9 +30,8 @@ def poll_once():
         return
     if not exe:
         return
-    if is_game(exe):
-        if recent[:1] != [exe]:
-            recent[:] = [exe] + [e for e in recent if e != exe][:RECENT_MAX - 1]
+    if is_game(exe) and recent[:1] != [exe]:
+        recent[:] = [exe, *[e for e in recent if e != exe][:RECENT_MAX - 1]]
     for i in S.set_game(exe):
         if not S.alive[i]:
             continue

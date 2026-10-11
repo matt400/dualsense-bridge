@@ -18,7 +18,8 @@ pongs = 0
 fb_filter = SeqFilter(1.0)            # z oknem czasowym: restart receivera (losowe seq) nie blokuje feedbacku
 on_feedback = None                    # callback(idx, (small, large, r, g, b)) ustawiany w main
 on_command = None                     # callback(idx, cmd, arg) ustawiany w main
-recent_rtt = collections.deque(maxlen=5)   # ostatnie pomiary - do pakietu info (okno w GUI receivera)
+PING_S = 0.25                         # 4 pingi/s: mediana z 2 s jest stabilna, a pojedynczy skok jej nie zmienia
+recent_rtt = collections.deque(maxlen=8)   # ostatnie pomiary - do pakietu info (okno w GUI receivera)
 last_pong = 0.0
 
 
@@ -123,8 +124,8 @@ async def pinger():
     while True:
         emit(T_PING, 255, time.perf_counter_ns())
         pings_sent += 1
-        await asyncio.sleep(1.0)
-        if pings_sent >= 4 and pongs == 0 and not warned:
+        await asyncio.sleep(PING_S)
+        if pings_sent >= 4 / PING_S and pongs == 0 and not warned:
             print("WARNING: no reply from receiver - check IP/port, firewall and --key")
             warned = True
         if C.STATS and time.monotonic() - last_print >= 5.0:

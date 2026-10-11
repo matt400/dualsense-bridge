@@ -90,7 +90,9 @@ DualSense ──Bluetooth──> telefon: sender/ ──UDP 5005──> PC: rece
 - **Niskie opóźnienia:**
   - przyciski wysyłane natychmiast, z powtórkami na wypadek zgubionego pakietu,
   - gałki i ruch zlewane do 250 Hz i uśredniane,
-  - priorytety wątków i procesów, timer 1 ms na Windows.
+  - priorytety wątków i procesów, timer 1 ms na Windows,
+  - telefon (z `doas`): procesor bez głębokiego uśpienia (PM QoS), nadajnik na najszybszych rdzeniach i z planistą
+    czasu rzeczywistego - wybudzenie z uśpienia klastra (Snapdragon 845 do ~6.5 ms) nie opóźnia już pada ani pingu.
 
 ## Wymagania
 
@@ -162,6 +164,9 @@ Najczęściej zmieniane:
 | `host` | sender | 192.168.1.4 | IP komputera z receiverem |
 | `pad_min_dt` | sender | 0.004 | min. odstęp pakietów stanu (4 ms = 250 Hz) |
 | `idle_off_min` | sender | 15 | wyłącz pada po tylu minutach bez użycia, 0 = nigdy |
+| `low_latency` | sender | true | procesor telefonu bez głębokiego uśpienia + najszybsze rdzenie (wymaga `doas`) |
+| `cpu_latency_us` | sender | 50 | `low_latency`: maks. czas wybudzenia procesora w µs |
+| `rt_priority` | sender | 10 | SCHED_FIFO z tym priorytetem, `0` = zwykły planista (wymaga `doas`) |
 | `rumble` | sender | auto | wibracja: `auto` (sterownik i raport HID naraz), `evdev`, `hidraw`, `off` |
 | `key` | oba | "" | wspólny klucz HMAC (opcjonalne uwierzytelnianie pakietów) |
 | `mouse_sens`, `scroll_sens` | receiver | 0.5, 0.6 | czułość myszy i przewijania touchpadem |
@@ -196,7 +201,7 @@ Nadajnik zapisuje stały przydział pad → slot w `sender/slots.json` (`slots_f
 | Objaw | Co sprawdzić |
 |---|---|
 | `WARNING: no reply from receiver` na telefonie | IP komputera, zapora Windows (UDP 5005), czy `key` jest taki sam po obu stronach |
-| Wysoki ping / skoki w oknie receivera | Wi-Fi na telefonie; najlepiej Ethernet przez hub USB, wtedy wyłącz Wi-Fi (`nmcli radio wifi off`) |
+| Wysoki ping / skoki w oknie receivera | Wi-Fi na telefonie (najlepiej Ethernet przez hub USB, wtedy `nmcli radio wifi off`); nadajnik bez `doas` - log `Low latency: ... run with doas` (procesor telefonu usypia się głęboko) |
 | Gyro kręci w złą stronę | edytor → Gyro aim → „Invert horizontal / vertical” |
 | Ruch odwrócony w emulatorze (DSU) | `acc_sign` / `gyro_sign` w konfiguracji receivera |
 | Profil gry się nie włącza | gry z anti-cheatem mogą blokować odczyt nazwy procesu; przełącz ręcznie PS + d-pad |
@@ -219,9 +224,12 @@ tests/      testy na Linuksie z zaślepkami Windows i urządzeń evdev
 ## Testy
 
 ```
-pip install evdev pyflakes PySide6-Essentials playwright   # playwright: test edytora w przeglądarce (opcjonalnie)
+pip install evdev ruff PySide6-Essentials playwright   # playwright: test edytora w przeglądarce (opcjonalnie)
 ./tests/run_tests.sh
 ```
+
+`ruff` (reguły w `pyproject.toml`) sprawdza cały kod przed testami. GitHub Actions uruchamia to samo przy każdym
+pushu i PR (`.github/workflows/tests.yml`).
 
 Testy obejmują:
 - logikę obu stron: touchpad, gesty, limiter, przepełnienie bufora, skróty, profile, gyro, kształtowanie gałek;

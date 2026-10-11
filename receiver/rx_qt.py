@@ -418,7 +418,7 @@ class MainWindow(QMainWindow):
         (np. monitor wyłączony w trybie konsoli) -> okno zostaje tam, gdzie jest; Qt pilnuje, żeby było widoczne."""
         name = self.screen_choice()
         target = dict(screens()).get(name) if name else None
-        if target is None or self.screen() is target and target.availableGeometry().contains(self.frameGeometry()):
+        if target is None or (self.screen() is target and target.availableGeometry().contains(self.frameGeometry())):
             return False
         area = target.availableGeometry()
         if self.isMaximized() or self.isFullScreen():

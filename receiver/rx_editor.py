@@ -159,8 +159,7 @@ class Editor:
             inv = ", ".join(t for t, on in ((_("odwróć X"), e["inv_x"]), (_("odwróć Y"), e["inv_y"])) if on)
             src = _("środek") if e["src"] == "none" else _(STICK_NAME[e["src"]])
             out.append((f"{_(STICK_NAME[name])} ← {src}" + (f" ({inv})" if inv else ""), lambda n=name: self.clear_stick(n)))
-        for name in self.prof["tuning"]:
-            out.append((self._describe_tuning(name), lambda n=name: self.clear_tuning(n)))
+        out += [(self._describe_tuning(name), lambda n=name: self.clear_tuning(n)) for name in self.prof["tuning"]]
         g = self.gyro()
         if g["mode"] != "off":
             hold = _("zawsze") if g["hold"] == "always" else _("przytrzymaj {b}").format(b=L[g["hold"]])

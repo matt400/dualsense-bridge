@@ -16,7 +16,7 @@ from rx_qt_widgets import Combo, ConfirmButton, SliderRow, button, field, input_
 
 NONE = "__none"
 def targets():
-    return input_items(B.INPUTS, text=True) + [(NONE, _("— wyłączony —"))]   # ikona + nazwa: wybór widać od razu       # ikony przycisków (nazwa w podpowiedzi)
+    return [*input_items(B.INPUTS, text=True), (NONE, _("— wyłączony —"))]   # ikona + nazwa: wybór widać od razu
 
 
 def r3(v):
@@ -309,7 +309,7 @@ class GyroPage(QWidget):
         lay.addWidget(self.off_hint)
         self.body = QWidget()
         bl = _vbox(self.body)
-        self.hold = Combo([("always", _("Zawsze"))] + input_items(B.INPUTS, text=True))
+        self.hold = Combo([("always", _("Zawsze")), *input_items(B.INPUTS, text=True)])
         self.hold.changed.connect(lambda v: self._set(hold=v))
         bl.addWidget(field(_("Aktywne (zawsze albo przy trzymanym przycisku)"), self.hold))
         self.sens = SliderRow(_("Czułość"), 0.1, 5, 0.05, "x")

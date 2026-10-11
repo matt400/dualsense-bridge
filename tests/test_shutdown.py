@@ -19,7 +19,7 @@ class Dev:
         await asyncio.sleep(3600)
         yield
 net.init()
-sup.discover = lambda: {}
+sup.discover = dict
 async def runner():
     task = asyncio.create_task(main_mod.main())
     await asyncio.sleep(0.3)
@@ -37,6 +37,6 @@ try:
     while True:
         p = codec.parse(rx.recv(256))
         if p: types.append(p[0])
-except socket.timeout:
+except TimeoutError:
     pass
 print("PASS" if T_BYE in types else "FAIL", "bye wysłany przy zamykaniu nadajnika; gniazdo zamknięte:", net.sock is None)
