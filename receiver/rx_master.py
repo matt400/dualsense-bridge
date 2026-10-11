@@ -15,6 +15,7 @@ Ustawienia -> Master) albo na padzie: PS + R3 przytrzymane CLAIM_S sekund (claim
 Działa na SUROWYCH wejściach (przed remapowaniem), jak skróty PS. Wątek sieci woła tylko on_state() i filter_inputs();
 akcje systemowe idą osobnym wątkiem.
 """
+from rx_i18n import _
 import threading
 from dataclasses import replace
 
@@ -94,10 +95,10 @@ def check(i, feature):
 def set_master(i, save=True):
     """Pad w slocie i zostaje masterem (i = None: bez mastera). -> (ok, komunikat)."""
     if i is not None and S.pad_id[i] is None:
-        return False, f"Pad {i + 1} nie przysłał jeszcze identyfikatora (MAC) - spróbuj za chwilę"
+        return False, _("Pad {n} nie przysłał jeszcze identyfikatora (MAC) - spróbuj za chwilę").format(n=i + 1)
     pad = "" if i is None else S.profile_key(i)
     if pad == rx_settings.cur.master.pad:
-        return True, "Bez zmian"
+        return True, _("Bez zmian")
     ok, msg = rx_settings.update(C.SETTINGS_PATH if save else None,
                                  master=replace(rx_settings.cur.master, pad=pad))
     if ok and i is not None:
@@ -193,7 +194,7 @@ def _claim(i, gen, button):
     ok, msg = set_master(i)
     if not ok:
         print(f"Controller {i}: master not saved: {msg}")
-    elif msg == "Bez zmian":
+    elif msg == _("Bez zmian"):
         F.pulse(i, "master")
 
 

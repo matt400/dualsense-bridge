@@ -3,6 +3,7 @@
 Kształty pochodzą z rysunku SVG edytora w przeglądarce (ten sam układ 800x520); rysowane bezpośrednio, więc
 odświeżenie 30 razy na sekundę kosztuje niewiele, a trafianie w części jest dokładne (kontur, nie prostokąt).
 """
+from rx_i18n import _
 import re
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
@@ -92,7 +93,7 @@ class Part:
 
 def _build_parts():
     """Części w kolejności rysowania (ostatnia na wierzchu - tę sprawdza kliknięcie najpierw)."""
-    L = B.LABELS
+    L = {k: _(v) for k, v in B.LABELS.items()}
     sym = QPainterPath()
     sym.moveTo(587, 232)
     sym.lineTo(603, 248)
@@ -120,8 +121,8 @@ def _build_parts():
         Part("circle", _circle(635, 200, 19), L["circle"], sym=(_circle(635, 200, 8.5), "#ff6b6b")),
         Part("cross", _circle(595, 240, 19), L["cross"], sym=(sym, "#5b9bff")),
         Part("square", _circle(555, 200, 19), L["square"], sym=(square, "#e58bd2")),
-        Part("left_stick", _circle(305, 285, 42), "Left stick (click = L3)"),
-        Part("right_stick", _circle(495, 285, 42), "Right stick (click = R3)"),
+        Part("left_stick", _circle(305, 285, 42), _("Lewa gałka (klik = L3)")),
+        Part("right_stick", _circle(495, 285, 42), _("Prawa gałka (klik = R3)")),
     ]
 
 

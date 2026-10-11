@@ -3,6 +3,9 @@ między monitorem a TV.
 
   auto-ON   po połączeniu pada master (auto_on_master) tryb włącza się sam; wyłączasz go ręcznie podwójnym R2
             i zostaje wyłączony do następnego połączenia mastera
+  w grze    przełączanie (ręczne i auto-ON) działa tylko, gdy na pierwszym planie jest program z allowed_apps
+            (pulpit, Steam / Big Picture, launchery); w grze podwójne R2 nic nie robi (czerwone mignięcie), a auto-ON
+            czeka, aż gra przestanie być na pierwszym planie
 
   ON   ekran tylko TV (DisplaySwitch /external), na TV tv_width x tv_height i skalowanie tv_scale % (rx_display),
        dźwięk audio_tv, toast "Tryb konsoli włączony"
@@ -18,6 +21,7 @@ Wątek sieci woła tylko on_state() (porównanie bitu i czasu). Polecenia ekranu
 roboczy z kolejki, więc nic nie blokuje odbioru UDP, a kolejne przełączenia nie wyprzedzają poprzednich.
 Błąd któregokolwiek kroku jest logowany i nie przerywa pozostałych.
 """
+from rx_i18n import _
 import json
 import os
 import queue
@@ -28,12 +32,20 @@ from dataclasses import asdict, dataclass, fields
 
 import rx_audio
 import rx_display
+import rx_feedback as F
 import rx_master as master
 import rx_state as S
+import rx_winapi as W
 from rx_buttons import BIT, BUTTON_CODES, DIRS, INPUTS, TRIG_ON, pressed_inputs
 from rx_config import C
 
 STARTUP_MODES = ("extend", "internal")
+# programy, przy których wolno przełączać tryb konsoli (pulpit, Steam / Big Picture, launchery, ten receiver)
+DEFAULT_APPS = ("explorer.exe", "steam.exe", "steamwebhelper.exe", "python.exe", "pythonw.exe",
+                "shellexperiencehost.exe", "startmenuexperiencehost.exe", "searchhost.exe", "searchapp.exe",
+                "applicationframehost.exe", "textinputhost.exe", "lockapp.exe", "systemsettings.exe",
+                "playnite.fullscreenapp.exe", "playnite.desktopapp.exe", "epicgameslauncher.exe", "galaxyclient.exe",
+                "eadesktop.exe", "upc.exe")
 CONFIG_VERSION = 3
 TEST_S = 10.0              # "Przetestuj": tyle sekund w trybie ON, potem samo OFF (extend, monitor nie zostaje czarny)
 APP_NAME = "DualSense bridge"
@@ -66,6 +78,12 @@ def _bool(v):
     return v
 
 
+def _apps(v):
+    if not isinstance(v, (list, tuple)) or not all(isinstance(x, str) for x in v):
+        raise ValueError("expected a list of program names")
+    return tuple(dict.fromkeys(x.strip().lower() for x in v if x.strip()))
+
+
 def _text(v):
     if not isinstance(v, str):
         raise ValueError("expected text")
@@ -85,6 +103,7 @@ class ConsoleConfig:
     tv_height: int = 1440
     tv_scale: int = 200             # skalowanie TV w % (0 = bez zmiany)
     auto_on_master: bool = True     # połączenie pada master = tryb konsoli ON
+    allowed_apps: tuple = DEFAULT_APPS   # przełączanie tylko, gdy na pierwszym planie jest jeden z tych programów
     version: int = CONFIG_VERSION   # wersja pliku (migracje)
 
     @classmethod
@@ -123,6 +142,7 @@ _VALIDATORS = {
     "tv_height": _number(0, 8640),
     "tv_scale": lambda v: int(_choice((0, *rx_display.DPI_VALUES))(v)),
     "auto_on_master": _bool,
+    "allowed_apps": _apps,
     "version": _number(1, CONFIG_VERSION),
 }
 
@@ -181,6 +201,14 @@ def _tv_mode(w, h, scale):
     print(f"Console: TV {rx_display.apply_tv(w, h, scale)}")
 
 
+def _foreground():
+    """Program na pierwszym planie (małe litery) albo None (brak okna / brak dostępu)."""
+    try:
+        return W.foreground_exe()
+    except OSError:
+        return None
+
+
 def _audio(name):
     rx_audio.set_default(name)
 
@@ -214,6 +242,7 @@ class Console:
         self._thread = None
         restored = os.environ.pop(RESTART_ENV, None)
         self._restore_on = restored == "1"  # restart z włączonym trybem -> zostaje włączony
+        self._pending = None                # auto-ON czekające, aż gra zejdzie z pierwszego planu (slot mastera)
         self._skip_auto = restored == "0"   # restart z wyłączonym -> ponowne połączenie mastera nie włącza
 
     # ---------- wątek sieci ----------
@@ -237,9 +266,14 @@ class Console:
         now = time.monotonic()
         if now - self._last_click[i] <= self.cfg.double_click_ms / 1000:
             self._last_click[i] = 0.0       # trzecie kliknięcie zaczyna od nowa, nie przełącza drugi raz
-            if master.check(i, "console"):  # może być zastrzeżone dla pada master
-                print(f"Console: double {self.cfg.toggle_button} on controller {i}")
-                self._jobs.put(self._toggle)
+            if not master.check(i, "console"):   # może być zastrzeżone dla pada master
+                return
+            if (exe := self.blocked_by()) is not None:
+                print(f"Console: double {self.cfg.toggle_button} on controller {i} ignored - {exe} in the foreground")
+                F.pulse(i, "denied")
+                return
+            print(f"Console: double {self.cfg.toggle_button} on controller {i}")
+            self._jobs.put(self._toggle)
         else:
             self._last_click[i] = now
 
@@ -252,9 +286,19 @@ class Console:
             return
         self._jobs.put(lambda: self._auto_on(i))
 
+    def blocked_by(self):
+        """Program na pierwszym planie, który blokuje przełączanie (gra), albo None."""
+        exe = _foreground()
+        return exe if exe and exe not in self.cfg.allowed_apps else None
+
     def _auto_on(self, i):
-        if not self.on:
-            self._apply(True, why=f"połączono pad master (pad {i + 1})")
+        if self.on:
+            return
+        if (exe := self.blocked_by()) is not None:
+            print(f"Console: master connected, {exe} in the foreground - console mode waits until it is not")
+            self._pending = i
+            return
+        self._apply(True, why=_("połączono pad master (pad {n})").format(n=i + 1))
 
     def combo(self, i):
         """Przycisk trybu użyty razem z innym wejściem (także klikiem touchpada, który nie jest w masce): to naciśnięcie
@@ -297,15 +341,23 @@ class Console:
 
     def _tick(self):
         now = time.monotonic()
+        if self._pending is not None:
+            i = self._pending
+            if self.on or not S.alive[i] or not master.is_master(i):
+                self._pending = None                 # już włączony / master odszedł - nie czekaj dalej
+            elif self.blocked_by() is None:
+                self._pending = None
+                self._apply(True, why=_("połączono pad master (pad {n})").format(n=i + 1))
+                return
         if self._revert and now >= self._revert[0]:
-            self._apply(False, self._revert[1], "koniec testu")
+            self._apply(False, self._revert[1], _("koniec testu"))
         elif self.on and now - max(self._since, max(S.last_seen, default=0.0)) > self.cfg.timeout_s:
             print(f"Console: no packets from the pad for {self.cfg.timeout_s}s - auto-OFF")
-            self._apply(False, why=f"Brak sygnału z pada przez {self.cfg.timeout_s} s")
+            self._apply(False, why=_("Brak sygnału z pada przez {s} s").format(s=self.cfg.timeout_s))
 
     def _startup(self):
         if self._restore_on:
-            self._apply(True, why="po restarcie receivera", toast=False)
+            self._apply(True, why=_("po restarcie receivera"), toast=False)
             return
         _step("display", _display, self.cfg.startup_mode)
         if self.cfg.audio_pc:
@@ -313,6 +365,7 @@ class Console:
         print(f"Console: startup mode {self.cfg.startup_mode}")
 
     def _toggle(self):
+        self._pending = None
         self._apply(not self.on)
 
     def _apply(self, on, cfg=None, why="", toast=True):
@@ -325,7 +378,7 @@ class Console:
             _step("audio", _audio, audio)
         print(f"Console: {'ON' if on else 'OFF'}" + (f" ({why})" if why else ""))
         if toast:
-            _step("toast", _toast, "Tryb konsoli włączony" if on else "Tryb konsoli wyłączony", why)
+            _step("toast", _toast, _("Tryb konsoli włączony") if on else _("Tryb konsoli wyłączony"), why)
 
     def _test(self, cfg):
         self._apply(True, cfg)
@@ -340,7 +393,7 @@ class Console:
         """Zamykanie receivera. Przy zwykłym wyjściu z włączonym trybem konsoli wracamy do extend (po restarcie
         sam start ustawi ekran wg startup_mode, więc dwa razy nie przełączamy)."""
         if self.on and not restart:
-            self._jobs.put(lambda: self._apply(False, why="zamknięcie receivera", toast=False))
+            self._jobs.put(lambda: self._apply(False, why=_("zamknięcie receivera"), toast=False))
         self._jobs.put(_STOP)
         if self._thread is not None:
             self._thread.join(timeout=10)

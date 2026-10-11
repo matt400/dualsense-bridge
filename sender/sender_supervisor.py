@@ -12,6 +12,7 @@ import sender_streams as streams
 from proto import T_BYE
 from sender_config import C, IDLE_TP, SETTLE_S
 from sender_ctrl import Ctrl
+from sender_rumble import Rumble
 from sender_net import emit
 
 _MAC = re.compile(r"^[0-9a-f]{2}(:[0-9a-f]{2}){5}$", re.IGNORECASE)
@@ -190,6 +191,7 @@ async def run_ctrl(c):
     tasks = []
     try:
         c.init_state()
+        c.rumble = Rumble(c.idx, c.pad_dev, C.RUMBLE)
         print(f"== Controller {c.idx} ({c.key})")
         print(f"   Pad:    {c.pad_dev.name} ({c.pad_dev.path})")
         print(f"   Motion: {c.motion_dev.name if c.motion_dev else 'NOT FOUND'}")

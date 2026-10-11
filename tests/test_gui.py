@@ -2,6 +2,7 @@ import sys, os, time, json
 sys.path.insert(0, os.path.dirname(__file__))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")            # bez ekranu i bez Xvfb
 from rxenv import *                                              # noqa
+import rx_i18n; rx_i18n.set_lang("en")              # asercje na angielskich tekstach okna
 from proto import T_CMD
 from PySide6.QtCore import QPoint, QPointF, Qt
 from PySide6.QtTest import QTest

@@ -20,6 +20,7 @@ PULSES = {
     "master": (0.60, 0, 200, (255, 200, 0)),      # ten pad został masterem - złoty błysk
     "hold": (0.06, 90, 0, None),                  # akcja mastera: trzymaj dalej
     "denied": (0.25, 0, 0, (255, 0, 0)),          # tylko master może - czerwone mignięcie
+    "test": (0.6, 200, 255, (255, 255, 255)),     # przycisk "Test wibracji" w oknie
 }
 fb = []
 fb_event = threading.Event()
@@ -57,9 +58,10 @@ def reset(i):
     fb_sent[i] = None
 
 
-def pulse(i, kind):
-    """Krótkie potwierdzenie na padzie (wibracja i/lub kolor), nałożone na feedback z gry."""
-    if C.CONFIRM and 0 <= i < len(pulses) and S.alive[i]:
+def pulse(i, kind, force=False):
+    """Krótkie potwierdzenie na padzie (wibracja i/lub kolor), nałożone na feedback z gry.
+    force: także przy confirm = false (test wibracji z okna)."""
+    if (C.CONFIRM or force) and 0 <= i < len(pulses) and S.alive[i]:
         d, small, large, rgb = PULSES[kind]
         pulses[i] = (time.monotonic() + d, small, large, rgb)
         fb_event.set()

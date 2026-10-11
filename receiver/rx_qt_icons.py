@@ -5,6 +5,7 @@ icon(name)  -> QIcon dla wejścia pada ("cross", "ps", "dpad_up", "l2"...) albo 
 tip(name)   -> pełna nazwa do podpowiedzi (ikona bez tekstu musi mieć tooltip).
 Kolory symboli jak na rysunku pada (rx_qt_pad): trójkąt zielony, kółko czerwone, krzyżyk niebieski, kwadrat różowy.
 """
+from rx_i18n import _
 from functools import cache
 
 from PySide6.QtCore import QPointF, QRectF, Qt
@@ -16,12 +17,13 @@ FG, DIM, BODY, GOLD = QColor("#e8eaf0"), QColor("#8b91a1"), QColor("#3a3f4d"), Q
 FACE = {"triangle": "#4cd08a", "circle": "#ff6b6b", "cross": "#5b9bff", "square": "#e58bd2"}
 BADGES = {"l1": "L1", "r1": "R1", "l2": "L2", "r2": "R2", "l3": "L3", "r3": "R3"}
 EXTRA_TIPS = {"crown": "Pad master", "mouse": "Touchpad jako mysz", "touchpad": "Touchpad jako dotyk DS4",
-              "tv": "Tryb konsoli", "power": "Wyłącz", "restart": "Uruchom ponownie", "window": "Ekran"}
+              "tv": "Tryb konsoli", "power": "Wyłącz", "restart": "Uruchom ponownie", "window": "Ekran",
+              "fullscreen": "Pełny ekran", "rumble": "Wibracja"}
 SIZES = (16, 20, 24, 32, 48)
 
 
 def tip(name):
-    return LABELS.get(name) or EXTRA_TIPS.get(name, name)
+    return _(LABELS.get(name) or EXTRA_TIPS.get(name, name))
 
 
 def _pen(color, w):
@@ -158,6 +160,24 @@ def _window(p):
     p.drawLine(QPointF(3, 9), QPointF(21, 9))
 
 
+def _fullscreen(p):
+    p.setPen(_pen(FG, 1.8))
+    for x, y, dx, dy in ((4, 4, 1, 1), (20, 4, -1, 1), (4, 20, 1, -1), (20, 20, -1, -1)):
+        p.drawLine(QPointF(x, y), QPointF(x + 5 * dx, y))
+        p.drawLine(QPointF(x, y), QPointF(x, y + 5 * dy))
+
+
+def _rumble(p):
+    p.setPen(_pen(FG, 1.6))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawRoundedRect(QRectF(8, 4, 8, 16), 2, 2)
+    for x in (4.5, 19.5):
+        path = QPainterPath(QPointF(x, 7))
+        for k, y in enumerate((9.5, 12, 14.5, 17)):
+            path.lineTo(x + (1.5 if k % 2 == 0 else -1.5) * (1 if x < 12 else -1), y)
+        p.drawPath(path)
+
+
 def _tv(p):
     p.setPen(_pen(FG, 1.6))
     p.setBrush(Qt.BrushStyle.NoBrush)
@@ -181,7 +201,7 @@ def _draw(p, name):
         _dpad(p, name)
     else:
         {"ps": _ps, "share": _share, "options": _options, "crown": _crown, "mouse": _mouse,
-         "tv": _tv, "power": _power, "touchpad": _touchpad, "restart": _restart, "window": _window}[name](p)
+         "tv": _tv, "power": _power, "touchpad": _touchpad, "restart": _restart, "window": _window, "fullscreen": _fullscreen, "rumble": _rumble}[name](p)
 
 
 def pixmap(name, size=24, dim=False):
@@ -208,4 +228,4 @@ def icon(name, dim=False):
 
 def has_icon(name):
     return name in FACE or name in BADGES or name.startswith("dpad_") or name in (
-        "ps", "share", "options", "crown", "mouse", "touchpad", "tv", "power", "restart", "window")
+        "ps", "share", "options", "crown", "mouse", "touchpad", "tv", "power", "restart", "window", "fullscreen", "rumble")

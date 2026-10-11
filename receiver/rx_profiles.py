@@ -1,4 +1,5 @@
 """Receiver: operacje na profilach remapowania wspólne dla okna (rx_qt) i edytora w przeglądarce (rx_web)."""
+from rx_i18n import _
 import re
 
 import rx_buttons as B
@@ -44,7 +45,7 @@ def apply(slot, key, profile, save=False):
         ok, msg = S.store.save(key, prof)
     else:
         S.store.set_live(key, prof)
-        ok, msg = True, "Applied (not saved)"
+        ok, msg = True, _("Zastosowano (niezapisane)")
     S.reload_profile(slot)
     return ok, msg
 
@@ -52,7 +53,7 @@ def apply(slot, key, profile, save=False):
 def delete(slot, key):
     """Usuwa profil gry. -> (ok, komunikat)."""
     if not B.is_game_key(key):
-        return False, "only game profiles can be deleted"
+        return False, _("usuwać można tylko profile gier")
     with S.profile_lock:
         ok, msg = S.store.delete(key)
         if S.override[slot] == key:

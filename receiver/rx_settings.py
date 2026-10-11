@@ -6,6 +6,7 @@
 Brak pliku / błędna wartość -> domyślna (komunikat w logu, plik poprawiany przy zapisie). Zmiana z okna działa od
 razu: apply() podmienia obiekt `cur` (jedno przypisanie - wątki sieci czytają zawsze spójną całość).
 """
+from rx_i18n import _
 import json
 import os
 from dataclasses import asdict, dataclass, field, fields, replace
@@ -60,7 +61,7 @@ MouseConfig.V = {"sens": _num(0.05, 5.0, float), "click_freeze_ms": _num(0, 600)
 # ---------------- pad master ----------------
 # co można zastrzec tylko dla mastera: klucz -> (opis w oknie, ikona z rx_qt_icons); kolejność = kolejność w oknie
 MASTER_FEATURES = {
-    "console": ("Tryb konsoli (ekran i dźwięk)", "tv"),
+    "console": ("Tryb konsoli (ekran i dźwięk)", "tv"),   # opisy po polsku - w oknie przez rx_i18n._()
     "actions": ("Akcje systemowe (PS + przycisk)", "ps"),
     "ps_hold": ("Przytrzymanie PS: Game Bar / Big Picture", "ps"),
     "ps_game": ("PS w grze i w Steam (menu, nakładka)", "ps"),
@@ -118,9 +119,20 @@ MasterConfig.V = {"pad": _text, "when_absent": _choice(ABSENT), "only_master": _
 
 
 @dataclass(frozen=True, slots=True)
+class UiConfig:
+    lang: str = "pl"                # język okna: pl | en (zmiana po restarcie)
+
+    V = None
+
+
+UiConfig.V = {"lang": _choice(("pl", "en"))}
+
+
+@dataclass(frozen=True, slots=True)
 class Settings:
     mouse: MouseConfig = field(default_factory=MouseConfig)
     master: MasterConfig = field(default_factory=MasterConfig)
+    ui: UiConfig = field(default_factory=UiConfig)
 
 
 def _section(cls, raw, base, name):
@@ -158,13 +170,15 @@ def load(path, base=None):
     raw = raw if isinstance(raw, dict) else {}
     sec = lambda k: raw.get(k) if isinstance(raw.get(k), dict) else {}
     return Settings(_section(MouseConfig, sec("mouse"), base.mouse, "mouse"),
-                    _section(MasterConfig, sec("master"), base.master, "master"))
+                    _section(MasterConfig, sec("master"), base.master, "master"),
+                    _section(UiConfig, sec("ui"), base.ui, "ui"))
 
 
 def save(s, path):
     """Zapis atomowy (plik tymczasowy + zamiana)."""
     tmp = path + ".tmp"
-    data = {"version": 1, "mouse": asdict(s.mouse), "master": {**asdict(s.master), "only_master": list(s.master.only_master)}}
+    data = {"version": 1, "mouse": asdict(s.mouse), "master": {**asdict(s.master), "only_master": list(s.master.only_master)},
+            "ui": asdict(s.ui)}
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
         f.write("\n")
@@ -195,5 +209,5 @@ def update(path=None, **sections):
         try:
             save(s, path)
         except OSError as e:
-            return False, f"Nie udało się zapisać {os.path.basename(path)}: {e}"
-    return True, "Zapisano"
+            return False, _("Nie udało się zapisać {path}: {err}").format(path=os.path.basename(path), err=e)
+    return True, _("Zapisano")

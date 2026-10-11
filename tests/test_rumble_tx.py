@@ -1,0 +1,111 @@
+"""Nadajnik: wibracja (sender_rumble) - evdev FF albo raport HID przez hidraw, strażnik, przełączenie po błędzie."""
+import asyncio, os, sys, tempfile, types, zlib
+sys.path.insert(0, sys.argv[1])
+import sender_config; sender_config.init(["127.0.0.1"])
+import sender_rumble as R
+from evdev import ecodes as ec
+
+TMP = tempfile.mkdtemp()
+ok = lambda m: print("OK  ", m)
+
+# ---------- raport wyjściowy ----------
+bt = R.output_report(True, 3, 40, 200)
+usb = R.output_report(False, 0, 40, 200)
+assert len(bt) == 78 and len(usb) == 63, (len(bt), len(usb))
+assert bt[0] == 0x31 and bt[1] == 0x30 and bt[2] == 0x10, bt[:3].hex()
+c = bt[3:]
+assert c[0] == 0x03 and c[2] == 40 and c[3] == 200 and c[38] == 0x04, "flagi wibracji, silnik prawy (słaby) / lewy (mocny)"
+assert c[1] == 0 and not any(c[41:47]), "bez flag i wartości lightbara / diod - nimi steruje sterownik"
+assert int.from_bytes(bt[-4:], "little") == zlib.crc32(b"\xa2" + bt[:-4]) & 0xFFFFFFFF, "CRC32 z ziarnem 0xA2"
+assert usb[0] == 0x02 and usb[1:48] == c[:47]
+assert R.output_report(True, 0x13, 0, 0)[1] == 0x30, "numer sekwencji 4 bity"
+ok("raport: USB 63 B / BT 78 B, tylko flagi wibracji, CRC32")
+
+# ---------- sysfs: hidraw i rodzaj połączenia ----------
+root = os.path.join(TMP, "sys")
+for bus, ev, raw in (("0005", "event9", "hidraw3"), ("0003", "event4", "hidraw1")):
+    hid = os.path.join(root, f"devices/x/{bus}:054C:0CE6.000{ev[-1]}")
+    os.makedirs(os.path.join(hid, f"input/input2{ev[-1]}/{ev}"))
+    os.makedirs(os.path.join(hid, "hidraw", raw))
+    os.makedirs(os.path.join(root, "class/input"), exist_ok=True)
+    os.symlink(os.path.join(hid, f"input/input2{ev[-1]}/{ev}"), os.path.join(root, "class/input", ev))
+assert R.find_hidraw(types.SimpleNamespace(path="/dev/input/event9"), root) == ("/dev/hidraw3", True)
+assert R.find_hidraw(types.SimpleNamespace(path="/dev/input/event4"), root) == ("/dev/hidraw1", False)
+assert R.find_hidraw(types.SimpleNamespace(path="/dev/input/event7"), root) == (None, False)
+ok("hidraw pada i Bluetooth / USB z sysfs")
+
+
+# ---------- evdev FF ----------
+class FFDev:
+    def __init__(self, ff=True, fail=False):
+        self.ff, self.fail, self.log = ff, fail, []
+    def capabilities(self):
+        return {ec.EV_FF: [ec.FF_RUMBLE]} if self.ff else {ec.EV_KEY: [304]}
+    def upload_effect(self, eff):
+        if self.fail:
+            raise OSError(38, "Function not implemented")
+        self.log.append(("upload", eff.u.ff_rumble_effect.strong_magnitude, eff.u.ff_rumble_effect.weak_magnitude))
+        return 7
+    def write(self, t, code, v):
+        self.log.append(("play", code, v))
+    def erase_effect(self, i):
+        self.log.append(("erase", i))
+
+
+def frames(path):
+    data = open(path, "rb").read()
+    return [data[k:k + 78] for k in range(0, len(data), 78)]
+
+
+async def main():
+    d = FFDev()
+    r = R.Rumble(0, d, "auto")
+    assert r.mode == "evdev"
+    r.set(10, 100)
+    assert d.log[:2] == [("upload", 100 * 257, 10 * 257), ("play", 7, 1)], d.log
+    n = len(d.log); r.set(10, 100)
+    assert len(d.log) == n, "bez zmian i świeże - nic nie wysyła"
+    r.set(0, 0)
+    assert d.log[-1] == ("play", 7, 0)
+    r.close()
+    assert d.log[-1] == ("erase", 7)
+    ok("evdev FF: wgranie efektu, odtwarzanie, stop, sprzątanie")
+
+    path = os.path.join(TMP, "hidraw-bt")
+    open(path, "wb").close()
+    d = FFDev(ff=False)
+    r = R.Rumble(1, d, "auto", hidraw=(path, True))
+    assert r.mode == "hidraw"
+    r.set(30, 250)
+    f = frames(path)
+    assert len(f) == 1 and f[0][3 + 2] == 30 and f[0][3 + 3] == 250, f
+    r.set(30, 250); r.set(0, 0)
+    f = frames(path)
+    assert len(f) == 2 and f[1][5] == 0 and f[1][6] == 0 and f[0][1] != f[1][1], "stop + nowy numer sekwencji"
+    r.set(80, 80)
+    await asyncio.sleep(R.WATCHDOG_S + 0.2)
+    f = frames(path)
+    assert f[-1][5] == 0 and f[-1][6] == 0 and r.cur == (0, 0), "brak odświeżeń -> strażnik zatrzymuje silniki"
+    r.set(90, 90); await asyncio.sleep(0.5); r.set(90, 90)
+    await asyncio.sleep(R.WATCHDOG_S - 0.4)
+    assert r.cur == (90, 90), "odświeżana wibracja trwa"
+    r.close()
+    assert frames(path)[-1][5:7] == b"\x00\x00" and r.fd is None, "zamknięcie zatrzymuje wibrację"
+    ok("hidraw: raport przy zmianie, stop, strażnik po ciszy, zamknięcie")
+
+    path2 = os.path.join(TMP, "hidraw-fallback")
+    open(path2, "wb").close()
+    d = FFDev(fail=True)
+    r = R.Rumble(2, d, "auto")
+    assert r.mode == "evdev"
+    R.find_hidraw, orig = (lambda dev, root="/sys": (path2, False)), R.find_hidraw
+    r.set(5, 6)
+    R.find_hidraw = orig
+    assert r.mode == "hidraw" and open(path2, "rb").read()[:1] == b"\x02", "błąd evdev FF -> raport HID (USB)"
+    r.close()
+    assert R.Rumble(3, FFDev(ff=False), "off").mode is None
+    assert R.Rumble(4, FFDev(ff=False), "evdev").mode is None
+    ok("błąd evdev FF przełącza na hidraw; off / evdev bez FF = bez wibracji")
+
+asyncio.run(main())
+print("RUMBLE OK")
