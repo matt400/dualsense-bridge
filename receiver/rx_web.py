@@ -183,8 +183,11 @@ def start():
 
 
 def stop():
+    """Zatrzymuje serwer i zamyka gniazdo nasłuchu - sam shutdown() zostawia port zajęty (po restarcie z ustawień
+    nowy proces dostawał wtedy kolejny port i inny URL edytora)."""
     if server is not None:
         server.shutdown()
+        server.server_close()
 
 
 def _app_browser():

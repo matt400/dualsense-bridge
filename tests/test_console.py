@@ -204,6 +204,33 @@ c.close(restart=True)
 check(not calls, "przy restarcie ekran zostawia start nowego procesu")
 ok("zamknięcie: ON wraca do extend, restart nie dubluje przełączeń")
 
+# ---------- skróty z PS to nie kliknięcia ----------
+from proto import T_CLICK
+c = new_console(); calls.clear()
+def combo(second, gap=0.03):
+    state(0, mask=BIT[PS]); time.sleep(gap); second(); time.sleep(gap); state(0, mask=0); time.sleep(gap)
+for _ in range(2):                                         # PS + Share (zrzut ekranu) dwa razy pod rząd
+    combo(lambda: state(0, mask=BIT[PS] | BIT[SHARE]))
+time.sleep(0.2)
+check(not c.on and not any(x[0] == "display" for x in calls), f"PS + Share dwa razy nie przełącza trybu: {calls}")
+for _ in range(2):                                         # PS + d-pad (zmiana profilu) dwa razy
+    combo(lambda: state(0, mask=BIT[PS], hat=(1, 0)))
+time.sleep(0.2)
+check(not c.on, "PS + d-pad dwa razy nie przełącza trybu")
+for _ in range(2):                                         # PS + klik touchpada (mysz / dotyk) dwa razy
+    combo(lambda: (feed(T_CLICK, 0, 1), feed(T_CLICK, 0, 0)))
+time.sleep(0.2)
+check(not c.on, "PS + klik touchpada dwa razy nie przełącza trybu")
+for m in (BIT[SHARE], BIT[SHARE] | BIT[PS], BIT[SHARE], BIT[SHARE] | BIT[PS], BIT[SHARE], 0):
+    state(0, mask=m); time.sleep(0.03)
+time.sleep(0.2)
+check(not c.on, "PS naciskany przy trzymanym Share to też skrót")
+time.sleep(0.5)
+click(); time.sleep(0.05); click()
+check(wait_for(lambda: c.on), "zwykłe podwójne kliknięcie po skrótach dalej działa")
+c.close(restart=True)
+ok("skróty z PS (Share, d-pad, touchpad) nie liczą się jako kliknięcia")
+
 # ---------- rx_audio.find ----------
 devs = [("1", "Speakers (Realtek)"), ("2", "LG TV (NVIDIA High Definition Audio)"), ("3", "Headphones (USB)")]
 check(rx_audio.find("speakers (realtek)", devs) == "1", "dokładna nazwa, bez wielkości liter")
