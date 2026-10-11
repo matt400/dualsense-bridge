@@ -40,7 +40,9 @@ DEFAULTS = {
     "gestures": True,              # 2 palce = przewijanie, tap 2 palcami = prawy przycisk myszy
     "rumble": "auto",              # wibracja: auto (sterownik, a bez niego raport HID przez hidraw) | evdev | hidraw | off
     "idle_off_min": 15,            # wyłącz pada (rozłącz Bluetooth) po tylu minutach bez użycia; 0 = nigdy
-    "rt_priority": 0,              # >0 = SCHED_FIFO z tym priorytetem (1-99, sensownie 10-20); wymaga doas
+    "rt_priority": 10,             # SCHED_FIFO z tym priorytetem (1-99); 0 = zwykły planista; wymaga doas
+    "low_latency": True,           # procesor bez głębokiego uśpienia + najszybsze rdzenie (sender_rt); wymaga doas
+    "cpu_latency_us": 50,          # low_latency: max czas wybudzenia procesora [µs] (głębokie stany śpią do ~6.5 ms)
     "key": "",
     "stats": False,
 }
@@ -83,7 +85,7 @@ def init(argv=None):
     try:
         C.PC_ADDR = socket.gethostbyname(C.HOST)
     except OSError as e:
-        raise SystemExit(f"Nie można rozwiązać hosta {C.HOST!r}: {e}")
+        raise SystemExit(f"Nie można rozwiązać hosta {C.HOST!r}: {e}") from None
     C.PORT = int(cfg["port"])
     C.MAX_PADS = int(cfg["max_pads"])
     sf = str(cfg["slots_file"] or "")
@@ -105,6 +107,7 @@ def init(argv=None):
     C.RUMBLE = cfg["rumble"] if cfg["rumble"] in ("auto", "evdev", "hidraw", "off") else "auto"
     C.IDLE_OFF_S = max(0.0, float(cfg["idle_off_min"])) * 60
     C.RT_PRIORITY = max(0, min(99, int(cfg["rt_priority"])))
+    C.LOW_LATENCY, C.CPU_LATENCY_US = bool(cfg["low_latency"]), max(0, int(cfg["cpu_latency_us"]))
     C.KEY = str(cfg["key"]).encode() if cfg["key"] else b""
     C.STATS = bool(cfg["stats"])
     return C

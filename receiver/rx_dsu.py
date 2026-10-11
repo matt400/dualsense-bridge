@@ -1,6 +1,5 @@
 """Receiver: serwer DSU (Cemuhook) - gyro/akcelerometr/dotyk dla emulatorów."""
 import random
-import socket
 import struct
 import threading
 import time
@@ -91,7 +90,7 @@ def rx_thread():
     while not S.stop.is_set():
         try:
             data, addr = dsu.recvfrom(2048)
-        except socket.timeout:
+        except TimeoutError:
             continue                                   # timeout tylko po to, by sprawdzić S.stop
         except OSError as e:
             if getattr(e, "winerror", None) not in (10040, 10054):   # za duży datagram / ICMP - po prostu dalej

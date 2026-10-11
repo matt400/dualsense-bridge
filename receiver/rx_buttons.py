@@ -140,7 +140,7 @@ def normalize_sticks(sm):
 
 
 PROFILE_PARTS = ("buttons", "sticks", "tuning", "gyro")
-HOLD_INPUTS = ("always",) + INPUTS      # czym można aktywować gyro
+HOLD_INPUTS = ("always", *INPUTS)      # czym można aktywować gyro
 
 
 def normalize_profile(p):

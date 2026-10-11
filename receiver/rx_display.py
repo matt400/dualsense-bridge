@@ -150,7 +150,8 @@ def set_resolution(device, w, h):
     """-> opis zmiany; nic nie robi, gdy ekran już ma w×h."""
     u = _user32()
     cur = DEVMODEW(dmSize=ctypes.sizeof(DEVMODEW))
-    if u.EnumDisplaySettingsW(device, ctypes.c_uint32(ENUM_CURRENT_SETTINGS), ctypes.byref(cur)) and (cur.dmPelsWidth, cur.dmPelsHeight) == (w, h):
+    current = u.EnumDisplaySettingsW(device, ctypes.c_uint32(ENUM_CURRENT_SETTINGS), ctypes.byref(cur))
+    if current and (cur.dmPelsWidth, cur.dmPelsHeight) == (w, h):
         return f"{w}x{h} already set"
     modes, k = [], 0
     dm = DEVMODEW(dmSize=ctypes.sizeof(DEVMODEW))

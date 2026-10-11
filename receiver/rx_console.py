@@ -380,7 +380,7 @@ class Console:
         cfg = cfg or self.cfg
         self.on, self._since, self._revert = on, time.monotonic(), None
         _step("display", _display, "tv" if on else "extend")
-        if on and (cfg.tv_width and cfg.tv_height or cfg.tv_scale):
+        if on and ((cfg.tv_width and cfg.tv_height) or cfg.tv_scale):
             _step("TV resolution / scaling", _tv_mode, cfg.tv_width, cfg.tv_height, cfg.tv_scale)
         if audio := cfg.audio_tv if on else cfg.audio_pc:
             _step("audio", _audio, audio)

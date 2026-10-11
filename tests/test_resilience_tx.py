@@ -3,7 +3,7 @@ sys.path.insert(0, sys.argv[1])
 import sender_config; sender_config.init(["127.0.0.1"])
 import sender_controller as M, sender_streams as st, sender_supervisor as sup, sender_net as net
 net.init()
-sup.discover = lambda: {}
+sup.discover = dict
 beats = {"n": 0}
 orig = st.heartbeat
 async def flaky():

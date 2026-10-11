@@ -216,7 +216,8 @@ def _draw(p, name):
         _dpad(p, name)
     else:
         {"ps": _ps, "share": _share, "options": _options, "crown": _crown, "mouse": _mouse,
-         "tv": _tv, "power": _power, "touchpad": _touchpad, "restart": _restart, "window": _window, "fullscreen": _fullscreen, "rumble": _rumble, "gear": _gear}[name](p)
+         "tv": _tv, "power": _power, "touchpad": _touchpad, "restart": _restart, "window": _window,
+         "fullscreen": _fullscreen, "rumble": _rumble, "gear": _gear}[name](p)
 
 
 def pixmap(name, size=24, dim=False):

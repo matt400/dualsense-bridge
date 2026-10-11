@@ -209,7 +209,7 @@ class ConsoleSettings(QDialog):
         grid.setVerticalSpacing(8)
         self.actions = {}
         for r, (k, (text, hold)) in enumerate(MASTER_ACTIONS.items()):
-            combo = Combo([("", "—")] + input_items(COMBO_BUTTONS))
+            combo = Combo([("", "—"), *input_items(COMBO_BUTTONS)])
             combo.setFixedWidth(96)
             self.actions[k] = combo
             grid.addWidget(icon_label("ps"), r, 0)
@@ -244,7 +244,7 @@ class ConsoleSettings(QDialog):
         res = (cfg.tv_width, cfg.tv_height) if cfg.tv_width and cfg.tv_height else (0, 0)
         extra = () if res in TV_RESOLUTIONS else (res,)     # wpisana ręcznie w console.json - zostaje na liście
         self.tv_res.set_items(_res_items((*TV_RESOLUTIONS, *extra)))
-        self.tv_res.set_data("%dx%d" % res)
+        self.tv_res.set_data("{}x{}".format(*res))
         self.tv_scale.set_data(cfg.tv_scale)
         self.apps.setPlainText("\n".join(cfg.allowed_apps))
         owner = self.parent()
@@ -283,7 +283,7 @@ class ConsoleSettings(QDialog):
         for i in range(C.NUM_PADS):
             key = S.profile_key(i)
             # tylko pad z identyfikatorem (MAC) - klucz "slotN" zgubiłby się po nadejściu identyfikatora
-            if key in known or not (S.pad_id[i] and (S.alive[i] or S.want[i].is_set()) or key == m.pad):
+            if key in known or not ((S.pad_id[i] and (S.alive[i] or S.want[i].is_set())) or key == m.pad):
                 continue
             known.add(key)
             items.append((key, _("Pad {n}  ·  {key}").format(n=i + 1, key=key), "crown" if key == m.pad else None))
@@ -311,7 +311,7 @@ class ConsoleSettings(QDialog):
         return ConsoleConfig(toggle_button=self.toggle_button, double_click_ms=self.dbl.value(),
                              audio_tv=self.tv.currentData() or "", audio_pc=self.pc.currentData() or "",
                              timeout_s=self.timeout.value(), startup_mode=self.startup.currentData(),
-                             **dict(zip(("tv_width", "tv_height"), map(int, self.tv_res.currentData().split("x")))),
+                             **dict(zip(("tv_width", "tv_height"), map(int, self.tv_res.currentData().split("x")), strict=True)),
                              tv_scale=self.tv_scale.currentData(), auto_on_master=self.auto_on.isChecked(),
                              allowed_apps=tuple(dict.fromkeys(x.strip().lower() for x in self.apps.toPlainText().splitlines()
                                                               if x.strip())))
@@ -399,7 +399,7 @@ class ConsoleSettings(QDialog):
 
 
 def _res_items(resolutions):
-    return [("%dx%d" % r, f"{r[0]} × {r[1]}" if r[0] else _("— bez zmiany —")) for r in resolutions]
+    return [("{}x{}".format(*r), f"{r[0]} × {r[1]}" if r[0] else _("— bez zmiany —")) for r in resolutions]
 
 
 def _page(items):

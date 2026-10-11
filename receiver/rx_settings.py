@@ -168,7 +168,10 @@ def load(path, base=None):
         print(f"Settings: cannot read {path} ({e!r}) - using defaults")
         return base
     raw = raw if isinstance(raw, dict) else {}
-    sec = lambda k: raw.get(k) if isinstance(raw.get(k), dict) else {}
+
+    def sec(k):
+        return raw.get(k) if isinstance(raw.get(k), dict) else {}
+
     return Settings(_section(MouseConfig, sec("mouse"), base.mouse, "mouse"),
                     _section(MasterConfig, sec("master"), base.master, "master"),
                     _section(UiConfig, sec("ui"), base.ui, "ui"))

@@ -14,13 +14,13 @@ Gesty touchpada (gestures, touch_start_move) i opóźnienie dotyku (touch_coales
 """
 import asyncio
 import gc
-import os
 import signal
 import traceback
 
 import sender_config
 import sender_control as control
 import sender_net as net
+import sender_rt
 import sender_streams as streams
 import sender_state as state
 import sender_supervisor as sup
@@ -69,16 +69,7 @@ if __name__ == "__main__":
     net.init()
     net.on_feedback = sup.dispatch_feedback
     net.on_command = control.on_command
-    try:
-        os.nice(-10)
-    except OSError:
-        pass
-    if C.RT_PRIORITY:
-        try:   # opcjonalnie: planista czasu rzeczywistego (wymaga roota/doas); 0 = wyłączone
-            os.sched_setscheduler(0, os.SCHED_FIFO, os.sched_param(C.RT_PRIORITY))
-            print(f"Realtime scheduling: SCHED_FIFO {C.RT_PRIORITY}")
-        except (OSError, AttributeError) as e:
-            print(f"Realtime scheduling unavailable: {e}")
+    sender_rt.setup(C.LOW_LATENCY, C.CPU_LATENCY_US, C.RT_PRIORITY)
     gc.collect()
     gc.freeze()   # obiekty ze startu poza zasięgiem GC - krótsze pauzy
     try:

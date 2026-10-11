@@ -158,7 +158,7 @@ async def stream_motion(c):
                 else:
                     cal_end = 0.0
                     if len(samples) >= 20:
-                        axes = list(zip(*samples))
+                        axes = list(zip(*samples, strict=True))
                         if all(max(a) - min(a) <= C.CAL_MAX_RANGE for a in axes):
                             bias = [sum(a) / len(a) for a in axes]
                             print(f"Controller {c.idx}: gyro bias {[round(b) for b in bias]}")

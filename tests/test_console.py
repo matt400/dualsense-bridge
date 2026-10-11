@@ -185,7 +185,7 @@ ok("błędy ekranu / dźwięku / toastu logowane, nic się nie wywala")
 c = new_console(); got = []
 state(0, mask=BIT[SHARE])                                  # trzymany w chwili uzbrojenia - nie liczy się
 c.arm_capture(got.append)
-state(0, mask=BIT[SHARE] | BIT[PS]);
+state(0, mask=BIT[SHARE] | BIT[PS])
 check(got == ["ps"], f"przechwycony nowo wciśnięty przycisk (a nie trzymany): {got}")
 state(0, mask=0); calls.clear(); c.on = False
 click(0, PS); click(0, PS)

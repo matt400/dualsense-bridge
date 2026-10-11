@@ -7,7 +7,8 @@
   PS + D-pad lewo / prawo  -> poprzedni / następny profil remapowania tego pada
   PS + klik touchpada      -> mysz / dotyk DS4 (obsługa w rx_net, tu tylko mark_used)
 
-Każdy skrót może być zastrzeżony dla pada master (rx_master.allowed). Wejścia użyte w skrócie nie trafiają do gry, dopóki nie zostaną puszczone. Działa na SUROWYCH wejściach,
+Każdy skrót może być zastrzeżony dla pada master (rx_master.allowed). Wejścia użyte w skrócie nie trafiają do gry,
+dopóki nie zostaną puszczone. Działa na SUROWYCH wejściach,
 przed remapowaniem, więc zremapowanie PS nie wyłącza skrótów. ps_modifier = False wyłącza całość
 (PS idzie wtedy do gry od razu, jak wcześniej).
 """

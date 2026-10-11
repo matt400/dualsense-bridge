@@ -1,0 +1,23 @@
+name: tests
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: System libraries for Qt (offscreen)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libegl1 libxkbcommon0 libfontconfig1 libdbus-1-3
+      - name: Python packages
+        run: pip install evdev ruff PySide6-Essentials
+      - name: Tests (sender, receiver with Windows stubs, GUI offscreen)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: ./tests/run_tests.sh
