@@ -155,6 +155,16 @@ def _touchpad(p):
     p.drawEllipse(QPointF(14, 12), 2.2, 2.2)
 
 
+def _restart(p):
+    p.setPen(_pen(FG, 1.8))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawArc(QRectF(5, 5, 14, 14), 60 * 16, 290 * 16)
+    head = QPainterPath(QPointF(19.5, 3.5))
+    head.lineTo(19.5, 9)
+    head.lineTo(14, 9)
+    p.drawPath(head)
+
+
 def _tv(p):
     p.setPen(_pen(FG, 1.6))
     p.setBrush(Qt.BrushStyle.NoBrush)
@@ -178,7 +188,7 @@ def _draw(p, name):
         _dpad(p, name)
     else:
         {"ps": _ps, "mute": _mute, "share": _share, "options": _options, "crown": _crown, "mouse": _mouse,
-         "tv": _tv, "power": _power, "touchpad": _touchpad}[name](p)
+         "tv": _tv, "power": _power, "touchpad": _touchpad, "restart": _restart}[name](p)
 
 
 def pixmap(name, size=24, dim=False):
@@ -205,4 +215,4 @@ def icon(name, dim=False):
 
 def has_icon(name):
     return name in FACE or name in BADGES or name.startswith("dpad_") or name in (
-        "ps", "mute", "share", "options", "crown", "mouse", "touchpad", "tv", "power")
+        "ps", "mute", "share", "options", "crown", "mouse", "touchpad", "tv", "power", "restart")

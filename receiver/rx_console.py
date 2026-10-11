@@ -1,7 +1,8 @@
 """Receiver: tryb konsoli - jedno podwójne kliknięcie przycisku pada (domyślnie mute) przełącza ekran i dźwięk
 między monitorem a TV.
 
-  ON   ekran tylko TV (DisplaySwitch /external), dźwięk audio_tv, toast "Tryb konsoli włączony"
+  ON   ekran tylko TV (DisplaySwitch /external), na TV tv_width x tv_height i skalowanie tv_scale % (rx_display),
+       dźwięk audio_tv, toast "Tryb konsoli włączony"
   OFF  ekran extend (DisplaySwitch /extend: oba ekrany), dźwięk audio_pc, toast "Tryb konsoli wyłączony"
   auto-OFF  brak pakietów z pada przez timeout_s -> samo OFF (oba ekrany aktywne, nie zostajesz bez obrazu)
   start     startup_mode: extend (oba ekrany) albo internal (tylko monitor) + dźwięk audio_pc
@@ -23,6 +24,7 @@ import traceback
 from dataclasses import asdict, dataclass, fields
 
 import rx_audio
+import rx_display
 import rx_master as master
 import rx_state as S
 from rx_buttons import BIT, BUTTON_CODES, DIRS, INPUTS, TRIG_ON, pressed_inputs
@@ -67,6 +69,9 @@ class ConsoleConfig:
     audio_pc: str = ""              # nazwa urządzenia audio PC; puste = nie zmieniaj dźwięku
     timeout_s: int = 60             # cisza z pada dłuższa niż tyle = auto-OFF
     startup_mode: str = "extend"    # extend | internal
+    tv_width: int = 2560            # rozdzielczość TV po włączeniu (0 = bez zmiany)
+    tv_height: int = 1440
+    tv_scale: int = 200             # skalowanie TV w % (0 = bez zmiany)
     version: int = CONFIG_VERSION   # wersja pliku (migracje)
 
     @classmethod
@@ -100,6 +105,9 @@ _VALIDATORS = {
     "audio_pc": _text,
     "timeout_s": _number(5, 3600),
     "startup_mode": _choice(STARTUP_MODES),
+    "tv_width": _number(0, 15360),
+    "tv_height": _number(0, 8640),
+    "tv_scale": lambda v: int(_choice((0, *rx_display.DPI_VALUES))(v)),
     "version": _number(1, CONFIG_VERSION),
 }
 
@@ -152,6 +160,10 @@ def _display(mode):
     exe = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "DisplaySwitch.exe")
     subprocess.run([exe, DISPLAY_ARG[mode]], timeout=15, check=False,
                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+
+
+def _tv_mode(w, h, scale):
+    print(f"Console: TV {rx_display.apply_tv(w, h, scale)}")
 
 
 def _audio(name):
@@ -267,6 +279,8 @@ class Console:
         cfg = cfg or self.cfg
         self.on, self._since, self._revert = on, time.monotonic(), None
         _step("display", _display, "tv" if on else "extend")
+        if on and (cfg.tv_width and cfg.tv_height or cfg.tv_scale):
+            _step("TV resolution / scaling", _tv_mode, cfg.tv_width, cfg.tv_height, cfg.tv_scale)
         if audio := cfg.audio_tv if on else cfg.audio_pc:
             _step("audio", _audio, audio)
         print(f"Console: {'ON' if on else 'OFF'}" + (f" ({why})" if why else ""))

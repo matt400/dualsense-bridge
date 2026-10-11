@@ -23,7 +23,8 @@ DualSense ──Bluetooth──> telefon: sender/ ──UDP 5005──> PC: rece
   - remapowanie przycisków i gałek, strefy martwe, krzywe i anti-deadzone, celowanie żyroskopem (prawa gałka / mysz);
   - profile per gra (`gra.exe`), które włączają się same, gdy gra jest aktywnym oknem;
   - zmiany działają na padzie od razu, zapis do `remap.json` jest osobno;
-  - akcje nieodwracalne (wyłączenie pada, usunięcie profilu, reset) wymagają drugiego kliknięcia, bez okienek;
+  - akcje nieodwracalne (wyłączenie pada, usunięcie profilu, reset, restart receivera) wymagają drugiego kliknięcia;
+  - **Restart** w nagłówku okna i w menu zasobnika uruchamia receiver od nowa;
   - przyciski pada pokazane jako ikony (z pełną nazwą w podpowiedzi).
 - **Skróty z PS:**
 
@@ -43,7 +44,7 @@ DualSense ──Bluetooth──> telefon: sender/ ──UDP 5005──> PC: rece
 
   | | Ekran (`DisplaySwitch.exe`) | Dźwięk | Powiadomienie |
   |---|---|---|---|
-  | ON | tylko TV (`/external`) | `audio_tv` | „Tryb konsoli włączony” |
+  | ON | tylko TV (`/external`), na TV 2560×1440 i skalowanie 200 % (`tv_width`, `tv_height`, `tv_scale`) | `audio_tv` | „Tryb konsoli włączony” |
   | OFF | oba ekrany (`/extend`) | `audio_pc` | „Tryb konsoli wyłączony” |
   | brak pakietów z pada przez `timeout_s` | jak OFF | jak OFF | jak OFF |
   | start receivera (autostart) | `startup_mode`: `extend` (oba ekrany) albo `internal` | `audio_pc` | brak |
@@ -170,6 +171,8 @@ Tryb konsoli ma własny plik `receiver/console.json` (obok skryptu). Brak pliku 
 | `audio_pc` | "" | nazwa urządzenia audio komputera |
 | `timeout_s` | 60 | brak pakietów z pada przez tyle sekund = automatyczne OFF (5-3600) |
 | `startup_mode` | `extend` | ekran przy starcie receivera: `extend` albo `internal` |
+| `tv_width`, `tv_height` | 2560, 1440 | rozdzielczość TV po włączeniu trybu (najwyższe odświeżanie dla niej; 0 = bez zmiany) |
+| `tv_scale` | 200 | skalowanie TV w %: 100, 125, 150, 175, 200, 225, 250, 300... (0 = bez zmiany) |
 
 Mysz touchpada i pad master są w `receiver/settings.json` (okno → Ustawienia → Mysz / Master, działa od razu).
 Nadajnik zapisuje stały przydział pad → slot w `sender/slots.json` (`slots_file = ""` wyłącza).

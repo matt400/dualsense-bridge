@@ -7,6 +7,7 @@ Zmiany profilu działają na pad na żywo po 150 ms od ostatniego ruchu suwaka, 
 """
 import os
 import signal
+from functools import cache
 import sys
 import time
 
@@ -20,6 +21,7 @@ import rx_master
 import rx_profiles as P
 import rx_state as S
 import rx_status as ST
+import rx_winapi as W
 from rx_buttons import profile_size
 from rx_config import C
 from rx_editor import Editor
@@ -36,10 +38,15 @@ NOTE_S = 6.0           # tyle sekund komunikat (np. "Saved") zasłania status pr
 VIEWS = (("out", "Result"), ("in", "Physical"))
 
 
+@cache
 def make_icon(rgb):
-    pm = QPixmap()
-    pm.loadFromData(icon_png(render_icon(rgb)))
-    return QIcon(pm)
+    """Ikona pada w kilku rozmiarach - ostra w zasobniku, na pasku zadań i przy skalowaniu 150-200 %."""
+    ic = QIcon()
+    for size in (16, 24, 32, 48, 64):
+        pm = QPixmap()
+        pm.loadFromData(icon_png(render_icon(rgb, size)))
+        ic.addPixmap(pm)
+    return ic
 
 
 class PadCard(QFrame):
@@ -225,6 +232,10 @@ class MainWindow(QMainWindow):
         settings_btn = button("Ustawienia", small=True)
         settings_btn.setToolTip("Tryb konsoli, mysz touchpada, pad master")
         settings_btn.clicked.connect(self.open_settings)
+        restart_btn = ConfirmButton("Restart", "Restart?", small=True)
+        restart_btn.setIcon(icon("restart"))
+        restart_btn.setToolTip("Uruchamia receiver od nowa (pady na chwilę znikną, niezapisane zmiany profilu przepadną)")
+        restart_btn.confirmed.connect(self.restart)
         quit_btn = ConfirmButton("Quit", "Quit?", small=True)
         quit_btn.setToolTip("Stops the receiver - the virtual pads disappear")
         quit_btn.confirmed.connect(self.quit)
@@ -233,6 +244,7 @@ class MainWindow(QMainWindow):
         lay.addWidget(self.sender)
         lay.addSpacing(12)
         lay.addWidget(settings_btn)
+        lay.addWidget(restart_btn)
         lay.addWidget(quit_btn)
         return bar
 
@@ -317,6 +329,7 @@ class MainWindow(QMainWindow):
         menu = QMenu()
         menu.addAction("Show window", self.bring_to_front)
         menu.addAction("Ustawienia", self.open_settings)
+        menu.addAction(icon("restart"), "Restart", self.restart)
         menu.addAction("Quit", self.quit)
         tray.setContextMenu(menu)
         self._tray_menu = menu                 # Qt nie przejmuje własności menu - trzeba je trzymać
@@ -375,7 +388,9 @@ class MainWindow(QMainWindow):
         self.settings_dlg.present()
 
     def restart(self):
-        """Zapisane ustawienia: zwykłe zamknięcie okna, a receiver sam startuje od nowa po zwolnieniu portów i ViGEm."""
+        """Restart (przycisk, zasobnik, zapisane ustawienia): zwykłe zamknięcie okna, a receiver sam startuje od nowa
+        po zwolnieniu portów i ViGEm."""
+        print("Restart requested from the window")
         S.restart = True
         self.quit()
 
@@ -559,8 +574,10 @@ def _int(v, default):
 
 def create_window(settings_path=None):
     """QApplication (jeśli jeszcze nie ma) + okno. Osobno od run_gui, żeby testy mogły sterować oknem bez pętli."""
+    W.set_app_id()                             # ikona pada na pasku zadań zamiast ikony Pythona
     app = QApplication.instance() or QApplication(sys.argv[:1])
     app.setApplicationName("DualSense bridge")
+    app.setWindowIcon(make_icon(ICON_OK))      # także okno ustawień i powiadomienia
     app.setQuitOnLastWindowClosed(False)       # zamknięcie okna = do zasobnika
     apply_theme(app)
     path = settings_path or os.path.join(os.path.dirname(C.REMAP_PATH), "receiver_ui.ini")

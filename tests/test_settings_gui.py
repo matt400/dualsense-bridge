@@ -93,4 +93,15 @@ assert "mute" not in targets and "ps" in targets, "mute można zremapować, ale 
 assert win.part_page.dst.itemText(0) == "" and not win.part_page.dst.itemIcon(0).isNull(), "cele jako ikony"
 win.grab().save(os.path.join(os.path.dirname(__file__), "gui_master2.png"))
 ok("remap: mute klikalny na rysunku, cele jako ikony z podpowiedzią")
+# ---------- przycisk Restart w nagłówku i ikona okna ----------
+from PySide6.QtWidgets import QPushButton
+btn = next(b for b in win.findChildren(QPushButton) if b.text() == "Restart")
+S.restart = False; closed.clear()
+btn.click(); pump()
+assert S.restart is False and btn.text() == "Restart?", "pierwszy klik tylko uzbraja"
+btn.click(); pump()
+assert S.restart is True and closed, "drugi klik: restart receivera"
+S.restart = False
+assert not QApplication.instance().windowIcon().isNull() and len(win.windowIcon().availableSizes()) >= 4, "ikona pada w kilku rozmiarach"
+ok("Restart: dwa kliknięcia, restart receivera; ikona aplikacji ustawiona")
 print("GUI USTAWIEŃ (MYSZ / MASTER) OK")

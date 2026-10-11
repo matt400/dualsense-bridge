@@ -76,12 +76,16 @@ ok("Przetestuj: używa wartości z okna, nic nie zapisuje")
 S.restart = False; closed = []
 QApplication.instance().quit = lambda: closed.append(True)  # bez pętli zdarzeń w teście
 dlg.set_button("cross"); dlg.tv.set_data("Speakers (Realtek)"); dlg.pc.set_data("Headphones (USB)")
+assert dlg.tv_res.currentData() == "2560x1440" and dlg.tv_scale.currentData() == 200, "domyślnie TV 1440p / 200 %"
+dlg.tv_res.set_data("3840x2160"); dlg.tv_scale.set_data(150)
 dlg.save_btn.click(); pump()
 saved = json.load(open(C.CONSOLE_PATH))
 assert saved == {"toggle_button": "cross", "double_click_ms": 500, "audio_tv": "Speakers (Realtek)",
-                 "audio_pc": "Headphones (USB)", "timeout_s": 120, "startup_mode": "extend", "version": 2}, saved
+                 "audio_pc": "Headphones (USB)", "timeout_s": 120, "startup_mode": "extend", "tv_width": 3840,
+                 "tv_height": 2160, "tv_scale": 150, "version": 2}, saved
 assert S.restart is True and closed, "zapis prosi o restart (zamknięcie okna, S.restart)"
-assert rx_console.load(C.CONSOLE_PATH) == ConsoleConfig("cross", 500, "Speakers (Realtek)", "Headphones (USB)", 120, "extend")
+assert rx_console.load(C.CONSOLE_PATH) == ConsoleConfig("cross", 500, "Speakers (Realtek)", "Headphones (USB)", 120, "extend",
+                                                        3840, 2160, 150)
 S.restart = False
 ok("Zapisz: console.json zapisany, restart zlecony")
 

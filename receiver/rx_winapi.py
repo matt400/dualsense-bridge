@@ -30,6 +30,18 @@ def init_process():
         pass
 
 
+APP_ID = "DualSenseBridge.Receiver"
+
+
+def set_app_id():
+    """Własny AppUserModelID: Windows traktuje okno jako osobną aplikację, więc pasek zadań pokazuje ikonę okna
+    (pad), a nie ikonę python.exe / pythonw.exe. Wołać przed utworzeniem pierwszego okna."""
+    try:
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_ID)
+    except Exception:
+        pass
+
+
 def _no_power_throttling():
     """Windows 10/11: proces z ukrytym oknem (zasobnik) bywa przenoszony w tryb efektywności (EcoQoS) i traci
     rozdzielczość timera - to dawało losowe skoki opóźnień. Wyłączamy oba mechanizmy (ignoruj błędy na starszych

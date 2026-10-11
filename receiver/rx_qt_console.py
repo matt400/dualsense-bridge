@@ -19,6 +19,7 @@ import rx_state as S
 from rx_buttons import LABELS
 from rx_config import C
 from rx_console import STARTUP_MODES, ConsoleConfig
+from rx_display import DPI_VALUES
 from rx_qt_icons import icon
 from rx_qt_style import set_prop
 from rx_qt_widgets import Combo, SliderRow, button, field, icon_label, input_items, label
@@ -26,6 +27,7 @@ from rx_settings import ABSENT, COMBO_BUTTONS, MASTER_ACTIONS, MASTER_FEATURES, 
 
 CAPTURE_TIMEOUT_MS = 15000
 NO_AUDIO = ("", "— nie zmieniaj dźwięku —")
+TV_RESOLUTIONS = ((0, 0), (1920, 1080), (2560, 1440), (3840, 2160))
 STARTUP_LABELS = {"extend": "Rozszerz: oba ekrany aktywne", "internal": "Tylko monitor"}
 
 
@@ -107,6 +109,14 @@ class ConsoleSettings(QDialog):
         refresh = button("Odśwież listę urządzeń", small=True)
         refresh.clicked.connect(lambda: self.refresh())     # clicked podaje 'checked' - nie jako urządzenie
         lay.addWidget(refresh)
+
+        self.tv_res = Combo(_res_items(TV_RESOLUTIONS))
+        self.tv_scale = Combo([(v, f"{v} %" if v else "— bez zmiany —") for v in (0, *DPI_VALUES)])
+        row = QHBoxLayout()
+        row.setSpacing(12)
+        row.addWidget(field("Rozdzielczość TV po włączeniu", self.tv_res))
+        row.addWidget(field("Skalowanie TV", self.tv_scale))
+        lay.addLayout(row)
 
         self.startup = Combo([(m, STARTUP_LABELS[m]) for m in STARTUP_MODES])
         lay.addWidget(field("Ekran przy starcie receivera", self.startup))
@@ -196,6 +206,11 @@ class ConsoleSettings(QDialog):
         self.dbl.setValue(cfg.double_click_ms)
         self.timeout.setValue(cfg.timeout_s)
         self.startup.set_data(cfg.startup_mode)
+        res = (cfg.tv_width, cfg.tv_height) if cfg.tv_width and cfg.tv_height else (0, 0)
+        extra = () if res in TV_RESOLUTIONS else (res,)     # wpisana ręcznie w console.json - zostaje na liście
+        self.tv_res.set_items(_res_items((*TV_RESOLUTIONS, *extra)))
+        self.tv_res.set_data("%dx%d" % res)
+        self.tv_scale.set_data(cfg.tv_scale)
         self.pick.setEnabled(rx_console.ctl is not None)
         self.refresh(cfg.audio_tv, cfg.audio_pc)
         self._status("")
@@ -255,7 +270,9 @@ class ConsoleSettings(QDialog):
     def collect(self):
         return ConsoleConfig(toggle_button=self.toggle_button, double_click_ms=self.dbl.value(),
                              audio_tv=self.tv.currentData() or "", audio_pc=self.pc.currentData() or "",
-                             timeout_s=self.timeout.value(), startup_mode=self.startup.currentData())
+                             timeout_s=self.timeout.value(), startup_mode=self.startup.currentData(),
+                             **dict(zip(("tv_width", "tv_height"), map(int, self.tv_res.currentData().split("x")))),
+                             tv_scale=self.tv_scale.currentData())
 
     # ---------- przycisk pada ----------
     def set_button(self, name):
@@ -331,6 +348,10 @@ class ConsoleSettings(QDialog):
         super().hideEvent(e)
         if self._cap_timer.isActive():
             self._stop_capture()
+
+
+def _res_items(resolutions):
+    return [("%dx%d" % r, f"{r[0]} × {r[1]}" if r[0] else "— bez zmiany —") for r in resolutions]
 
 
 def _scroll(w):
