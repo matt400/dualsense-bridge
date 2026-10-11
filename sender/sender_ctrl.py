@@ -9,7 +9,7 @@ from evdev import ecodes as ec
 from evdev import ff
 
 import sender_net as net
-from proto import (KEY_BIT, MUTE_KEY, T_CLICK, T_IDENT, T_MOUSE, T_STATE, T_TOUCH, clamp)
+from proto import (KEY_BIT, MUTE_KEY, SENDER_VERSION, T_CAPS, T_CLICK, T_IDENT, T_MOUSE, T_STATE, T_TOUCH, clamp)
 from sender_config import BURST_DELAYS, C, IDLE_TP, NEUTRAL_PAD, PAD_ABS, STICK_AXES
 
 MUTE_BIT = KEY_BIT[MUTE_KEY]
@@ -42,6 +42,7 @@ class Ctrl:
         self.hat = [0, 0]
         self.mask = 0
         self.mute = False             # przycisk mute (z hidraw, sender_hidraw.py) - bit MUTE_BIT w masce
+        self.mute_caps = 0            # CAPS_MUTE_* - czy mute działa (okno receivera to pokazuje)
         self.motion = [0] * 6
         self.batt, self.flags = 255, 0
         self.touch = IDLE_TP
@@ -118,6 +119,7 @@ class Ctrl:
     # ---- wysyłanie ----
     def send_ident(self):
         net.emit(T_IDENT, self.idx, pad_ident(self.key).encode("ascii", "replace")[:17])
+        net.emit(T_CAPS, self.idx, SENDER_VERSION, self.mute_caps)
 
     def send_state(self, force=False):
         key = (*self.pad, *self.hat, self.mask, self.batt, self.flags, *self.motion)

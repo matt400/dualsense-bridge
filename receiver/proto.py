@@ -15,6 +15,8 @@ opcjonalnie 8 B HMAC-SHA256 (gdy ustawiony klucz).
   9 ident   "17s"        nadajnik: stały identyfikator pada (MAC) - klucz profilu remapowania
  10 cmd     "BB"         PC -> nadajnik: polecenie, argument (CMD_POWER_OFF = wyłącz pada)
  11 info    "HHH"        nadajnik -> PC co 1 s: ping x10 [ms] (0xFFFF = brak), Hz raportów pada, Hz ruchu
+ 12 caps    "BB"         nadajnik -> PC razem z ident: wersja nadajnika, flagi (CAPS_MUTE_*: stan przycisku mute);
+                         starszy receiver ignoruje nieznany typ
 """
 import hmac
 import json
@@ -25,7 +27,9 @@ import threading
 VER = 2
 HDR0 = VER << 4
 
-T_STATE, T_TOUCH, T_CLICK, T_MOUSE, T_PING, T_FB, T_PONG, T_BYE, T_IDENT, T_CMD, T_INFO = range(1, 12)
+T_STATE, T_TOUCH, T_CLICK, T_MOUSE, T_PING, T_FB, T_PONG, T_BYE, T_IDENT, T_CMD, T_INFO, T_CAPS = range(1, 13)
+SENDER_VERSION = 3
+CAPS_MUTE_OPEN, CAPS_MUTE_OK, CAPS_MUTE_FAIL = 1, 2, 4   # hidraw otwarty / format sprawdzony, mute działa / nie działa
 CMD_POWER_OFF = 1
 RTT_NONE = 0xFFFF
 
@@ -42,9 +46,10 @@ BODY = {
     T_IDENT: struct.Struct("!17s"),
     T_CMD: struct.Struct("!BB"),
     T_INFO: struct.Struct("!HHH"),
+    T_CAPS: struct.Struct("!BB"),
 }
 BODY_LEN = {t: s.size for t, s in BODY.items()}
-assert BODY_LEN == {1: 36, 2: 12, 3: 1, 4: 5, 5: 8, 6: 5, 7: 8, 8: 0, 9: 17, 10: 2, 11: 6}, BODY_LEN
+assert BODY_LEN == {1: 36, 2: 12, 3: 1, 4: 5, 5: 8, 6: 5, 7: 8, 8: 0, 9: 17, 10: 2, 11: 6, 12: 2}, BODY_LEN
 
 # kody evdev przycisków DualSense -> bit w masce (kolejność = pozycja bitu w pakiecie stanu).
 # 248 = KEY_MICMUTE: jądro (hid-playstation) nie wysyła przycisku mute przez evdev, nadajnik czyta go z hidraw

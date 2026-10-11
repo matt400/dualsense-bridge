@@ -8,13 +8,15 @@ import rx_hotkeys as hotkeys
 import rx_master as master
 import rx_mouse as mouse
 import rx_state as S
-from proto import (BODY, RTT_NONE, Codec, T_BYE, T_CLICK, T_CMD, T_FB, T_IDENT, T_INFO, T_MOUSE, T_PING, T_PONG,
-                   T_STATE, T_TOUCH, clamp)
-from rx_buttons import MASK_ALL, PS_BIT, profile_size
+from proto import (BODY, RTT_NONE, Codec, T_BYE, T_CAPS, T_CLICK, T_CMD, T_FB, T_IDENT, T_INFO, T_MOUSE, T_PING, T_PONG,
+                   T_STATE, T_TOUCH, CAPS_MUTE_FAIL, CAPS_MUTE_OK, clamp)
+from rx_buttons import MASK_ALL, MUTE_BIT, PS_BIT, TRIG_ON, profile_size
+
+MUTE_STUCK_S = 8.0     # mute "trzymany" dłużej = błędny odczyt u nadajnika: ignoruj bit do puszczenia
 from rx_config import C
 from rx_winapi import bind_udp, boost_thread
 
-RX_TYPES = {T_STATE, T_TOUCH, T_CLICK, T_MOUSE, T_PING, T_BYE, T_IDENT, T_INFO}   # typy, które receiver przyjmuje
+RX_TYPES = {T_STATE, T_TOUCH, T_CLICK, T_MOUSE, T_PING, T_BYE, T_IDENT, T_INFO, T_CAPS}   # typy, które receiver przyjmuje
 ST_STATE, ST_TOUCH, ST_MOUSE, ST_INFO = BODY[T_STATE], BODY[T_TOUCH], BODY[T_MOUSE], BODY[T_INFO]
 
 
@@ -53,6 +55,7 @@ class LinkStats:
 codec = None
 in_sock = None
 _warned_idx = set()
+_digital = [None] * 4    # ostatni stan przycisków (maska, d-pad, spusty wciśnięte) per slot - zmiana = obsługa skrótów
 
 
 def init():
@@ -107,9 +110,12 @@ def clear_slot(i, forget_id=False):
     S.batt_info[i] = (255, 0)
     S.info[i] = None
     S.seen.forget(lambda k: k[1] == i)
+    S.mute_since[i], S.mute_stuck[i] = None, False
+    _digital[i] = None
     hotkeys.reset(i)
     master.reset(i)
     if forget_id:                      # pad fizycznie odszedł - następny w tym slocie przyśle swój ident
+        S.caps[i] = None
         with S.profile_lock:
             S.pad_id[i] = None
             S.override[i] = None
@@ -141,14 +147,17 @@ def handle(t, i, data):
         if v == S.last_v[i]:
             return      # powtórka (heartbeat) - nic się nie zmieniło
         S.last_v[i] = v
-        mask = v[8] & MASK_ALL
+        mask = mute_guard(i, v[8] & MASK_ALL, time.monotonic())
         bd, b4 = batt_codes(v[9], v[10])
         S.batt_info[i] = (v[9], v[10])
         lx, ly, lt, rx, ry, rt = v[:6]
         hx, hy = clamp(v[6], -1, 1), clamp(v[7], -1, 1)
-        master.on_state(i, mask, hx, hy, lt, rt)       # przed skrótami PS: filtr wejść używa stanu kombinacji
-        hotkeys.on_state(i, mask, hx, hy)
-        rx_console.on_state(i, mask, hx, hy, lt, rt)
+        dig = (mask, hx, hy, lt >= TRIG_ON, rt >= TRIG_ON)
+        if dig != _digital[i]:              # skróty / master / tryb konsoli tylko przy zmianie przycisków,
+            _digital[i] = dig               # a nie przy każdej próbce gyro i gałek (250 Hz)
+            master.on_state(i, mask, hx, hy, lt, rt)   # przed skrótami PS: filtr wejść używa stanu kombinacji
+            hotkeys.on_state(i, mask, hx, hy)
+            rx_console.on_state(i, mask, hx, hy, lt, rt)
         with S.lock:
             s = S.states[i]
             s["raw"] = (mask, hx, hy, lt, rt)
@@ -220,9 +229,32 @@ def handle(t, i, data):
             n = profile_size(S.remap_maps[i])
             print(f"Controller {i}: id {pid}, profile {S.profile_label(S.active[i])}"
                   + (f" ({n} changes)" if n else ""))
+    elif t == T_CAPS:
+        caps = BODY[T_CAPS].unpack_from(data, 4)
+        if caps != S.caps[i]:
+            S.caps[i] = caps
+            print(f"Controller {i}: sender v{caps[0]}, mute button "
+                  + ("OK" if caps[1] & CAPS_MUTE_OK else "NOT available" if caps[1] & CAPS_MUTE_FAIL else "checking..."))
     elif t == T_INFO:
         rtt, pad_hz, motion_hz = ST_INFO.unpack_from(data, 4)
         S.info[i] = (None if rtt == RTT_NONE else rtt / 10, pad_hz, motion_hz, time.monotonic())
+
+
+def mute_guard(i, mask, now):
+    """Mute trzymany bez przerwy dłużej niż MUTE_STUCK_S to nie człowiek, tylko zły odczyt (np. inny układ raportu
+    HID): bez tej ochrony każdy przycisk liczyłby się jako "mute + przycisk" (akcje mastera, brak trybu konsoli)."""
+    if not mask & MUTE_BIT:
+        if S.mute_stuck[i]:
+            print(f"Controller {i}: mute released - mute button active again")
+        S.mute_since[i], S.mute_stuck[i] = None, False
+        return mask
+    if S.mute_since[i] is None:
+        S.mute_since[i] = now
+    elif not S.mute_stuck[i] and now - S.mute_since[i] > MUTE_STUCK_S:
+        S.mute_stuck[i] = True
+        print(f"Controller {i}: mute reported as held for {MUTE_STUCK_S:g}s - ignoring it until released "
+              "(check the sender log for the mute button)")
+    return mask & ~MUTE_BIT if S.mute_stuck[i] else mask
 
 
 def check_stale(now):

@@ -16,7 +16,7 @@ FG, DIM, BODY, GOLD = QColor("#e8eaf0"), QColor("#8b91a1"), QColor("#3a3f4d"), Q
 FACE = {"triangle": "#4cd08a", "circle": "#ff6b6b", "cross": "#5b9bff", "square": "#e58bd2"}
 BADGES = {"l1": "L1", "r1": "R1", "l2": "L2", "r2": "R2", "l3": "L3", "r3": "R3"}
 EXTRA_TIPS = {"crown": "Pad master", "mouse": "Touchpad jako mysz", "touchpad": "Touchpad jako dotyk DS4",
-              "tv": "Tryb konsoli", "power": "Wyłącz"}
+              "tv": "Tryb konsoli", "power": "Wyłącz", "restart": "Uruchom ponownie", "window": "Ekran"}
 SIZES = (16, 20, 24, 32, 48)
 
 
@@ -165,6 +165,13 @@ def _restart(p):
     p.drawPath(head)
 
 
+def _window(p):
+    p.setPen(_pen(FG, 1.6))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawRoundedRect(QRectF(3, 5, 18, 14), 2, 2)
+    p.drawLine(QPointF(3, 9), QPointF(21, 9))
+
+
 def _tv(p):
     p.setPen(_pen(FG, 1.6))
     p.setBrush(Qt.BrushStyle.NoBrush)
@@ -188,7 +195,7 @@ def _draw(p, name):
         _dpad(p, name)
     else:
         {"ps": _ps, "mute": _mute, "share": _share, "options": _options, "crown": _crown, "mouse": _mouse,
-         "tv": _tv, "power": _power, "touchpad": _touchpad, "restart": _restart}[name](p)
+         "tv": _tv, "power": _power, "touchpad": _touchpad, "restart": _restart, "window": _window}[name](p)
 
 
 def pixmap(name, size=24, dim=False):
@@ -215,4 +222,4 @@ def icon(name, dim=False):
 
 def has_icon(name):
     return name in FACE or name in BADGES or name.startswith("dpad_") or name in (
-        "ps", "mute", "share", "options", "crown", "mouse", "touchpad", "tv", "power", "restart")
+        "ps", "mute", "share", "options", "crown", "mouse", "touchpad", "tv", "power", "restart", "window")

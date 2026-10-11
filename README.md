@@ -40,7 +40,8 @@ DualSense ──Bluetooth──> telefon: sender/ ──UDP 5005──> PC: rece
   gryzie - wcześniej domyślne podwójne PS otwierało przy okazji Steam Big Picture. Stary `console.json` z PS zmienia się
   sam na mute; PS wybrany ponownie w Ustawieniach zostaje. Naciśnięcie w skrócie (PS + Share, mute + przycisk...)
   nie liczy się jako kliknięcie. Dioda mikrofonu na padzie przełącza się przy każdym naciśnięciu mute (robi to
-  sterownik Linuksa) - to tylko kosmetyka.
+  sterownik Linuksa) - to tylko kosmetyka. Nadajnik zanim włączy mute porównuje raporty HID z osiami pada (zły
+  odczyt nie może udawać wiecznie wciśniętego mute), a karta pada w oknie pokazuje, czy mute działa.
 
   | | Ekran (`DisplaySwitch.exe`) | Dźwięk | Powiadomienie |
   |---|---|---|---|
@@ -64,13 +65,14 @@ DualSense ──Bluetooth──> telefon: sender/ ──UDP 5005──> PC: rece
   | do ustawienia | uśpij komputer, wyłącz komputer (10 s na `shutdown /a`) |
 
   Przycisk z kombinacji nie trafia do gry. Gdy master nie jest podłączony: każdy może (domyślnie) albo nikt.
-- **Ustawienia** (ikona w zasobniku → Ustawienia, albo przycisk w oknie), trzy zakładki:
+- **Ustawienia** (ikona w zasobniku → Ustawienia, albo przycisk w oknie), cztery zakładki:
   - **Tryb konsoli:** przycisk pada wybierasz naciśnięciem go na padzie, czasy to pola liczbowe, urządzenia audio to
     listy aktywnych wyjść Windows, „Przetestuj” włącza tryb na 10 s z wartościami z okna. Zmiana trybu konsoli zapisuje
     `console.json` i restartuje receiver (niezapisane zmiany profilu remapowania przepadają);
   - **Mysz:** czułość i stabilizacja kliknięcia touchpada;
   - **Master:** pad master, co wolno tylko jemu, przyciski akcji. Mysz i master działają od razu, bez restartu
-    (`settings.json`).
+    (`settings.json`);
+  - **Okno:** ekran, na którym pojawia się okno (na środku; gdy ekranu nie ma, okno zostaje na dostępnym).
 - **Edytor w przeglądarce** (opcjonalny, `remap_ui = true`): to samo co w oknie, w Edge/Chrome.
 - **Wyłączanie pada** z PC albo samo po bezczynności (domyślnie 15 min).
 - **Stała kolejność graczy:** nadajnik pamięta, który pad (MAC) był w którym slocie (`slots.json`), a receiver podłącza
@@ -187,7 +189,8 @@ Nadajnik zapisuje stały przydział pad → slot w `sender/slots.json` (`slots_f
 | Ruch odwrócony w emulatorze (DSU) | `acc_sign` / `gyro_sign` w konfiguracji receivera |
 | Profil gry się nie włącza | gry z anti-cheatem mogą blokować odczyt nazwy procesu; przełącz ręcznie PS + d-pad |
 | `virtual DS4 error ... ViGEmBus` | zainstaluj sterownik ViGEmBus |
-| `mute button unavailable` na telefonie | uruchom nadajnik przez `doas` (odczyt `/dev/hidrawN`); bez tego wszystko działa poza mute |
+| Mute nie działa (karta pada w oknie pokazuje stan mute) | „stary nadajnik” = skopiuj nowe pliki `sender/` na telefon; „niedostępny” = uruchom nadajnik przez `doas` (odczyt `/dev/hidrawN`) i sprawdź log nadajnika (`mute button ...`); „zawieszony” = nadajnik zgłaszał mute bez przerwy - jest ignorowany |
+| Tryb konsoli nie reaguje | log receivera: `Console: double ... on controller N` = wykryte; `only the master pad can do that` = funkcja zastrzeżona dla mastera (Ustawienia → Master) |
 | Gra w co-op widzi pady dziwnie (Steam) | Steam → biblioteka → gra → Właściwości → Kontroler: spróbuj „Wyłącz Steam Input” (gra czyta dwa DS4 sama) albo odwrotnie; kolejność graczy w Big Picture → Ustawienia → Kontroler |
 
 ## Struktura

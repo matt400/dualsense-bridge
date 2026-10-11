@@ -49,6 +49,11 @@ def make_icon(rgb):
     return ic
 
 
+def screens():
+    """[(klucz, QScreen)] - klucz to nazwa ekranu z Windows (np. \\\\.\\DISPLAY2), a gdy jej brak - numer."""
+    return [(sc.name() or f"#{n}", sc) for n, sc in enumerate(QApplication.screens(), 1)]
+
+
 class PadCard(QFrame):
     """Karta pada po lewej: stan połączenia, bateria, jakość łącza, profil, wyłączenie, korona mastera.
     Klik = edytuj ten pad; klik w koronę = ten pad zostaje masterem (drugi klik - bez mastera)."""
@@ -93,6 +98,15 @@ class PadCard(QFrame):
         for lb in (self.net, self.rate):
             lay.addWidget(lb)
         lay.addLayout(mode_row)
+        self.mute_icon, self.mute = label(""), label("", "dim")      # czy przycisk mute działa (pakiet caps)
+        pm = pixmap("mute", 32)
+        pm.setDevicePixelRatio(2)
+        self.mute_icon.setPixmap(pm)
+        mute_row = QHBoxLayout()
+        mute_row.setSpacing(6)
+        mute_row.addWidget(self.mute_icon)
+        mute_row.addWidget(self.mute, 1)
+        lay.addLayout(mute_row)
         lay.addWidget(self.profile)
         row = QHBoxLayout()
         self.off = ConfirmButton("Power off", "Turn off?", small=True)
@@ -131,7 +145,7 @@ class PadCard(QFrame):
         alive, want = bool(S.alive[i]), S.want[i].is_set()
         master = rx_master.is_master(i)
         key = (alive, want, pct, flags, S.plugged[i], S.mouse_mode[i], profile_size(S.remap_maps[i]), S.active[i],
-               master, S.pad_id[i])
+               master, S.pad_id[i], S.caps[i], S.mute_stuck[i])
         if key == self._key:
             return low                        # nic się nie zmieniło - nie dotykaj widżetów
         self._key = key
@@ -157,6 +171,13 @@ class PadCard(QFrame):
         self.mode_icon.setPixmap(pm)
         self.mode_icon.setToolTip("Touchpad jako mysz" if S.mouse_mode[i] else "Touchpad jako dotyk DS4")
         self.profile.setText(f"profile: {S.profile_label(S.active[i])}" + (f" ({n})" if n else ""))
+        text, level, tip = ST.mute_status(i)
+        self.mute.setText(text)
+        self.mute.setToolTip(tip)
+        self.mute_icon.setToolTip(tip)
+        set_prop(self.mute, "level", level)
+        for w in (self.mute, self.mute_icon):
+            w.setVisible(alive)
         return low
 
 
@@ -200,6 +221,7 @@ class MainWindow(QMainWindow):
             self.resize(1160, 720)
             screen = QApplication.primaryScreen().availableGeometry()
             self.move(screen.center() - self.rect().center())
+        self.place_on_screen()
         self.slow_tick()
         self.slow_timer.start()                # działa także przy ukrytym oknie (zasobnik, bateria, Ctrl+C)
 
@@ -339,7 +361,32 @@ class MainWindow(QMainWindow):
         return tray
 
     # ---------- okno ----------
+    # ---------- ekran okna ----------
+    def screen_choice(self):
+        """Nazwa ekranu wybranego w Ustawieniach (QScreen.name()) albo "" = tam, gdzie okno było ostatnio."""
+        return str(self.settings.value("screen", "") or "")
+
+    def set_screen_choice(self, name):
+        self.settings.setValue("screen", name)
+        self.settings.sync()
+        self.place_on_screen()
+
+    def place_on_screen(self):
+        """Przenosi okno na wybrany ekran (na środek, zmniejszone, jeśli się nie mieści). Wybranego ekranu nie ma
+        (np. monitor wyłączony w trybie konsoli) -> okno zostaje tam, gdzie jest; Qt pilnuje, żeby było widoczne."""
+        name = self.screen_choice()
+        target = dict(screens()).get(name) if name else None
+        if target is None or self.screen() is target and target.availableGeometry().contains(self.frameGeometry()):
+            return False
+        area = target.availableGeometry()
+        if self.isMaximized():
+            self.showNormal()
+        self.resize(min(self.width(), area.width() - 40), min(self.height(), area.height() - 60))
+        self.move(area.center() - self.rect().center())
+        return True
+
     def bring_to_front(self):
+        self.place_on_screen()
         self.showNormal()
         self.raise_()
         self.activateWindow()

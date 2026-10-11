@@ -1,5 +1,5 @@
 """Nadajnik: przycisk mute z hidraw (sender_hidraw) i stały przydział pad -> slot (slots.json)."""
-import asyncio, json, os, sys, tempfile, types
+import asyncio, json, os, socket, sys, tempfile, types
 sys.path.insert(0, sys.argv[1])
 import sender_config; sender_config.init(["127.0.0.1"])
 from sender_config import C
@@ -34,27 +34,67 @@ assert H.find_hidraw(dev, root) == "/dev/hidraw3", H.find_hidraw(dev, root)
 assert H.find_hidraw(types.SimpleNamespace(path="/dev/input/event77"), root) is None
 print("OK   hidraw tego samego urządzenia HID co pad evdev")
 
+# ---------- weryfikacja formatu raportu względem osi evdev ----------
+def report(rid=0x31, base=None, axes=(128, 128, 128, 128, 0, 0), mute=False, size=None):
+    """Raport jak z hidraw: osie x, y, rx, ry, z(L2), rz(R2) od `base`, buttons[2] (mute) na base + 9."""
+    r = bytearray(size or H._SIZE[rid]); r[0] = rid
+    b = H._BASE[rid] if base is None else base
+    r[1] = 0x77                                            # BT: bajt sekwencji / znacznika przed danymi
+    r[b:b + 6] = bytes(axes)
+    r[b + 6] = 9                                           # numer raportu
+    if mute:
+        r[b + H.BUTTONS2] |= 0x04
+    return bytes(r)
+
+PAD = [128, 128, 0, 128, 128, 0]                          # evdev: X, Y, Z(L2), RX, RY, RZ(R2)
+chk = H.FormatCheck()
+for _ in range(H.CHECK_REPORTS):
+    chk.feed(report(), PAD)
+assert chk.done and chk.base == 2, (chk.base, chk.hits)
+chk = H.FormatCheck()
+for _ in range(H.CHECK_REPORTS):
+    chk.feed(report(base=3), PAD)                          # dane przesunięte o bajt - wykryte, a nie zgadywane
+assert chk.base == 3, (chk.base, chk.hits)
+chk = H.FormatCheck()
+for k in range(H.CHECK_REPORTS):
+    chk.feed(report(axes=(10, 250, 30, 200, 99, 7)), [128, 128, 0, 128, 128, 0])
+assert chk.done and chk.base is None, "bajty nie pasują do pada -> mute wyłączony (zamiast przypadkowego bitu)"
+chk = H.FormatCheck()
+for k in range(H.CHECK_REPORTS):
+    x = 40 + k * 4
+    chk.feed(report(rid=0x01, axes=(x, 128, 128, 128, 0, 0)), [x - 3, 128, 0, 128, 128, 0])
+assert chk.base == 1, "USB 0x01, ruch gałki z opóźnieniem evdev w tolerancji"
+print("OK   format raportu sprawdzany osiami evdev: zwykły, przesunięty, niezgodny (mute wyłączony), USB")
+
 # ---------- odczyt: zmiana mute -> pakiet stanu z bitem, puszczenie, zamknięcie węzła ----------
 async def t_stream():
     c = Ctrl(0, "aa:bb:cc:dd:ee:ff", None, None, None)
-    r, w = os.pipe()
-    os.set_blocking(r, False)
-    path = f"/proc/self/fd/{r}"
-    task = asyncio.create_task(H.stream_mute(c, path))
+    rs, ws = socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET)    # granice raportów jak w hidraw
+    rs.setblocking(False)
+    r, w = rs.detach(), ws.detach()
+    task = asyncio.create_task(H.stream_mute(c, fd=r))
     await asyncio.sleep(0.05)
-    os.write(w, bytes(usb)); await asyncio.sleep(0.05)
+    assert c.mute_caps == H.CAP_OPEN
+    for _ in range(H.CHECK_REPORTS - 1):
+        os.write(w, report(mute=True))                     # mute wciśnięty już w trakcie sprawdzania - jeszcze nie liczony
+    await asyncio.sleep(0.05)
+    assert not c.mute and c.mute_caps == H.CAP_OPEN, "przed sprawdzeniem formatu mute nie działa"
+    os.write(w, b"\xa1" + report()); await asyncio.sleep(0.05)   # nagłówek HIDP zdejmowany
+    assert c.mute_caps == H.CAP_OPEN | H.CAP_OK, c.mute_caps
+    out.clear()
+    os.write(w, report(mute=True)); await asyncio.sleep(0.05)
     assert c.mute and c.mask & MUTE and out and out[-1][0] == T_STATE and out[-1][2][8] & MUTE, out[-1:]
     n = len(out)
-    os.write(w, bytes(usb)); await asyncio.sleep(0.05)
+    os.write(w, report(mute=True)); await asyncio.sleep(0.05)
     assert len([x for x in out[n:] if x[2][8] & MUTE]) <= 2, "powtórzony stan to nie nowe naciśnięcie (najwyżej powtórki burst)"
-    usb[10] &= ~0x04
-    os.write(w, bytes(usb)); await asyncio.sleep(0.05)
+    os.write(w, report()); await asyncio.sleep(0.05)
     assert not c.mute and not out[-1][2][8] & MUTE
-    usb[10] |= 0x04
-    os.write(w, bytes(usb)); await asyncio.sleep(0.05)
+    os.write(w, report(mute=True)); await asyncio.sleep(0.05)
     assert c.mute
+    out.clear(); c.send_ident()
+    assert [x[0] for x in out] == [9, 12] and out[1][2] == (3, H.CAP_OPEN | H.CAP_OK), out
     os.close(w); await asyncio.wait_for(task, 1)
-    assert not c.mute and not c.mask & MUTE, "węzeł zniknął z wciśniętym mute - puszczony"
+    assert not c.mute and not c.mask & MUTE and c.mute_caps == 0, "węzeł zniknął z wciśniętym mute - puszczony"
     c.mask = KEY_BIT[304]; c.mute = True; c.mask |= MUTE
     class Dev:
         def absinfo(self, code): raise OSError
@@ -62,12 +102,27 @@ async def t_stream():
     c.pad_dev = Dev(); c.resync()
     assert c.mask == KEY_BIT[304] | MUTE, "resync z evdev nie gubi mute (nie ma go w evdev)"
 asyncio.run(t_stream())
-print("OK   mute: pakiet przy zmianie, puszczenie przy utracie węzła, resync zachowuje bit")
+print("OK   mute: sprawdzenie formatu, pakiet przy zmianie, caps do receivera, puszczenie przy utracie węzła")
+
+async def t_bad_format():
+    c = Ctrl(2, "x", None, None, None)
+    rs, ws = socket.socketpair(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+    rs.setblocking(False)
+    r, w = rs.detach(), ws.detach()
+    task = asyncio.create_task(H.stream_mute(c, fd=r))
+    await asyncio.sleep(0.02)
+    for _ in range(H.CHECK_REPORTS + 5):
+        os.write(w, report(axes=(1, 2, 3, 4, 5, 6), mute=True))
+    await asyncio.sleep(0.05)
+    assert c.mute_caps == H.CAP_OPEN | H.CAP_FAIL and not c.mute, "zły format: mute wyłączony, bit nie wysyłany"
+    os.close(w); await asyncio.wait_for(task, 1)
+asyncio.run(t_bad_format())
+print("OK   niezgodny format: mute wyłączony z komunikatem, nic nie jest zgłaszane jako wciśnięte")
 
 async def t_no_access():
     c = Ctrl(1, "x", None, None, None)
     await H.stream_mute(c, os.path.join(TMP, "brak-hidraw"))       # brak węzła / uprawnień - kończy się cicho
-    assert not c.mute
+    assert not c.mute and c.mute_caps == H.CAP_FAIL
 asyncio.run(t_no_access())
 print("OK   brak dostępu do hidraw: pad działa dalej bez mute")
 

@@ -1,10 +1,11 @@
-"""Receiver: okno ustawień (tray -> Ustawienia, albo przycisk w nagłówku okna) - trzy zakładki:
+"""Receiver: okno ustawień (tray -> Ustawienia, albo przycisk w nagłówku okna) - cztery zakładki:
 
   Tryb konsoli  przycisk pada wybierasz naciśnięciem go na padzie (rx_console.arm_capture), urządzenia audio to lista
                 aktywnych wyjść Windows (rx_audio, Odśwież); "Przetestuj" włącza tryb konsoli na kilka sekund
                 z wartościami z okna (jeszcze niezapisanymi) i sam wraca do extend
   Mysz          czułość kursora touchpada i stabilizacja kliknięcia (rx_settings.MouseConfig)
   Master        pad master, funkcje tylko dla niego, akcje "mute + przycisk" (rx_settings.MasterConfig, rx_master)
+  Okno          ekran, na którym pojawia się okno (receiver_ui.ini, MainWindow.place_on_screen)
 
 "Zapisz": mysz i master działają od razu (settings.json, bez restartu). Zmiana trybu konsoli zapisuje console.json
 i prosi właściciela okna o restart receivera (sygnał saved) - po restarcie obowiązuje startup_mode jak przy autostarcie.
@@ -58,6 +59,7 @@ class ConsoleSettings(QDialog):
         self.tabs.addTab(self._console_tab(), icon("tv"), "Tryb konsoli")
         self.tabs.addTab(self._mouse_tab(), icon("mouse"), "Mysz")
         self.tabs.addTab(_scroll(self._master_tab()), icon("crown"), "Master")
+        self.tabs.addTab(self._window_tab(), icon("window"), "Okno")
         lay.addWidget(self.tabs, 1)
 
         self.status = label("", wrap=True)
@@ -76,6 +78,7 @@ class ConsoleSettings(QDialog):
         row.addWidget(self.save_btn)
         lay.addLayout(row)
         self.tabs.currentChanged.connect(lambda i: self.test_btn.setVisible(i == 0))
+        self.tabs.tabBar().setExpanding(False)
 
     def _console_tab(self):
         w = QWidget()
@@ -146,6 +149,35 @@ class ConsoleSettings(QDialog):
         lay.addStretch(1)
         return w
 
+    def _window_tab(self):
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        lay.setContentsMargins(0, 12, 0, 0)
+        lay.setSpacing(12)
+        self.screen_box = Combo()
+        lay.addWidget(field("Ekran, na którym pojawia się okno DualSense bridge", self.screen_box))
+        lay.addWidget(label("Okno otwiera się (z ikony w zasobniku, przy starcie) na środku wybranego ekranu. Gdy tego "
+                            "ekranu nie ma (np. monitor wyłączony w trybie konsoli), okno zostaje na dostępnym ekranie.",
+                            "dim", wrap=True))
+        lay.addStretch(1)
+        return w
+
+    def _load_screens(self):
+        from PySide6.QtGui import QGuiApplication
+        from rx_qt import screens
+        owner = self.parent()
+        cur = owner.screen_choice() if hasattr(owner, "screen_choice") else ""
+        items = [("", "Tam, gdzie okno było ostatnio")]
+        for n, (key, sc) in enumerate(screens(), 1):
+            g = sc.geometry()
+            model = " ".join(x for x in (sc.manufacturer(), sc.model()) if x).strip()
+            prim = "  · główny" if sc is QGuiApplication.primaryScreen() else ""
+            items.append((key, f"Ekran {n}: {model or sc.name() or key}  ({g.width()}×{g.height()}){prim}", "window"))
+        if cur and cur not in [v for v, *_ in items]:
+            items.append((cur, f"{cur} (teraz niepodłączony)", "window"))
+        self.screen_box.set_items(items)
+        self.screen_box.set_data(cur)
+
     def _master_tab(self):
         w = QWidget()
         lay = QVBoxLayout(w)
@@ -199,6 +231,7 @@ class ConsoleSettings(QDialog):
         self.activateWindow()
 
     def reload(self):
+        self._load_screens()
         self._load_mouse(rx_settings.cur.mouse)
         self._load_master(rx_settings.cur.master)
         cfg = rx_console.ctl.cfg if rx_console.ctl else ConsoleConfig()
@@ -243,7 +276,8 @@ class ConsoleSettings(QDialog):
         items, known = [("", "— brak mastera (każdy pad może wszystko) —")], {""}
         for i in range(C.NUM_PADS):
             key = S.profile_key(i)
-            if key in known or not (S.alive[i] or S.want[i].is_set() or key == m.pad):
+            # tylko pad z identyfikatorem (MAC) - klucz "slotN" zgubiłby się po nadejściu identyfikatora
+            if key in known or not (S.pad_id[i] and (S.alive[i] or S.want[i].is_set()) or key == m.pad):
                 continue
             known.add(key)
             items.append((key, f"Pad {i + 1}  ·  {key}", "crown" if key == m.pad else None))
@@ -325,6 +359,9 @@ class ConsoleSettings(QDialog):
             self._status(f"Nie udało się zapisać {C.SETTINGS_PATH}: {e}", "bad")
             return
         rx_settings.apply(new)
+        owner = self.parent()
+        if hasattr(owner, "set_screen_choice"):
+            owner.set_screen_choice(self.screen_box.currentData() or "")
         self.applied.emit()
         cfg = self.collect()
         running = rx_console.ctl.cfg if rx_console.ctl else None

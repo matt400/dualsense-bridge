@@ -28,6 +28,7 @@ states = wake = want = plugged = last_seen = alive = ignore_until = None
 mouse_mode = tp_down = swallow = last_v = last_touch = batt_info = None
 pad_id = remap_maps = None
 override = active = info = pps = None
+caps = mute_since = mute_stuck = None
 
 
 def new_state():
@@ -50,7 +51,7 @@ def new_state():
 def init(store_):
     global states, wake, want, plugged, last_seen, alive, ignore_until, mouse_mode
     global tp_down, swallow, last_v, last_touch, batt_info, pad_id, remap_maps, store
-    global override, active, info, pps
+    global override, active, info, pps, caps, mute_since, mute_stuck
     n = C.NUM_PADS
     store = store_
     states = [new_state() for _ in range(n)]
@@ -72,6 +73,9 @@ def init(store_):
     override = [None] * n                            # profil wybrany ręcznie (PS + d-pad), None = automatycznie
     info = [None] * n                                # (ping ms | None, Hz pada, Hz ruchu, czas) z pakietu info
     pps = [0.0] * n                                  # pakiety stanu na sekundę
+    caps = [None] * n                                # (wersja nadajnika, flagi CAPS_MUTE_*) z pakietu caps; None = stary
+    mute_since = [None] * n                          # od kiedy mute jest wciśnięty (ochrona przed "zawieszonym" bitem)
+    mute_stuck = [False] * n
 
 
 def run_forever(name, fn, *args):

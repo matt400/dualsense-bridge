@@ -31,10 +31,11 @@ NO_CLOSE = frozenset({"explorer.exe", "steam.exe", "steamwebhelper.exe", "python
 
 
 class Slot:
-    __slots__ = ("mute", "gen", "used", "prev", "sup", "combo", "timer")
+    __slots__ = ("mute", "gen", "used", "prev", "sup", "combo", "timer", "fresh")
 
     def __init__(self):
         self.mute = self.used = False
+        self.fresh = True         # pierwszy stan po połączeniu: wejścia już trzymane to nie nowe naciśnięcia
         self.gen = 0              # numer naciśnięcia mute / kombinacji - spóźniony timer nic nie zrobi
         self.prev = frozenset()   # wejścia wciśnięte w poprzednim stanie
         self.sup = frozenset()    # wejścia zużyte w kombinacji (nie trafiają do gry do puszczenia)
@@ -88,6 +89,8 @@ def check(i, feature):
 
 def set_master(i, save=True):
     """Pad w slocie i zostaje masterem (i = None: bez mastera). -> (ok, komunikat)."""
+    if i is not None and S.pad_id[i] is None:
+        return False, f"Pad {i + 1} nie przysłał jeszcze identyfikatora (MAC) - spróbuj za chwilę"
     pad = "" if i is None else S.profile_key(i)
     if pad == rx_settings.cur.master.pad:
         return True, "Bez zmian"
@@ -108,6 +111,9 @@ def on_state(i, mask, hx, hy, lt, rt):
     """Każda zmiana surowego stanu pada, przed przeliczeniem wyjścia (jak rx_hotkeys.on_state)."""
     h = slots[i]
     now = frozenset(pressed_inputs(mask, hx, hy, lt, rt))
+    if h.fresh:
+        h.fresh, h.prev, h.mute, h.used = False, now, "mute" in now, True
+        return
     mute = "mute" in now
     if mute and not h.mute:
         h.mute, h.used = True, False
