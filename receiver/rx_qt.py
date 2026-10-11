@@ -12,11 +12,12 @@ from functools import cache
 import sys
 import time
 
-from PySide6.QtCore import QEvent, QSettings, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QAbstractNativeEventFilter, QEvent, QSettings, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QIcon, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QMainWindow, QMenu, QSystemTrayIcon, QTabWidget,
                                QToolButton, QVBoxLayout, QWidget)
 
+import rx_console
 import rx_feedback as F
 import rx_games
 import rx_master
@@ -667,6 +668,39 @@ def _int(v, default):
         return default
 
 
+WM_QUERYENDSESSION = 0x0011
+
+
+def session_end(*_args):
+    """Windows się wyłącza / restartuje / wylogowuje (Start, Big Picture, shutdown.exe): włączony tryb konsoli -> OFF,
+    zanim proces zostanie zamknięty, żeby po starcie obraz nie był tylko na TV."""
+    if rx_console.power_off(_("wyłączanie Windows")):
+        print("Windows session ending - console mode switched off")
+
+
+class SessionEndFilter(QAbstractNativeEventFilter):
+    """WM_QUERYENDSESSION prosto z pętli komunikatów - działa też, gdy Qt nie zgłosi commitDataRequest."""
+    def nativeEventFilter(self, event_type, message):
+        if event_type in (b"windows_generic_MSG", "windows_generic_MSG"):
+            import ctypes.wintypes
+            if ctypes.wintypes.MSG.from_address(int(message)).message == WM_QUERYENDSESSION:
+                session_end()
+        return False, 0
+
+
+_session_filter = None      # referencja - filtr nie może zostać zebrany przez GC
+
+
+def _watch_session_end(app):
+    global _session_filter
+    if _session_filter is not None:
+        return
+    _session_filter = SessionEndFilter()
+    app.commitDataRequest.connect(session_end)
+    if sys.platform == "win32":
+        app.installNativeEventFilter(_session_filter)
+
+
 def create_window(settings_path=None):
     """QApplication (jeśli jeszcze nie ma) + okno. Osobno od run_gui, żeby testy mogły sterować oknem bez pętli."""
     W.set_app_id()                             # ikona pada na pasku zadań zamiast ikony Pythona
@@ -674,6 +708,7 @@ def create_window(settings_path=None):
     app.setApplicationName("DualSense bridge")
     app.setWindowIcon(make_icon(ICON_OK))      # także okno ustawień i powiadomienia
     app.setQuitOnLastWindowClosed(False)       # zamknięcie okna = do zasobnika
+    _watch_session_end(app)                    # wyłączanie Windows z trybem konsoli -> najpierw oba ekrany
     apply_theme(app)
     path = settings_path or os.path.join(os.path.dirname(C.REMAP_PATH), "receiver_ui.ini")
     return MainWindow(QSettings(path, QSettings.Format.IniFormat))

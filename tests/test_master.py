@@ -137,8 +137,11 @@ S.game = None
 pulses.clear(); actions.clear()
 state(1, mask=BIT[PS]); state(1, mask=BIT[PS] | BIT[CROSS]); time.sleep(0.4); state(1)
 check("shutdown" not in actions and (1, "denied") in pulses, "nie master: PS + przycisk nic nie robi")
+import rx_console
+rx_console.power_off = lambda why: actions.append(("console off", why)) or True
 state(0, mask=BIT[PS]); state(0, mask=BIT[PS] | BIT[CROSS])
 check(wait_for(lambda: "shutdown" in actions), "master: PS + krzyżyk przytrzymane -> wyłączenie PC")
+check(actions[-2:] == [("console off", "wyłączanie komputera"), "shutdown"], f"najpierw tryb konsoli OFF, potem wyłączenie: {actions}")
 state(0)
 ok("akcje mastera: pauza, zamknięcie gry z przytrzymaniem, wyłączenie; przyciski kombinacji nie idą do gry")
 

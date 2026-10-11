@@ -158,4 +158,13 @@ assert S.restart is True and closed, "drugi klik: restart receivera"
 S.restart = False
 assert not QApplication.instance().windowIcon().isNull() and len(win.windowIcon().availableSizes()) >= 4, "ikona pada w kilku rozmiarach"
 ok("Restart: dwa kliknięcia, restart receivera; ikona aplikacji ustawiona")
+offs = []
+rx_console.power_off = lambda why: offs.append(why) or True
+rx_qt.session_end()
+assert offs == ["wyłączanie Windows"], offs
+import ctypes.wintypes
+msg = ctypes.wintypes.MSG(message=rx_qt.WM_QUERYENDSESSION)
+assert rx_qt.SessionEndFilter().nativeEventFilter(b"windows_generic_MSG", ctypes.addressof(msg)) == (False, 0)
+assert offs == ["wyłączanie Windows"] * 2, "WM_QUERYENDSESSION -> tryb konsoli OFF przed wyłączeniem Windows"
+ok("koniec sesji Windows wyłącza tryb konsoli")
 print("GUI USTAWIEŃ (MYSZ / MASTER) OK")
