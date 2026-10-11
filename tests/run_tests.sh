@@ -18,6 +18,7 @@ for t in test_i18n test_rx2 test_editor test_bugs test_resilience test_startup t
 run test_e2e python3 $T/test_e2e.py $RX $TX
 run test_service_tx python3 $T/test_service_tx.py $TX
 run test_update python3 $T/test_update.py $RX
+run test_update_tx python3 $T/test_update_tx.py $TX
 python3 -c "import playwright" 2>/dev/null && { run test_web python3 $T/test_web.py $RX; run test_web2 python3 $T/test_web2.py $RX; } || echo "SKIP  test_web* (brak playwright)"
 python3 -c "import PySide6.QtWidgets, PySide6.QtTest" 2>/dev/null && { run test_gui python3 $T/test_gui.py $RX; run test_console_gui python3 $T/test_console_gui.py $RX; run test_settings_gui python3 $T/test_settings_gui.py $RX; } || echo "SKIP  test_gui (brak PySide6)"
 rm -f "$BTLOG"

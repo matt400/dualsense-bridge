@@ -17,6 +17,7 @@ MACS = [bytes([0, 2, 3, 4, 5, 6 + s]) for s in range(5)]
 SENDER_TIMEOUT = 3.0                       # cisza dłuższa niż tyle (3 pingi) = nadajnik offline
 
 peer = None        # adres ostatniego nadajnika (dla feedbacku / pong)
+sender_build = None  # (commit, czas commita, stan aktualizacji UPD_*, czas odbioru) z pakietu build nadajnika
 last_pkt = 0.0     # kiedy przyszedł ostatni poprawny pakiet - do wskaźnika online
 store = None       # RemapStore
 dsu_wake = threading.Event()

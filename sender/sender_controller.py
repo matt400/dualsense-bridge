@@ -14,8 +14,10 @@ Gesty touchpada (gestures, touch_start_move) i opóźnienie dotyku (touch_coales
 """
 import asyncio
 import gc
+import os
 import signal
 import socket
+import sys
 import traceback
 
 import sender_config
@@ -25,6 +27,7 @@ import sender_rt
 import sender_streams as streams
 import sender_state as state
 import sender_supervisor as sup
+import sender_update
 from sender_config import C
 
 
@@ -49,6 +52,7 @@ async def forever(name, fn):
 
 async def main():
     print(f"Sending to {C.HOST}:{C.PORT}" + (" (HMAC on)" if C.KEY else " (NO authentication - consider --key)"))
+    state.main_task = asyncio.current_task()
     try:
         asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, asyncio.current_task().cancel)
     except (NotImplementedError, RuntimeError):
@@ -93,7 +97,12 @@ if __name__ == "__main__":
     sender_rt.setup(C.LOW_LATENCY, C.CPU_LATENCY_US, C.RT_PRIORITY)
     gc.collect()
     gc.freeze()   # obiekty ze startu poza zasięgiem GC - krótsze pauzy
+    sender_update.init()
     try:
         asyncio.run(main())
     except (KeyboardInterrupt, asyncio.CancelledError):
         print("\nStopped.")
+    if state.restart:                  # po aktualizacji: nowy kod w tym samym procesie (PID dla usługi bez zmian)
+        print("Restarting with the updated code")
+        sys.stdout.flush()
+        os.execv(sys.executable, [sys.executable, *sys.argv])

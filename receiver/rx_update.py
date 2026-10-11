@@ -11,16 +11,17 @@ Po udanej aktualizacji okno robi restart receivera (nowy kod działa dopiero w n
 Uruchomienie bez okna: python receiver\\rx_update.py
 """
 import os
-import shutil
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 
+import proto
+from proto import UPD_DONE, UPD_FAILED, UPD_NO_CHANGE, UPD_NO_GIT, UPD_NOT_GIT, UPD_RUNNING
 from rx_i18n import _
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REQUIREMENTS = "receiver/requirements.txt"
-GIT_PATHS = (r"C:\Program Files\Git\cmd\git.exe", r"C:\Program Files (x86)\Git\cmd\git.exe")
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
@@ -33,11 +34,62 @@ class Result:
     new: str = ""
 
 
+# wynik aktualizacji nadajnika (pakiet build) -> tekst w oknie
+SENDER_TEXT = {
+    UPD_NO_CHANGE: "nadajnik: najnowsza wersja",
+    UPD_DONE: "nadajnik: zaktualizowany, uruchamia się od nowa",
+    UPD_NOT_GIT: "nadajnik: folder na telefonie to nie klon git - na telefonie: "
+                 "git clone https://github.com/matt400/dualsense-bridge i doas ./install-service.sh z nowego folderu",
+    UPD_NO_GIT: "nadajnik: brak git na telefonie (doas apk add git)",
+    UPD_FAILED: "nadajnik: git pull nie powiódł się (szczegóły w logu na telefonie)",
+    UPD_RUNNING: "nadajnik nie odpowiedział",
+}
+_version = None
+
+
 def find_git():
-    if found := shutil.which("git"):
-        return found
-    local = os.path.expandvars(r"%LOCALAPPDATA%\Programs\Git\cmd\git.exe")
-    return next((p for p in (*GIT_PATHS, local) if os.path.isfile(p)), None)
+    return proto.find_git()
+
+
+def version():
+    """Wersja kodu receivera (commit, czas, tytuł) - liczona raz, kod zmienia się tylko z restartem."""
+    global _version
+    if _version is None:
+        _version = proto.git_version(ROOT)
+    return _version
+
+
+def describe(commit, ts):
+    """'a1b2c3d · 12.10.2026' albo 'nieznana' (folder bez gita)."""
+    if not commit:
+        return _("nieznana")
+    return f"{commit} · {time.strftime('%d.%m.%Y', time.localtime(ts))}" if ts else commit
+
+
+def sender_text(build):
+    """Wynik aktualizacji nadajnika z pakietu build (None = nadajnik sprzed tej funkcji)."""
+    if build is None:
+        return _("nadajnik w starej wersji - zaktualizuj go raz ręcznie (git pull na telefonie)")
+    return _(SENDER_TEXT.get(build[2], "nadajnik nie odpowiedział"))
+
+
+def update(root=ROOT, git=None, pip=True):
+    if not os.path.isdir(os.path.join(root, ".git")):
+        return Result(False, False, _("Folder nie jest repozytorium git (pobrany jako ZIP?) - sklonuj: "
+                                      "git clone https://github.com/matt400/dualsense-bridge"))
+    git = git or find_git()
+    if git is None:
+        return Result(False, False, _("Nie znaleziono git - zainstaluj Git for Windows (git-scm.com)"))
+    state, msg, old, new, files = proto.git_pull(root, git)
+    if state == UPD_FAILED:
+        return Result(False, False, _("git pull nie powiódł się: {msg}").format(msg=msg), old, old)
+    if state != UPD_DONE:
+        return Result(True, False, _("Masz najnowszą wersję"), old, new)
+    count = proto.git(root, "rev-list", "--count", f"{old}..{new}", git_exe=git).stdout.strip() or "?"
+    text = _("Zaktualizowano ({n} zmian): {old} → {new}").format(n=count, old=old[:7], new=new[:7])
+    if pip and REQUIREMENTS in files:
+        text += " · " + _install_requirements(root)
+    return Result(True, True, text, old, new)
 
 
 def _run(cmd, root, timeout):
@@ -48,32 +100,6 @@ def _run(cmd, root, timeout):
 def _last_lines(text, n=3):
     lines = [x.strip() for x in text.strip().splitlines() if x.strip()]
     return " / ".join(lines[-n:])
-
-
-def update(root=ROOT, git=None, pip=True):
-    if not os.path.isdir(os.path.join(root, ".git")):
-        return Result(False, False, _("Folder nie jest repozytorium git (pobrany jako ZIP?) - sklonuj: "
-                                      "git clone https://github.com/matt400/dualsense-bridge"))
-    git = git or find_git()
-    if git is None:
-        return Result(False, False, _("Nie znaleziono git - zainstaluj Git for Windows (git-scm.com)"))
-    try:
-        old = _run([git, "rev-parse", "HEAD"], root, 15).stdout.strip()
-        p = _run([git, "pull", "--ff-only"], root, 120)
-        if p.returncode:
-            return Result(False, False, _("git pull nie powiódł się: {msg}").format(msg=_last_lines(p.stderr or p.stdout)),
-                          old, old)
-        new = _run([git, "rev-parse", "HEAD"], root, 15).stdout.strip()
-        if new == old:
-            return Result(True, False, _("Masz najnowszą wersję"), old, new)
-        count = _run([git, "rev-list", "--count", f"{old}..{new}"], root, 15).stdout.strip() or "?"
-        files = _run([git, "diff", "--name-only", old, new], root, 15).stdout.split()
-    except (OSError, subprocess.TimeoutExpired) as e:
-        return Result(False, False, _("git nie odpowiada: {msg}").format(msg=e))
-    text = _("Zaktualizowano ({n} zmian): {old} → {new}").format(n=count, old=old[:7], new=new[:7])
-    if pip and REQUIREMENTS in files:
-        text += " · " + _install_requirements(root)
-    return Result(True, True, text, old, new)
 
 
 def _install_requirements(root):

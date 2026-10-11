@@ -8,7 +8,7 @@ import rx_master as master
 import rx_mouse as mouse
 import rx_state as S
 from proto import (BODY, RTT_NONE, Codec, T_BYE, T_CLICK, T_CMD, T_FB, T_IDENT, T_INFO, T_MOUSE, T_PING, T_PONG, T_VERSION,
-                   T_STATE, T_TOUCH, clamp)
+                   T_STATE, T_TOUCH, T_BUILD, clamp)
 from rx_buttons import MASK_ALL, PS_BIT, profile_size
 
 from rx_config import C
@@ -238,6 +238,15 @@ def handle(t, i, data):
         S.info[i] = (None if rtt == RTT_NONE else rtt / 10, pad_hz, motion_hz, time.monotonic())
 
 
+def on_build(data, now):
+    """Pakiet build: (commit nadajnika, czas commita, stan aktualizacji UPD_*) -> S.sender_build."""
+    h, ts, st = BODY[T_BUILD].unpack_from(data, 4)
+    b = (h.rstrip(b"\0").decode("ascii", "replace"), ts, st)
+    if S.sender_build is None or S.sender_build[:3] != b:
+        print(f"Sender build {b[0] or '?'} (update state {st})")
+    S.sender_build = (*b, now)
+
+
 def check_stale(now):
     """Cisza od nadajnika: najpierw reset stanu (stale_s), potem odłączenie wirtualnego DS4 (unplug_s)."""
     for i in range(C.NUM_PADS):
@@ -296,6 +305,10 @@ def net_loop():
                 stats.clear()
                 t_print = now
 
+        if t == T_BUILD:  # wersja kodu nadajnika i stan jego aktualizacji (dotyczy całego nadajnika, idx 255)
+            S.peer = addr
+            on_build(data, now)
+            continue
         if t == T_PING:   # ping -> pong (pomiar RTT po stronie nadajnika)
             S.peer = addr
             send_peer(codec.pack(T_PONG, i, BODY[T_PING].unpack_from(data, 4)[0]))
