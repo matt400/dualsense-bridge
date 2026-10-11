@@ -212,5 +212,16 @@ check(not okk and "identyfikatora" in msg and rx_settings.cur.master.pad == A, "
 ident(1, B)
 ok("master tylko dla pada z identyfikatorem")
 
+# ---------- wersja nadajnika i wibracja na karcie pada ----------
+import rx_status
+from proto import T_VERSION
+S.sender_info[0] = None
+check(rx_status.rumble_status(0)[1] == "warn", "brak pakietu version = stary nadajnik")
+feed(T_VERSION, 0, 4, 3)
+check(S.sender_info[0] == (4, 3) and "HID" in rx_status.rumble_status(0)[0], rx_status.rumble_status(0))
+feed(T_VERSION, 0, 4, 0)
+check(rx_status.rumble_status(0)[1] == "bad", "nadajnik bez dostępu do wibracji")
+ok("pakiet version: wersja nadajnika i sposoby wibracji")
+
 print("FAIL" if fails else "PASS", "master:", len(fails), "błędów" if fails else "wszystko OK")
 sys.exit(1 if fails else 0)

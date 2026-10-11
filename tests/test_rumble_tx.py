@@ -105,6 +105,18 @@ async def main():
     R.find_hidraw = orig
     assert r.mode == "hidraw" and open(path2, "rb").read()[:1] == b"\x02", "błąd evdev FF -> raport HID (USB)"
     r.close()
+    path3 = os.path.join(TMP, "hidraw-both")
+    open(path3, "wb").close()
+    d = FFDev()
+    r = R.Rumble(5, d, "auto", hidraw=(path3, True))
+    assert r.methods == ["evdev", "hidraw"] and r.bits == 3, r.methods
+    r.set(70, 140)
+    assert ("upload", 140 * 257, 70 * 257) in d.log and frames(path3)[-1][5:7] == bytes([70, 140]), "obie drogi naraz"
+    d.fail = True
+    r.set(0, 0); r.set(10, 20)
+    assert r.methods == ["hidraw"] and frames(path3)[-1][5:7] == bytes([10, 20]), "błąd sterownika - zostaje raport HID"
+    r.close()
+    ok("auto: sterownik i raport HID jednocześnie; błąd jednej drogi wyłącza tylko ją")
     assert R.Rumble(3, FFDev(ff=False), "off").mode is None
     assert R.Rumble(4, FFDev(ff=False), "evdev").mode is None
     ok("błąd evdev FF przełącza na hidraw; off / evdev bez FF = bez wibracji")

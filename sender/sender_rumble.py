@@ -5,7 +5,7 @@ Sterownik hid-playstation obsługuje wibrację tylko z opcją jądra CONFIG_PLAY
 wyjściowy, który wysłałby sterownik (tryb zgodności z DS4: dwa silniki), ustawiając w nim TYLKO flagi wibracji -
 lightbar i diody, którymi steruje sterownik, zostają nietknięte.
 
-  rumble = "auto"    evdev FF, jeśli pad go ma; inaczej hidraw (domyślnie)
+  rumble = "auto"    oba naraz: evdev FF (jeśli pad go ma) i raport HID (domyślnie)
            "evdev" / "hidraw" / "off"
 
 Raport: USB 0x02 (63 B), Bluetooth 0x31 (78 B: numer sekwencji, znacznik 0x10, na końcu CRC32 z ziarnem 0xA2).
@@ -89,10 +89,16 @@ def has_ff(dev):
 
 
 class Rumble:
-    """Wibracja jednego pada. set(small, large) przy każdym pakiecie feedbacku; close() przy rozłączeniu."""
+    """Wibracja jednego pada. set(small, large) przy każdym pakiecie feedbacku; close() przy rozłączeniu.
+
+    W trybie "auto" działają OBA sposoby naraz, jeśli są dostępne: sterownik (evdev FF) i raport HID (hidraw).
+    Ta sama moc silników wysłana dwiema drogami nic nie psuje, a wibracja działa także wtedy, gdy jedna z nich
+    po cichu nic nie robi (jądro bez pełnej obsługi wibracji, nietypowy stos Bluetooth). Sposób, który zgłosi błąd,
+    jest wyłączany."""
 
     def __init__(self, idx, pad_dev, mode="auto", hidraw=None):
-        self.idx, self.dev, self.mode = idx, pad_dev, None
+        self.idx, self.dev = idx, pad_dev
+        self.methods = []             # "evdev" i/lub "hidraw" - w tej kolejności
         self.fd, self.bt, self.seq, self.ff_id, self.path = None, False, 0, None, None
         self.v2, self.fw = None, None
         self.logged = 0               # ile pierwszych poleceń wibracji zapisać w logu (diagnostyka)
@@ -100,15 +106,32 @@ class Rumble:
         self.t_set = 0.0
         self._watch = None
         if mode in ("auto", "evdev") and has_ff(pad_dev):
-            self.mode = "evdev"
-        elif mode in ("auto", "hidraw"):
-            self._open_hidraw(hidraw)
-        fw = (f", firmware {self.fw:04x}" if self.fw is not None else ", firmware unknown") \
-            + f", vibration {'v2' if self.v2 else 'v1' if self.v2 is False else 'v1+v2'}" if self.mode == "hidraw" else ""
-        what = {"evdev": "kernel driver (evdev FF)", "hidraw": f"direct HID reports ({self.path}{fw})", None: ""}
-        print(f"Controller {idx}: rumble " + (f"via {what[self.mode]}" if self.mode else
+            self.methods.append("evdev")
+        if mode in ("auto", "hidraw") and self._open_hidraw(hidraw):
+            self.methods.append("hidraw")
+        print(f"Controller {idx}: rumble " + (self.describe() if self.methods else
                                               "unavailable (no evdev FF and no hidraw access - run with doas)"
                                               if mode != "off" else "off"))
+
+    @property
+    def mode(self):
+        """Główny sposób (do logów i testów): pierwszy działający albo None."""
+        return self.methods[0] if self.methods else None
+
+    @property
+    def bits(self):
+        """Sposoby jako bity (pakiet wersji do receivera): 1 = sterownik, 2 = raport HID."""
+        return ("evdev" in self.methods) | ("hidraw" in self.methods) << 1
+
+    def describe(self):
+        parts = []
+        if "evdev" in self.methods:
+            parts.append("kernel driver (evdev FF)")
+        if "hidraw" in self.methods:
+            fw = f"firmware {self.fw:04x}" if self.fw is not None else "firmware unknown"
+            mode = "v2" if self.v2 else "v1" if self.v2 is False else "v1+v2"
+            parts.append(f"direct HID reports ({self.path}, {fw}, vibration {mode})")
+        return "via " + " + ".join(parts)
 
     def _open_hidraw(self, given=None):
         path, bt = given or find_hidraw(self.dev)
@@ -119,7 +142,7 @@ class Rumble:
         except OSError as e:
             print(f"Controller {self.idx}: cannot open {path} for rumble: {e.strerror}")
             return False
-        self.path, self.bt, self.mode = path, bt, "hidraw"
+        self.path, self.bt = path, bt
         self.fw = firmware_version(self.fd)
         self.v2 = None if self.fw is None else self.fw >= VIBRATION_V2_FROM
         return True
@@ -127,33 +150,33 @@ class Rumble:
     # ---------- sterowanie ----------
     def set(self, small, large):
         now = time.monotonic()
-        if self.mode is None:
+        if not self.methods:
             return
         if (small, large) == self.cur and now - self.t_set < 0.4:
             return                                   # bez zmian i świeże - nic nie wysyłaj
         if self.logged < 3 and (small or large):
             self.logged += 1
-            print(f"Controller {self.idx}: rumble {small}/{large} from PC via {self.mode}")
-        try:
-            self._send(small, large)
-        except OSError as e:
-            if self.mode == "evdev":
-                print(f"Controller {self.idx}: evdev rumble failed ({e!r}) - switching to hidraw")
-                self.mode = None
-                if self._open_hidraw():
-                    self._send(small, large)
-            else:
-                print(f"Controller {self.idx}: rumble failed: {e!r}")
-                self.close()
-                return
+            print(f"Controller {self.idx}: rumble {small}/{large} from PC {self.describe()}")
+        self._send(small, large)
         self.cur, self.t_set = (small, large), now
         self._arm_watchdog()
 
     def _send(self, small, large):
-        if self.mode == "hidraw":
-            self.seq = (self.seq + 1) & 0x0F
-            os.write(self.fd, output_report(self.bt, self.seq, small, large, self.v2))
-            return
+        for m in list(self.methods):
+            try:
+                (self._send_hidraw if m == "hidraw" else self._send_evdev)(small, large)
+            except OSError as e:
+                print(f"Controller {self.idx}: rumble via {m} failed ({e!r}) - not using it any more")
+                self.methods.remove(m)
+                if m == "evdev" and "hidraw" not in self.methods and self._open_hidraw():
+                    self.methods.append("hidraw")
+                    self._send_hidraw(small, large)
+
+    def _send_hidraw(self, small, large):
+        self.seq = (self.seq + 1) & 0x0F
+        os.write(self.fd, output_report(self.bt, self.seq, small, large, self.v2))
+
+    def _send_evdev(self, small, large):
         if small or large:
             eff = ff.Effect(ec.FF_RUMBLE, -1 if self.ff_id is None else self.ff_id, 0, ff.Trigger(0, 0),
                             ff.Replay(EFFECT_MS, 0),
@@ -183,20 +206,20 @@ class Rumble:
         if self._watch is not None:
             self._watch.cancel()
             self._watch = None
-        try:
-            if self.cur != (0, 0):
-                self._send(0, 0)
-            if self.mode == "evdev" and self.ff_id is not None:
+        if self.cur != (0, 0):
+            self._send(0, 0)
+        if "evdev" in self.methods and self.ff_id is not None:
+            try:
                 self.dev.erase_effect(self.ff_id)
-        except OSError:
-            pass
+            except OSError:
+                pass
         if self.fd is not None:
             try:
                 os.close(self.fd)
             except OSError:
                 pass
             self.fd = None
-        self.mode, self.cur = None, (0, 0)
+        self.methods, self.cur = [], (0, 0)
 
 
 # ---------------- test z linii poleceń: doas python3 sender_rumble.py --test ----------------

@@ -78,9 +78,10 @@ DualSense ──Bluetooth──> telefon: sender/ ──UDP 5005──> PC: rece
     pełny ekran (też F11 i przycisk w nagłówku), język: polski / English (zmiana po restarcie).
 - **Edytor w przeglądarce** (opcjonalny, `remap_ui = true`): to samo co w oknie, w Edge/Chrome.
 - **Wyłączanie pada** z PC albo samo po bezczynności (domyślnie 15 min).
-- **Wibracja:** przez sterownik (evdev FF), a gdy jądro telefonu nie ma `CONFIG_PLAYSTATION_FF` - bezpośrednio
-  raportem HID przez `/dev/hidrawN` (nadajnik przez `doas`); ustawienie `rumble` w `sender.toml`. Przycisk wibracji
-  na karcie pada w oknie sprawdza, czy wibracja dochodzi do pada.
+- **Wibracja:** jednocześnie przez sterownik (evdev FF) i bezpośrednio raportem HID przez `/dev/hidrawN`
+  (nadajnik przez `doas`), z flagami zależnymi od firmware pada; ustawienie `rumble` w `sender.toml`. Karta pada
+  pokazuje „wibracja: sterownik + HID” / „niedostępna” (brak `doas`) / „stary nadajnik” (skopiuj nowy `sender/`
+  na telefon). Przycisk wibracji na karcie pada sprawdza, czy wibracja dochodzi do pada.
 - **Stała kolejność graczy:** nadajnik pamięta, który pad (MAC) był w którym slocie (`slots.json`), a receiver podłącza
   wirtualne DS4 w kolejności slotów, więc pad 1 zostaje graczem 1 w Steam / grze niezależnie od tego, który włączysz
   pierwszy.
@@ -159,7 +160,7 @@ Najczęściej zmieniane:
 | `host` | sender | 192.168.1.4 | IP komputera z receiverem |
 | `pad_min_dt` | sender | 0.004 | min. odstęp pakietów stanu (4 ms = 250 Hz) |
 | `idle_off_min` | sender | 15 | wyłącz pada po tylu minutach bez użycia, 0 = nigdy |
-| `rumble` | sender | auto | wibracja: `auto` (sterownik, bez niego raport HID), `evdev`, `hidraw`, `off` |
+| `rumble` | sender | auto | wibracja: `auto` (sterownik i raport HID naraz), `evdev`, `hidraw`, `off` |
 | `key` | oba | "" | wspólny klucz HMAC (opcjonalne uwierzytelnianie pakietów) |
 | `mouse_sens`, `scroll_sens` | receiver | 0.5, 0.6 | czułość myszy i przewijania touchpadem |
 | `ps_modifier` | receiver | true | PS jako klawisz skrótów (PS idzie do gry po puszczeniu) |
@@ -198,7 +199,7 @@ Nadajnik zapisuje stały przydział pad → slot w `sender/slots.json` (`slots_f
 | Ruch odwrócony w emulatorze (DSU) | `acc_sign` / `gyro_sign` w konfiguracji receivera |
 | Profil gry się nie włącza | gry z anti-cheatem mogą blokować odczyt nazwy procesu; przełącz ręcznie PS + d-pad |
 | `virtual DS4 error ... ViGEmBus` | zainstaluj sterownik ViGEmBus |
-| Pad nie wibruje | na telefonie: `doas python3 sender_rumble.py --test` (wibruje każdym sposobem po kolei, bez sieci) i ustaw w `sender.toml` `rumble` na ten, który działa; log nadajnika `rumble via ...` i `rumble N/N from PC` (czy polecenie z PC dochodzi); przycisk „Wibracja” na karcie pada |
+| Pad nie wibruje | karta pada: „stary nadajnik” = skopiuj nowe pliki `sender/` na telefon, „niedostępna” = uruchom nadajnik przez `doas`; na telefonie: `doas python3 sender_rumble.py --test` (wibruje każdym sposobem po kolei, bez sieci) i ustaw w `sender.toml` `rumble` na ten, który działa; log nadajnika `rumble via ...` i `rumble N/N from PC` (czy polecenie z PC dochodzi); przycisk „Wibracja” na karcie pada |
 | Tryb konsoli nie reaguje | log receivera: `Console: double ... on controller N` = wykryte; `only the master pad can do that` = funkcja zastrzeżona dla mastera (Ustawienia → Master) |
 | Gra w co-op widzi pady dziwnie (Steam) | Steam → biblioteka → gra → Właściwości → Kontroler: spróbuj „Wyłącz Steam Input” (gra czyta dwa DS4 sama) albo odwrotnie; kolejność graczy w Big Picture → Ustawienia → Kontroler |
 
