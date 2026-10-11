@@ -327,7 +327,17 @@ EN = {
     "Skopiuj nowe pliki sender/ na telefon - starszy nadajnik nie wibruje bez obsługi wibracji w jądrze.":
         "Copy the new sender/ files to the phone - an older sender cannot rumble without kernel rumble support.",
     "wibracja: niedostępna": "rumble: unavailable",
-    "Nadajnik nie ma dostępu do wibracji - uruchom go przez doas.": "The sender has no access to rumble - run it with doas.",
+    "Na telefonie: doas python3 sender_rumble.py --test": "On the phone: doas python3 sender_rumble.py --test",
+    "wibracja: wyłączona": "rumble: off",
+    "W sender.toml ustaw rumble = \"auto\".": "Set rumble = \"auto\" in sender.toml.",
+    "wibracja: brak uprawnień": "rumble: no permission",
+    "Nadajnik nie może otworzyć /dev/hidraw - uruchom go przez doas.": "The sender cannot open /dev/hidraw - run it with doas.",
+    "wibracja: brak w jądrze": "rumble: missing in kernel",
+    "Jądro telefonu nie ma CONFIG_PLAYSTATION_FF ani CONFIG_HIDRAW - bez jednej z nich pad nie wibruje.":
+        "The phone kernel has neither CONFIG_PLAYSTATION_FF nor CONFIG_HIDRAW - the pad cannot rumble without one of them.",
+    "wibracja: nie znaleziono pada": "rumble: pad not found",
+    "Nadajnik nie znalazł /dev/hidraw tego pada - na telefonie: doas python3 sender_rumble.py --test":
+        "The sender did not find /dev/hidraw of this pad - on the phone: doas python3 sender_rumble.py --test",
     "sterownik": "driver",
     "wibracja: {ways}": "rumble: {ways}",
     # ---------- ikony ----------

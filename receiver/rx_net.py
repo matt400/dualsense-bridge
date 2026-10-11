@@ -233,7 +233,7 @@ def handle(t, i, data):
         v = BODY[T_VERSION].unpack_from(data, 4)
         if v != S.sender_info[i]:
             S.sender_info[i] = v
-            print(f"Controller {i}: sender v{v[0]}, rumble methods {v[1]}")
+            print(f"Controller {i}: sender v{v[0]}, rumble methods {v[1]}, reason {v[2]}")
     elif t == T_INFO:
         rtt, pad_hz, motion_hz = ST_INFO.unpack_from(data, 4)
         S.info[i] = (None if rtt == RTT_NONE else rtt / 10, pad_hz, motion_hz, time.monotonic())

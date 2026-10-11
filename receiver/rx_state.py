@@ -72,7 +72,7 @@ def init(store_):
     override = [None] * n                            # profil wybrany ręcznie (PS + d-pad), None = automatycznie
     info = [None] * n                                # (ping ms | None, Hz pada, Hz ruchu, czas) z pakietu info
     pps = [0.0] * n                                  # pakiety stanu na sekundę
-    sender_info = [None] * n                         # (wersja nadajnika, sposoby wibracji) z pakietu version; None = stary
+    sender_info = [None] * n                         # (wersja nadajnika, sposoby wibracji, powód) z pakietu version; None = stary
 
 
 def run_forever(name, fn, *args):

@@ -13,14 +13,18 @@ Pad trzyma ostatnią moc silników - receiver odświeża wibrację co 0.5 s, a s
 odświeżenia ustaną (zgubione pakiety, zamknięta gra), żeby pad nie wibrował bez końca.
 """
 import asyncio
+import errno
 import glob
 import os
 import re
+import stat
 import time
 import zlib
 
 from evdev import ecodes as ec
 from evdev import ff
+
+from proto import WHY_ACCESS, WHY_NO_HIDRAW, WHY_NOT_FOUND, WHY_OFF, WHY_OK, WHY_OPEN
 
 FLAG0_COMPAT_VIBRATION, FLAG0_HAPTICS_SELECT = 0x01, 0x02
 FLAG2_COMPAT_VIBRATION2 = 0x04            # nowsze oprogramowanie pada (jak use_vibration_v2 w jądrze)
@@ -65,20 +69,62 @@ def output_report(bt, seq, small, large, v2=None):
     return bytes(rep) + crc.to_bytes(4, "little")
 
 
+def _uevent(path):
+    try:
+        with open(path) as f:
+            return dict(line.rstrip("\n").split("=", 1) for line in f if "=" in line)
+    except OSError:
+        return {}
+
+
+def _by_uniq(uniq, sys_root):
+    """Zapas: hidraw, którego urządzenie HID ma ten sam HID_UNIQ (adres MAC pada) - gdy ścieżka w sysfs od eventN
+    do urządzenia HID jest nietypowa (inne jądro / stos Bluetooth)."""
+    uniq = (uniq or "").lower()
+    if not uniq:
+        return None, False
+    for raw in sorted(glob.glob(f"{sys_root}/class/hidraw/hidraw*")):
+        ev = _uevent(os.path.join(raw, "device", "uevent"))
+        if ev.get("HID_UNIQ", "").lower() == uniq:
+            bus = int(ev.get("HID_ID", "0:0:0").split(":")[0], 16)
+            return f"/dev/{os.path.basename(raw)}", bus == BUS_BLUETOOTH
+    return None, False
+
+
 def find_hidraw(pad_dev, sys_root="/sys"):
     """-> (/dev/hidrawN, czy Bluetooth) dla tego samego urządzenia HID co pad evdev, albo (None, False)."""
     try:
         node = os.path.realpath(f"{sys_root}/class/input/{os.path.basename(pad_dev.path)}")
     except (OSError, AttributeError):
-        return None, False
+        node = "/"
     hid = node
     while hid not in ("/", "") and not _HID_DIR.match(os.path.basename(hid)):
         hid = os.path.dirname(hid)
-    if hid in ("/", ""):
-        return None, False
-    found = sorted(glob.glob(os.path.join(hid, "hidraw", "hidraw*")))
-    bus = int(_HID_DIR.match(os.path.basename(hid)).group(1), 16)
-    return (f"/dev/{os.path.basename(found[0])}" if found else None), bus == BUS_BLUETOOTH
+    if hid not in ("/", ""):
+        found = sorted(glob.glob(os.path.join(hid, "hidraw", "hidraw*")))
+        if found:
+            bus = int(_HID_DIR.match(os.path.basename(hid)).group(1), 16)
+            return f"/dev/{os.path.basename(found[0])}", bus == BUS_BLUETOOTH
+    return _by_uniq(getattr(pad_dev, "uniq", ""), sys_root)
+
+
+def kernel_has_hidraw(sys_root="/sys"):
+    """Czy jądro ma hidraw (CONFIG_HIDRAW): klasa urządzeń hidraw w sysfs."""
+    return os.path.isdir(f"{sys_root}/class/hidraw")
+
+
+def ensure_node(path, sys_root="/sys"):
+    """Brak /dev/hidrawN przy istniejącym urządzeniu w sysfs (system bez udev / mdev) -> mknod z numerów z sysfs
+    (tylko root). Bez wyjątków - błąd wyjdzie przy otwieraniu."""
+    if os.path.exists(path):
+        return
+    try:
+        with open(f"{sys_root}/class/hidraw/{os.path.basename(path)}/dev") as f:
+            major, minor = map(int, f.read().split(":"))
+        os.mknod(path, stat.S_IFCHR | 0o600, os.makedev(major, minor))
+        print(f"Created missing device node {path}")
+    except (OSError, ValueError):
+        pass
 
 
 def has_ff(dev):
@@ -86,6 +132,12 @@ def has_ff(dev):
         return ec.FF_RUMBLE in dev.capabilities().get(ec.EV_FF, [])
     except (OSError, AttributeError):
         return False
+
+
+WHY_TEXT = {WHY_OK: "ok", WHY_OFF: "rumble = off / evdev in config",
+            WHY_ACCESS: "no permission for /dev/hidraw - run with doas",
+            WHY_NO_HIDRAW: "kernel without CONFIG_HIDRAW",
+            WHY_NOT_FOUND: "hidraw of this pad not found", WHY_OPEN: "cannot open hidraw"}
 
 
 class Rumble:
@@ -101,6 +153,7 @@ class Rumble:
         self.methods = []             # "evdev" i/lub "hidraw" - w tej kolejności
         self.fd, self.bt, self.seq, self.ff_id, self.path = None, False, 0, None, None
         self.v2, self.fw = None, None
+        self.why = WHY_OFF if mode in ("off", "evdev") else WHY_OK   # powód braku raportu HID (pakiet do receivera)
         self.logged = 0               # ile pierwszych poleceń wibracji zapisać w logu (diagnostyka)
         self.cur = (0, 0)
         self.t_set = 0.0
@@ -110,7 +163,7 @@ class Rumble:
         if mode in ("auto", "hidraw") and self._open_hidraw(hidraw):
             self.methods.append("hidraw")
         print(f"Controller {idx}: rumble " + (self.describe() if self.methods else
-                                              "unavailable (no evdev FF and no hidraw access - run with doas)"
+                                              f"unavailable (no evdev FF; {WHY_TEXT[self.why]})"
                                               if mode != "off" else "off"))
 
     @property
@@ -136,12 +189,17 @@ class Rumble:
     def _open_hidraw(self, given=None):
         path, bt = given or find_hidraw(self.dev)
         if not path:
+            self.why = WHY_NOT_FOUND if kernel_has_hidraw() else WHY_NO_HIDRAW
             return False
+        if given is None:
+            ensure_node(path)
         try:
             self.fd = os.open(path, os.O_RDWR | os.O_NONBLOCK)   # RDWR: także odczyt wersji oprogramowania
         except OSError as e:
+            self.why = WHY_ACCESS if e.errno in (errno.EACCES, errno.EPERM) else WHY_OPEN
             print(f"Controller {self.idx}: cannot open {path} for rumble: {e.strerror}")
             return False
+        self.why = WHY_OK
         self.path, self.bt = path, bt
         self.fw = firmware_version(self.fd)
         self.v2 = None if self.fw is None else self.fw >= VIBRATION_V2_FROM
@@ -235,7 +293,8 @@ def _test():
     for d in pads:
         path, bt = find_hidraw(d)
         print(f"== {d.name} {d.uniq or d.phys} ({d.path}): {'Bluetooth' if bt else 'USB'}, hidraw {path}, "
-              f"evdev FF {'yes' if has_ff(d) else 'NO (kernel without CONFIG_PLAYSTATION_FF)'}")
+              f"evdev FF {'yes' if has_ff(d) else 'NO (kernel without CONFIG_PLAYSTATION_FF)'}"
+              + ("" if kernel_has_hidraw() else ", kernel WITHOUT CONFIG_HIDRAW"))
         steps = [("evdev FF", "evdev", None)] if has_ff(d) else []
         steps += [("HID report v1", "hidraw", False), ("HID report v2", "hidraw", True), ("HID report v1+v2", "hidraw", None)]
         for label, mode, v2 in steps:

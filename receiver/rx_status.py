@@ -1,7 +1,7 @@
 """Receiver: teksty i poziomy jakości do okna (łącze, bateria) - czyste funkcje, bez Qt, łatwe do przetestowania."""
 from rx_i18n import _
 import rx_state as S
-from proto import RUMBLE_EVDEV, RUMBLE_HIDRAW
+from proto import RUMBLE_EVDEV, RUMBLE_HIDRAW, WHY_ACCESS, WHY_NO_HIDRAW, WHY_NOT_FOUND, WHY_OFF
 
 INFO_MAX_AGE = 3.0   # pakiet "info" starszy niż tyle = brak danych o pingu i Hz
 
@@ -68,9 +68,16 @@ def rumble_status(i):
     if info is None:
         return (_("wibracja: stary nadajnik"), "warn",
                 _("Skopiuj nowe pliki sender/ na telefon - starszy nadajnik nie wibruje bez obsługi wibracji w jądrze."))
-    bits = info[1]
+    bits, why = info[1], info[2]
     if not bits:
-        return (_("wibracja: niedostępna"), "bad",
-                _("Nadajnik nie ma dostępu do wibracji - uruchom go przez doas."))
+        text, tip = {
+            WHY_OFF: (_("wibracja: wyłączona"), _("W sender.toml ustaw rumble = \"auto\".")),
+            WHY_ACCESS: (_("wibracja: brak uprawnień"), _("Nadajnik nie może otworzyć /dev/hidraw - uruchom go przez doas.")),
+            WHY_NO_HIDRAW: (_("wibracja: brak w jądrze"),
+                            _("Jądro telefonu nie ma CONFIG_PLAYSTATION_FF ani CONFIG_HIDRAW - bez jednej z nich pad nie wibruje.")),
+            WHY_NOT_FOUND: (_("wibracja: nie znaleziono pada"),
+                            _("Nadajnik nie znalazł /dev/hidraw tego pada - na telefonie: doas python3 sender_rumble.py --test")),
+        }.get(why, (_("wibracja: niedostępna"), _("Na telefonie: doas python3 sender_rumble.py --test")))
+        return text, "bad", tip
     ways = [w for b, w in ((RUMBLE_EVDEV, _("sterownik")), (RUMBLE_HIDRAW, "HID")) if bits & b]
     return _("wibracja: {ways}").format(ways=" + ".join(ways)), "", ""
