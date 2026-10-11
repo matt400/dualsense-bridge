@@ -14,7 +14,7 @@ from rx_qt_icons import pixmap
 from rx_qt_widgets import Combo, ConfirmButton, SliderRow, button, field, input_items, label
 
 NONE = "__none"
-TARGETS = input_items(B.TARGET_INPUTS) + [(NONE, "— disabled —")]       # ikony przycisków (nazwa w podpowiedzi)
+TARGETS = input_items(B.INPUTS) + [(NONE, "— disabled —")]       # ikony przycisków (nazwa w podpowiedzi)
 
 
 def r3(v):
@@ -250,7 +250,7 @@ class PartPage(QWidget):
 
     def _target(self, src):
         t = self.ed.target_of(src)
-        return NONE if t is None or t not in B.TARGET_INPUTS else t   # mute bez zmian = nic w grze (DS4 go nie ma)
+        return NONE if t is None else t
 
     def refresh(self):
         """Wczytuje wartości wybranej części z profilu do widżetów (bez wywoływania zmian)."""

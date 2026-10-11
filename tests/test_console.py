@@ -44,16 +44,20 @@ PS, SHARE = 316, 314
 # ---------- config: brak pliku, błędne wartości, uszkodzony plik ----------
 cfg = rx_console.load(PATH)
 check(cfg == ConsoleConfig() and os.path.exists(PATH), "brak pliku -> domyślne i utworzony console.json")
-check(json.load(open(PATH)) == {"toggle_button": "mute", "double_click_ms": 400, "audio_tv": "", "audio_pc": "",
+check(json.load(open(PATH)) == {"toggle_button": "r2", "double_click_ms": 400, "audio_tv": "", "audio_pc": "",
                                 "timeout_s": 60, "startup_mode": "extend", "tv_width": 2560, "tv_height": 1440,
-                                "tv_scale": 200, "version": 2}, "domyślne wartości w pliku (mute, TV 1440p / 200 %)")
+                                "tv_scale": 200, "auto_on_master": True, "version": 3}, "domyślne wartości w pliku (R2, TV 1440p / 200 %)")
 json.dump({"toggle_button": "ps", "double_click_ms": 300, "audio_tv": "", "audio_pc": "", "timeout_s": 60,
            "startup_mode": "extend"}, open(PATH, "w"))
 cfg = rx_console.load(PATH)
-check(cfg.toggle_button == "mute" and cfg.double_click_ms == 300 and json.load(open(PATH))["version"] == 2,
-      f"stary plik (bez wersji) z PS -> mute, reszta zostaje: {cfg}")
+check(cfg.toggle_button == "r2" and cfg.double_click_ms == 300 and json.load(open(PATH))["version"] == 3,
+      f"stary plik (bez wersji) z PS -> R2, reszta zostaje: {cfg}")
+json.dump({"toggle_button": "mute", "version": 2}, open(PATH, "w"))
+check(rx_console.load(PATH).toggle_button == "r2", "wersja 2 z mute (usuniętym) -> R2")
+json.dump({"toggle_button": "ps", "version": 2}, open(PATH, "w"))
+check(rx_console.load(PATH).toggle_button == "ps", "PS wybrany świadomie w wersji 2 zostaje")
 json.dump({**json.load(open(PATH)), "toggle_button": "ps"}, open(PATH, "w"))
-check(rx_console.load(PATH).toggle_button == "ps", "PS wybrany świadomie w nowym pliku (wersja 2) zostaje")
+check(rx_console.load(PATH).toggle_button == "ps", "PS wybrany świadomie w nowym pliku zostaje")
 json.dump({"toggle_button": "share", "double_click_ms": 250, "audio_tv": " LG TV ", "audio_pc": "Głośniki",
            "timeout_s": 90, "startup_mode": "internal"}, open(PATH, "w"))
 cfg = rx_console.load(PATH)
@@ -279,17 +283,63 @@ except RuntimeError:
 D.time.sleep = sleep                                             # moduł time jest wspólny - przywróć
 ok("TV: rozdzielczość i skala tylko przy ON, wybór trybu, skala względna, czekanie na ekran")
 
-# ---------- mute jako przycisk trybu (domyślny) ----------
-MUTE = 248
-c = new_console(toggle_button="mute"); calls.clear()
-click(0, MUTE); time.sleep(0.05); click(0, MUTE)
-check(wait_for(lambda: c.on), "podwójne mute -> ON")
-c.on = False; calls.clear()
-state(0, mask=BIT[MUTE]); state(0, mask=BIT[MUTE] | BIT[304]); state(0, mask=0); time.sleep(0.03)
-state(0, mask=BIT[MUTE]); state(0, mask=BIT[MUTE] | BIT[304]); state(0, mask=0); time.sleep(0.2)
-check(not c.on, "mute + przycisk (akcja mastera) dwa razy to nie podwójne kliknięcie")
+# ---------- R2 jako przycisk trybu (domyślny): histereza, kombinacje ----------
+c = new_console(toggle_button="r2"); calls.clear()
+def r2(v, mask=0):
+    state(0, rt=v, mask=mask); time.sleep(0.03)
+r2(255); r2(0); r2(255); r2(0)
+check(wait_for(lambda: c.on), "podwójne pełne R2 -> ON")
+c.on = False; calls.clear(); time.sleep(0.5)
+for v in (100, 200, 120, 199, 90, 0):                      # drżenie wokół progu to jedno naciśnięcie (histereza)
+    r2(v)
+time.sleep(0.3)
+check(not c.on, "drżenie spustu przy progu nie jest podwójnym kliknięciem")
+time.sleep(0.5)
+for v in (60, 150, 0, 70, 0):                               # lekkie naciśnięcia (gra) nie liczą się
+    r2(v)
+time.sleep(0.3)
+check(not c.on, "lekkie naciśnięcia R2 nie przełączają")
+r2(255, BIT[304]); r2(0); r2(255, BIT[304]); r2(0); time.sleep(0.2)
+check(not c.on, "R2 z innym przyciskiem (w grze) to nie kliknięcie")
 c.close(restart=True)
-ok("mute: podwójne kliknięcie przełącza, kombinacje z mute nie")
+ok("R2: podwójne głębokie naciśnięcie przełącza, drżenie / lekkie / z innym przyciskiem nie")
+
+# ---------- auto-ON po połączeniu pada master, ręczne wyłączenie, restart ----------
+import rx_master, rx_settings
+from dataclasses import replace
+from proto import T_IDENT, T_BYE
+MAC = "aa:bb:cc:00:00:01"
+rx_settings.apply(replace(rx_settings.cur, master=replace(rx_settings.cur.master, pad=MAC)))
+c = new_console(toggle_button="r2"); calls.clear()
+feed(T_IDENT, 1, MAC.encode())
+check(wait_for(lambda: c.on) and any(x[0] == "toast" and "master" in x[2] for x in calls), f"master połączony -> ON: {calls}")
+time.sleep(0.5)
+for v in (255, 0, 255, 0):
+    state(1, rt=v); time.sleep(0.03)
+check(wait_for(lambda: not c.on), "podwójne R2 na masterze -> ręcznie OFF")
+time.sleep(0.3); feed(T_IDENT, 1, MAC.encode()); time.sleep(0.3)
+check(not c.on, "ten sam pad dalej połączony (ident bez zmian) - tryb zostaje wyłączony")
+feed(T_BYE, 1); time.sleep(1.1); feed(T_IDENT, 1, MAC.encode())
+check(wait_for(lambda: c.on), "ponowne połączenie mastera -> znów ON")
+c.close(restart=True)
+c = new_console(toggle_button="r2", auto_on_master=False); feed(T_BYE, 1); time.sleep(1.1)
+feed(T_IDENT, 1, MAC.encode()); time.sleep(0.3)
+check(not c.on, "auto_on_master = false -> bez automatu")
+c.close(restart=True)
+feed(T_IDENT, 0, b"cc:cc:cc:00:00:09"); time.sleep(0.2)
+c = new_console(toggle_button="r2"); feed(T_BYE, 0); time.sleep(1.1); feed(T_IDENT, 0, b"cc:cc:cc:00:00:09"); time.sleep(0.3)
+check(not c.on, "zwykły pad (nie master) nie włącza trybu")
+c.close(restart=True)
+os.environ[rx_console.RESTART_ENV] = "0"
+c = new_console(toggle_button="r2"); feed(T_BYE, 1); time.sleep(1.1); feed(T_IDENT, 1, MAC.encode()); time.sleep(0.3)
+check(not c.on and rx_console.RESTART_ENV not in os.environ, "restart z wyłączonym trybem: powrót mastera go nie włącza")
+c.close(restart=True)
+os.environ[rx_console.RESTART_ENV] = "1"
+calls.clear(); c = Console(ConsoleConfig()); c.start()
+check(wait_for(lambda: c.on) and ("display", "tv") in calls, f"restart z włączonym trybem: od razu ON: {calls}")
+c.close(restart=True)
+rx_settings.apply(replace(rx_settings.cur, master=replace(rx_settings.cur.master, pad="")))
+ok("auto-ON: połączenie mastera, ręczne OFF, ponowne połączenie, wyłączalne, restart zachowuje stan")
 
 # ---------- rx_audio.find ----------
 devs = [("1", "Speakers (Realtek)"), ("2", "LG TV (NVIDIA High Definition Audio)"), ("3", "Headphones (USB)")]

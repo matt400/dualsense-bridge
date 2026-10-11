@@ -1,6 +1,6 @@
 """Receiver: ikony przycisków pada i kilku funkcji (QPainter, bez plików graficznych) - zamiast nazw w oknie.
 
-icon(name)  -> QIcon dla wejścia pada ("cross", "ps", "mute", "dpad_up", "l2"...) albo funkcji ("crown", "mouse",
+icon(name)  -> QIcon dla wejścia pada ("cross", "ps", "dpad_up", "l2"...) albo funkcji ("crown", "mouse",
                "tv", "power"); ostre na ekranach HiDPI (rysowane w kilku rozmiarach), zapamiętywane po pierwszym użyciu.
 tip(name)   -> pełna nazwa do podpowiedzi (ikona bez tekstu musi mieć tooltip).
 Kolory symboli jak na rysunku pada (rx_qt_pad): trójkąt zielony, kółko czerwone, krzyżyk niebieski, kwadrat różowy.
@@ -32,7 +32,7 @@ def _pen(color, w):
 
 
 def _disc(p, fill=BODY):
-    """Okrągła "nakładka" przycisku - tło ikon przycisków twarzowych, PS i mute."""
+    """Okrągła "nakładka" przycisku - tło ikon przycisków twarzowych i PS."""
     p.setPen(_pen("#565d70", 1.2))
     p.setBrush(fill)
     p.drawEllipse(QRectF(1.5, 1.5, 21, 21))
@@ -98,20 +98,6 @@ def _dpad(p, name):
 def _ps(p):
     _disc(p, QColor("#2a2e3a"))
     _text(p, "PS", QRectF(0, 0, 24, 24), 9)
-
-
-def _mute(p):
-    """Mikrofon z ukośną kreską - przycisk wyciszenia pod przyciskiem PS."""
-    _disc(p, QColor("#2a2e3a"))
-    p.setPen(_pen(FG, 1.6))
-    p.setBrush(Qt.BrushStyle.NoBrush)
-    p.drawRoundedRect(QRectF(9.6, 5.5, 4.8, 8.5), 2.4, 2.4)
-    arc = QPainterPath(QPointF(7.5, 11.5))
-    arc.cubicTo(7.5, 17, 16.5, 17, 16.5, 11.5)
-    p.drawPath(arc)
-    p.drawLine(QPointF(12, 16), QPointF(12, 18.5))
-    p.setPen(_pen("#ff6b6b", 1.8))
-    p.drawLine(QPointF(6.5, 6), QPointF(17.5, 18))
 
 
 def _share(p):
@@ -194,7 +180,7 @@ def _draw(p, name):
     elif name.startswith("dpad_"):
         _dpad(p, name)
     else:
-        {"ps": _ps, "mute": _mute, "share": _share, "options": _options, "crown": _crown, "mouse": _mouse,
+        {"ps": _ps, "share": _share, "options": _options, "crown": _crown, "mouse": _mouse,
          "tv": _tv, "power": _power, "touchpad": _touchpad, "restart": _restart, "window": _window}[name](p)
 
 
@@ -222,4 +208,4 @@ def icon(name, dim=False):
 
 def has_icon(name):
     return name in FACE or name in BADGES or name.startswith("dpad_") or name in (
-        "ps", "mute", "share", "options", "crown", "mouse", "touchpad", "tv", "power", "restart", "window")
+        "ps", "share", "options", "crown", "mouse", "touchpad", "tv", "power", "restart", "window")

@@ -1,7 +1,7 @@
 """Receiver: ustawienia zmieniane w oknie bez restartu (settings.json obok skryptu) - mysz touchpada i pad master.
 
   mouse   czułość kursora i stabilizacja fizycznego kliknięcia touchpada (rx_mouse)
-  master  który pad jest masterem, co wolno tylko jemu i akcje systemowe "mute + przycisk" (rx_master)
+  master  który pad jest masterem, co wolno tylko jemu i akcje systemowe "PS + przycisk" (rx_master)
 
 Brak pliku / błędna wartość -> domyślna (komunikat w logu, plik poprawiany przy zapisie). Zmiana z okna działa od
 razu: apply() podmienia obiekt `cur` (jedno przypisanie - wątki sieci czytają zawsze spójną całość).
@@ -10,7 +10,7 @@ import json
 import os
 from dataclasses import asdict, dataclass, field, fields, replace
 
-from rx_buttons import BUTTON_CODES, DIRS
+from rx_buttons import BUTTON_CODES
 
 # ---------------- funkcje sprawdzające (wartość z JSON -> wartość albo ValueError) ----------------
 
@@ -61,7 +61,7 @@ MouseConfig.V = {"sens": _num(0.05, 5.0, float), "click_freeze_ms": _num(0, 600)
 # co można zastrzec tylko dla mastera: klucz -> (opis w oknie, ikona z rx_qt_icons); kolejność = kolejność w oknie
 MASTER_FEATURES = {
     "console": ("Tryb konsoli (ekran i dźwięk)", "tv"),
-    "actions": ("Akcje systemowe (mute + przycisk)", "mute"),
+    "actions": ("Akcje systemowe (PS + przycisk)", "ps"),
     "ps_hold": ("Przytrzymanie PS: Game Bar / Big Picture", "ps"),
     "ps_game": ("PS w grze i w Steam (menu, nakładka)", "ps"),
     "screenshot": ("Zrzut ekranu (PS + Share)", "share"),
@@ -77,7 +77,8 @@ MASTER_ACTIONS = {
     "shutdown": ("Wyłącz komputer", True),
 }
 ABSENT = {"all": "każdy pad może wszystko", "nobody": "zastrzeżone funkcje są wyłączone"}
-COMBO_BUTTONS = tuple(n for n in (*BUTTON_CODES, *DIRS) if n not in ("mute", "ps"))   # do pary z mute
+# do pary z PS: bez przycisków skrótów PS (Share, D-pad) i R3 (PS + R3 = przejęcie mastera)
+COMBO_BUTTONS = tuple(n for n in BUTTON_CODES if n not in ("ps", "share", "r3"))
 
 
 def _features(v):
@@ -107,7 +108,7 @@ class MasterConfig:
     only_master: tuple = ("console", "actions", "ps_hold")
     actions: dict = field(default_factory=lambda: {"pause": "options", "close_game": "triangle",
                                                    "sleep": "", "shutdown": ""})
-    claim_hold: bool = True         # mute przytrzymany CLAIM_S s na padzie = ten pad zostaje masterem
+    claim_hold: bool = True         # PS + R3 przytrzymane CLAIM_S s na padzie = ten pad zostaje masterem
 
     V = None
 

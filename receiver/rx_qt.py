@@ -98,15 +98,6 @@ class PadCard(QFrame):
         for lb in (self.net, self.rate):
             lay.addWidget(lb)
         lay.addLayout(mode_row)
-        self.mute_icon, self.mute = label(""), label("", "dim")      # czy przycisk mute działa (pakiet caps)
-        pm = pixmap("mute", 32)
-        pm.setDevicePixelRatio(2)
-        self.mute_icon.setPixmap(pm)
-        mute_row = QHBoxLayout()
-        mute_row.setSpacing(6)
-        mute_row.addWidget(self.mute_icon)
-        mute_row.addWidget(self.mute, 1)
-        lay.addLayout(mute_row)
         lay.addWidget(self.profile)
         row = QHBoxLayout()
         self.off = ConfirmButton("Power off", "Turn off?", small=True)
@@ -145,7 +136,7 @@ class PadCard(QFrame):
         alive, want = bool(S.alive[i]), S.want[i].is_set()
         master = rx_master.is_master(i)
         key = (alive, want, pct, flags, S.plugged[i], S.mouse_mode[i], profile_size(S.remap_maps[i]), S.active[i],
-               master, S.pad_id[i], S.caps[i], S.mute_stuck[i])
+               master, S.pad_id[i])
         if key == self._key:
             return low                        # nic się nie zmieniło - nie dotykaj widżetów
         self._key = key
@@ -171,13 +162,6 @@ class PadCard(QFrame):
         self.mode_icon.setPixmap(pm)
         self.mode_icon.setToolTip("Touchpad jako mysz" if S.mouse_mode[i] else "Touchpad jako dotyk DS4")
         self.profile.setText(f"profile: {S.profile_label(S.active[i])}" + (f" ({n})" if n else ""))
-        text, level, tip = ST.mute_status(i)
-        self.mute.setText(text)
-        self.mute.setToolTip(tip)
-        self.mute_icon.setToolTip(tip)
-        set_prop(self.mute, "level", level)
-        for w in (self.mute, self.mute_icon):
-            w.setVisible(alive)
         return low
 
 
