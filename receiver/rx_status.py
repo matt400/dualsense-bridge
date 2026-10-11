@@ -1,6 +1,5 @@
 """Receiver: teksty i poziomy jakości do okna (łącze, bateria) - czyste funkcje, bez Qt, łatwe do przetestowania."""
 import rx_state as S
-from proto import CAPS_MUTE_FAIL, CAPS_MUTE_OK
 
 INFO_MAX_AGE = 3.0   # pakiet "info" starszy niż tyle = brak danych o pingu i Hz
 
@@ -59,21 +58,3 @@ def is_low(i, low_batt):
     pct, flags = S.batt_info[i]
     return bool(S.alive[i]) and pct <= 100 and not flags & 1 and pct <= low_batt
 
-
-def mute_status(i):
-    """Przycisk mute pada (z pakietu caps nadajnika) -> (tekst, poziom, podpowiedź) dla karty w oknie."""
-    caps = S.caps[i]
-    if S.mute_stuck[i]:
-        return ("mute: zawieszony - ignorowany", "bad",
-                "Nadajnik zgłasza mute wciśnięty bez przerwy - bit jest ignorowany do puszczenia. Sprawdź log nadajnika.")
-    if caps is None:
-        return ("mute: stary nadajnik", "warn", "Zaktualizuj pliki nadajnika (sender/) na telefonie - mute czyta tylko nowy nadajnik.")
-    if caps[1] & CAPS_MUTE_OK:
-        return "mute: działa", "ok", f"Nadajnik v{caps[0]} czyta przycisk mute (hidraw)."
-    if caps[1] & CAPS_MUTE_FAIL:
-        return ("mute: niedostępny", "bad",
-                "Nadajnik nie może czytać /dev/hidrawN (uruchom go przez doas) albo format raportu się nie zgadza - szczegóły w logu nadajnika.")
-    if not caps[1]:
-        return ("mute: nieaktywny", "warn",
-                "Nadajnik nie czyta mute (mute_button = false w sender.toml albo pad dopiero się łączy).")
-    return "mute: sprawdzam…", "", "Nadajnik porównuje raporty HID z padem (ułamek sekundy po połączeniu)."

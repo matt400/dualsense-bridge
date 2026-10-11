@@ -35,13 +35,11 @@ DualSense ──Bluetooth──> telefon: sender/ ──UDP 5005──> PC: rece
   | PS + d-pad lewo / prawo | zmiana profilu |
   | długie PS | Xbox Game Bar albo Steam Big Picture |
 
-- **Tryb konsoli:** podwójne kliknięcie wybranego przycisku pada (domyślnie **mute**, przycisk mikrofonu pod PS)
-  przełącza ekran i dźwięk między monitorem a telewizorem. Mute nie trafia do gier (DS4 go nie ma), więc nic się nie
-  gryzie - wcześniej domyślne podwójne PS otwierało przy okazji Steam Big Picture. Stary `console.json` z PS zmienia się
-  sam na mute; PS wybrany ponownie w Ustawieniach zostaje. Naciśnięcie w skrócie (PS + Share, mute + przycisk...)
-  nie liczy się jako kliknięcie. Dioda mikrofonu na padzie przełącza się przy każdym naciśnięciu mute (robi to
-  sterownik Linuksa) - to tylko kosmetyka. Nadajnik zanim włączy mute porównuje raporty HID z osiami pada (zły
-  odczyt nie może udawać wiecznie wciśniętego mute), a karta pada w oknie pokazuje, czy mute działa.
+- **Tryb konsoli:** podwójne kliknięcie wybranego przycisku pada (domyślnie **R2**) przełącza ekran i dźwięk między
+  monitorem a telewizorem. R2 liczy się tylko przy głębokim naciśnięciu (z histerezą - drżenie spustu nie daje
+  podwójnego kliknięcia) i tylko samo: R2 razem z innym przyciskiem (typowo w grze) nie przełącza. **Po połączeniu pada
+  master tryb włącza się sam** (`auto_on_master`); podwójne R2 go wyłącza i zostaje wyłączony do następnego połączenia
+  mastera. Restart receivera z okna zachowuje stan trybu. Stary `console.json` z PS / mute zmienia się sam na R2.
 
   | | Ekran (`DisplaySwitch.exe`) | Dźwięk | Powiadomienie |
   |---|---|---|---|
@@ -56,15 +54,16 @@ DualSense ──Bluetooth──> telefon: sender/ ──UDP 5005──> PC: rece
 - **Pad master** (np. gdy grają dzieci): wybrane funkcje działają tylko na jednym padzie - tryb konsoli, akcje
   systemowe, długie PS, PS w grze / Steam, zrzut ekranu, zmiana profilu, mysz, czułość. Inny pad dostaje czerwone
   mignięcie lightbara. Master jest przypisany do pada (MAC), nie do slotu. Szybka zmiana: korona na karcie pada albo
-  **mute przytrzymany 3 s** na padzie (złoty błysk; można wyłączyć). Akcje systemowe mastera:
+  **PS + R3 przytrzymane 3 s** na padzie (złoty błysk; można wyłączyć). Akcje systemowe mastera:
 
   | Domyślnie | Akcja |
   |---|---|
-  | mute + Options | pauza gry (Esc) |
-  | mute + △ (przytrzymaj ~1 s) | zamknij grę (nie zamyka pulpitu ani Steama) |
+  | PS + Options | pauza gry (Esc) |
+  | PS + △ (przytrzymaj ~1 s) | zamknij grę (nie zamyka pulpitu ani Steama) |
   | do ustawienia | uśpij komputer, wyłącz komputer (10 s na `shutdown /a`) |
 
-  Przycisk z kombinacji nie trafia do gry. Gdy master nie jest podłączony: każdy może (domyślnie) albo nikt.
+  Przycisk z kombinacji (i samo PS) nie trafia do gry. Do akcji nie można użyć przycisków skrótów PS (Share, D-pad)
+  ani R3. Gdy master nie jest podłączony: każdy może (domyślnie) albo nikt.
 - **Ustawienia** (ikona w zasobniku → Ustawienia, albo przycisk w oknie), cztery zakładki:
   - **Tryb konsoli:** przycisk pada wybierasz naciśnięciem go na padzie, czasy to pola liczbowe, urządzenia audio to
     listy aktywnych wyjść Windows, „Przetestuj” włącza tryb na 10 s z wartościami z okna. Zmiana trybu konsoli zapisuje
@@ -89,7 +88,7 @@ DualSense ──Bluetooth──> telefon: sender/ ──UDP 5005──> PC: rece
 |---|---|---|
 | System | Windows 10 / 11 | Linux z jądrem ze sterownikiem `hid-playstation` |
 | Python | 3.11+ | 3.11+ |
-| Inne | sterownik ViGEmBus, `vgamepad`, `PySide6-Essentials`, `pycaw`, `winotify` | `evdev`, `bluez` (`bluetoothctl`), dostęp do `/dev/hidraw*` (doas) dla przycisku mute |
+| Inne | sterownik ViGEmBus, `vgamepad`, `PySide6-Essentials`, `pycaw`, `winotify` | `evdev`, `bluez` (`bluetoothctl`) |
 
 ## Instalacja
 
@@ -167,12 +166,13 @@ Tryb konsoli ma własny plik `receiver/console.json` (obok skryptu). Brak pliku 
 
 | Klucz | Domyślnie | Co robi |
 |---|---|---|
-| `toggle_button` | `mute` | przycisk pada: `mute`, `ps`, `share`, `options`, `cross`, `circle`, `triangle`, `square`, `l1`, `r1`, `l3`, `r3`, `dpad_*`, `l2`, `r2` |
+| `toggle_button` | `r2` | przycisk pada: `r2`, `l2`, `ps`, `share`, `options`, `cross`, `circle`, `triangle`, `square`, `l1`, `r1`, `l3`, `r3`, `dpad_*` |
 | `double_click_ms` | 400 | maksymalny odstęp między dwoma naciśnięciami (100-2000) |
 | `audio_tv` | "" | nazwa urządzenia audio TV (jak na liście w Ustawieniach; pusty = dźwięk bez zmian) |
 | `audio_pc` | "" | nazwa urządzenia audio komputera |
 | `timeout_s` | 60 | brak pakietów z pada przez tyle sekund = automatyczne OFF (5-3600) |
 | `startup_mode` | `extend` | ekran przy starcie receivera: `extend` albo `internal` |
+| `auto_on_master` | true | połączenie pada master włącza tryb konsoli |
 | `tv_width`, `tv_height` | 2560, 1440 | rozdzielczość TV po włączeniu trybu (najwyższe odświeżanie dla niej; 0 = bez zmiany) |
 | `tv_scale` | 200 | skalowanie TV w %: 100, 125, 150, 175, 200, 225, 250, 300... (0 = bez zmiany) |
 
@@ -189,7 +189,6 @@ Nadajnik zapisuje stały przydział pad → slot w `sender/slots.json` (`slots_f
 | Ruch odwrócony w emulatorze (DSU) | `acc_sign` / `gyro_sign` w konfiguracji receivera |
 | Profil gry się nie włącza | gry z anti-cheatem mogą blokować odczyt nazwy procesu; przełącz ręcznie PS + d-pad |
 | `virtual DS4 error ... ViGEmBus` | zainstaluj sterownik ViGEmBus |
-| Mute nie działa (karta pada w oknie pokazuje stan mute) | „stary nadajnik” = skopiuj nowe pliki `sender/` na telefon; „niedostępny” = uruchom nadajnik przez `doas` (odczyt `/dev/hidrawN`) i sprawdź log nadajnika (`mute button ...`); „zawieszony” = nadajnik zgłaszał mute bez przerwy - jest ignorowany |
 | Tryb konsoli nie reaguje | log receivera: `Console: double ... on controller N` = wykryte; `only the master pad can do that` = funkcja zastrzeżona dla mastera (Ustawienia → Master) |
 | Gra w co-op widzi pady dziwnie (Steam) | Steam → biblioteka → gra → Właściwości → Kontroler: spróbuj „Wyłącz Steam Input” (gra czyta dwa DS4 sama) albo odwrotnie; kolejność graczy w Big Picture → Ustawienia → Kontroler |
 
@@ -216,7 +215,8 @@ Testy obejmują:
 - komunikację end-to-end przez UDP;
 - start prawdziwych procesów oraz czyste zamknięcie przy restarcie z ustawień (porty UDP, wirtualne DS4, blokada instancji);
 - tryb konsoli z zaślepionymi poleceniami ekranu, dźwięku i powiadomień (config, podwójne kliknięcie, auto-OFF, błędy);
-- pad master (uprawnienia, akcje mute + przycisk, przejęcie), stabilizację kliku touchpada, mute z hidraw, `slots.json`;
+- pad master (uprawnienia, akcje PS + przycisk, przejęcie), auto-ON trybu konsoli, R2 z histerezą,
+  stabilizację kliku touchpada, `slots.json`;
 - okno receivera (Qt offscreen, bez ekranu) i edytor w headless Chromium.
 
 Działanie z prawdziwym padem, ViGEm, `DisplaySwitch.exe`, przełączaniem dźwięku (pycaw) i powiadomieniami Windows trzeba

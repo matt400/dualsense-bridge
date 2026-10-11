@@ -41,7 +41,8 @@ ok("korona: klik = master, klik na masterze = brak mastera, zapis do pliku")
 win.open_settings(); pump(100)
 dlg = win.settings_dlg
 assert [dlg.tabs.tabText(i) for i in range(dlg.tabs.count())] == ["Tryb konsoli", "Mysz", "Master", "Okno"]
-assert dlg.toggle_button == "mute" and "Mute" in dlg.pick_name.text() and not dlg.pick_icon.pixmap().isNull()
+assert dlg.toggle_button == "r2" and "R2" in dlg.pick_name.text() and not dlg.pick_icon.pixmap().isNull()
+assert dlg.auto_on.isChecked(), "domyślnie: tryb konsoli po połączeniu mastera"
 assert not dlg.tabs.tabIcon(2).isNull(), "zakładki z ikonami"
 dlg.tabs.setCurrentIndex(1); pump()
 assert not dlg.test_btn.isVisible(), "Przetestuj tylko na zakładce trybu konsoli"
@@ -86,13 +87,13 @@ S.restart = False
 ok("zmiana trybu konsoli: zapis + restart jak wcześniej")
 
 # ---------- ikony w remapowaniu ----------
-win.on_part("mute"); pump()
-assert win.part_page.title.text() == "Mute (mic)" and not win.part_page.title_icon.pixmap().isNull()
+win.on_part("r2"); pump()
+assert win.part_page.title.text() == "R2 (trigger)" and not win.part_page.title_icon.pixmap().isNull()
 targets = [win.part_page.dst.itemData(i) for i in range(win.part_page.dst.count())]
-assert "mute" not in targets and "ps" in targets, "mute można zremapować, ale nie jest celem (DS4 go nie ma)"
+assert "mute" not in targets and "ps" in targets and len(targets) == 18, targets
 assert win.part_page.dst.itemText(0) == "" and not win.part_page.dst.itemIcon(0).isNull(), "cele jako ikony"
 win.grab().save(os.path.join(os.path.dirname(__file__), "gui_master2.png"))
-ok("remap: mute klikalny na rysunku, cele jako ikony z podpowiedzią")
+ok("remap: tytuł z ikoną, cele jako ikony z podpowiedzią")
 # ---------- ekran okna ----------
 dlg.present(); pump()
 scr = [dlg.screen_box.itemData(i) for i in range(dlg.screen_box.count())]
@@ -108,13 +109,6 @@ assert dlg.screen_box.currentData() == "NIE-MA-TAKIEGO" and "niepodłączony" in
 assert win.place_on_screen() is False, "brak wybranego ekranu -> okno zostaje"
 win.set_screen_choice("")
 ok("ekran okna: lista ekranów, zapis, przeniesienie, brak ekranu")
-
-# ---------- stan mute na karcie pada ----------
-from proto import T_CAPS, CAPS_MUTE_OK
-feed(T_CAPS, 0, 3, CAPS_MUTE_OK); state(0); win.slow_tick(); pump()
-assert card0.mute.text() == "mute: działa" and card0.mute.property("level") == "ok", card0.mute.text()
-assert win.cards[1].mute.text() == "mute: stary nadajnik", win.cards[1].mute.text()
-ok("karta pada: czy mute działa (nowy / stary nadajnik)")
 
 # ---------- przycisk Restart w nagłówku i ikona okna ----------
 from PySide6.QtWidgets import QPushButton

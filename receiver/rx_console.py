@@ -1,5 +1,8 @@
-"""Receiver: tryb konsoli - jedno podwójne kliknięcie przycisku pada (domyślnie mute) przełącza ekran i dźwięk
+"""Receiver: tryb konsoli - jedno podwójne kliknięcie przycisku pada (domyślnie R2) przełącza ekran i dźwięk
 między monitorem a TV.
+
+  auto-ON   po połączeniu pada master (auto_on_master) tryb włącza się sam; wyłączasz go ręcznie podwójnym R2
+            i zostaje wyłączony do następnego połączenia mastera
 
   ON   ekran tylko TV (DisplaySwitch /external), na TV tv_width x tv_height i skalowanie tv_scale % (rx_display),
        dźwięk audio_tv, toast "Tryb konsoli włączony"
@@ -31,9 +34,12 @@ from rx_buttons import BIT, BUTTON_CODES, DIRS, INPUTS, TRIG_ON, pressed_inputs
 from rx_config import C
 
 STARTUP_MODES = ("extend", "internal")
-CONFIG_VERSION = 2
+CONFIG_VERSION = 3
 TEST_S = 10.0              # "Przetestuj": tyle sekund w trybie ON, potem samo OFF (extend, monitor nie zostaje czarny)
 APP_NAME = "DualSense bridge"
+TRIG_HI, TRIG_LO = 192, 96     # spust jako przycisk trybu: wciśnięty od głębokiego naciśnięcia, puszczony poniżej połowy
+                               # (histereza - drżenie spustu w okolicy progu nie daje "podwójnego kliknięcia")
+RESTART_ENV = "DSB_CONSOLE_ON" # restart z okna: "1" / "0" = tryb konsoli przed restartem (zostaje taki sam)
 DISPLAY_ARG = {"extend": "/extend", "internal": "/internal", "tv": "/external"}
 _STOP = object()
 
@@ -54,6 +60,12 @@ def _choice(options):
     return check
 
 
+def _bool(v):
+    if not isinstance(v, bool):
+        raise ValueError("expected true / false")
+    return v
+
+
 def _text(v):
     if not isinstance(v, str):
         raise ValueError("expected text")
@@ -62,7 +74,7 @@ def _text(v):
 
 @dataclass(frozen=True, slots=True)
 class ConsoleConfig:
-    toggle_button: str = "mute"     # przycisk pada (nazwa jak w remapowaniu: "mute", "share", "cross", "dpad_up"...);
+    toggle_button: str = "r2"       # przycisk pada (nazwa jak w remapowaniu: "r2", "share", "cross", "dpad_up"...);
                                     # nie "ps": podwójne PS otwiera też Steam Big Picture
     double_click_ms: int = 400      # okno między dwoma naciśnięciami
     audio_tv: str = ""              # nazwa urządzenia audio TV; puste = nie zmieniaj dźwięku
@@ -72,6 +84,7 @@ class ConsoleConfig:
     tv_width: int = 2560            # rozdzielczość TV po włączeniu (0 = bez zmiany)
     tv_height: int = 1440
     tv_scale: int = 200             # skalowanie TV w % (0 = bez zmiany)
+    auto_on_master: bool = True     # połączenie pada master = tryb konsoli ON
     version: int = CONFIG_VERSION   # wersja pliku (migracje)
 
     @classmethod
@@ -80,11 +93,12 @@ class ConsoleConfig:
         raw = dict(raw) if isinstance(raw, dict) else {}
         fixed = not raw
         if raw and raw.get("version") != CONFIG_VERSION:
-            fixed = True                    # plik sprzed wersji 2: PS jako przycisk trybu konsoli -> mute (kolizja z Big Picture)
-            raw["version"] = CONFIG_VERSION
-            if raw.get("toggle_button") == "ps":
-                print("Console: toggle button ps -> mute (double PS also opens Steam Big Picture)")
-                raw["toggle_button"] = "mute"
+            fixed = True
+            old, raw["version"] = raw.get("version"), CONFIG_VERSION
+            # v1: domyślne PS (kolizja z Big Picture); v2: domyślny mute (usunięty - pad nie przekazuje mikrofonu)
+            if raw.get("toggle_button") == "mute" or (old is None and raw.get("toggle_button") == "ps"):
+                print(f"Console: toggle button {raw['toggle_button']} -> r2")
+                raw["toggle_button"] = "r2"
         values = {}
         for f in fields(cls):
             if f.name not in raw:
@@ -108,6 +122,7 @@ _VALIDATORS = {
     "tv_width": _number(0, 15360),
     "tv_height": _number(0, 8640),
     "tv_scale": lambda v: int(_choice((0, *rx_display.DPI_VALUES))(v)),
+    "auto_on_master": _bool,
     "version": _number(1, CONFIG_VERSION),
 }
 
@@ -191,16 +206,24 @@ class Console:
         self._since = time.monotonic()      # kiedy ostatnio zmienił się tryb (auto-OFF liczy od późniejszego z: pakiet, zmiana)
         self._revert = None                 # (kiedy, cfg) - powrót do OFF po "Przetestuj"
         self._detect = detector(cfg.toggle_button)
+        self._trigger = cfg.toggle_button in ("l2", "r2")
         self._down = [False] * C.NUM_PADS
         self._last_click = [0.0] * C.NUM_PADS
         self._capture = None                # callback wywołany z nazwą następnego wciśniętego przycisku
         self._cap_prev = []
         self._thread = None
+        restored = os.environ.pop(RESTART_ENV, None)
+        self._restore_on = restored == "1"  # restart z włączonym trybem -> zostaje włączony
+        self._skip_auto = restored == "0"   # restart z wyłączonym -> ponowne połączenie mastera nie włącza
 
     # ---------- wątek sieci ----------
     def on_state(self, i, mask, hx, hy, lt, rt):
         """Wołane przy każdej zmianie surowego stanu pada. Tylko porównania - żadnych poleceń systemowych."""
-        down = self._detect(mask, hx, hy, lt, rt)
+        if self._trigger:
+            v = lt if self.cfg.toggle_button == "l2" else rt
+            down = v >= (TRIG_LO if self._down[i] else TRIG_HI)
+        else:
+            down = self._detect(mask, hx, hy, lt, rt)
         rising = down and not self._down[i]
         self._down[i] = down
         if (cb := self._capture) is not None:
@@ -219,6 +242,19 @@ class Console:
                 self._jobs.put(self._toggle)
         else:
             self._last_click[i] = now
+
+    def pad_connected(self, i):
+        """Pad w slocie i właśnie się połączył (nowy identyfikator albo ponownie utworzony wirtualny DS4)."""
+        if not (self.cfg.auto_on_master and master.is_master(i)):
+            return
+        if self._skip_auto:
+            self._skip_auto = False
+            return
+        self._jobs.put(lambda: self._auto_on(i))
+
+    def _auto_on(self, i):
+        if not self.on:
+            self._apply(True, why=f"połączono pad master (pad {i + 1})")
 
     def combo(self, i):
         """Przycisk trybu użyty razem z innym wejściem (także klikiem touchpada, który nie jest w masce): to naciśnięcie
@@ -268,6 +304,9 @@ class Console:
             self._apply(False, why=f"Brak sygnału z pada przez {self.cfg.timeout_s} s")
 
     def _startup(self):
+        if self._restore_on:
+            self._apply(True, why="po restarcie receivera", toast=False)
+            return
         _step("display", _display, self.cfg.startup_mode)
         if self.cfg.audio_pc:
             _step("audio", _audio, self.cfg.audio_pc)
@@ -322,6 +361,15 @@ def init():
 def on_state(i, mask, hx, hy, lt, rt):
     if ctl is not None:
         ctl.on_state(i, mask, hx, hy, lt, rt)
+
+
+def pad_connected(i):
+    if ctl is not None:
+        ctl.pad_connected(i)
+
+
+def is_on():
+    return ctl is not None and ctl.on
 
 
 def on_touch_click(i):

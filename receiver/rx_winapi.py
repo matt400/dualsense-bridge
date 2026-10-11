@@ -99,10 +99,11 @@ def release_single_instance():
         _mutex = None
 
 
-def relaunch():
-    """Nowy proces receivera z tymi samymi argumentami (jak autostart). Wołać po zwolnieniu portów i blokady instancji."""
+def relaunch(env=None):
+    """Nowy proces receivera z tymi samymi argumentami (jak autostart). Wołać po zwolnieniu portów i blokady instancji.
+    env: dodatkowe zmienne środowiska dla nowego procesu (np. stan trybu konsoli)."""
     cmd = [sys.executable, os.path.abspath(sys.argv[0]), *sys.argv[1:]]
-    kw = {"cwd": os.getcwd(), "close_fds": True}
+    kw = {"cwd": os.getcwd(), "close_fds": True, "env": {**os.environ, **(env or {})}}
     if os.path.basename(sys.executable).lower().startswith("pythonw"):      # autostart: bez konsoli, niezależny od starego
         kw.update(creationflags=0x00000008 | 0x00000200,                    # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
                   stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

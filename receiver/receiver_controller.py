@@ -6,7 +6,7 @@ Pliki: proto.py (wspólny), rx_config.py, rx_state.py, rx_buttons.py (remap + re
        rx_gyro.py (gyro jako mysz), rx_feedback.py (wibracja, lightbar, potwierdzenia),
        rx_winapi.py, rx_mouse.py, rx_report.py, rx_net.py, rx_dsu.py, rx_ds4.py,
        rx_console.py + rx_audio.py (tryb konsoli: monitor / TV, console.json),
-       rx_settings.py (settings.json: mysz, pad master), rx_master.py (pad master: uprawnienia, mute + przycisk),
+       rx_settings.py (settings.json: mysz, pad master), rx_master.py (pad master: uprawnienia, PS + przycisk),
        okno: rx_qt.py (okno, zasobnik), rx_qt_pad.py (rysunek pada), rx_qt_panels.py, rx_qt_widgets.py, rx_qt_style.py,
        rx_qt_console.py (okno ustawień: konsola, mysz, master), rx_qt_icons.py (ikony przycisków),
        rx_editor.py (model edycji profilu), rx_profiles.py, rx_status.py, rx_icon.py;
@@ -24,10 +24,10 @@ PS + d-pad góra/dół = czułość myszy, PS + d-pad lewo/prawo = zmiana profil
 Profile gier: profil "pad@gra.exe" włącza się sam, gdy ta gra jest na pierwszym planie (zakładka w edytorze).
 Gyro: celowanie żyroskopem jako prawa gałka albo mysz, ustawiane w profilu (edytor -> Gyro aim).
 W trybie myszy: 1 palec = kursor, tap = LPM, 2 palce = przewijanie, tap 2 palcami = PPM (scroll_sens, scroll_natural).
-Tryb konsoli: podwójne kliknięcie wybranego przycisku (domyślnie mute) przełącza ekran i dźwięk monitor <-> TV, po ciszy
+Tryb konsoli: podwójne kliknięcie wybranego przycisku (domyślnie R2) przełącza ekran i dźwięk monitor <-> TV, po ciszy
 z pada samo wraca na monitor; start ustawia startup_mode (extend / internal). Ustawienia: tray -> Ustawienia (console.json).
-Pad master (rx_master): wybrane funkcje tylko dla jednego pada; mute + przycisk = pauza / zamknij grę / uśpij /
-wyłącz PC; mute przytrzymany 3 s = ten pad zostaje masterem. Ustawienia: okno -> Ustawienia -> Master (settings.json).
+Pad master (rx_master): wybrane funkcje tylko dla jednego pada; PS + przycisk = pauza / zamknij grę / uśpij /
+wyłącz PC; PS + R3 przytrzymane 3 s = ten pad zostaje masterem; połączenie mastera włącza tryb konsoli. Ustawienia: okno -> Ustawienia -> Master (settings.json).
 Konfiguracja: --config plik.toml|json (klucze jak w DEFAULTS), flagi CLI nadpisują plik.
 Autostart z Windows: --autostart on|off (wpis w HKCU\\...\\Run, uruchamia pythonw bez konsoli).
 """
@@ -121,6 +121,7 @@ def main():
         deadline = time.monotonic() + 2.0
         for t in slot_threads:      # wątki slotów odłączają wirtualne DS4 od ViGEm (koniec wątku = odłączone)
             t.join(max(0.0, deadline - time.monotonic()))
+        console_on = rx_console.is_on()
         rx_console.close(restart=S.restart)
         rx_net.close()
         rx_dsu.close()
@@ -128,7 +129,7 @@ def main():
         rx_winapi.end_timer()
         if S.restart:               # porty, ViGEm i blokada instancji są już zwolnione - nowy proces startuje jak z autostartu
             try:
-                rx_winapi.relaunch()
+                rx_winapi.relaunch({rx_console.RESTART_ENV: "1" if console_on else "0"})
             except OSError as e:
                 print(f"Restart failed: {e!r} - start the receiver manually")
         if C.log_handle is not None:

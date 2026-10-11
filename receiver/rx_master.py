@@ -2,13 +2,15 @@
 
 Master to pad o identyfikatorze rx_settings.cur.master.pad (MAC, ten sam klucz co profil w remap.json), więc
 zostaje masterem niezależnie od slotu i kolejności łączenia. Ustawia się go w oknie (korona na karcie pada,
-Ustawienia -> Master) albo na padzie: mute przytrzymany CLAIM_S sekund (claim_hold; pad mignie na złoto).
+Ustawienia -> Master) albo na padzie: PS + R3 przytrzymane CLAIM_S sekund (claim_hold; pad mignie na złoto).
 
   allowed(i, funkcja)  czy pad i może użyć funkcji z MASTER_FEATURES (tryb konsoli, PS, skróty...);
                        funkcja niezastrzeżona albo brak mastera w ustawieniach = każdy może;
                        master ustawiony, ale nie podłączony -> wg when_absent (all / nobody)
-  mute + przycisk      akcje systemowe (pauza, zamknięcie gry, uśpienie, wyłączenie PC); groźne wymagają
-                       przytrzymania HOLD_S (krótka wibracja = "trzymaj dalej"), przycisk z kombinacji nie trafia do gry
+  PS + przycisk        akcje systemowe (pauza, zamknięcie gry, uśpienie, wyłączenie PC); groźne wymagają
+                       przytrzymania HOLD_S (krótka wibracja = "trzymaj dalej"); przycisk z kombinacji nie trafia do gry,
+                       a PS po puszczeniu też nie (jak przy skrótach PS z rx_hotkeys). Przyciski skrótów PS (Share,
+                       D-pad, klik touchpada) i R3 (przejęcie mastera) nie są dostępne dla akcji.
 
 Działa na SUROWYCH wejściach (przed remapowaniem), jak skróty PS. Wątek sieci woła tylko on_state() i filter_inputs();
 akcje systemowe idą osobnym wątkiem.
@@ -23,23 +25,25 @@ import rx_winapi as W
 from rx_buttons import BIT, BUTTON_CODES, DIRS, pressed_inputs
 from rx_config import C
 
-CLAIM_S = 3.0          # mute przytrzymany tyle (bez innych przycisków) = ten pad zostaje masterem
-HOLD_S = 1.2           # tyle trzeba trzymać mute + przycisk dla akcji "groźnych" (zamknięcie gry, uśpienie, wyłączenie)
+MOD = "ps"             # modyfikator akcji mastera
+CLAIM_BUTTON = "r3"    # PS + R3 trzymane CLAIM_S = ten pad zostaje masterem
+CLAIM_S = 3.0
+HOLD_S = 1.2           # tyle trzeba trzymać PS + przycisk dla akcji "groźnych" (zamknięcie gry, uśpienie, wyłączenie)
 # programy, których "zamknij grę" nie zamyka (pulpit, Steam, ten receiver)
 NO_CLOSE = frozenset({"explorer.exe", "steam.exe", "steamwebhelper.exe", "python.exe", "pythonw.exe",
                       "shellexperiencehost.exe", "startmenuexperiencehost.exe", "searchhost.exe", "lockapp.exe"})
 
 
 class Slot:
-    __slots__ = ("mute", "gen", "used", "prev", "sup", "combo", "timer", "fresh")
+    __slots__ = ("mod", "gen", "prev", "sup", "combo", "timer", "fresh")
 
     def __init__(self):
-        self.mute = self.used = False
+        self.mod = False          # PS trzymany
         self.fresh = True         # pierwszy stan po połączeniu: wejścia już trzymane to nie nowe naciśnięcia
-        self.gen = 0              # numer naciśnięcia mute / kombinacji - spóźniony timer nic nie zrobi
+        self.gen = 0              # numer naciśnięcia PS / kombinacji - spóźniony timer nic nie zrobi
         self.prev = frozenset()   # wejścia wciśnięte w poprzednim stanie
         self.sup = frozenset()    # wejścia zużyte w kombinacji (nie trafiają do gry do puszczenia)
-        self.combo = None         # przycisk trzymanej kombinacji czekającej na HOLD_S
+        self.combo = None         # przycisk trzymanej kombinacji czekającej na HOLD_S / CLAIM_S
         self.timer = None
 
 
@@ -108,32 +112,30 @@ def _action_for(button):
 
 
 def on_state(i, mask, hx, hy, lt, rt):
-    """Każda zmiana surowego stanu pada, przed przeliczeniem wyjścia (jak rx_hotkeys.on_state)."""
+    """Każda zmiana surowego stanu przycisków pada, przed przeliczeniem wyjścia (jak rx_hotkeys.on_state)."""
     h = slots[i]
     now = frozenset(pressed_inputs(mask, hx, hy, lt, rt))
     if h.fresh:
-        h.fresh, h.prev, h.mute, h.used = False, now, "mute" in now, True
+        h.fresh, h.prev, h.mod = False, now, MOD in now
         return
-    mute = "mute" in now
-    if mute and not h.mute:
-        h.mute, h.used = True, False
-        h.gen += 1
-        if rx_settings.cur.master.claim_hold:
-            _timer(h, CLAIM_S, _claim, i, h.gen)
-    elif not mute and h.mute:
-        h.mute = False
-        h.gen += 1                          # unieważnia czekające timery (claim, akcja z przytrzymaniem)
+    mod = MOD in now
+    if mod != h.mod:
+        h.mod = mod
+        h.gen += 1                          # unieważnia czekające timery (przejęcie, akcja z przytrzymaniem)
         h.combo = None
-    if h.mute:
-        for b in sorted(now - h.prev - {"mute"}):
-            h.used = True                   # mute użyty w kombinacji - to już nie "przejęcie mastera"
-            action = _action_for(b)
-            if action is None or not check(i, "actions"):
+    if h.mod:
+        for b in sorted(now - h.prev - {MOD}):
+            if b == CLAIM_BUTTON and rx_settings.cur.master.claim_hold:
+                _consume(i, h, b)
+                _timer(h, CLAIM_S, _claim, i, h.gen, b)
                 continue
-            h.sup |= {b}
+            action = _action_for(b)
+            if action is None:
+                continue
+            _consume(i, h, b)
+            if not check(i, "actions"):
+                continue
             if rx_settings.MASTER_ACTIONS[action][1]:
-                h.gen += 1
-                h.combo = b
                 F.pulse(i, "hold")          # "trzymaj dalej"
                 _timer(h, HOLD_S, _held, i, h.gen, b, action)
             else:
@@ -143,6 +145,15 @@ def on_state(i, mask, hx, hy, lt, rt):
         h.gen += 1
     h.sup = h.sup & now                     # zużyte wejście wraca do gry dopiero po puszczeniu
     h.prev = now
+
+
+def _consume(i, h, b):
+    """Przycisk zużyty w kombinacji: nie idzie do gry, a PS po puszczeniu też nie (i nie ma Game Bar z długiego PS)."""
+    import rx_hotkeys                       # rx_hotkeys importuje rx_master - import tutaj
+    rx_hotkeys.mark_used(i)
+    h.sup |= {b}
+    h.gen += 1
+    h.combo = b
 
 
 def filter_inputs(i, mask, hx, hy):
@@ -174,11 +185,11 @@ def _run(fn, *args):
     threading.Thread(target=fn, args=args, daemon=True).start()
 
 
-def _claim(i, gen):
+def _claim(i, gen, button):
     h = slots[i]
-    if h.gen != gen or not h.mute or h.used or not rx_settings.cur.master.claim_hold:
+    if h.gen != gen or h.combo != button or not h.mod or not rx_settings.cur.master.claim_hold:
         return
-    h.used = True
+    h.combo = None
     ok, msg = set_master(i)
     if not ok:
         print(f"Controller {i}: master not saved: {msg}")
@@ -188,7 +199,7 @@ def _claim(i, gen):
 
 def _held(i, gen, button, action):
     h = slots[i]
-    if h.gen != gen or h.combo != button or not h.mute:
+    if h.gen != gen or h.combo != button or not h.mod:
         return
     h.combo = None
     _do(i, action)

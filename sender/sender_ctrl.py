@@ -9,10 +9,8 @@ from evdev import ecodes as ec
 from evdev import ff
 
 import sender_net as net
-from proto import (KEY_BIT, MUTE_KEY, SENDER_VERSION, T_CAPS, T_CLICK, T_IDENT, T_MOUSE, T_STATE, T_TOUCH, clamp)
+from proto import (KEY_BIT, T_CLICK, T_IDENT, T_MOUSE, T_STATE, T_TOUCH, clamp)
 from sender_config import BURST_DELAYS, C, IDLE_TP, NEUTRAL_PAD, PAD_ABS, STICK_AXES
-
-MUTE_BIT = KEY_BIT[MUTE_KEY]
 
 
 def find_led(pad_dev):
@@ -41,8 +39,6 @@ class Ctrl:
         self.pad = list(NEUTRAL_PAD)
         self.hat = [0, 0]
         self.mask = 0
-        self.mute = False             # przycisk mute (z hidraw, sender_hidraw.py) - bit MUTE_BIT w masce
-        self.mute_caps = 0            # CAPS_MUTE_* - czy mute działa (okno receivera to pokazuje)
         self.motion = [0] * 6
         self.batt, self.flags = 255, 0
         self.touch = IDLE_TP
@@ -97,29 +93,16 @@ class Ctrl:
                 self.hat[i] = clamp(self.pad_dev.absinfo(c).value, -1, 1)
             except Exception:
                 pass
-        self.mask = MUTE_BIT if self.mute else 0      # mute nie jest w evdev - zostaje z hidraw
+        self.mask = 0
         try:
             for k in self.pad_dev.active_keys():
                 self.mask |= KEY_BIT.get(k, 0)
         except OSError:
             pass
 
-    def set_mute(self, on):
-        """Zmiana przycisku mute (z hidraw): jak przycisk evdev - pakiet od razu i dwie powtórki."""
-        self.mute = on
-        self.mask = (self.mask | MUTE_BIT) if on else (self.mask & ~MUTE_BIT)
-        if self.closing:
-            return
-        self.last_input = time.monotonic()
-        self.send_state()
-        loop = asyncio.get_running_loop()
-        for d in BURST_DELAYS:
-            loop.call_later(d, self.send_state, True)
-
     # ---- wysyłanie ----
     def send_ident(self):
         net.emit(T_IDENT, self.idx, pad_ident(self.key).encode("ascii", "replace")[:17])
-        net.emit(T_CAPS, self.idx, SENDER_VERSION, self.mute_caps)
 
     def send_state(self, force=False):
         key = (*self.pad, *self.hat, self.mask, self.batt, self.flags, *self.motion)
@@ -188,7 +171,6 @@ class Ctrl:
         self.pad = list(NEUTRAL_PAD)
         self.hat = [0, 0]
         self.mask = 0
-        self.mute = False
         self.motion = [0] * 6
         self.touch = IDLE_TP
         self.tp = 0

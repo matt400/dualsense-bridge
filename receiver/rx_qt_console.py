@@ -4,7 +4,7 @@
                 aktywnych wyjść Windows (rx_audio, Odśwież); "Przetestuj" włącza tryb konsoli na kilka sekund
                 z wartościami z okna (jeszcze niezapisanymi) i sam wraca do extend
   Mysz          czułość kursora touchpada i stabilizacja kliknięcia (rx_settings.MouseConfig)
-  Master        pad master, funkcje tylko dla niego, akcje "mute + przycisk" (rx_settings.MasterConfig, rx_master)
+  Master        pad master, funkcje tylko dla niego, akcje "PS + przycisk" (rx_settings.MasterConfig, rx_master)
   Okno          ekran, na którym pojawia się okno (receiver_ui.ini, MainWindow.place_on_screen)
 
 "Zapisz": mysz i master działają od razu (settings.json, bez restartu). Zmiana trybu konsoli zapisuje console.json
@@ -123,6 +123,9 @@ class ConsoleSettings(QDialog):
 
         self.startup = Combo([(m, STARTUP_LABELS[m]) for m in STARTUP_MODES])
         lay.addWidget(field("Ekran przy starcie receivera", self.startup))
+        self.auto_on = QCheckBox("Włącz tryb konsoli po połączeniu pada master (wyłączasz go tym samym podwójnym kliknięciem)")
+        self.auto_on.setIcon(icon("crown"))
+        lay.addWidget(self.auto_on)
         lay.addWidget(label("Zmiana trybu konsoli uruchamia receiver od nowa (pady na chwilę znikną). Niezapisane "
                             "zmiany profilu (Save w oknie głównym) zostaną utracone.", "dim", wrap=True))
         lay.addStretch(1)
@@ -184,11 +187,11 @@ class ConsoleSettings(QDialog):
         lay.setContentsMargins(0, 12, 0, 0)
         lay.setSpacing(10)
         lay.addWidget(label("Master to jeden pad z dodatkowymi uprawnieniami (np. gdy grają dzieci). Szybka zmiana: "
-                            "korona na karcie pada w oknie głównym albo przytrzymanie mute na padzie.", "dim", wrap=True))
+                            "korona na karcie pada w oknie głównym albo przytrzymanie PS + R3 na padzie.", "dim", wrap=True))
         self.master_pad = Combo()
         lay.addWidget(field("Pad master", self.master_pad))
-        self.claim = QCheckBox(f"Przytrzymanie mute przez {_claim_s()} s na padzie = ten pad zostaje masterem")
-        self.claim.setIcon(icon("mute"))
+        self.claim = QCheckBox(f"PS + R3 przytrzymane {_claim_s()} s na padzie = ten pad zostaje masterem")
+        self.claim.setIcon(icon("r3"))
         lay.addWidget(self.claim)
 
         lay.addWidget(label("TYLKO MASTER MOŻE", "h2"))
@@ -201,7 +204,7 @@ class ConsoleSettings(QDialog):
         self.absent = Combo([(k, v) for k, v in ABSENT.items()])
         lay.addWidget(field("Gdy master nie jest podłączony", self.absent))
 
-        lay.addWidget(label("AKCJE: MUTE + PRZYCISK", "h2"))
+        lay.addWidget(label("AKCJE: PS + PRZYCISK", "h2"))
         grid = QGridLayout()
         grid.setHorizontalSpacing(8)
         self.actions = {}
@@ -209,7 +212,7 @@ class ConsoleSettings(QDialog):
             combo = Combo([("", "—")] + input_items(COMBO_BUTTONS))
             combo.setMinimumWidth(80)
             self.actions[k] = combo
-            grid.addWidget(icon_label("mute"), r, 0)
+            grid.addWidget(icon_label("ps"), r, 0)
             grid.addWidget(label("+"), r, 1)
             grid.addWidget(combo, r, 2)
             grid.addWidget(label(text + ("  (przytrzymaj)" if hold else ""), wrap=True), r, 3)
@@ -239,6 +242,7 @@ class ConsoleSettings(QDialog):
         self.dbl.setValue(cfg.double_click_ms)
         self.timeout.setValue(cfg.timeout_s)
         self.startup.set_data(cfg.startup_mode)
+        self.auto_on.setChecked(cfg.auto_on_master)
         res = (cfg.tv_width, cfg.tv_height) if cfg.tv_width and cfg.tv_height else (0, 0)
         extra = () if res in TV_RESOLUTIONS else (res,)     # wpisana ręcznie w console.json - zostaje na liście
         self.tv_res.set_items(_res_items((*TV_RESOLUTIONS, *extra)))
@@ -306,7 +310,7 @@ class ConsoleSettings(QDialog):
                              audio_tv=self.tv.currentData() or "", audio_pc=self.pc.currentData() or "",
                              timeout_s=self.timeout.value(), startup_mode=self.startup.currentData(),
                              **dict(zip(("tv_width", "tv_height"), map(int, self.tv_res.currentData().split("x")))),
-                             tv_scale=self.tv_scale.currentData())
+                             tv_scale=self.tv_scale.currentData(), auto_on_master=self.auto_on.isChecked())
 
     # ---------- przycisk pada ----------
     def set_button(self, name):

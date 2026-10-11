@@ -28,8 +28,9 @@ import rx_console, rx_winapi, rx_net, rx_dsu, rx_state as S
 rx_console._display = lambda m: None; rx_console._audio = lambda n: None; rx_console._toast = lambda *a: None
 rx_winapi.release_single_instance = lambda: EVENTS.append("release_mutex")
 state_at_relaunch = {}
-def relaunch():
+def relaunch(env=None):
     EVENTS.append("relaunch")
+    state_at_relaunch["env"] = env
     for name, port in (("in", 25105), ("dsu", 26899)):
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try: s.bind(("0.0.0.0", port)); state_at_relaunch[name] = True
@@ -50,7 +51,7 @@ S.restart = True; S.stop.set()
 t.join(5)
 assert not t.is_alive(), "main() nie zakończył się"
 assert "relaunch" in EVENTS, EVENTS
-assert state_at_relaunch == {"in": True, "dsu": True, "plugged": [False, False]}, state_at_relaunch
+assert state_at_relaunch == {"in": True, "dsu": True, "plugged": [False, False], "env": {"DSB_CONSOLE_ON": "0"}}, state_at_relaunch
 assert EVENTS.index("unplug") < EVENTS.index("release_mutex") < EVENTS.index("relaunch"), EVENTS
 assert not errors, errors
 print("RESTART OK - kolejność:", [e for e in EVENTS if e != "plug"], "| porty wolne, wirtualny DS4 odłączony")

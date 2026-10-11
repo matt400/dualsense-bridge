@@ -108,7 +108,6 @@ def _build_parts():
         Part("share", _round_rect(266, 136, 12, 38, 6), L["share"]),
         Part("options", _round_rect(522, 136, 12, 38, 6), L["options"]),
         Part("ps", _circle(400, 252, 16), L["ps"], label=("PS", 400, 256)),
-        Part("mute", _round_rect(386, 289, 28, 11, 5.5), L["mute"] + " - console mode (double press), master actions"),
         Part("dpad_up", svg_path("M191 190 V168 Q191 160 199 160 H211 Q219 160 219 168 V190 Z"), L["dpad_up"],
              arrow=svg_path("M205 166 L198 178 H212 Z")),
         Part("dpad_down", svg_path("M191 210 V232 Q191 240 199 240 H211 Q219 240 219 232 V210 Z"), L["dpad_down"],
@@ -146,6 +145,7 @@ class PadView(QWidget):
         self.by_name = {p.name: p for p in self.parts}
         self.body = svg_path(BODY)
         self.touch = _round_rect(300, 112, 200, 96, 24)
+        self.mic = _round_rect(391, 292, 18, 8, 4)          # przycisk mikrofonu - tylko rysunek (nie trafia do PC)
         self.selected = None
         self.hover = None
         self.live = {"on": frozenset(), "ls": (128, 128), "rs": (128, 128), "l2": 0, "r2": 0}
@@ -261,7 +261,7 @@ class PadView(QWidget):
         p.drawRoundedRect(r, 16, 16)
 
     def _decor(self, p):
-        """Elementy bez remapowania: touchpad z paskami świetlnymi, podstawa D-pada."""
+        """Elementy bez remapowania: touchpad z paskami świetlnymi, mikrofon, podstawa D-pada."""
         edge = QPen(QColor("#434a5c"), 2)
         p.setPen(edge)
         p.setBrush(QColor("#1a1d25"))
@@ -277,6 +277,7 @@ class PadView(QWidget):
         p.drawPath(svg_path("M507 122 Q518 160 507 200"))
         p.setPen(QPen(QColor("#434a5c"), 1))
         p.setBrush(QColor("#2a2e3a"))
+        p.drawPath(self.mic)
         p.drawPath(_circle(205, 200, 13))
 
     def _part(self, p, part):

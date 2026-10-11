@@ -23,7 +23,7 @@ def wait_for(pred, timeout=2.0):
         time.sleep(0.01)
     return pred()
 
-PS, SHARE, CROSS, TRI, OPT, MUTE = 316, 314, 304, 307, 315, 248
+PS, SHARE, CROSS, TRI, OPT, R3 = 316, 314, 304, 307, 315, 318
 A, B = "aa:aa:aa:aa:aa:01", "bb:bb:bb:bb:bb:02"
 pulses = []
 F.pulse = lambda i, kind: pulses.append((i, kind))
@@ -45,13 +45,13 @@ state(0); state(1)
 path = os.path.join(TMP, "s.json")
 check(rx_settings.load(path) == rx_settings.defaults(), "brak pliku -> domyślne")
 json.dump({"mouse": {"sens": 9, "click_freeze_ms": 200}, "master": {"pad": " AA:AA:AA:AA:AA:01 ", "when_absent": "x",
-           "only_master": ["console", "nie-ma", "console", "ps_game"], "actions": {"pause": "mute", "sleep": "cross",
+           "only_master": ["console", "nie-ma", "console", "ps_game"], "actions": {"pause": "share", "sleep": "cross",
            "shutdown": "cross"}, "claim_hold": "tak"}}, open(path, "w"))
 s = rx_settings.load(path)
 check(s.mouse.sens == 0.5 and s.mouse.click_freeze_ms == 200, f"zła czułość -> domyślna, reszta wczytana: {s.mouse}")
 check(s.master.pad == A and s.master.when_absent == "all" and s.master.only_master == ("console", "ps_game"), f"master: {s.master}")
 check(s.master.actions == {"pause": "", "close_game": "", "sleep": "cross", "shutdown": ""} and s.master.claim_hold is True,
-      f"akcje: mute nie do pary z mute, przycisk nie dwa razy: {s.master.actions}")
+      f"akcje: Share (skrót PS) niedozwolony, przycisk nie dwa razy: {s.master.actions}")
 rx_settings.save(s, path)
 check(rx_settings.load(path) == s and not os.path.exists(path + ".tmp"), "zapis i odczyt bez zmian")
 open(path, "w").write("{zepsuty")
@@ -80,14 +80,14 @@ settings(pad=A, only_master=("console", "ps_game", "screenshot", "profile", "mou
 calls = []
 rx_console._display = lambda mode: calls.append(mode)
 rx_console._audio = rx_console._toast = lambda *a: None
-c = Console(ConsoleConfig(toggle_button="mute")); c.start(); rx_console.ctl = c
+c = Console(ConsoleConfig(toggle_button="r2", auto_on_master=False)); c.start(); rx_console.ctl = c
 wait_for(lambda: calls); calls.clear(); pulses.clear()
 for i in (1, 1):
-    state(1, mask=BIT[MUTE]); time.sleep(0.03); state(1); time.sleep(0.03)
+    state(1, rt=255); time.sleep(0.03); state(1); time.sleep(0.03)
 time.sleep(0.3)
-check(not c.on and (1, "denied") in pulses, f"pad 1 (nie master): podwójne mute nic nie przełącza, czerwone mignięcie: {pulses}")
-state(0, mask=BIT[MUTE]); time.sleep(0.03); state(0); time.sleep(0.03); state(0, mask=BIT[MUTE]); time.sleep(0.03); state(0)
-check(wait_for(lambda: c.on), "master: podwójne mute przełącza tryb konsoli")
+check(not c.on and (1, "denied") in pulses, f"pad 1 (nie master): podwójne R2 nic nie przełącza, czerwone mignięcie: {pulses}")
+state(0, rt=255); time.sleep(0.03); state(0); time.sleep(0.03); state(0, rt=255); time.sleep(0.03); state(0)
+check(wait_for(lambda: c.on), "master: podwójne R2 przełącza tryb konsoli")
 c.close(restart=True); rx_console.ctl = None
 
 pulses.clear()
@@ -110,54 +110,58 @@ check(wait_for(lambda: S.states[1]["mask"] & BIT[PS], 0.5), "PS niezastrzeżony 
 time.sleep(0.2)
 ok("egzekwowanie: tryb konsoli, PS do gry, PS + Share, PS + touchpad")
 
-# ---------- akcje mute + przycisk ----------
+# ---------- akcje PS + przycisk ----------
 rx_master.HOLD_S = 0.15
 settings(pad=A, only_master=("actions",), actions={"pause": "options", "close_game": "triangle", "sleep": "", "shutdown": "cross"})
 rxenv.calls.clear(); actions.clear()
-state(0, mask=BIT[MUTE]); state(0, mask=BIT[MUTE] | BIT[OPT])
-check(wait_for(lambda: ("k", W.VK_ESCAPE) in rxenv.calls), "mute + Options -> Esc (pauza)")
+state(0, mask=BIT[PS]); state(0, mask=BIT[PS] | BIT[OPT])
+check(wait_for(lambda: ("k", W.VK_ESCAPE) in rxenv.calls), "PS + Options -> Esc (pauza)")
 check(not S.states[0]["mask"] & BIT[OPT], "Options z kombinacji nie trafia do gry")
-state(0, mask=BIT[OPT])
-check(not S.states[0]["mask"] & BIT[OPT], "puszczony mute, trzymany Options dalej zablokowany do puszczenia")
+state(0, mask=BIT[OPT]); time.sleep(0.2)
+check(not S.states[0]["mask"] & BIT[OPT], "puszczony PS, trzymany Options dalej zablokowany do puszczenia")
+check(not S.states[0]["mask"] & BIT[PS], "PS użyty w kombinacji nie trafia do gry po puszczeniu")
 state(0); state(0, mask=BIT[OPT])
 check(S.states[0]["mask"] & BIT[OPT], "po puszczeniu Options znów działa normalnie")
 state(0)
 
 S.game = "ittakestwo.exe"
-state(0, mask=BIT[MUTE]); state(0, mask=BIT[MUTE] | BIT[TRI]); time.sleep(0.05); state(0, mask=BIT[MUTE]); time.sleep(0.3)
+state(0, mask=BIT[PS]); state(0, mask=BIT[PS] | BIT[TRI]); time.sleep(0.05); state(0, mask=BIT[PS]); time.sleep(0.3)
 check("close" not in actions, "zamknięcie gry: puszczone przed czasem -> nic")
-state(0, mask=BIT[MUTE] | BIT[TRI])
+state(0, mask=BIT[PS] | BIT[TRI])
 check(wait_for(lambda: "close" in actions), "zamknięcie gry: przytrzymane -> WM_CLOSE")
 state(0)
 S.game = "explorer.exe"; actions.clear()
-state(0, mask=BIT[MUTE]); state(0, mask=BIT[MUTE] | BIT[TRI]); time.sleep(0.4); state(0)
+state(0, mask=BIT[PS]); state(0, mask=BIT[PS] | BIT[TRI]); time.sleep(0.4); state(0)
 check("close" not in actions, "pulpit (explorer) nie jest zamykany")
 S.game = None
 pulses.clear(); actions.clear()
-state(1, mask=BIT[MUTE]); state(1, mask=BIT[MUTE] | BIT[CROSS]); time.sleep(0.4); state(1)
-check("shutdown" not in actions and (1, "denied") in pulses, "nie master: mute + przycisk nic nie robi")
-state(0, mask=BIT[MUTE]); state(0, mask=BIT[MUTE] | BIT[CROSS])
-check(wait_for(lambda: "shutdown" in actions), "master: mute + krzyżyk przytrzymane -> wyłączenie PC")
+state(1, mask=BIT[PS]); state(1, mask=BIT[PS] | BIT[CROSS]); time.sleep(0.4); state(1)
+check("shutdown" not in actions and (1, "denied") in pulses, "nie master: PS + przycisk nic nie robi")
+state(0, mask=BIT[PS]); state(0, mask=BIT[PS] | BIT[CROSS])
+check(wait_for(lambda: "shutdown" in actions), "master: PS + krzyżyk przytrzymane -> wyłączenie PC")
 state(0)
 ok("akcje mastera: pauza, zamknięcie gry z przytrzymaniem, wyłączenie; przyciski kombinacji nie idą do gry")
 
-# ---------- przejęcie mastera przytrzymaniem mute ----------
+# ---------- przejęcie mastera: PS + R3 ----------
 rx_master.CLAIM_S = 0.2
 settings(pad=A, claim_hold=True)
 pulses.clear()
-state(1, mask=BIT[MUTE]); time.sleep(0.1); state(1)
+state(1, mask=BIT[PS]); state(1, mask=BIT[PS] | BIT[R3]); time.sleep(0.1); state(1)
 time.sleep(0.2)
-check(rx_settings.cur.master.pad == A, "krótkie mute nie przejmuje")
-state(1, mask=BIT[MUTE])
-check(wait_for(lambda: rx_settings.cur.master.pad == B), "mute trzymany CLAIM_S -> pad B jest masterem")
+check(rx_settings.cur.master.pad == A, "krótkie PS + R3 nie przejmuje")
+state(1, mask=BIT[PS]); state(1, mask=BIT[PS] | BIT[R3])
+check(not S.states[1]["mask"] & BIT[R3], "R3 z kombinacji nie trafia do gry")
+check(wait_for(lambda: rx_settings.cur.master.pad == B), "PS + R3 trzymane CLAIM_S -> pad B jest masterem")
 state(1)
 check((1, "master") in pulses and json.load(open(C.SETTINGS_PATH))["master"]["pad"] == B, "złoty błysk i zapis do settings.json")
-state(0, mask=BIT[MUTE]); time.sleep(0.05); state(0, mask=BIT[MUTE] | BIT[CROSS]); time.sleep(0.3); state(0)
-check(rx_settings.cur.master.pad == B, "mute użyty w kombinacji nie przejmuje mastera")
+state(0, mask=BIT[PS]); state(0, mask=BIT[PS] | BIT[R3]); time.sleep(0.05); state(0, mask=BIT[PS]); time.sleep(0.3); state(0)
+check(rx_settings.cur.master.pad == B, "R3 puszczone przed czasem nie przejmuje mastera")
 settings(pad=B, claim_hold=False)
-state(0, mask=BIT[MUTE]); time.sleep(0.35); state(0)
+state(0, mask=BIT[PS]); state(0, mask=BIT[PS] | BIT[R3])
+check(S.states[0]["mask"] & BIT[R3], "claim_hold wyłączony -> R3 zwykłym przyciskiem")
+time.sleep(0.35); state(0)
 check(rx_settings.cur.master.pad == B, "claim_hold wyłączony -> przytrzymanie nic nie robi")
-ok("przejęcie mastera: przytrzymanie mute, zapis, wyłączalne")
+ok("przejęcie mastera: PS + R3, zapis, wyłączalne")
 
 # ---------- mysz: stabilizacja kliknięcia ----------
 rx_settings.apply(Settings(MouseConfig(sens=1.0, click_freeze_ms=100, click_rewind_ms=80, drag_threshold=30), MasterConfig()))
@@ -193,32 +197,11 @@ check(rxenv.calls == [("m", M.LDOWN, 0, 0, 0), ("m", M.MOVE, 2, 0, 0), ("m", M.L
       f"0 = poprawki wyłączone (dawne zachowanie): {rxenv.calls}")
 ok("mysz: cofnięcie ruchu sprzed kliku, freeze, próg przeciągania, wyłączalne")
 
-# ---------- "zawieszony" mute (zły odczyt u nadajnika) i pakiet caps ----------
-import rx_net, rx_status
-from proto import T_CAPS, CAPS_MUTE_OK, CAPS_MUTE_FAIL, CAPS_MUTE_OPEN
-rx_net.MUTE_STUCK_S = 0.3
-settings(pad="")
-state(0, mask=BIT[MUTE]); time.sleep(0.35)
-state(0, mask=BIT[MUTE] | BIT[CROSS])
-check(S.mute_stuck[0] and not S.states[0]["raw"][0] & BIT[MUTE], "mute trzymany dłużej niż limit -> ignorowany")
-check(S.states[0]["mask"] & BIT[CROSS], "przy zawieszonym mute zwykły przycisk trafia do gry (nie jest kombinacją)")
-check(rx_status.mute_status(0)[1] == "bad", "okno pokazuje zawieszony mute")
-state(0, mask=BIT[CROSS]); state(0)
-check(not S.mute_stuck[0], "puszczony -> mute znów działa")
-state(0, mask=BIT[MUTE]); check(S.states[0]["raw"][0] & BIT[MUTE], "krótkie mute działa normalnie"); state(0)
-S.caps[0] = None
-check(rx_status.mute_status(0)[0] == "mute: stary nadajnik", "brak caps = stary nadajnik")
-feed(T_CAPS, 0, 3, CAPS_MUTE_OPEN | CAPS_MUTE_OK)
-check(S.caps[0] == (3, 3) and rx_status.mute_status(0)[1] == "ok", f"caps: mute działa {S.caps[0]}")
-feed(T_CAPS, 0, 3, CAPS_MUTE_FAIL)
-check(rx_status.mute_status(0)[1] == "bad", "caps: mute niedostępny")
-ok("mute: zawieszony bit ignorowany, stan mute z nadajnika (caps) w oknie")
-
 # ---------- pierwszy stan po połączeniu: trzymane wejścia to nie naciśnięcia ----------
 settings(pad=A, actions={"pause": "options", "close_game": "", "sleep": "", "shutdown": ""})
 rx_master.reset(0); rxenv.calls.clear()
-state(0, mask=BIT[MUTE] | BIT[OPT]); time.sleep(0.05)
-check(not any(x[:2] == ("k", W.VK_ESCAPE) for x in rxenv.calls), "pad połączony z trzymanym mute + Options nie pauzuje")
+state(0, mask=BIT[PS] | BIT[OPT]); time.sleep(0.05)
+check(not any(x[:2] == ("k", W.VK_ESCAPE) for x in rxenv.calls), "pad połączony z trzymanym PS + Options nie pauzuje")
 state(0)
 ok("pierwszy stan po połączeniu nie wyzwala akcji")
 

@@ -1,7 +1,6 @@
 """Receiver: tabele przycisków, remapowanie wejść i zapis profili (remap.json).
 
-Remapować można 18 "wejść": 12 przycisków (z mute - DS4 go nie ma, więc mute może być tylko źródłem),
-4 kierunki D-pada i spusty L2/R2. Mapa to słownik
+Remapować można 17 "wejść": 11 przycisków, 4 kierunki D-pada i spusty L2/R2. Mapa to słownik
 {wejście_źródłowe: wejście_docelowe | None}; brak wpisu = bez zmian, None = wyłączone.
 Spust -> przycisk działa progowo (TRIG_ON), przycisk -> spust daje pełne 255.
 PS + klik touchpada (przełączanie myszy) używa SUROWYCH wejść, więc nie da się go "zremapować away".
@@ -18,25 +17,23 @@ import json
 import os
 import threading
 
-from proto import MUTE_KEY, PAD_KEYS
+from proto import PAD_KEYS
 from rx_shape import normalize_gyro, normalize_tuning
 
 BIT = {c: 1 << k for k, c in enumerate(PAD_KEYS)}
 MASK_ALL = (1 << len(PAD_KEYS)) - 1
-PS_BIT, L1_BIT, R1_BIT, MUTE_BIT = BIT[316], BIT[310], BIT[311], BIT[MUTE_KEY]
+PS_BIT, L1_BIT, R1_BIT = BIT[316], BIT[310], BIT[311]
 
 BUTTON_CODES = {"cross": 304, "circle": 305, "triangle": 307, "square": 308,
-                "l1": 310, "r1": 311, "share": 314, "options": 315, "ps": 316, "l3": 317, "r3": 318,
-                "mute": MUTE_KEY}
+                "l1": 310, "r1": 311, "share": 314, "options": 315, "ps": 316, "l3": 317, "r3": 318}
 DIRS = {"dpad_up": (0, -1), "dpad_down": (0, 1), "dpad_left": (-1, 0), "dpad_right": (1, 0)}   # (hx, hy)
 TRIGGERS = ("l2", "r2")
 INPUTS = tuple(BUTTON_CODES) + tuple(DIRS) + TRIGGERS
 LABELS = {"cross": "Cross (X)", "circle": "Circle (O)", "triangle": "Triangle", "square": "Square",
           "l1": "L1", "r1": "R1", "share": "Share / Create", "options": "Options", "ps": "PS button",
-          "l3": "L3 (stick)", "r3": "R3 (stick)", "mute": "Mute (mic)",
+          "l3": "L3 (stick)", "r3": "R3 (stick)",
           "dpad_up": "D-pad Up", "dpad_down": "D-pad Down", "dpad_left": "D-pad Left", "dpad_right": "D-pad Right",
           "l2": "L2 (trigger)", "r2": "R2 (trigger)"}
-TARGET_INPUTS = tuple(n for n in INPUTS if n != "mute")   # na co można zamienić wejście (DS4 nie ma mute)
 TRIG_ON = 40   # od tej wartości analogowej spust liczy się jako wciśnięty przycisk
 
 

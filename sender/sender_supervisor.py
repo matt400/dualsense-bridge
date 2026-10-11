@@ -7,7 +7,6 @@ import time
 
 import evdev
 
-import sender_hidraw
 import sender_state as state
 import sender_streams as streams
 from proto import T_BYE
@@ -183,15 +182,6 @@ async def _run_extra(c, kind, dev, coro):
             print(f"Controller {c.idx}: {kind} device lost - waiting for it to come back")
 
 
-async def _run_mute(c):
-    try:
-        await sender_hidraw.stream_mute(c)
-    except asyncio.CancelledError:
-        raise
-    except Exception as e:
-        print(f"Controller {c.idx} mute button error: {e!r}")
-
-
 def incomplete(c):
     return c.motion_dev is None or c.touch_dev is None
 
@@ -215,10 +205,6 @@ async def run_ctrl(c):
             if dev is not None:
                 setattr(c, KIND_ATTR[kind], None)
                 attach(c, kind, dev)
-        if C.MUTE_BUTTON:                         # mute z hidraw - też osobno, brak dostępu nie rozłącza pada
-            t = asyncio.create_task(_run_mute(c))
-            c.extra.add(t)
-            t.add_done_callback(c.extra.discard)
 
         done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         for t in pending:
