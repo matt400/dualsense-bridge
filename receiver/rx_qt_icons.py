@@ -18,7 +18,7 @@ FACE = {"triangle": "#4cd08a", "circle": "#ff6b6b", "cross": "#5b9bff", "square"
 BADGES = {"l1": "L1", "r1": "R1", "l2": "L2", "r2": "R2", "l3": "L3", "r3": "R3"}
 EXTRA_TIPS = {"crown": "Pad master", "mouse": "Touchpad jako mysz", "touchpad": "Touchpad jako dotyk DS4",
               "tv": "Tryb konsoli", "power": "Wyłącz", "restart": "Uruchom ponownie", "window": "Ekran",
-              "fullscreen": "Pełny ekran", "rumble": "Wibracja", "gear": "Ustawienia"}
+              "fullscreen": "Pełny ekran", "rumble": "Wibracja", "gear": "Ustawienia", "update": "Aktualizuj"}
 SIZES = (16, 20, 24, 32, 48)
 
 
@@ -193,6 +193,22 @@ def _gear(p):
     p.drawEllipse(QPointF(12, 12), 2.8, 2.8)
 
 
+def _update(p):
+    """Strzałka w dół do "tacki" - pobranie nowej wersji."""
+    p.setPen(_pen(FG, 1.8))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawLine(QPointF(12, 4), QPointF(12, 14.5))
+    head = QPainterPath(QPointF(7.5, 10.5))
+    head.lineTo(12, 15)
+    head.lineTo(16.5, 10.5)
+    p.drawPath(head)
+    tray = QPainterPath(QPointF(4.5, 15.5))
+    tray.lineTo(4.5, 19.5)
+    tray.lineTo(19.5, 19.5)
+    tray.lineTo(19.5, 15.5)
+    p.drawPath(tray)
+
+
 def _tv(p):
     p.setPen(_pen(FG, 1.6))
     p.setBrush(Qt.BrushStyle.NoBrush)
@@ -217,7 +233,7 @@ def _draw(p, name):
     else:
         {"ps": _ps, "share": _share, "options": _options, "crown": _crown, "mouse": _mouse,
          "tv": _tv, "power": _power, "touchpad": _touchpad, "restart": _restart, "window": _window,
-         "fullscreen": _fullscreen, "rumble": _rumble, "gear": _gear}[name](p)
+         "fullscreen": _fullscreen, "rumble": _rumble, "gear": _gear, "update": _update}[name](p)
 
 
 def pixmap(name, size=24, dim=False):
@@ -244,4 +260,5 @@ def icon(name, dim=False):
 
 def has_icon(name):
     return name in FACE or name in BADGES or name.startswith("dpad_") or name in (
-        "ps", "share", "options", "crown", "mouse", "touchpad", "tv", "power", "restart", "window", "fullscreen", "rumble", "gear")
+        "ps", "share", "options", "crown", "mouse", "touchpad", "tv", "power", "restart", "window", "fullscreen", "rumble", "gear",
+        "update")

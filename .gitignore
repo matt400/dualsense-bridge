@@ -229,6 +229,9 @@ __pycache__/
 *.log
 *.log.1
 remap.json.tmp
+# profile remapowania użytkownika (git pull z przycisku Aktualizuj ich nie rusza)
+remap.json
+remap.json.bad
 # układ okna receivera (rozmiar, pozycja, wybrany pad)
 receiver_ui.ini
 # zrzuty z testów UI

@@ -152,6 +152,12 @@ doas python3 sender_controller.py 192.168.1.4 --stats
 `--stats` co 5 s wypisuje ping i realną częstotliwość raportów pada. Autostart receivera z Windows:
 `python receiver_controller.py --autostart on`.
 
+Aktualizacja na Windows: przycisk **Aktualizuj** w oknie (albo w menu ikony w zasobniku) - `git pull` w folderze
+`dualsense-bridge`, przy zmianie `requirements.txt` także `pip install`, potem sam restart receivera. Bez okna:
+`update.bat` w głównym folderze. Wymaga klonu git (`git clone https://github.com/matt400/dualsense-bridge`) i Git
+for Windows; ustawienia i profile (`console.json`, `settings.json`, `remap.json`) zostają nietknięte. Pliki
+nadajnika na telefonie aktualizuje się osobno (`git pull` albo kopia `sender/`, potem restart usługi).
+
 Autostart nadajnika na telefonie - usługa systemowa działająca jako root (wibracja przez `/dev/hidraw`, tryb niskich
 opóźnień), OpenRC albo systemd wykrywane samo:
 

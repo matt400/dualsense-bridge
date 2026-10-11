@@ -341,6 +341,26 @@ EN = {
         "The sender did not find /dev/hidraw of this pad - on the phone: doas python3 sender_rumble.py --test",
     "sterownik": "driver",
     "wibracja: {ways}": "rumble: {ways}",
+    # ---------- aktualizacja ----------
+    "Aktualizuj": "Update",
+    "Aktualizować?": "Update?",
+    "Aktualizuję…": "Updating…",
+    "Pobieranie aktualizacji…": "Downloading update…",
+    "Pobiera nową wersję z GitHuba (git pull) i uruchamia receiver od nowa":
+        "Downloads the new version from GitHub (git pull) and restarts the receiver",
+    "Folder nie jest repozytorium git (pobrany jako ZIP?) - sklonuj: git clone https://github.com/matt400/dualsense-bridge":
+        "The folder is not a git repository (downloaded as ZIP?) - clone it: git clone https://github.com/matt400/dualsense-bridge",
+    "Nie znaleziono git - zainstaluj Git for Windows (git-scm.com)": "git not found - install Git for Windows (git-scm.com)",
+    "git pull nie powiódł się: {msg}": "git pull failed: {msg}",
+    "Masz najnowszą wersję": "You have the latest version",
+    "git nie odpowiada: {msg}": "git does not respond: {msg}",
+    "Zaktualizowano ({n} zmian): {old} → {new}": "Updated ({n} changes): {old} → {new}",
+    "pip nie zadziałał ({msg}) - uruchom: pip install -r receiver\\requirements.txt":
+        "pip failed ({msg}) - run: pip install -r receiver\\requirements.txt",
+    "pip: {msg}": "pip: {msg}",
+    "nowe biblioteki zainstalowane": "new libraries installed",
+    "Uruchom ponownie receiver (przycisk Restart w oknie), żeby działał nowy kod.":
+        "Restart the receiver (Restart button in the window) to run the new code.",
     # ---------- ikony ----------
     "Ekran": "Screen",
     "Uruchom ponownie": "Restart",

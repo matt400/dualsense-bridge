@@ -10,6 +10,7 @@ import os
 import signal
 from functools import cache
 import sys
+import threading
 import time
 
 from PySide6.QtCore import QAbstractNativeEventFilter, QEvent, QSettings, QSize, Qt, QTimer, Signal
@@ -23,6 +24,7 @@ import rx_games
 import rx_master
 import rx_profiles as P
 import rx_state as S
+import rx_update
 import rx_status as ST
 import rx_winapi as W
 from rx_buttons import profile_size
@@ -37,6 +39,7 @@ from rx_qt_style import LEVEL, apply_theme, set_prop
 from rx_qt_widgets import BatteryBar, ConfirmButton, Segmented, button, label
 
 LIVE_MS, SLOW_MS, APPLY_MS = 33, 400, 150
+UPDATE_RESTART_MS = 2500   # po udanej aktualizacji: tyle widać komunikat, potem restart receivera
 NOTE_S = 6.0           # tyle sekund komunikat (np. "Saved") zasłania status profilu
 VIEWS = (("out", "Wynik"), ("in", "Fizycznie"))
 
@@ -198,6 +201,8 @@ class PadCard(QFrame):
 
 
 class MainWindow(QMainWindow):
+    update_done = Signal(object)          # rx_update.Result z wątku aktualizacji
+
     def __init__(self, settings):
         super().__init__()
         self.settings = settings
@@ -229,6 +234,7 @@ class MainWindow(QMainWindow):
 
         self._build()
         self.tray = self._make_tray()
+        self.update_done.connect(self._update_finished)
         QShortcut(QKeySequence.StandardKey.Save, self, activated=self.save)
         QShortcut(QKeySequence(Qt.Key.Key_F11), self, activated=self.toggle_fullscreen)
         self.select_pad(self.ed.slot)
@@ -276,6 +282,10 @@ class MainWindow(QMainWindow):
         restart_btn.setIcon(icon("restart"))
         restart_btn.setToolTip(_("Uruchamia receiver od nowa (pady na chwilę znikną, niezapisane zmiany profilu przepadną)"))
         restart_btn.confirmed.connect(self.restart)
+        self.update_btn = ConfirmButton(_("Aktualizuj"), _("Aktualizować?"), small=True)
+        self.update_btn.setIcon(icon("update"))
+        self.update_btn.setToolTip(_("Pobiera nową wersję z GitHuba (git pull) i uruchamia receiver od nowa"))
+        self.update_btn.confirmed.connect(self.start_update)
         quit_btn = ConfirmButton(_("Zakończ"), _("Zakończyć?"), small=True)
         quit_btn.setIcon(icon("power"))
         quit_btn.setToolTip(_("Zatrzymuje receiver - wirtualne pady znikają"))
@@ -294,7 +304,7 @@ class MainWindow(QMainWindow):
         sep.setFixedHeight(22)
         lay.addWidget(sep)
         lay.addSpacing(8)
-        for b in (self.fs_btn, settings_btn, restart_btn, quit_btn):
+        for b in (self.fs_btn, settings_btn, self.update_btn, restart_btn, quit_btn):
             lay.addWidget(b)
         return bar
 
@@ -381,6 +391,7 @@ class MainWindow(QMainWindow):
         menu = QMenu()
         menu.addAction(_("Pokaż okno"), self.bring_to_front)
         menu.addAction(_("Ustawienia"), self.open_settings)
+        menu.addAction(icon("update"), _("Aktualizuj"), self.start_update)
         menu.addAction(icon("restart"), "Restart", self.restart)
         menu.addAction(_("Zakończ"), self.quit)
         tray.setContextMenu(menu)
@@ -482,6 +493,24 @@ class MainWindow(QMainWindow):
             self.settings_dlg.saved.connect(self.restart)
             self.settings_dlg.applied.connect(self.slow_tick)
         self.settings_dlg.present()
+
+    def start_update(self):
+        """git pull w osobnym wątku (sieć potrafi trwać); wynik wraca sygnałem do wątku okna."""
+        if not self.update_btn.isEnabled():
+            return
+        self.update_btn.setEnabled(False)
+        self.update_btn.setText(_("Aktualizuję…"))
+        self.note(_("Pobieranie aktualizacji…"), "")
+        threading.Thread(target=lambda: self.update_done.emit(rx_update.update()), name="update", daemon=True).start()
+
+    def _update_finished(self, r):
+        print(f"Update: {r.text}")
+        self.update_btn.setText(_("Aktualizuj"))
+        self.update_btn.setEnabled(not r.changed)
+        self.update_btn.setToolTip(r.text)
+        self.note(r.text, "ok" if r.ok else "bad")
+        if r.changed:
+            QTimer.singleShot(UPDATE_RESTART_MS, self.restart)
 
     def restart(self):
         """Restart (przycisk, zasobnik, zapisane ustawienia): zwykłe zamknięcie okna, a receiver sam startuje od nowa
