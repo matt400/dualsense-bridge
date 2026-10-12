@@ -45,7 +45,7 @@ assert "ping 1.2 ms" in c0.net.text() and "loss 0.0%" in c0.net.text() and "pad 
 assert c0.profile.text().startswith("profile: doom.exe"), c0.profile.text()
 assert c0.pct.text() == "64%" and c1.pct.text() == "12%" and "connected" in c0.status.text() and "not connected" in c1.status.text()
 assert c0.off.isEnabled() and not c1.off.isEnabled() and not c1.net.isVisible()
-assert "online" in win.sender.text() and "192.168.1.50" in win.sender.text()
+assert "online" in win.sender.text() and "192.168.1.50" in win.sender.toolTip()   # adres w podpowiedzi (wąskie okno)
 S.batt_info[0] = (10, 0); win.slow_tick()
 assert c0.property("low") is True and win.windowTitle().endswith("LOW BATTERY") and win.warned[0]
 S.batt_info[0] = (64, 0); win.slow_tick()

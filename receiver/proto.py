@@ -222,11 +222,14 @@ def git_error(text):
     return " / ".join(useful[:3])
 
 
-def git(root, *args, git_exe=None, timeout=15):
-    """-> CompletedProcess (tekst). Bez okna konsoli na Windows."""
+def git(root, *args, git_exe=None, timeout=15, env=None):
+    """-> CompletedProcess (tekst). Bez okna konsoli na Windows. env: dodatkowe zmienne środowiska dla gita."""
+    kw = _owner(root)
+    if env:
+        kw["env"] = {**kw["env"], **env}
     return subprocess.run([git_exe or find_git() or "git", "-c", "safe.directory=*", *args], cwd=root,
                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout,
-                          creationflags=_NO_WINDOW, **_owner(root))
+                          creationflags=_NO_WINDOW, **kw)
 
 
 def git_version(root, git_exe=None):
