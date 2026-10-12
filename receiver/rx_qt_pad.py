@@ -206,10 +206,17 @@ class PadView(QWidget):
             if out_name in prof["tuning"]:
                 r = self.by_name[out_name + "_stick"].path.boundingRect()
                 out.append((r.left() - 16 if out_name == "left" else r.right() + 16, r.center().y(), "∿", False))
-        for name, e in prof.get("triggers", {}).items():   # opór spustu DualSense: obok spustu, na zewnątrz
-            r = self.by_name[name].path.boundingRect()
-            out.append((r.left() - 20 if name == "l2" else r.right() + 20, r.center().y() + 8,
-                        _("opór {n}").format(n=e["force"]), "fx"))
+        trig = prof.get("triggers", {})
+        game_rv = (trig.get("rumble") or {}).get("on")
+        for name in B.TRIGGERS:                           # efekt spustu DualSense: obok spustu, na zewnątrz
+            e = trig.get(name)
+            tag = {"res": _("opór {n}"), "click": _("klik {n}"), "vib": _("drgania {n}"), "off": _("bez efektu")}.get(
+                (e or {}).get("mode"), "").format(n=(e or {}).get("force", (e or {}).get("amp")))
+            if game_rv:
+                tag = (tag + " + " if tag else "") + _("wibr. gry")
+            if tag:
+                r = self.by_name[name].path.boundingRect()
+                out.append((r.left() - 20 if name == "l2" else r.right() + 20, r.center().y() + 8, tag, "fx"))
         mode = prof["gyro"].get("mode", "off")
         if mode != "off":
             r = self.by_name["right_stick"].path.boundingRect()

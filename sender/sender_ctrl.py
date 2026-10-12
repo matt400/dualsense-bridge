@@ -7,7 +7,7 @@ import zlib
 
 import sender_net as net
 from proto import (KEY_BIT, LAT_NONE, SENDER_VERSION, T_CLICK, T_IDENT, T_MOUSE, T_STATE, T_STATE2, T_TOUCH, T_VERSION,
-                   WHY_OFF, clamp)
+                   TRIG2_OFF, WHY_OFF, clamp, trig2_from_legacy)
 from sender_config import BURST_DELAYS, C, IDLE_TP, NEUTRAL_PAD, PAD_ABS, STICK_AXES
 
 
@@ -66,7 +66,7 @@ class Ctrl:
         # opóźnienie Bluetooth ponad minimum w tamtej chwili i bieżące (z sender_streams.BtDelay)
         self.t_event = None
         self.ev_bt = self.bt_us = LAT_NONE
-        self.triggers = (0, 0, 0, 0)  # opór spustów z PC (L2 początek, siła, R2 początek, siła)
+        self.triggers = TRIG2_OFF     # efekty spustów z PC (wartości trig2: L2, R2, wibracja z gry)
         self.fb = None                # ostatni feedback z PC (mała, duża, r, g, b) - powrót po lokalnym błysku
         self.wol_timer = None         # odliczanie przytrzymania kombinacji Wake-on-LAN (sender_wol)
         self._pulse_timer = None
@@ -265,11 +265,12 @@ class Ctrl:
         self.apply_feedback(*back, remember=False)
 
     def set_triggers(self, vals):
-        """Opór spustów z profilu (pakiet trig). Tylko raport HID - sterownik jądra nie ma takiej funkcji."""
+        """Efekty spustów z profilu (pakiet trig2 albo stary trig = sam opór). Tylko raport HID - sterownik jądra nie
+        ma takiej funkcji."""
         vals = tuple(vals)
-        self.triggers = vals
+        self.triggers = trig2_from_legacy(vals) if len(vals) == 4 else vals
         if self.rumble is not None:
-            self.rumble.set_triggers(vals)
+            self.rumble.set_triggers(self.triggers)
 
     def cancel_timers(self):
         for name in ("_state_timer", "_touch_timer", "wol_timer", "_pulse_timer"):

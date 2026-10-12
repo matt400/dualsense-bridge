@@ -4,7 +4,14 @@ Ustawienia są częścią profilu remapowania (brak klucza = domyślnie, bez zmi
   tuning = {"left" | "right": {"dz", "outer", "curve", "anti"},   # ułamki wychylenia 0..1, krzywa = wykładnik
             "l2" | "r2": {"dz", "max"}}                           # wartości spustu 0..255
   gyro   = {"mode": "off" | "stick" | "mouse", "hold": "always" | <wejście>, "sens", "inv_x", "inv_y", "anti"}
-  triggers = {"l2" | "r2": {"start": 0-9, "force": 1-8}}           # stały opór spustu DualSense (nadajnik, raport HID)
+  triggers = {"l2" | "r2": {"mode": "off" | "res" | "click" | "vib", parametry trybu},   # efekty spustów DualSense
+              "rumble": {"on", "gain", "freq"}}                     # wibracja z gry na spustach (nadajnik, raport HID)
+     res   = opór:      start 0-9 (strefa = 10 % skoku), force 1-8
+     click = klik:      pos 2-7 (punkt 20-70 % skoku), force 1-8
+     vib   = wibracja:  start 0-9, amp 1-8, freq 1-255 Hz
+     rumble: on, gain 10-200 % (siła drgań względem silników), freq 1-255 Hz; L2 wg dużego silnika, R2 wg małego
+  Brak klucza w profilu gry = jak w profilu pada (S.effective_triggers), "off" = wyłączone mimo profilu pada.
+  Stary zapis oporu {"start", "force"} (bez "mode") jest wczytywany jako "res" (siła 0 = brak wpisu).
 Kształtowanie działa na WYJŚCIU (to, co dostaje gra, po zamianie gałek), gyro dodaje się do prawej gałki.
 """
 import math
@@ -14,7 +21,15 @@ STICK_LIMITS = {"dz": (0.0, 0.5), "outer": (0.5, 1.0), "curve": (0.3, 3.0), "ant
 TRIG_DEF = {"dz": 0, "max": 255}
 GYRO_DEF = {"mode": "off", "hold": "always", "sens": 1.0, "inv_x": False, "inv_y": False, "anti": 0.0}
 GYRO_MODES = ("off", "stick", "mouse")
-TRIG_FX_DEF = {"start": 0, "force": 0}        # opór spustu: początek (strefa 0-9 = 0-90 % skoku), siła 0 = brak
+TRIG_MODES = ("off", "res", "click", "vib")
+# parametry trybu: nazwa -> (min, max, domyślnie); zakresy jak w proto (TRIG_*, RFX_*)
+TRIG_PARAMS = {"off": {},
+               "res": {"start": (0, 9, 0), "force": (1, 8, 4)},
+               "click": {"pos": (2, 7, 5), "force": (1, 8, 6)},
+               "vib": {"start": (0, 9, 0), "amp": (1, 8, 4), "freq": (1, 255, 30)}}
+TRIG_FX_DEF = {"mode": "off", **{k: d for p in TRIG_PARAMS.values() for k, (_lo, _hi, d) in p.items()}}
+RUMBLE_LIMITS = {"gain": (10, 200, 100), "freq": (1, 255, 40)}
+RUMBLE_DEF = {"on": False, **{k: d for k, (_lo, _hi, d) in RUMBLE_LIMITS.items()}}
 
 GYRO_DPS_FULL = 150.0    # tryb gałki: pełne wychylenie przy tylu °/s (dzielone przez sens)
 GYRO_PX_PER_DEG = 10.0   # tryb myszy: pikseli na stopień obrotu (mnożone przez sens)
@@ -52,25 +67,68 @@ def normalize_tuning(t):
     return out
 
 
+def trigger_entry(e):
+    """Jeden spust -> {"mode", parametry trybu} w zakresach albo None (zły wpis / stary zapis z siłą 0)."""
+    if not isinstance(e, dict):
+        return None
+    mode = e.get("mode")
+    if mode is None:                                  # stary zapis: sam opór
+        if not round(_num(e.get("force"), 0, 8, 0)):
+            return None
+        mode = "res"
+    if mode not in TRIG_MODES:
+        return None
+    return {"mode": mode, **{k: round(_num(e.get(k), lo, hi, d)) for k, (lo, hi, d) in TRIG_PARAMS[mode].items()}}
+
+
 def normalize_triggers(t):
-    """Opór spustów: tylko L2 / R2 z siłą > 0, początek 0-9, siła 1-8 (jak w proto)."""
-    from proto import TRIG_FORCE_MAX, TRIG_START_MAX
+    """Efekty spustów: L2 / R2 (trigger_entry) i wibracja z gry ("rumble"); nieznane klucze odrzucone."""
     t = t if isinstance(t, dict) else {}
-    out = {}
-    for name in ("l2", "r2"):
-        e = t.get(name)
-        if not isinstance(e, dict):
-            continue
-        force = round(_num(e.get("force"), 0, TRIG_FORCE_MAX, 0))
-        if force:
-            out[name] = {"start": round(_num(e.get("start"), 0, TRIG_START_MAX, 0)), "force": force}
+    out = {name: e for name in ("l2", "r2") if (e := trigger_entry(t.get(name))) is not None}
+    r = t.get("rumble")
+    if isinstance(r, dict):
+        out["rumble"] = {"on": r.get("on") is True,
+                         **{k: round(_num(r.get(k), lo, hi, d)) for k, (lo, hi, d) in RUMBLE_LIMITS.items()}}
     return out
 
 
+def merge_triggers(pad, game):
+    """Efekty spustów w grze: wpisy profilu gry, a czego w nim nie ma - z profilu pada."""
+    return {**pad, **game}
+
+
 def trigger_values(t):
-    """Znormalizowany opór spustów -> pakiet trig (L2 początek, L2 siła, R2 początek, R2 siła)."""
-    l2, r2 = t.get("l2", TRIG_FX_DEF), t.get("r2", TRIG_FX_DEF)
-    return l2["start"], l2["force"], r2["start"], r2["force"]
+    """Znormalizowane efekty spustów -> wartości pakietu trig2 (L2: tryb, a, b, c; R2: ...; flagi, %, Hz, 0)."""
+    from proto import RFX_ON, TFX_CLICK, TFX_OFF, TFX_RES, TFX_VIB
+
+    def side(e):
+        match (e or {}).get("mode"):
+            case "res":
+                return TFX_RES, e["start"], e["force"], 0
+            case "click":
+                return TFX_CLICK, e["pos"], e["force"], 0
+            case "vib":
+                return TFX_VIB, e["start"], e["amp"], e["freq"]
+        return TFX_OFF, 0, 0, 0
+
+    r = t.get("rumble") or RUMBLE_DEF
+    rumble = (RFX_ON, r["gain"], r["freq"], 0) if r["on"] else (0, 0, 0, 0)
+    return (*side(t.get("l2")), *side(t.get("r2")), *rumble)
+
+
+def legacy_values(vals):
+    """Wartości trig2 -> stary pakiet trig dla nadajnika bez CAP_TRIG_FX (sam opór; klik / wibracja = brak)."""
+    from proto import TFX_RES
+
+    def side(mode, a, b, _c):
+        return (a, b) if mode == TFX_RES else (0, 0)
+    return (*side(*vals[0:4]), *side(*vals[4:8]))
+
+
+def needs_fx(t):
+    """Czy efekty wymagają nadajnika z CAP_TRIG_FX (klik, wibracja spustu, wibracja z gry)."""
+    return any((t.get(n) or {}).get("mode") in ("click", "vib") for n in ("l2", "r2")) or \
+        bool((t.get("rumble") or {}).get("on"))
 
 
 def normalize_gyro(g, inputs):

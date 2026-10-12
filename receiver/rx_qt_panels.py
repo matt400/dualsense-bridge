@@ -13,7 +13,8 @@ from PySide6.QtWidgets import (QCheckBox, QCompleter, QFrame, QHBoxLayout, QLine
 
 import rx_buttons as B
 import rx_status as ST
-from proto import TRIG_FORCE_MAX, TRIG_START_MAX
+from proto import RFX_GAIN_MAX, TRIG_AMP_MAX, TRIG_CLICK_MAX, TRIG_CLICK_MIN, TRIG_FORCE_MAX, TRIG_FREQ_MAX, TRIG_START_MAX
+from rx_shape import RUMBLE_LIMITS, needs_fx
 from rx_editor import GYRO_MODES, L3_OF, SHORT, STICK_NAME, STICK_OF
 from rx_qt_style import set_prop
 from rx_qt_icons import pixmap
@@ -21,6 +22,21 @@ from rx_qt_widgets import (Collapsible, Combo, ConfirmButton, SliderRow, button,
                            left)
 
 NONE = "__none"
+# tryb efektu spustu -> (nazwa, podpowiedź); "inherit" tylko w profilu gry
+FX_MODES = {
+    "inherit": ("Jak w profilu pada", "W tej grze spust działa tak, jak ustawiono w profilu domyślnym pada."),
+    "off": ("Wyłączony", "Spust bez efektu."),
+    "res": ("Opór", "Stały opór od wybranego miejsca skoku, np. gaz i hamulec w wyścigach."),
+    "click": ("Klik", "Opór narasta do wybranego punktu i puszcza z kliknięciem - jak spust broni."),
+    "vib": ("Drgania", "Spust drga stale od wybranego miejsca skoku."),
+}
+FX_SLIDERS = {"res": ("start", "force"), "click": ("pos", "force"), "vib": ("start", "amp", "freq")}
+RUMBLE_ON = {"inherit": "Jak w profilu pada", "on": "Włączona", "off": "Wyłączona"}
+RUMBLE_KEY = {None: "inherit", True: "on", False: "off"}
+
+
+def _of8(v):
+    return f"{round(v)} / {TRIG_FORCE_MAX}"
 def targets():
     return [*input_items(B.INPUTS, text=True), (NONE, _("— wyłączony —"))]   # ikona + nazwa: wybór widać od razu
 
@@ -171,19 +187,43 @@ class PartPage(QWidget):
         self.dflt.clicked.connect(lambda: self._reset_button(self.name))
         lay.addWidget(self.dflt, 0, Qt.AlignmentFlag.AlignLeft)
 
-        self.trig = QWidget()                        # tylko L2 / R2: opór spustu i (zwinięta) reakcja
+        self.trig = QWidget()                        # tylko L2 / R2: efekt spustu, wibracja z gry i (zwinięta) reakcja
         tl = _vbox(self.trig)
         tl.addSpacing(4)
-        tl.addWidget(label(_("OPÓR SPUSTU"), "h2"))
-        self.fx_force = SliderRow(_("Siła oporu"), 0, TRIG_FORCE_MAX, 1,
-                                  fmt=lambda v: _("wył.") if v < 0.5 else f"{round(v)} / {TRIG_FORCE_MAX}")
-        self.fx_start = SliderRow(_("Opór od (skok spustu)"), 0, TRIG_START_MAX * 10, 10, "%")
-        self.fx_force.changed.connect(lambda v: self._trigger_fx(force=round(v)))
-        self.fx_start.changed.connect(lambda v: self._trigger_fx(start=round(v / 10)))
-        tl.addWidget(self.fx_force)
-        tl.addWidget(self.fx_start)
-        tl.addWidget(label(_("Stały opór DualSense, np. do wyścigów - najlepiej w profilu gry. Gra przez DS4 go nie "
-                             "ustawi, więc robi to nadajnik."), "dim", wrap=True))
+        tl.addWidget(label(_("EFEKT SPUSTU"), "h2"))
+        self.fx_mode = Combo()
+        self.fx_mode.changed.connect(lambda v: self._trigger_fx(mode=v))
+        tl.addWidget(field(_("Efekt"), self.fx_mode))
+        self.fx_hint = label("", "dim", wrap=True)
+        tl.addWidget(self.fx_hint)
+        self.fx = {
+            "start": SliderRow(_("Od (skok spustu)"), 0, TRIG_START_MAX * 10, 10, "%"),
+            "pos": SliderRow(_("Punkt kliku (skok spustu)"), TRIG_CLICK_MIN * 10, TRIG_CLICK_MAX * 10, 10, "%"),
+            "force": SliderRow(_("Siła"), 1, TRIG_FORCE_MAX, 1, fmt=_of8),
+            "amp": SliderRow(_("Siła drgań"), 1, TRIG_AMP_MAX, 1, fmt=_of8),
+            "freq": SliderRow(_("Częstotliwość drgań"), 1, TRIG_FREQ_MAX, 1, fmt=lambda v: f"{round(v)} Hz"),
+        }
+        for k, row in self.fx.items():
+            scale = 10 if k in ("start", "pos") else 1
+            row.changed.connect(lambda v, k=k, sc=scale: self._trigger_fx(**{k: round(v / sc)}))
+            tl.addWidget(row)
+        tl.addWidget(label(_("Gra przez DS4 nie ustawi efektów DualSense, więc robi to nadajnik. W profilu gry "
+                             "„Jak w profilu pada” bierze ustawienie z profilu domyślnego."), "dim", wrap=True))
+
+        tl.addSpacing(4)
+        tl.addWidget(label(_("WIBRACJA Z GRY NA SPUSTACH"), "h2"))
+        self.rv_on = Combo()
+        self.rv_on.changed.connect(lambda v: self._rumble_fx(on={"inherit": None, "on": True, "off": False}[v]))
+        tl.addWidget(field(_("Wibracja z gry"), self.rv_on))
+        gain_lo, _hi, _d = RUMBLE_LIMITS["gain"]
+        self.rv_gain = SliderRow(_("Siła (względem wibracji pada)"), gain_lo, RFX_GAIN_MAX, 10, "%")
+        self.rv_freq = SliderRow(_("Częstotliwość drgań"), 1, TRIG_FREQ_MAX, 1, fmt=lambda v: f"{round(v)} Hz")
+        self.rv_gain.changed.connect(lambda v: self._rumble_fx(gain=round(v)))
+        self.rv_freq.changed.connect(lambda v: self._rumble_fx(freq=round(v)))
+        tl.addWidget(self.rv_gain)
+        tl.addWidget(self.rv_freq)
+        tl.addWidget(label(_("Namiastka wibracji spustów: L2 drga jak duży silnik pada, R2 jak mały. Na czas wibracji "
+                             "zastępuje efekt spustu, po chwili ciszy efekt wraca. Wspólne dla L2 i R2."), "dim", wrap=True))
         self.fx_warn = label("", wrap=True)
         tl.addWidget(self.fx_warn)
         self.tdz = SliderRow(_("Strefa martwa (ignoruj lekkie dotknięcia do)"), 0, 200, 1)
@@ -258,8 +298,31 @@ class PartPage(QWidget):
     def _trigger_fx(self, **patch):
         if self.name in B.TRIGGERS:
             self.ed.set_trigger_fx(self.name, **patch)
-            self.fx_start.setEnabled(self.ed.trigger_fx(self.name)["force"] > 0)
+            if "mode" in patch:
+                self._show_fx(self.ed.trigger_fx(self.name))
             self.edited.emit()
+
+    def _rumble_fx(self, **patch):
+        self.ed.set_rumble_fx(**patch)
+        if "on" in patch:
+            self._show_rumble(self.ed.rumble_fx())
+        self.edited.emit()
+
+    def _show_fx(self, fx):
+        """Suwaki trybu efektu (pozostałe ukryte) i podpowiedź."""
+        self.fx_hint.setText(_(FX_MODES[fx["mode"]][1]))
+        shown = FX_SLIDERS.get(fx["mode"], ())
+        for k, row in self.fx.items():
+            row.setVisible(k in shown)
+            row.set(fx[k] * (10 if k in ("start", "pos") else 1))
+        self.update_caps()
+
+    def _show_rumble(self, rv):
+        self.rv_gain.set(rv["gain"])
+        self.rv_freq.set(rv["freq"])
+        self.rv_gain.setVisible(bool(rv["on"]))
+        self.rv_freq.setVisible(bool(rv["on"]))
+        self.update_caps()
 
     def _stick(self, **patch):
         if self.name in STICK_OF:
@@ -311,15 +374,20 @@ class PartPage(QWidget):
             self.tdz.set(t["dz"])
             self.tmax.set(t["max"])
             self.trig_adv.set_open(name in ed.prof["tuning"] or self.trig_adv.is_open())
-            self.fx_force.set(fx["force"])
-            self.fx_start.set(fx["start"] * 10)
-            self.fx_start.setEnabled(fx["force"] > 0)
-            self.update_caps()
+            game = ed.is_game()
+            self.fx_mode.set_items([(k, _(v[0])) for k, v in FX_MODES.items() if game or k != "inherit"])
+            self.fx_mode.set_data(fx["mode"])
+            self.rv_on.set_items([(k, _(v)) for k, v in RUMBLE_ON.items() if game or k != "inherit"])
+            rv = ed.rumble_fx()
+            self.rv_on.set_data(RUMBLE_KEY[rv["on"]])
+            self._show_fx(fx)
+            self._show_rumble(rv)
         self.stack.setCurrentIndex(1)
 
     def update_caps(self):
-        """Ostrzeżenie pod oporem spustu, gdy nadajnik tego pada go nie ustawi (co 400 ms z okna - tani odczyt)."""
-        text, level = ST.triggers_status(self.ed.slot) if self.name in B.TRIGGERS else ("", "")
+        """Ostrzeżenie pod efektami spustu, gdy nadajnik tego pada ich nie ustawi (co 400 ms z okna - tani odczyt)."""
+        text, level = (ST.triggers_status(self.ed.slot, needs_fx(self.ed.prof["triggers"]))
+                       if self.name in B.TRIGGERS else ("", ""))
         if text != self.fx_warn.text():
             self.fx_warn.setText(("⚠  " + text) if text else "")
         self.fx_warn.setVisible(bool(text))

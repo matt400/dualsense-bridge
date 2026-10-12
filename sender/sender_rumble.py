@@ -10,9 +10,12 @@ sprawiał, że pad przyjmował tylko jeden z nich. Diody gracza zostają nietkni
            "evdev" / "hidraw" / "off"
 
 Raport: USB 0x02 (63 B), Bluetooth 0x31 (78 B: numer sekwencji, znacznik 0x10, na końcu CRC32 z ziarnem 0xA2).
-Ten sam raport niesie stały opór spustów (adaptive triggers) z profilu gry na PC - gry przez wirtualnego DS4 go
-nie ustawią, a sterownik jądra nie ma takiej funkcji. Pad trzyma efekt spustu do następnej zmiany; raporty bez flag
-spustów (wibracja, kolor, sterownik) go nie ruszają.
+Ten sam raport niesie efekty spustów (adaptive triggers) z profilu na PC: opór, klik (jak spust broni), wibracja
+spustu - gry przez wirtualnego DS4 ich nie ustawią, a sterownik jądra nie ma takiej funkcji. Pad trzyma efekt spustu
+do następnej zmiany; raporty bez flag spustów (wibracja, kolor, sterownik) go nie ruszają.
+Wibracja z gry na spusty (RFX_ON w trig2) liczona jest tutaj, z tych samych pakietów wibracji - bez dodatkowego ruchu
+w sieci: L2 drga wg dużego silnika, R2 wg małego; na czas wibracji zastępuje efekt spustu, a RFX_HOLD_S po ustaniu
+wibracji spust wraca do swojego efektu.
 Pad trzyma ostatnią moc silników - receiver odświeża wibrację co 0.5 s, a strażnik tutaj zatrzymuje ją, gdy
 odświeżenia ustaną (zgubione pakiety, zamknięta gra), żeby pad nie wibrował bez końca.
 """
@@ -28,12 +31,16 @@ import zlib
 from evdev import ecodes as ec
 from evdev import ff
 
-from proto import CAP_TRIGGERS, TRIG_FORCE_MAX, TRIG_START_MAX, WHY_ACCESS, WHY_NO_HIDRAW, WHY_NOT_FOUND, WHY_OFF, WHY_OK, WHY_OPEN
+from proto import (CAP_TRIG_FX, CAP_TRIGGERS, RFX_GAIN_MAX, RFX_HOLD_S, RFX_ON, TFX_CLICK, TFX_RES, TFX_VIB,
+                   TRIG2_OFF, TRIG_AMP_MAX, TRIG_CLICK_MAX, TRIG_CLICK_MIN, TRIG_FORCE_MAX, TRIG_FREQ_MAX,
+                   TRIG_START_MAX, WHY_ACCESS, WHY_NO_HIDRAW, WHY_NOT_FOUND, WHY_OFF, WHY_OK, WHY_OPEN,
+                   trig2_from_legacy)
 
 FLAG0_COMPAT_VIBRATION, FLAG0_HAPTICS_SELECT = 0x01, 0x02
 FLAG0_RIGHT_TRIGGER, FLAG0_LEFT_TRIGGER = 0x04, 0x08    # valid_flag0: efekt prawego / lewego spustu z tego raportu
 RIGHT_TRIGGER_AT, LEFT_TRIGGER_AT, TRIGGER_LEN = 10, 21, 11
 TRIG_FEEDBACK, TRIG_OFF = 0x21, 0x05      # efekty spustu: "Feedback" (opór od strefy) i wyłączenie
+TRIG_WEAPON, TRIG_VIBRATION = 0x25, 0x26  # "Weapon" (opór do punktu i kliknięcie) i "Vibration" (drganie od strefy)
 FLAG2_COMPAT_VIBRATION2 = 0x04            # nowsze oprogramowanie pada (jak use_vibration_v2 w jądrze)
 FLAG1_LIGHTBAR = 0x04                     # valid_flag1: kolor lightbara z tego raportu
 LIGHTBAR_AT = 44                          # lightbar_red / green / blue we wspólnej części raportu
@@ -72,13 +79,66 @@ def trigger_effect(start, force):
     if not force or not 0 <= start <= TRIG_START_MAX:
         out[0] = TRIG_OFF
         return bytes(out)
-    level = min(force, TRIG_FORCE_MAX) - 1
-    zones = sum(1 << z for z in range(start, 10))
-    forces = sum(level << (3 * z) for z in range(start, 10))
     out[0] = TRIG_FEEDBACK
-    out[1:3] = zones.to_bytes(2, "little")
-    out[3:7] = forces.to_bytes(4, "little")
+    out[1:3] = _zones(start).to_bytes(2, "little")
+    out[3:7] = _levels(start, min(force, TRIG_FORCE_MAX) - 1)
     return bytes(out)
+
+
+OFF_EFFECT = trigger_effect(0, 0)
+
+
+def _zones(start):
+    """Maska stref od `start` do końca skoku (10 stref)."""
+    return sum(1 << z for z in range(start, 10))
+
+
+def _levels(start, level):
+    """Po 3 bity poziomu (0-7) na każdą strefę od `start` (4 B, little endian)."""
+    return sum(level << (3 * z) for z in range(start, 10)).to_bytes(4, "little")
+
+
+def weapon_effect(pos, force):
+    """Klik jak spust broni (efekt "Weapon" 0x25): opór od strefy `pos` (2-7) narasta do strefy pos + 1 i tam puszcza
+    (kliknięcie); siła 1-8; force 0 albo zły punkt -> Off."""
+    out = bytearray(TRIGGER_LEN)
+    if not force or not TRIG_CLICK_MIN <= pos <= TRIG_CLICK_MAX:
+        out[0] = TRIG_OFF
+        return bytes(out)
+    out[0] = TRIG_WEAPON
+    out[1:3] = ((1 << pos) | (1 << (pos + 1))).to_bytes(2, "little")
+    out[3] = min(force, TRIG_FORCE_MAX) - 1
+    return bytes(out)
+
+
+def vibration_effect(start, amp, freq):
+    """Drganie spustu (efekt "Vibration" 0x26) od strefy `start` (0-9) do końca: amplituda 1-8, częstotliwość 1-255 Hz;
+    amplituda albo częstotliwość 0 -> Off."""
+    out = bytearray(TRIGGER_LEN)
+    if not amp or not freq or not 0 <= start <= TRIG_START_MAX:
+        out[0] = TRIG_OFF
+        return bytes(out)
+    out[0] = TRIG_VIBRATION
+    out[1:3] = _zones(start).to_bytes(2, "little")
+    out[3:7] = _levels(start, min(amp, TRIG_AMP_MAX) - 1)
+    out[9] = min(freq, TRIG_FREQ_MAX)
+    return bytes(out)
+
+
+def effect(mode, a, b, c):
+    """Efekt spustu z pakietu trig2 (tryb TFX_*, parametry a, b, c - opis w proto) -> 11 B raportu."""
+    if mode == TFX_RES:
+        return trigger_effect(a, b)
+    if mode == TFX_CLICK:
+        return weapon_effect(a, b)
+    if mode == TFX_VIB:
+        return vibration_effect(a, b, c)
+    return OFF_EFFECT
+
+
+def rumble_amp(motor, gain):
+    """Moc silnika 0-255 i siła [%] -> amplituda drgania spustu 0-8 (0 = spust bez wibracji z gry)."""
+    return min(TRIG_AMP_MAX, (motor * min(gain, RFX_GAIN_MAX) * TRIG_AMP_MAX + 12750) // 25500)
 
 
 def output_report(bt, seq, small, large, v2=None, rgb=None, triggers=None):
@@ -192,7 +252,11 @@ class Rumble:
         self.logged = 0               # ile pierwszych poleceń wibracji zapisać w logu (diagnostyka)
         self.cur = (0, 0)
         self.rgb = None               # kolor lightbara wysyłany razem z wibracją (tylko raport HID)
-        self.trig = None              # opór spustów (L2, R2) ustawiony na padzie albo None = nigdy nie ruszany
+        self.trig = None              # efekty spustów (L2, R2) wysłane do pada albo None = nigdy nie ruszane
+        self.fx = None                # ustawienia spustów z PC (wartości trig2) albo None = nic nie przyszło
+        self._rv = [None, None]       # wibracja z gry na L2 / R2: efekt albo None
+        self._rv_off = [None, None]   # od kiedy silnik tego spustu stoi (po RFX_HOLD_S spust wraca do efektu)
+        self._rv_timer = None
         self.t_set = 0.0
         self._watch = None
         self._repeat = None
@@ -218,9 +282,10 @@ class Rumble:
 
     @property
     def bits(self):
-        """Sposoby jako bity (pakiet wersji do receivera): 1 = sterownik, 2 = raport HID, 4 = opór spustów."""
+        """Sposoby jako bity (pakiet wersji do receivera): 1 = sterownik, 2 = raport HID, 4 = opór spustów,
+        8 = efekty spustów z trig2 (klik, wibracja, wibracja z gry)."""
         hid = "hidraw" in self.methods
-        return ("evdev" in self.methods) | hid << 1 | (CAP_TRIGGERS if hid else 0)
+        return ("evdev" in self.methods) | hid << 1 | (CAP_TRIGGERS | CAP_TRIG_FX if hid else 0)
 
     def describe(self):
         parts = []
@@ -273,14 +338,19 @@ class Rumble:
             self._arm_repeat()
 
     def set_triggers(self, vals):
-        """Opór spustów (L2 początek, L2 siła, R2 początek, R2 siła). -> True, gdy wysłany do pada (raport HID).
-        Receiver odświeża go co kilka sekund, więc pad po ponownym połączeniu wraca do efektu z profilu."""
+        """Efekty spustów z PC: wartości trig2 (12) albo starego trig (4: sam opór). -> True, gdy wysłane do pada
+        (raport HID). Receiver odświeża je co kilka sekund, więc pad po ponownym połączeniu wraca do efektów z profilu."""
+        vals = tuple(vals)
+        if len(vals) == 4:
+            vals = trig2_from_legacy(vals)
+        if vals != self.fx:
+            print(f"Controller {self.idx}: triggers L2 {vals[0:4]} R2 {vals[4:8]} game rumble {vals[8:11]}")
+        self.fx = vals
+        if not vals[8] & RFX_ON:
+            self._rv, self._rv_off = [None, None], [None, None]
         if "hidraw" not in self.methods:
             return False
-        trig = (trigger_effect(*vals[:2]), trigger_effect(*vals[2:4]))
-        if trig != self.trig:
-            print(f"Controller {self.idx}: trigger resistance L2 {vals[0]}/{vals[1]} R2 {vals[2]}/{vals[3]}")
-        self.trig = trig
+        trig = self._want_triggers(*self.cur)
         try:
             self.seq = (self.seq + 1) & 0x0F
             os.write(self.fd, output_report(self.bt, self.seq, *self.cur, self.v2, self.rgb, trig))
@@ -289,7 +359,52 @@ class Rumble:
         except OSError as e:
             print(f"Controller {self.idx}: trigger effect via hidraw failed ({e!r})")
             return False
+        self.trig = trig
         return True
+
+    def _want_triggers(self, small, large, now=None):
+        """Efekty, które pad powinien mieć teraz: z ustawień, a przy wibracji z gry (i RFX_HOLD_S po niej) - drganie
+        wg silnika (L2 = duży, R2 = mały). None = PC nic nie ustawił (spustów nie ruszamy)."""
+        fx = self.fx
+        if fx is None:
+            return None
+        out = [effect(*fx[0:4]), effect(*fx[4:8])]
+        flags, gain, freq = fx[8:11]
+        if not flags & RFX_ON:
+            return tuple(out)
+        now = time.monotonic() if now is None else now
+        hold = False
+        for k, motor in enumerate((large, small)):
+            amp = rumble_amp(motor, gain)
+            if amp:
+                self._rv[k], self._rv_off[k] = vibration_effect(0, amp, freq or 1), None
+            elif self._rv[k] is not None:
+                if self._rv_off[k] is None:
+                    self._rv_off[k] = now
+                if now - self._rv_off[k] >= RFX_HOLD_S - 0.005:
+                    self._rv[k] = self._rv_off[k] = None
+                else:
+                    hold = True
+            if self._rv[k] is not None:
+                out[k] = self._rv[k]
+        self._arm_rv(hold)
+        return tuple(out)
+
+    def _arm_rv(self, hold):
+        """Po RFX_HOLD_S ciszy silników spust ma wrócić do efektu, choćby nic więcej nie przyszło z PC."""
+        if self._rv_timer is not None:
+            self._rv_timer.cancel()
+            self._rv_timer = None
+        if hold:
+            try:
+                self._rv_timer = asyncio.get_running_loop().call_later(RFX_HOLD_S, self._rv_expired)
+            except RuntimeError:
+                pass
+
+    def _rv_expired(self):
+        self._rv_timer = None
+        if self.methods:
+            self._send(*self.cur, only="hidraw")
 
     def _arm_repeat(self):
         if self._repeat is not None:
@@ -320,8 +435,14 @@ class Rumble:
                     self._send(small, large, only="hidraw")    # z tą samą obsługą błędów (wyjątek nie wyjdzie do pętli)
 
     def _send_hidraw(self, small, large):
+        """Wibracja (i kolor); efekty spustów tylko, gdy mają się zmienić (wibracja z gry na spustach)."""
+        trig = self._want_triggers(small, large)
+        if trig == self.trig:
+            trig = None
         self.seq = (self.seq + 1) & 0x0F
-        os.write(self.fd, output_report(self.bt, self.seq, small, large, self.v2, self.rgb))
+        os.write(self.fd, output_report(self.bt, self.seq, small, large, self.v2, self.rgb, trig))
+        if trig is not None:
+            self.trig = trig
 
     def _send_evdev(self, small, large):
         if small or large:
@@ -350,7 +471,7 @@ class Rumble:
             self.set(0, 0)                           # receiver przestał odświeżać - zatrzymaj silniki
 
     def close(self):
-        for name in ("_watch", "_repeat"):
+        for name in ("_watch", "_repeat", "_rv_timer"):
             t = getattr(self, name)
             if t is not None:
                 t.cancel()
@@ -358,7 +479,8 @@ class Rumble:
         if self.cur != (0, 0):
             self._send(0, 0)
         if self.trig is not None and any(t[0] != TRIG_OFF for t in self.trig):
-            self.set_triggers((0, 0, 0, 0))      # nadajnik się zamyka - spust nie może zostać twardy
+            self.set_triggers(TRIG2_OFF)         # nadajnik się zamyka - spust nie może zostać twardy
+        self._arm_rv(False)
         if "evdev" in self.methods and self.ff_id is not None:
             try:
                 self.dev.erase_effect(self.ff_id)

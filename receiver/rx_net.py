@@ -13,7 +13,7 @@ import rx_settings
 import rx_state as S
 from proto import (BODY, LAT_NONE, PAD_KEYS, RTT_NONE, SCFG_EVENTS, SCFG_WOL, STATE_FIELDS, WIRE, Codec, T_BYE, T_CLICK,
                    T_CMD, T_EVENT, T_FB, T_IDENT, T_INFO, T_MOUSE, T_PING, T_PONG, T_PONG2, T_SCFG, T_VERSION, T_STATE,
-                   T_STATE2, T_TOUCH, T_TRIG, T_BUILD, T_BUILD2, T_UPDMSG, clamp, cstr, mac_bytes, mac_text)
+                   T_STATE2, T_TOUCH, T_TRIG, T_TRIG2, TRIG2_OFF, T_BUILD, T_BUILD2, T_UPDMSG, clamp, cstr, mac_bytes, mac_text)
 from rx_buttons import BUTTON_CODES, MASK_ALL, PS_BIT, TRIG_ON, profile_size
 
 from rx_config import C
@@ -99,9 +99,11 @@ def send_cmd(i, cmd, arg=0):
 
 
 def send_triggers(i, vals, repeat=1):
-    """Opór spustów (L2 początek, siła, R2 początek, siła) do nadajnika; zmiana idzie kilka razy (zgubiony pakiet)."""
+    """Efekty spustów do nadajnika: 12 wartości = trig2, 4 = stary trig (sam opór); zmiana idzie kilka razy
+    (zgubiony pakiet)."""
+    t = T_TRIG2 if len(vals) == len(TRIG2_OFF) else T_TRIG
     for _n in range(repeat):
-        send_peer(codec.pack(T_TRIG, i, *vals))
+        send_peer(codec.pack(t, i, *vals))
 
 
 def scfg_values(s=None):
@@ -161,7 +163,7 @@ def clear_slot(i, forget_id=False):
             S.pad_id[i] = None
             S.override[i] = None
             S.active[i] = S.active_key(i)
-            S.remap_maps[i] = S.store.get(S.active[i])
+            S.remap_maps[i] = S.effective_profile(i, S.active[i])
     S.reset_state(i)
     mouse.reset(i)
     if forget_id:
