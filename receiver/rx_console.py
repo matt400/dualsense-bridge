@@ -294,7 +294,10 @@ class Console:
         self._jobs.put(lambda: self._auto_on(i))
 
     def blocked_by(self):
-        """Program na pierwszym planie, który blokuje przełączanie (gra), albo None."""
+        """Program na pierwszym planie, który blokuje przełączanie (gra), albo None. Pusta lista allowed_apps = bez
+        blokady (inaczej wyczyszczone pole w Ustawieniach blokowało przełączanie wszędzie, także na pulpicie)."""
+        if not self.cfg.allowed_apps:
+            return None
         exe = _foreground()
         return exe if exe and exe not in self.cfg.allowed_apps else None
 

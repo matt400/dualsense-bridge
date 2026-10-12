@@ -24,6 +24,7 @@ TEXT = {proto.UPD_NO_CHANGE: "already up to date", UPD_DONE: "updated - restarti
 
 version = ("", 0, "")          # (commit, czas commita, tytuł) - ustawiane w init()
 status = UPD_NONE
+fail_msg = ""                  # powód ostatniego błędu git pull - idzie z każdym pakietem build, póki stan to błąd
 _last = 0.0
 
 
@@ -35,12 +36,16 @@ def init():
 
 
 def send_build():
+    """Pakiet build; przy błędzie aktualizacji najpierw powód (updmsg) - okno pokaże go także po zgubionym pakiecie
+    i po ponownym kliknięciu Aktualizuj w ciągu REPEAT_GUARD_S (wtedy nadajnik nie próbuje drugi raz)."""
+    if status == proto.UPD_FAILED and fail_msg:
+        net.emit(T_UPDMSG, 255, fail_msg.encode("utf-8")[:T_UPDMSG_MAX])
     net.emit(T_BUILD, 255, version[0].encode("ascii", "replace")[:7], version[1], status)
 
 
 async def run():
     """Polecenie aktualizacji z receivera."""
-    global status, _last
+    global status, _last, fail_msg
     now = time.monotonic()
     if status == UPD_RUNNING or now - _last < REPEAT_GUARD_S:
         return
@@ -48,7 +53,7 @@ async def run():
     print("Update requested from PC - git pull")
     send_build()
     st, msg, old, new, files = await asyncio.to_thread(proto.git_pull, ROOT)
-    status = st
+    status, fail_msg = st, msg if st == proto.UPD_FAILED else ""
     detail = msg or (f"{old[:7]} -> {new[:7]}" if st == UPD_DONE else ROOT if st == proto.UPD_NOT_GIT else "")
     print(f"Update: {TEXT.get(st, st)}" + (f" ({detail})" if detail else ""))
     if st == proto.UPD_FAILED and proto.is_auth_error(msg):
@@ -56,9 +61,7 @@ async def run():
               f"{os.path.join(ROOT, 'sender', 'setup-update-key.sh')}")
     if st == UPD_DONE and REQUIREMENTS in files:
         print(f"Update: {REQUIREMENTS} changed - install new packages (doas apk add ... / pip install -r)")
-    for _ in range(3):                       # wynik musi dotrzeć do receivera przed restartem; powód błędu przed stanem
-        if msg:
-            net.emit(T_UPDMSG, 255, msg.encode("utf-8")[:T_UPDMSG_MAX])
+    for _ in range(3):                       # wynik musi dotrzeć do receivera przed restartem (powód błędu: send_build)
         send_build()
         await asyncio.sleep(0.05)
     if st == UPD_DONE:

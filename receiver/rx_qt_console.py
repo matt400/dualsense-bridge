@@ -129,7 +129,8 @@ class ConsoleSettings(QDialog):
         apps_reset.clicked.connect(lambda: self.apps.setPlainText("\n".join(DEFAULT_APPS)))
         games = group(_("BLOKADA W GRZE"),
                       label(_("Przełączanie działa tylko, gdy na pierwszym planie jest jeden z tych programów (jeden w linii) - "
-                              "w grze podwójne kliknięcie nic nie robi, a włączenie po połączeniu mastera czeka na wyjście z gry."),
+                              "w grze podwójne kliknięcie nic nie robi, a włączenie po połączeniu mastera czeka na wyjście z gry. "
+                              "Pusta lista = bez blokady."),
                             "dim", wrap=True),
                       field(_("Dozwolone programy (pulpit, Steam, launchery)"), self.apps),
                       left(apps_reset))
@@ -187,6 +188,8 @@ class ConsoleSettings(QDialog):
 
     def _master_tab(self):
         self.master_pad = Combo()
+        self._master_touched = False
+        self.master_pad.changed.connect(lambda _v: setattr(self, "_master_touched", True))
         self.claim = QCheckBox(_("Przejęcie na padzie: PS + R3 przez {s} s").format(s=_claim_s()))
         self.claim.setIcon(icon("r3"))
         who = group(_("PAD MASTER"),
@@ -292,6 +295,7 @@ class ConsoleSettings(QDialog):
             items.append((m.pad, _("{key}  (niepodłączony)").format(key=m.pad), "crown"))
         self.master_pad.set_items(items)
         self.master_pad.set_data(m.pad)
+        self._master_touched = False          # lista mastera ruszana w tym oknie (sygnał changed - tylko od użytkownika)
         self.claim.setChecked(m.claim_hold)
         for k, cb in self.features.items():
             cb.setChecked(k in m.only_master)
@@ -302,7 +306,10 @@ class ConsoleSettings(QDialog):
     def collect_settings(self):
         mouse = MouseConfig(sens=round(self.sens.value(), 2), click_freeze_ms=round(self.freeze.value()),
                             click_rewind_ms=round(self.rewind.value()), drag_threshold=round(self.drag.value()))
-        master = MasterConfig(pad=self.master_pad.currentData() or "", when_absent=self.absent.currentData(),
+        # master niezmieniany w tym oknie zostaje bieżący: korona na karcie pada albo PS + R3 przy otwartych Ustawieniach
+        # nie może zostać cofnięta przez Zapisz (np. przy zmianie samej myszy)
+        pad = (self.master_pad.currentData() or "") if self._master_touched else rx_settings.cur.master.pad
+        master = MasterConfig(pad=pad, when_absent=self.absent.currentData(),
                               only_master=tuple(k for k, cb in self.features.items() if cb.isChecked()),
                               actions={k: c.currentData() or "" for k, c in self.actions.items()},
                               claim_hold=self.claim.isChecked())

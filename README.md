@@ -228,7 +228,7 @@ Tryb konsoli ma własny plik `receiver/console.json` (obok skryptu). Brak pliku 
 | `timeout_s` | 60 | brak pakietów z pada przez tyle sekund = automatyczne OFF (5-3600) |
 | `startup_mode` | `extend` | ekran przy starcie receivera: `extend` albo `internal` |
 | `auto_on_master` | true | połączenie pada master włącza tryb konsoli |
-| `allowed_apps` | pulpit, Steam, launchery | przełączanie trybu tylko przy tych programach na pierwszym planie |
+| `allowed_apps` | pulpit, Steam, launchery | przełączanie trybu tylko przy tych programach na pierwszym planie; pusta lista = bez blokady |
 | `tv_width`, `tv_height` | 2560, 1440 | rozdzielczość TV po włączeniu trybu (najwyższe odświeżanie dla niej; 0 = bez zmiany) |
 | `tv_scale` | 200 | skalowanie TV w %: 100, 125, 150, 175, 200, 225, 250, 300... (0 = bez zmiany) |
 

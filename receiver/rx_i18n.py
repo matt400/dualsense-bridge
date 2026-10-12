@@ -219,9 +219,11 @@ EN = {
     "Włącz tryb konsoli po połączeniu pada master (wyłączasz go tym samym podwójnym kliknięciem)":
         "Turn console mode on when the master pad connects (turn it off with the same double press)",
     "Przełączanie działa tylko, gdy na pierwszym planie jest jeden z tych programów (jeden w linii) - "
-    "w grze podwójne kliknięcie nic nie robi, a włączenie po połączeniu mastera czeka na wyjście z gry.":
+    "w grze podwójne kliknięcie nic nie robi, a włączenie po połączeniu mastera czeka na wyjście z gry. "
+    "Pusta lista = bez blokady.":
         "Switching works only while one of these programs is in the foreground (one per line) - in a game the "
-        "double press does nothing and turning on after the master connects waits until you leave the game.",
+        "double press does nothing and turning on after the master connects waits until you leave the game. "
+        "Empty list = no blocking.",
     "Dozwolone programy (pulpit, Steam, launchery)": "Allowed programs (desktop, Steam, launchers)",
     "Przywróć domyślną listę": "Restore default list",
     "Zmiana trybu konsoli lub języka uruchamia receiver od nowa (pady na chwilę znikną). Niezapisane zmiany "

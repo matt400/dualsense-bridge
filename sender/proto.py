@@ -215,11 +215,20 @@ def is_auth_error(msg):
     return any(k in m for k in _AUTH)
 
 
+def _noise(line):
+    """Linie bez powodu błędu: ogólne zakończenie błędu połączenia, podpowiedzi gita (hint:), postęp pobierania
+    ("From ...", "   a1b2..c3d4  main -> origin/main", " * [new branch] ...")."""
+    low = line.lower()
+    return low.startswith((*_GENERIC, "hint:", "from ")) or (" -> " in line and line[:1] in " *+-=!t")
+
+
 def git_error(text):
-    """Powód błędu gita w jednej linii: bez ogólnego "Could not read from remote repository..." na końcu."""
-    lines = [x.strip() for x in (text or "").splitlines() if x.strip()]
-    useful = [x for x in lines if not x.lower().startswith(_GENERIC)] or lines
-    return " / ".join(useful[:3])
+    """Powód błędu gita w jednej linii: od pierwszej linii "fatal:" / "error:" (z plikami, których dotyczy), bez
+    podpowiedzi, postępu pobierania i ogólnego "Could not read from remote repository..."."""
+    raw = [x.rstrip() for x in (text or "").splitlines() if x.strip()]
+    useful = [x for x in raw if not _noise(x)] or raw
+    start = next((k for k, x in enumerate(useful) if x.lstrip().lower().startswith(("fatal:", "error:"))), 0)
+    return " / ".join(x.strip() for x in useful[start:start + 3])
 
 
 def git(root, *args, git_exe=None, timeout=15):

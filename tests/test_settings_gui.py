@@ -51,7 +51,7 @@ dlg.tabs.setCurrentIndex(2); pump()
 dlg.grab().save(os.path.join(os.path.dirname(__file__), "gui_settings_master.png"))
 pads = [dlg.master_pad.itemData(i) for i in range(dlg.master_pad.count())]
 assert pads == ["", A, B], pads
-dlg.master_pad.set_data(B)
+dlg.master_pad.set_data(B); dlg.master_pad.activated.emit(dlg.master_pad.currentIndex())   # wybór użytkownika
 dlg.features["ps_game"].setChecked(True); dlg.features["console"].setChecked(False)
 dlg.absent.set_data("nobody"); dlg.claim.setChecked(False)
 dlg.actions["sleep"].set_data("square")

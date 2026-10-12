@@ -200,5 +200,37 @@ N.in_sock = real_sock
 check(S.sender_update_msg == "Permission denied (publickey) żółw" and S.peer == ("10.0.0.9", 5005),
       f"pakiet z powodem błędu aktualizacji nadajnika: {S.sender_update_msg!r}")
 
+# ---------- Ustawienia otwarte, master zmieniony koroną / PS + R3: Zapisz go nie cofa ----------
+try:
+    from PySide6.QtWidgets import QApplication
+    app = QApplication.instance() or QApplication([])
+    import rx_qt_console
+except Exception as e:
+    print(f"SKIP master w otwartych Ustawieniach ({e!r})")
+else:
+    MA, MB = "aa:aa:aa:aa:aa:31", "bb:bb:bb:bb:bb:32"
+    C.SETTINGS_PATH = os.path.join(TMP, "settings_master.json")
+    feed(T_IDENT, 0, MA.encode()); state(0); feed(T_IDENT, 1, MB.encode()); state(1)
+    rx_master.set_master(0, save=False)
+    d = rx_qt_console.ConsoleSettings(); d.present()
+    rx_master.set_master(1, save=False)                       # korona na karcie pada 2
+    d.save_btn.click()
+    check(rx_settings.cur.master.pad == MB, f"Zapisz nie cofa mastera zmienionego koroną: {rx_settings.cur.master.pad}")
+    d.present(); d.master_pad.set_data(MA); d.master_pad.activated.emit(d.master_pad.currentIndex())
+    d.save_btn.click()
+    check(rx_settings.cur.master.pad == MA, "wybór mastera w oknie (także powrót do pierwotnego) działa")
+    d.close()
+    rx_settings.apply(rx_settings.defaults())
+
+# ---------- tryb konsoli: pusta lista dozwolonych programów = bez blokady ----------
+cc = rx_console.Console(rx_console.ConsoleConfig(allowed_apps=()))
+FG[0] = "explorer.exe"
+check(cc.blocked_by() is None, "pusta lista dozwolonych: pulpit nie blokuje (wcześniej blokowało wszystko)")
+FG[0] = "eldenring.exe"
+check(cc.blocked_by() is None, "pusta lista dozwolonych: bez blokady także w grze")
+cc = rx_console.Console(rx_console.ConsoleConfig())
+check(cc.blocked_by() == "eldenring.exe", "domyślna lista: gra blokuje")
+FG[0] = None
+
 print("WSZYSTKO OK" if not fails else f"FAIL: {fails}")
 sys.exit(1 if fails else 0)

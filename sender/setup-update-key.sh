@@ -50,11 +50,18 @@ if [ ! -f "$KEY" ]; then
 fi
 
 # to samo polecenie ssh, którego używa nadajnik przy aktualizacji (proto.ssh_command)
-if GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND="ssh -o BatchMode=yes -o ConnectTimeout=15 -i '$KEY' -o IdentitiesOnly=yes \
--o UserKnownHostsFile='$KNOWN' -o StrictHostKeyChecking=accept-new" git -C "$REPO" ls-remote origin HEAD >/dev/null 2>&1; then
+if ERR=$(GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND="ssh -o BatchMode=yes -o ConnectTimeout=15 -i '$KEY' -o IdentitiesOnly=yes \
+-o UserKnownHostsFile='$KNOWN' -o StrictHostKeyChecking=accept-new" git -C "$REPO" ls-remote origin HEAD 2>&1 >/dev/null); then
 	echo "OK - nadajnik ma dostęp do $SLUG. Przycisk Aktualizuj w oknie na PC zaktualizuje też telefon."
 	exit 0
 fi
+case $ERR in
+	*"Permission denied"* | *"publickey"* | *"Repository not found"* | *"not found"*) ;;
+	*)                                        # to nie brak klucza (sieć, DNS, host key...) - instrukcja nic nie da
+		echo "Nie udało się połączyć z GitHubem:" >&2
+		printf '%s\n' "$ERR" | grep -v '^$' | head -5 >&2
+		exit 1 ;;
+esac
 
 cat <<EOF
 
