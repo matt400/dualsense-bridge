@@ -16,6 +16,8 @@ SETTLE_S, MEASURE_S = 0.3, 3.0
 MARGIN, MIN_DZ, MOVE_R = 1.25, 0.03, 0.30
 MAX_SAMPLES = 20_000            # bezpiecznik: 3 s przy 1000 Hz to 3000 próbek
 RAW_S = round(SETTLE_S + MEASURE_S + 3)   # tyle nadajnik trzyma gałki bez strefy martwej (z zapasem)
+EPS = 1e-6                      # (t0 + 0.3) - t0 bywa 0.29999999999995 (zależnie od wartości monotonic) - bez tego
+                                # "minęło 0.3 s" wypadało raz tak, raz nie (niestabilny test widoku Test)
 
 
 def unit(v):
@@ -76,13 +78,13 @@ class DriftRun:
 
     def tick(self, now):
         if self.phase == "settle":
-            if now - self.t0 < SETTLE_S:
+            if now - self.t0 < SETTLE_S - EPS:
                 return None
             with S.lock:
                 S.probe[self.slot] = [S.states[self.slot]["rawst"]]     # stan, który już jest, też się liczy
             self.phase = "measure"
             return None
-        if self.phase != "measure" or now - self.t0 < SETTLE_S + MEASURE_S:
+        if self.phase != "measure" or now - self.t0 < SETTLE_S + MEASURE_S - EPS:
             return None
         samples = self._stop()
         return analyze(samples) if samples else None

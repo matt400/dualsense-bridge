@@ -41,8 +41,14 @@ run = D.DriftRun(0, 20.0, lambda s, secs: calls.append((s, secs)))
 run.tick(20.0 + D.SETTLE_S)
 run.cancel()
 assert calls[-1] == (0, 0) and S.probe[0] is None and run.tick(30.0) is None, "przerwanie oddaje strefę martwą nadajnikowi"
+t0 = 10000 / 7                                    # (t0 + 0.3) - t0 < 0.3 w arytmetyce float - granica musi się liczyć
+assert (t0 + D.SETTLE_S) - t0 < D.SETTLE_S and (t0 + D.SETTLE_S + D.MEASURE_S) - t0 < D.SETTLE_S + D.MEASURE_S
+run = D.DriftRun(0, t0)
+assert run.tick(t0 + D.SETTLE_S) is None and run.phase == "measure", "dokładnie po SETTLE_S - pomiar trwa"
+assert run.tick(t0 + D.SETTLE_S + D.MEASURE_S) is not None and run.phase == "done", "dokładnie po czasie - wynik"
 state(0)
-ok("pomiar: gałki bez strefy nadajnika -> próbki z każdego pakietu przez 3 s -> strefa wraca; przerwanie sprząta")
+ok("pomiar: gałki bez strefy nadajnika -> próbki z każdego pakietu przez 3 s -> strefa wraca; przerwanie sprząta; "
+   "granice czasu odporne na zaokrąglenia float")
 
 # ---------- korekcja dryfu: per pad, każdy profil, gałka fizyczna ----------
 rx_padcal.reload()
