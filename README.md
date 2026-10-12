@@ -163,6 +163,18 @@ Wersja (commit i data) jest w nagłówku okna obok nazwy, a wersja nadajnika prz
 receivera = żółty kolor. Wymaga klonów git po obu stronach (`git clone https://github.com/matt400/dualsense-bridge`;
 na telefonie potem `doas ./install-service.sh` z nowego folderu i `doas apk add git`) oraz Git for Windows.
 Ustawienia i profile (`console.json`, `settings.json`, `remap.json`, `sender.toml`, `slots.json`) zostają nietknięte.
+
+Repozytorium jest prywatne, a usługa nadajnika nie ma Twojego klucza SSH (brak agenta, klucz z hasłem) - git pull na
+telefonie kończył się `Could not read from remote repository`. Jednorazowo na telefonie, jako zwykły użytkownik
+(bez `doas`):
+
+```
+cd dualsense-bridge/sender
+./setup-update-key.sh      # tworzy klucz tylko do odczytu w .git/ i wypisuje, co wkleić na GitHubie
+./setup-update-key.sh      # po dodaniu klucza: sprawdza dostęp ("OK - nadajnik ma dostęp")
+```
+
+Powód nieudanej aktualizacji nadajnika jest widoczny w oknie na PC (np. `Permission denied (publickey)`).
 Bez okna: `update.bat` w głównym folderze (tylko receiver).
 
 Autostart nadajnika na telefonie - usługa systemd działająca jako root (wibracja przez `/dev/hidraw`, tryb niskich
