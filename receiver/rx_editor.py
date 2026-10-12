@@ -9,7 +9,7 @@ import copy
 import rx_buttons as B
 import rx_profiles as P
 import rx_state as S
-from rx_shape import GYRO_DEF, STICK_DEF, TRIG_DEF, TRIG_FX_DEF
+from rx_shape import GYRO_DEF, RUMBLE_DEF, STICK_DEF, TRIG_DEF, TRIG_FX_DEF, TRIG_PARAMS
 
 SHORT = {"cross": "✕", "circle": "○", "triangle": "△", "square": "□", "l1": "L1", "r1": "R1", "share": "SHARE",
          "options": "OPT", "ps": "PS", "l3": "L3", "r3": "R3", "dpad_up": "↑", "dpad_down": "↓", "dpad_left": "←",
@@ -29,6 +29,24 @@ def profile_name(key):
     return S.profile_label(key) if B.is_game_key(key) else _("Domyślny")
 
 
+def describe_trigger(name, e):
+    """Wpis efektów spustów profilu ("l2" / "r2" / "rumble") -> opis na liście zmian."""
+    if name == "rumble":
+        if not e["on"]:
+            return _("Wibracja z gry na spustach: wyłączona")
+        return _("Wibracja z gry na spustach: siła {gain}%, {freq} Hz").format(gain=e["gain"], freq=e["freq"])
+    b = SHORT[name]
+    match e["mode"]:
+        case "res":
+            return _("Opór {b}: od {start}%, siła {force}/8").format(b=b, start=e["start"] * 10, force=e["force"])
+        case "click":
+            return _("Klik {b}: w {pos}%, siła {force}/8").format(b=b, pos=e["pos"] * 10, force=e["force"])
+        case "vib":
+            return _("Wibracja {b}: od {start}%, siła {amp}/8, {freq} Hz").format(
+                b=b, start=e["start"] * 10, amp=e["amp"], freq=e["freq"])
+    return _("Efekt {b}: wyłączony").format(b=b)
+
+
 def _tuning_defaults(name):
     return TRIG_DEF if name in B.TRIGGERS else STICK_DEF
 
@@ -41,6 +59,7 @@ class Editor:
         self.base = None            # klucz profilu pada, dla którego załadowano stan (zmienia się, gdy nadejdzie id pada)
         self.key = None
         self.prof, self.saved, self.in_file = empty(), empty(), False
+        self._fx_mem = {}           # ostatnie wartości suwaków efektów spustów (zmiana trybu ich nie gubi)
         self.select()
 
     # ---------- ładowanie ----------
@@ -109,19 +128,41 @@ class Editor:
     def clear_tuning(self, name):
         self.prof["tuning"].pop(name, None)
 
+    def is_game(self):
+        return B.is_game_key(self.key)
+
     def trigger_fx(self, name):
-        """Opór spustu L2 / R2: {"start": 0-9, "force": 0-8} (siła 0 = bez oporu)."""
-        return {**TRIG_FX_DEF, **self.prof["triggers"].get(name, {})}
+        """Efekt spustu L2 / R2: {"mode", parametry wszystkich trybów} - suwaki pamiętają wartości innych trybów.
+        mode "inherit" = profil gry bez wpisu (jak w profilu pada)."""
+        e = self.prof["triggers"].get(name)
+        mode = e["mode"] if e else "inherit" if self.is_game() else "off"
+        return {**self._fx_mem.get(name, TRIG_FX_DEF), **(e or {}), "mode": mode}
 
     def set_trigger_fx(self, name, **patch):
         e = {**self.trigger_fx(name), **patch}
-        if e["force"]:
-            self.prof["triggers"][name] = e
+        self._fx_mem[name] = {k: v for k, v in e.items() if k != "mode"}
+        mode = e["mode"]
+        if mode == "inherit" or (mode == "off" and not self.is_game()):
+            self.prof["triggers"].pop(name, None)     # profil pada: brak wpisu = wyłączone
         else:
-            self.prof["triggers"].pop(name, None)
+            self.prof["triggers"][name] = {"mode": mode, **{k: e[k] for k in TRIG_PARAMS[mode]}}
 
     def clear_trigger_fx(self, name):
         self.prof["triggers"].pop(name, None)
+
+    def rumble_fx(self):
+        """Wibracja z gry na spustach: {"on": True / False / None (profil gry: jak w profilu pada), "gain", "freq"}."""
+        e = self.prof["triggers"].get("rumble")
+        on = e["on"] if e else None if self.is_game() else False
+        return {**self._fx_mem.get("rumble", RUMBLE_DEF), **(e or {}), "on": on}
+
+    def set_rumble_fx(self, **patch):
+        e = {**self.rumble_fx(), **patch}
+        self._fx_mem["rumble"] = {k: v for k, v in e.items() if k != "on"}
+        if e["on"] is None or (not e["on"] and not self.is_game()):
+            self.prof["triggers"].pop("rumble", None)
+        else:
+            self.prof["triggers"]["rumble"] = {"on": bool(e["on"]), "gain": e["gain"], "freq": e["freq"]}
 
     def gyro(self):
         return {**GYRO_DEF, **self.prof["gyro"]}
@@ -174,8 +215,8 @@ class Editor:
             src = _("środek") if e["src"] == "none" else _(STICK_NAME[e["src"]])
             out.append((f"{_(STICK_NAME[name])} ← {src}" + (f" ({inv})" if inv else ""), lambda n=name: self.clear_stick(n)))
         out += [(self._describe_tuning(name), lambda n=name: self.clear_tuning(n)) for name in self.prof["tuning"]]
-        out += [(_("Opór {b}: od {start}%, siła {force}/8").format(b=SHORT[name], start=e["start"] * 10, force=e["force"]),
-                 lambda n=name: self.clear_trigger_fx(n)) for name, e in self.prof["triggers"].items()]
+        out += [(describe_trigger(name, e), lambda n=name: self.clear_trigger_fx(n))
+                for name, e in self.prof["triggers"].items()]
         g = self.gyro()
         if g["mode"] != "off":
             hold = _("zawsze") if g["hold"] == "always" else _("przytrzymaj {b}").format(b=L[g["hold"]])

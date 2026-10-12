@@ -12,8 +12,8 @@ run() { name=$1; shift
 if command -v ruff >/dev/null 2>&1; then ruff check --quiet $RX $TX $T || fail=1      # reguły w pyproject.toml
 else python3 -m pyflakes $RX/*.py $TX/*.py | grep -v "imported but unused" && fail=1; fi
 cmp -s $RX/proto.py $TX/proto.py || { echo "FAIL  proto.py różni się między receiver/ i sender/"; fail=1; }
-for t in test_tx test_drop test_tx2 test_bugs_tx test_shutdown test_resilience_tx test_slots_tx test_rumble_tx test_rt_tx test_review_tx test_update_key_tx test_features_tx test_wol_tx h_rate; do run $t python3 $T/$t.py $TX; done
-for t in test_i18n test_rx2 test_editor test_bugs test_resilience test_startup test_console test_master test_restart test_review test_features test_extras; do run $t python3 $T/$t.py $RX; done
+for t in test_tx test_drop test_tx2 test_bugs_tx test_shutdown test_resilience_tx test_slots_tx test_rumble_tx test_trigfx_tx test_rt_tx test_review_tx test_update_key_tx test_features_tx test_wol_tx h_rate; do run $t python3 $T/$t.py $TX; done
+for t in test_i18n test_rx2 test_editor test_bugs test_resilience test_startup test_console test_master test_restart test_review test_features test_trigfx test_extras; do run $t python3 $T/$t.py $RX; done
 run test_e2e python3 $T/test_e2e.py $RX $TX
 run test_service_tx python3 $T/test_service_tx.py $TX
 run test_update python3 $T/test_update.py $RX

@@ -6,7 +6,7 @@ import traceback
 from proto import SeqFilter
 from rx_buttons import apply_remap, apply_sticks, pressed_inputs
 from rx_config import C
-from rx_shape import gyro_mouse_velocity, gyro_rates, gyro_stick, shape_stick, shape_trigger
+from rx_shape import gyro_mouse_velocity, gyro_rates, gyro_stick, merge_triggers, shape_stick, shape_trigger
 
 lock = threading.Lock()
 profile_lock = threading.RLock()            # wybór profilu (gra / edytor / skróty / ident) z kilku wątków
@@ -178,12 +178,22 @@ def active_key(i):
     return base
 
 
+def effective_profile(i, key):
+    """Profil do użycia na padzie: profil gry dziedziczy z profilu pada efekty spustów, których sam nie ustawia
+    (pozostałe części profilu gry zastępują profil pada w całości, jak dotąd)."""
+    prof = store.get(key)
+    base = profile_key(i)
+    if key != base:
+        prof["triggers"] = merge_triggers(store.get(base)["triggers"], prof["triggers"])
+    return prof
+
+
 def reload_profile(i):
     """Ustawia profil wg active_key(). -> True, gdy zmienił się klucz profilu."""
     with profile_lock:
         key = active_key(i)
         changed, active[i] = key != active[i], key
-        set_remap(i, store.get(key))
+        set_remap(i, effective_profile(i, key))
         return changed
 
 

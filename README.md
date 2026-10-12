@@ -31,8 +31,14 @@ DualSense ──Bluetooth──> telefon: sender/ ──UDP 5005──> PC: rece
   - po prawej profil (domyślny / per gra), zakładki **Selected**, **Gyro**, **Changes** i przycisk **Save** (Ctrl+S);
   - remapowanie przycisków i gałek, celowanie żyroskopem (prawa gałka / mysz); strefy martwe, krzywe i
     anti-deadzone w zwijanej sekcji „Zaawansowane” (otwiera się sama, gdy coś w niej zmieniono);
-  - **stały opór spustów** (adaptive triggers) L2 / R2 w profilu - np. w profilu gry wyścigowej: siła 1-8 i od
-    którego miejsca skoku działa. Gra przez wirtualnego DS4 tego nie wyśle, więc ustawia to nadajnik raportem HID;
+  - **efekty spustów** (adaptive triggers) L2 / R2 w profilu: **opór** (siła 1-8, od którego miejsca skoku),
+    **klik** jak spust broni (punkt 20-70 % skoku i siła) albo **drgania** (od którego miejsca, siła,
+    częstotliwość). Gra przez wirtualnego DS4 tego nie wyśle, więc ustawia to nadajnik raportem HID. Profil gry
+    może je nadpisać albo zostawić „jak w profilu pada”; w Ustawienia → Master można je zastrzec tylko dla mastera;
+  - **wibracja z gry na spustach** (namiastka): L2 drga jak duży silnik, R2 jak mały, z ustawianą siłą
+    i częstotliwością; na czas wibracji zastępuje efekt spustu, po chwili ciszy efekt wraca. Liczy to nadajnik
+    z tych samych pakietów wibracji - bez dodatkowego ruchu w sieci. Klik, drgania i wibracja z gry wymagają
+    nadajnika v8 (starszy dostaje sam opór);
   - profile per gra (`gra.exe`), które włączają się same, gdy gra jest aktywnym oknem;
   - zmiany działają na padzie od razu, zapis do `remap.json` jest osobno;
   - akcje nieodwracalne (wyłączenie pada, usunięcie profilu, reset, restart receivera) wymagają drugiego kliknięcia;
@@ -343,6 +349,8 @@ Testy obejmują:
 - okno receivera (Qt offscreen, bez ekranu);
 - kopie ustawień, pomiar opóźnienia (state2 / pong2, zegar PC, Bluetooth) i opór spustów w raporcie HID
   (`test_features.py`, `test_features_tx.py`);
+- efekty spustów: klik, drgania, wibracja z gry, trig2 / trig wg wersji nadajnika, dziedziczenie w profilu gry,
+  tylko master (`test_trigfx.py`, `test_trigfx_tx.py`);
 - regresje z przeglądu bugów (`test_review.py`, `test_review_tx.py`);
 - przycisk → gra, dziennik zdarzeń (też zdarzenia nadajnika end-to-end), lightbar od baterii, ustawienia dla nadajnika
   (`test_extras.py`, `test_extras_gui.py`) oraz Wake-on-LAN po stronie telefonu - kombinacja, ARP, broadcast, magic

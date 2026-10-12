@@ -1,5 +1,7 @@
 """Receiver: feedback do pada (wibracja, lightbar) z gry przez ViGEm + krótkie potwierdzenia skrótów,
-oraz opór spustów z aktywnego profilu (gra przez DS4 go nie ustawi - robi to nadajnik raportem HID).
+oraz efekty spustów z aktywnego profilu (gra przez DS4 ich nie ustawi - robi to nadajnik raportem HID): opór, klik,
+wibracja spustu i wibracja z gry na spustach (liczona na nadajniku z tych samych pakietów wibracji). Funkcja mastera
+"triggers" (Ustawienia -> Master) = efekty tylko na padzie mastera, pozostałe pady mają zwykłe spusty.
 
 Lightbar: gdy gra nic nie ustawiła - kolor z ustawień pada (stały / wg baterii, rx_lightbar); niska bateria miga
 na czerwono także nad kolorem gry; potwierdzenia (np. złoty błysk mastera) zawsze na wierzchu."""
@@ -9,12 +11,14 @@ import time
 import rx_lightbar as L
 import rx_settings
 import rx_state as S
-from proto import clamp
+from proto import CAP_TRIG_FX, TRIG2_OFF, clamp
 from rx_config import C
-from rx_shape import trigger_values
+from rx_shape import legacy_values, trigger_values
 
-TRIG_REFRESH_S = 2.0   # opór spustów odświeżany co tyle (pad po ponownym połączeniu / zgubiony pakiet)
-TRIG_REPEAT = 3        # zmiana oporu wysyłana tyle razy (UDP)
+FX_SENDER = 8          # od tej wersji nadajnik zna trig2 (z bitem CAP_TRIG_FX w pakiecie version)
+
+TRIG_REFRESH_S = 2.0   # efekty spustów odświeżane co tyle (pad po ponownym połączeniu / zgubiony pakiet)
+TRIG_REPEAT = 3        # zmiana efektów wysyłana tyle razy (UDP)
 
 # potwierdzenia na padzie: (czas s, mała wibracja, duża wibracja, kolor lightbara | None = bez zmiany koloru)
 PULSES = {
@@ -36,7 +40,7 @@ fb = []
 fb_event = threading.Event()
 pulses = []       # aktywne potwierdzenie per slot: (koniec, mała, duża, kolor | None) albo None
 fb_sent = []      # (wartość, czas) ostatnio wysłanego feedbacku; None = wyślij przy najbliższej okazji
-trig_sent = []    # (opór spustów, czas) ostatnio wysłany per slot; None = nic (pad ma domyślne spusty)
+trig_sent = []    # (efekty spustów, czas) ostatnio wysłane per slot; None = nic (pad ma domyślne spusty)
 cbs = []
 
 
@@ -114,14 +118,28 @@ def _target(i, now):
 
 def feedback_thread(send, send_trig=None):
     """send(slot, (mała, duża, r, g, b)) - wysyłka do nadajnika (rx_net.send_feedback);
-    send_trig(slot, (L2 początek, siła, R2 początek, siła), powtórzenia) - opór spustów (rx_net.send_triggers)."""
+    send_trig(slot, wartości trig2 (12) albo trig (4), powtórzenia) - efekty spustów (rx_net.send_triggers)."""
     _loop(send, send_trig)
 
 
+def sender_fx(i):
+    """Nadajnik tego pada zna trig2 (klik, wibracja spustu, wibracja z gry)."""
+    info = S.sender_info[i]
+    return info is not None and info[0] >= FX_SENDER and bool(info[1] & CAP_TRIG_FX)
+
+
+def trigger_target(i):
+    """Wartości do wysłania: trig2 dla nowego nadajnika, trig (sam opór) dla starszego; bez efektów, gdy
+    efekty spustów są tylko dla mastera, a to nie master."""
+    import rx_master        # rx_master importuje ten moduł
+    vals = trigger_values(S.remap_maps[i]["triggers"]) if rx_master.allowed(i, "triggers") else TRIG2_OFF
+    return vals if sender_fx(i) else legacy_values(vals)
+
+
 def triggers_tick(i, now, send_trig):
-    """Opór spustów z profilu slotu: zmiana -> od razu (kilka razy), stały opór -> odświeżanie co TRIG_REFRESH_S.
-    Bez oporu i bez wcześniejszej zmiany nic nie wysyła - pad zostaje z domyślnymi spustami."""
-    vals = trigger_values(S.remap_maps[i]["triggers"])
+    """Efekty spustów z profilu slotu: zmiana -> od razu (kilka razy), stałe efekty -> odświeżanie co TRIG_REFRESH_S.
+    Bez efektów i bez wcześniejszej zmiany nic nie wysyła - pad zostaje z domyślnymi spustami."""
+    vals = trigger_target(i)
     last = trig_sent[i]
     if last is None and not any(vals):
         return

@@ -76,6 +76,7 @@ MASTER_FEATURES = {
     "profile": ("Zmiana profilu (PS + ← / →)", "dpad_right"),
     "mouse": ("Touchpad jako mysz (PS + klik)", "mouse"),
     "sens": ("Czułość myszy (PS + ↑ / ↓)", "dpad_up"),
+    "triggers": ("Efekty spustów (opór, klik, wibracja)", "r2"),
 }
 # akcje mastera: klucz -> (opis, wymaga przytrzymania HOLD_S - ochrona przed przypadkiem)
 MASTER_ACTIONS = {

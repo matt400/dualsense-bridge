@@ -84,21 +84,37 @@ ok("karty padów: łącze, bateria, niski stan, profil gry, wyłączenie po drug
 S.set_game(None)
 click_part("right_stick"); assert win.part == "right_stick" and win.part_page.stack.currentIndex() == 2
 click_part("r2"); assert win.part_page.stack.currentIndex() == 1 and win.part_page.title.text() == "R2 (trigger)" and win.part_page.trig.isVisible()
-# opór spustu: siła 0 = wyłączony (początek zablokowany), zmiana idzie do profilu i na plakietkę
+# efekt spustu: tryb (profil pada: bez "jak w profilu pada"), suwaki trybu, profil, plakietka, ostrzeżenia
 pp = win.part_page
-assert pp.fx_force.val.text() == "off" and not pp.fx_start.isEnabled()
-pp.fx_force.slider.setValue(6); pp.fx_start.slider.setValue(3); pump(300)
-assert store.get(base)["triggers"] == {"r2": {"start": 3, "force": 6}} and pp.fx_start.isEnabled()
+modes = [pp.fx_mode.itemData(k) for k in range(pp.fx_mode.count())]
+assert modes == ["off", "res", "click", "vib"] and pp.fx_mode.currentData() == "off", modes
+assert not any(r.isVisible() for r in pp.fx.values()) and not pp.rv_gain.isVisible()
+pp.fx_mode.changed.emit("res"); pump(50)
+assert pp.fx["start"].isVisible() and pp.fx["force"].isVisible() and not pp.fx["pos"].isVisible()
+pp.fx["force"].slider.setValue(5); pp.fx["start"].slider.setValue(3); pump(300)
+assert store.get(base)["triggers"] == {"r2": {"mode": "res", "start": 3, "force": 6}}, store.get(base)["triggers"]
 assert any(b[3] == "fx" and b[2] == "resist 6" for b in win.pad.badges)
 assert any("Resistance R2: from 30%, strength 6/8" == t for t, _u in win.ed.changes())
 assert pp.fx_warn.isVisible() and "older sender" in pp.fx_warn.text(), "pad bez informacji o nadajniku v6"
 S.sender_info[0] = (6, 7, 0); win.slow_tick(); assert not pp.fx_warn.isVisible()
 S.sender_info[0] = (6, 1, 0); win.slow_tick(); assert pp.fx_warn.isVisible() and "HID" in pp.fx_warn.text()
+S.sender_info[0] = (7, 7, 0)
+pp.fx_mode.changed.emit("click"); pump(300)
+assert pp.fx["pos"].isVisible() and not pp.fx["start"].isVisible() and pp.fx["force"].val.text() == "6 / 8"
+assert store.get(base)["triggers"] == {"r2": {"mode": "click", "pos": 5, "force": 6}}, "siła zapamiętana przy zmianie trybu"
+win.slow_tick(); assert pp.fx_warn.isVisible() and "newer sender" in pp.fx_warn.text(), "klik wymaga nadajnika v8"
+S.sender_info[0] = (8, 15, 0); win.slow_tick(); assert not pp.fx_warn.isVisible()
+pp.rv_on.changed.emit("on"); pump(300)
+assert pp.rv_gain.isVisible() and store.get(base)["triggers"]["rumble"] == {"on": True, "gain": 100, "freq": 40}
+assert any(b[3] == "fx" and b[2] == "click 6 + game rumble" for b in win.pad.badges)
+assert any(b[3] == "fx" and b[2] == "game rumble" for b in win.pad.badges), "L2 bez efektu - sama wibracja z gry"
+pp.rv_gain.slider.setValue(5); pump(300)
+assert store.get(base)["triggers"]["rumble"]["gain"] == 60
 S.sender_info[0] = None
-pp.fx_force.slider.setValue(0); pump(300)
+pp.fx_mode.changed.emit("off"); pp.rv_on.changed.emit("off"); pump(300)
 assert "triggers" not in store.get(base) or store.get(base)["triggers"] == {}
 assert not pp.trig_adv.is_open(), "reakcja spustu zwinięta, dopóki nic w niej nie zmieniono"
-ok("opór spustu: siła / początek, profil, plakietka, ostrzeżenie o nadajniku")
+ok("efekt spustu: tryby i ich suwaki, wibracja z gry, profil, plakietki, ostrzeżenia o nadajniku")
 click_part("cross"); assert not win.part_page.trig.isVisible()
 win.part_page.dst.changed.emit("circle"); pump(300)
 assert store.get(base)["buttons"] == {"cross": "circle"} and S.remap_maps[0]["buttons"] == {"cross": "circle"}

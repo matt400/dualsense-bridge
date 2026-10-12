@@ -10,7 +10,7 @@ import rx_net
 import rx_status as ST
 from proto import (BODY, LAT_NONE, STATE_FIELDS, T_PONG, T_PONG2, T_STATE, T_STATE2, T_TRIG, TRIG_FORCE_MAX, Codec)
 from rx_buttons import normalize_profile
-from rx_shape import normalize_triggers, trigger_values
+from rx_shape import legacy_values, normalize_triggers, trigger_values
 
 ok = lambda m: print("OK  ", m)
 C.CONSOLE_PATH = os.path.join(TMP, "console.json")
@@ -133,10 +133,10 @@ ok("handle: pomiar z state2 do stanu slotu (rx_ds4 kończy go w ViGEm), czyszcze
 
 # ---------- opór spustów: normalizacja, profil, wysyłka z pętli feedbacku ----------
 assert normalize_triggers({"l2": {"start": 15, "force": 99}, "r2": {"force": 0}, "x": {}}) == \
-    {"l2": {"start": 9, "force": TRIG_FORCE_MAX}}, "zakresy, siła 0 = brak wpisu, nieznane klucze odrzucone"
+    {"l2": {"mode": "res", "start": 9, "force": TRIG_FORCE_MAX}}, "stary zapis: zakresy, siła 0 = brak wpisu"
 assert normalize_triggers("x") == {} and normalize_triggers({"r2": "x"}) == {}
 p = normalize_profile({"triggers": {"r2": {"start": 3, "force": 6}}})
-assert trigger_values(p["triggers"]) == (0, 0, 3, 6) and trigger_values({}) == (0, 0, 0, 0)
+assert legacy_values(trigger_values(p["triggers"])) == (0, 0, 3, 6) and trigger_values({}) == (0,) * 12
 ok("opór spustów: normalizacja i wartości pakietu")
 
 trig = []

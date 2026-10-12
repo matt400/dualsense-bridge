@@ -420,13 +420,54 @@ EN = {
         "Buttons, D-pad and triggers only (press / release) - no sticks or gyro.",
     "Wyzeruj pomiar przycisk → gra": "Reset the button → game measurement",
     "Wyzeruj": "Reset",
-    # ---------- opór spustów ----------
-    "OPÓR SPUSTU": "TRIGGER RESISTANCE",
-    "Siła oporu": "Resistance strength",
-    "Opór od (skok spustu)": "Resistance from (trigger travel)",
-    "Stały opór DualSense, np. do wyścigów - najlepiej w profilu gry. Gra przez DS4 go nie ustawi, więc robi to nadajnik.":
-        "Constant DualSense resistance, e.g. for racing - best in a game profile. A game talking to a DS4 can't set it, "
-        "so the sender does.",
+    # ---------- efekty spustów ----------
+    "EFEKT SPUSTU": "TRIGGER EFFECT",
+    "Efekt": "Effect",
+    "Jak w profilu pada": "As in the pad profile",
+    "W tej grze spust działa tak, jak ustawiono w profilu domyślnym pada.":
+        "In this game the trigger works as set in the pad's default profile.",
+    "Wyłączony": "Off",
+    "Spust bez efektu.": "Trigger without an effect.",
+    "Opór": "Resistance",
+    "Stały opór od wybranego miejsca skoku, np. gaz i hamulec w wyścigach.":
+        "Constant resistance from the chosen point of travel, e.g. throttle and brake in racing games.",
+    "Klik": "Click",
+    "Opór narasta do wybranego punktu i puszcza z kliknięciem - jak spust broni.":
+        "Resistance builds up to the chosen point and releases with a click - like a gun trigger.",
+    "Drgania": "Vibration",
+    "Spust drga stale od wybranego miejsca skoku.": "The trigger vibrates constantly from the chosen point of travel.",
+    "Od (skok spustu)": "From (trigger travel)",
+    "Punkt kliku (skok spustu)": "Click point (trigger travel)",
+    "Siła": "Strength",
+    "Siła drgań": "Vibration strength",
+    "Częstotliwość drgań": "Vibration frequency",
+    "Gra przez DS4 nie ustawi efektów DualSense, więc robi to nadajnik. W profilu gry „Jak w profilu pada” bierze "
+    "ustawienie z profilu domyślnego.":
+        "A game talking to a DS4 can't set DualSense effects, so the sender does. In a game profile "
+        "“As in the pad profile” takes the setting from the default profile.",
+    "WIBRACJA Z GRY NA SPUSTACH": "GAME RUMBLE ON TRIGGERS",
+    "Wibracja z gry": "Game rumble",
+    "Włączona": "On",
+    "Wyłączona": "Off",
+    "Siła (względem wibracji pada)": "Strength (relative to pad rumble)",
+    "Namiastka wibracji spustów: L2 drga jak duży silnik pada, R2 jak mały. Na czas wibracji zastępuje efekt spustu, "
+    "po chwili ciszy efekt wraca. Wspólne dla L2 i R2.":
+        "A stand-in for trigger rumble: L2 vibrates like the pad's large motor, R2 like the small one. While it "
+        "vibrates it replaces the trigger effect, which comes back after a short pause. Shared by L2 and R2.",
+    "Klik i wibracja spustu wymagają nowszego nadajnika - kliknij Aktualizuj (opór działa).":
+        "Trigger click and vibration need a newer sender - click Update (resistance works).",
+    "Efekty spustów są tylko dla pada master (Ustawienia -> Master).":
+        "Trigger effects are for the master pad only (Settings -> Master).",
+    "Efekty spustów (opór, klik, wibracja)": "Trigger effects (resistance, click, vibration)",
+    "Klik {b}: w {pos}%, siła {force}/8": "Click {b}: at {pos}%, strength {force}/8",
+    "Wibracja {b}: od {start}%, siła {amp}/8, {freq} Hz": "Vibration {b}: from {start}%, strength {amp}/8, {freq} Hz",
+    "Efekt {b}: wyłączony": "Effect {b}: off",
+    "Wibracja z gry na spustach: siła {gain}%, {freq} Hz": "Game rumble on triggers: strength {gain}%, {freq} Hz",
+    "Wibracja z gry na spustach: wyłączona": "Game rumble on triggers: off",
+    "klik {n}": "click {n}",
+    "drgania {n}": "vibr {n}",
+    "bez efektu": "no effect",
+    "wibr. gry": "game rumble",
     "Nadajnik w starszej wersji nie ustawia oporu - kliknij Aktualizuj.":
         "An older sender can't set the resistance - click Update.",
     "Opór wymaga raportu HID na telefonie (jak wibracja przez HID) - nadajnik go nie ma.":

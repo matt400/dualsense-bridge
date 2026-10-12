@@ -210,7 +210,7 @@ async def run_ctrl(c):
     try:
         c.init_state()
         c.rumble = Rumble(c.idx, c.pad_dev, C.RUMBLE)
-        if any(c.triggers):                   # opór spustów przyszedł z PC, zanim pad był gotowy
+        if any(c.triggers):                   # efekty spustów przyszły z PC, zanim pad był gotowy
             c.rumble.set_triggers(c.triggers)
         print(f"== Controller {c.idx} ({c.key})")
         print(f"   Pad:    {c.pad_dev.name} ({c.pad_dev.path})")

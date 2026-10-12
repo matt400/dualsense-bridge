@@ -2,7 +2,7 @@
 from rx_i18n import _
 import rx_latency
 import rx_state as S
-from proto import CAP_TRIGGERS, RUMBLE_EVDEV, RUMBLE_HIDRAW, WHY_ACCESS, WHY_NO_HIDRAW, WHY_NOT_FOUND, WHY_OFF
+from proto import CAP_TRIG_FX, CAP_TRIGGERS, RUMBLE_EVDEV, RUMBLE_HIDRAW, WHY_ACCESS, WHY_NO_HIDRAW, WHY_NOT_FOUND, WHY_OFF
 
 INFO_MAX_AGE = 3.0   # pakiet "info" starszy niż tyle = brak danych o pingu i Hz
 LAT_WARN_MS, LAT_BAD_MS = 6.0, 15.0     # opóźnienie pad -> gra (średnia): powyżej = żółty / czerwony
@@ -128,8 +128,9 @@ def rumble_status(i):
     return _("wibracja: {ways}").format(ways=" + ".join(ways)), "", ""
 
 
-def triggers_status(i):
-    """Czy nadajnik ustawi opór spustów temu padowi -> (tekst, poziom); ("", "") = działa albo pad niepodłączony."""
+def triggers_status(i, fx=False):
+    """Czy nadajnik ustawi efekty spustów temu padowi -> (tekst, poziom); ("", "") = działa albo pad niepodłączony.
+    fx: profil używa kliku / wibracji spustu / wibracji z gry (trzeba nadajnika z CAP_TRIG_FX)."""
     if not S.alive[i]:
         return "", ""
     info = S.sender_info[i]
@@ -137,4 +138,9 @@ def triggers_status(i):
         return _("Nadajnik w starszej wersji nie ustawia oporu - kliknij Aktualizuj."), "warn"
     if not info[1] & CAP_TRIGGERS:
         return _("Opór wymaga raportu HID na telefonie (jak wibracja przez HID) - nadajnik go nie ma."), "warn"
+    if fx and not info[1] & CAP_TRIG_FX:
+        return _("Klik i wibracja spustu wymagają nowszego nadajnika - kliknij Aktualizuj (opór działa)."), "warn"
+    import rx_master        # leniwie: rx_master ciągnie wątki i WinAPI, a status jest czytany też bez nich
+    if not rx_master.allowed(i, "triggers"):
+        return _("Efekty spustów są tylko dla pada master (Ustawienia -> Master)."), "warn"
     return "", ""

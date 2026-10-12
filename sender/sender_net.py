@@ -5,7 +5,7 @@ import socket
 import time
 
 from proto import (BODY, E_NET_DOWN, E_NO_RECEIVER, RTT_NONE, Codec, SeqFilter, T_CMD, T_FB, T_PING, T_PONG, T_PONG2,
-                   T_SCFG, T_TRIG)
+                   T_SCFG, T_TRIG, T_TRIG2)
 import sender_events as events
 import sender_state as state
 from sender_config import C
@@ -20,7 +20,7 @@ pongs = 0
 fb_filter = SeqFilter(1.0)            # z oknem czasowym: restart receivera (losowe seq) nie blokuje feedbacku
 on_feedback = None                    # callback(idx, (small, large, r, g, b)) ustawiany w main
 on_command = None                     # callback(idx, cmd, arg) ustawiany w main
-on_triggers = None                    # callback(idx, (l2 początek, l2 siła, r2 początek, r2 siła)) ustawiany w main
+on_triggers = None                    # callback(idx, wartości trig2 (12) albo trig (4)) ustawiany w main
 on_scfg = None                        # callback(flagi, mac, broadcast, przycisk, przytrzymanie ms) ustawiany w main
 scfg_t = 0.0                          # kiedy przyszedł pakiet scfg - receiver zna build2 i zdarzenia
 NEW_RECEIVER_S = 30.0
@@ -156,9 +156,9 @@ def on_readable():
         elif t == T_CMD:
             if fb_filter.fresh(("cmd", idx), sq, time.monotonic()) and on_command is not None:
                 on_command(idx, *BODY[T_CMD].unpack_from(data, 4))
-        elif t == T_TRIG:
+        elif t in (T_TRIG, T_TRIG2):    # trig2: efekty spustów (v8+), trig: sam opór (starszy receiver)
             if fb_filter.fresh(("trig", idx), sq, time.monotonic()) and on_triggers is not None:
-                on_triggers(idx, BODY[T_TRIG].unpack_from(data, 4))
+                on_triggers(idx, BODY[t].unpack_from(data, 4))
         elif t == T_SCFG:
             now = time.monotonic()
             if fb_filter.fresh(("scfg",), sq, now):
