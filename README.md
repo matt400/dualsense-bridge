@@ -47,7 +47,24 @@ DualSense ──Bluetooth──> telefon: sender/ ──UDP 5005──> PC: rece
   - **pełny ekran = tryb TV:** większy interfejs (czytelny z kanapy) i sterowanie oknem padem, gdy okno jest
     aktywne: D-pad - poruszanie się, ✕ - wybór, ○ - wstecz / wyjście z pełnego ekranu, L1 / R1 - poprzedni / następny
     pad, PS trzymane - zwykłe skróty;
-  - przyciski pada pokazane jako ikony (z pełną nazwą w podpowiedzi).
+  - przyciski pada pokazane jako ikony (z pełną nazwą w podpowiedzi);
+  - **widok Test** (trzeci przełącznik pod padem: Wynik / Fizycznie / Test) dla wybranego pada:
+    - na rysunku na żywo przyciski, wartości spustów (0-255), gałki, palce i klik touchpada (także w trybie myszy);
+    - po prawej wykresy gyro [°/s] i akcelerometru [g] (3 osie, ostatnie 5 s, skala sama się dopasowuje) i
+      położenie obu gałek w skali pierwiastkowej (dryf rzędu 1-2 % jest dobrze widoczny);
+    - **dryf gałek:** „Zmierz dryf” - puszczone gałki przez 3 s (nadajnik na ten czas wyłącza swoją strefę martwą,
+      inaczej przyciąłby odchyłki do ~2 %), wynik: największe wychylenie w spoczynku i propozycja strefy martwej
+      (×1,25, w górę do 1 %, min. 3 %); „Zastosuj” zapisuje ją od razu jako **korekcję dryfu pada**
+      (`receiver/padcal.json`, per MAC). Działa we wszystkich profilach tego pada, także w profilach gier, jako
+      minimum strefy martwej (większa z profilu zostaje) i idzie za gałką fizyczną przy zamianie gałek;
+    - **kalibracja żyroskopu:** pad leży nieruchomo 3 s, nadajnik liczy offset i zapisuje go na telefonie per pad
+      (`sender/gyro_cal.json`); skalibrowany pad nie kalibruje się już przy starcie nadajnika (nie trzeba go wtedy
+      odkładać), autobias dalej dostraja offset w pamięci. Wymaga nadajnika v9;
+    - na czas testu gra dostaje neutralny stan testowanego pada (przełącznik „Blokuj wyjście do gry”, domyślnie
+      włączony): przyciski, gałki, ruch i dotyk nie idą do gry, mysz touchpada, gyro-mysz, skróty PS i tryb
+      konsoli nie reagują. Blokada działa tylko przy aktywnym oknie receivera: znika po przejściu do gry (inne okno
+      na pierwszym planie), wyjściu z widoku Test, minimalizacji / schowaniu okna i zamknięciu receivera;
+    - w trybie TV testowany pad nie steruje oknem; przytrzymanie ○ przez 1 s wychodzi z testu.
 - **Skróty z PS:**
 
   | Skrót | Działanie |
@@ -303,6 +320,8 @@ Tryb konsoli ma własny plik `receiver/console.json` (obok skryptu). Brak pliku 
 Mysz touchpada, pad master, lightbar, Wake-on-LAN i ustawienia dziennika są w `receiver/settings.json` (okno →
 Ustawienia, działa od razu). Nadajnik zapisuje ustawienia Wake-on-LAN z okna w `sender/wol.json`.
 Nadajnik zapisuje stały przydział pad → slot w `sender/slots.json` (`slots_file = ""` wyłącza).
+Kalibracja żyroskopu z okna (widok Test) jest w `sender/gyro_cal.json` (`gyro_cal_file = ""` - bez zapisu),
+korekcja dryfu gałek w `receiver/padcal.json` (obok `remap.json`, w kopiach ustawień przy aktualizacji).
 
 ## Rozwiązywanie problemów
 
@@ -311,6 +330,8 @@ Nadajnik zapisuje stały przydział pad → slot w `sender/slots.json` (`slots_f
 | `WARNING: no reply from receiver` na telefonie | IP komputera, zapora Windows (UDP 5005), czy `key` jest taki sam po obu stronach |
 | Wysoki ping / skoki w oknie receivera | Wi-Fi na telefonie (najlepiej Ethernet przez hub USB, wtedy `nmcli radio wifi off`); nadajnik bez `doas` - log `Low latency: ... run with doas` (procesor telefonu usypia się głęboko) |
 | Gyro kręci w złą stronę | edytor → Gyro aim → „Invert horizontal / vertical” |
+| Celownik / kamera powoli „płynie” sama | widok Test → wykres gyro przy leżącym padzie; jeśli nie jest płaski - „Kalibruj żyroskop” |
+| Postać idzie sama / kamera się kręci (gałka) | widok Test → „Zmierz dryf” → „Zastosuj” (korekcja dryfu tego pada) |
 | Ruch odwrócony w emulatorze (DSU) | `acc_sign` / `gyro_sign` w konfiguracji receivera |
 | Profil gry się nie włącza | gry z anti-cheatem mogą blokować odczyt nazwy procesu; przełącz ręcznie PS + d-pad |
 | `virtual DS4 error ... ViGEmBus` | zainstaluj sterownik ViGEmBus |
@@ -354,7 +375,10 @@ Testy obejmują:
 - regresje z przeglądu bugów (`test_review.py`, `test_review_tx.py`);
 - przycisk → gra, dziennik zdarzeń (też zdarzenia nadajnika end-to-end), lightbar od baterii, ustawienia dla nadajnika
   (`test_extras.py`, `test_extras_gui.py`) oraz Wake-on-LAN po stronie telefonu - kombinacja, ARP, broadcast, magic
-  packet, `wol.json` (`test_wol_tx.py`).
+  packet, `wol.json` (`test_wol_tx.py`);
+- widok Test: pomiar dryfu i propozycja strefy martwej, korekcja dryfu we wszystkich profilach pada, blokada wyjścia
+  do gry (DS4, DSU, mysz, skróty), kalibracja żyroskopu z okna i jej zapis na telefonie, gałki bez strefy martwej
+  nadajnika na czas pomiaru (`test_padtest.py`, `test_padtest_gui.py`, `test_calib_tx.py`).
 
 Działanie z prawdziwym padem, ViGEm, `DisplaySwitch.exe`, przełączaniem dźwięku (pycaw) i powiadomieniami Windows trzeba
 sprawdzić ręcznie.

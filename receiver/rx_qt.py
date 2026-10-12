@@ -16,8 +16,8 @@ import time
 
 from PySide6.QtCore import QAbstractNativeEventFilter, QEvent, QSettings, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QIcon, QKeySequence, QPixmap, QShortcut
-from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QMainWindow, QMenu, QSplitter, QSystemTrayIcon,
-                               QTabWidget, QToolButton, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QMainWindow, QMenu, QSplitter, QStackedWidget,
+                               QSystemTrayIcon, QTabWidget, QToolButton, QVBoxLayout, QWidget)
 
 import rx_console
 import rx_events as ev
@@ -32,7 +32,6 @@ import rx_update
 import rx_status as ST
 import rx_winapi as W
 from proto import CMD_UPDATE, UPD_RUNNING
-from rx_buttons import profile_size
 from rx_config import C
 from rx_editor import Editor
 from rx_icon import ICON_LOW, ICON_OK, icon_png, render_icon
@@ -42,6 +41,7 @@ from rx_qt_log import LogPanel
 from rx_qt_pad import PadView
 from rx_qt_panels import ChangesPage, GyroPage, PartPage, ProfileBar
 from rx_qt_style import DIM, LEVEL, SEGMENT, TV_SCALE, apply_theme, px, set_prop
+from rx_qt_test import TestPanel
 from rx_qt_tv import PadNav
 from rx_qt_widgets import BatteryBar, ConfirmButton, Segmented, SegmentBar, button, icon_button, icon_label, label
 
@@ -49,7 +49,8 @@ LIVE_MS, SLOW_MS, APPLY_MS = 33, 400, 150
 UPDATE_WAIT_S = 60.0       # tyle najwyżej czekamy na wynik aktualizacji nadajnika (git pull na telefonie)
 UPDATE_RESTART_MS = 2500   # po udanej aktualizacji: tyle widać komunikat, potem restart receivera
 NOTE_S = 6.0           # tyle sekund komunikat (np. "Saved") zasłania status profilu
-VIEWS = (("out", "Wynik"), ("in", "Fizycznie"))
+VIEWS = (("out", "Wynik"), ("in", "Fizycznie"), ("test", "Test"))
+EXIT_HOLD_S = 1.0      # widok Test w trybie TV: tyle trzeba trzymać ○ testowanego pada, żeby wyjść z testu
 
 
 @cache
@@ -267,7 +268,7 @@ class PadCard(QFrame):
         pct, flags = S.batt_info[i]
         low = ST.is_low(i, ST.low_pct())
         master = rx_master.is_master(i)
-        key = (alive, want, pct, flags, S.plugged[i], S.mouse_mode[i], profile_size(S.remap_maps[i]), S.active[i],
+        key = (alive, want, pct, flags, S.plugged[i], S.mouse_mode[i], S.profile_changes(i), S.active[i],
                master, S.pad_id[i], S.sender_info[i], ST.low_pct())
         if key == self._key:
             return low                        # nic się nie zmieniło - nie dotykaj widżetów
@@ -297,7 +298,7 @@ class PadCard(QFrame):
             self.bar.set(pct, LEVEL[ST.battery_level(pct, charging, ST.low_pct())])
             self.pct.setText(f"{pct}%" + (" ⚡" if charging else ""))
         set_prop(self.pct, "level", "bad" if low else "")
-        n = profile_size(S.remap_maps[i])
+        n = S.profile_changes(i)
         pm = pixmap("mouse" if S.mouse_mode[i] else "touchpad", px(18) * 2)
         pm.setDevicePixelRatio(2)
         self.mode_icon.setPixmap(pm)
@@ -332,7 +333,9 @@ class MainWindow(QMainWindow):
         slot = _int(settings.value("slot", 0), 0)
         self.ed = Editor(slot if 0 <= slot < C.NUM_PADS else 0)
         view = settings.value("view", "out")
-        self.view = view if view in dict(VIEWS) else "out"
+        self.view = view if view in dict(VIEWS) and view != "test" else "out"     # test (z blokadą) nie od startu
+        self.edit_view = self.view             # ostatni widok Wynik / Fizycznie - do niego wraca wyjście z testu
+        self.exit_hold = None                  # widok Test w trybie TV: od kiedy ○ jest trzymane
         self.part = None                       # zaznaczona część pada (nazwa) albo None
         self.warned = [False] * C.NUM_PADS     # powiadomienie o niskiej baterii wysłane raz na rozładowanie
         self.note_text, self.note_until = None, 0.0
@@ -516,11 +519,13 @@ class MainWindow(QMainWindow):
         self.pad.part_clicked.connect(self.on_part)
         lay.addWidget(self.pad, 1)
         row = QHBoxLayout()
-        row.addWidget(label(_("Kliknij część pada, aby ją zremapować."), "dim", wrap=True), 1)
+        self.pad_hint = label(_("Kliknij część pada, aby ją zremapować."), "dim", wrap=True)
+        row.addWidget(self.pad_hint, 1)
         row.addSpacing(px(12))
         self.seg = Segmented([(k, _(t)) for k, t in VIEWS])
         self.seg.set(self.view)
-        self.seg.setToolTip(_("Wynik = to, co dostaje gra po remapowaniu. Fizycznie = to, co robi sam pad."))
+        self.seg.setToolTip(_("Wynik = to, co dostaje gra po remapowaniu. Fizycznie = to, co robi sam pad. "
+                              "Test = przyciski, spusty, gałki, touchpad i ruch na żywo, dryf gałek, kalibracja żyroskopu."))
         self.seg.changed.connect(self.set_view)
         row.addWidget(self.seg)
         lay.addLayout(row)
@@ -531,9 +536,18 @@ class MainWindow(QMainWindow):
         panel.setObjectName("panel")
         panel.setFixedWidth(px(340))
         self.right_col = panel
-        lay = QVBoxLayout(panel)
-        lay.setContentsMargins(px(14), px(14), px(14), px(14))
+        outer = QVBoxLayout(panel)
+        outer.setContentsMargins(px(14), px(14), px(14), px(14))
+        self.right_stack = QStackedWidget()      # edycja profilu albo panel testu (widok Test)
+        outer.addWidget(self.right_stack)
+        edit = QWidget()
+        lay = QVBoxLayout(edit)
+        lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(px(10))
+        self.right_stack.addWidget(edit)
+        self.test_panel = TestPanel(str(self.settings.value("test_block", "true")).lower() == "true")
+        self.test_panel.block_changed.connect(self.on_block_toggled)
+        self.right_stack.addWidget(self.test_panel)
         self.profile_bar = ProfileBar()
         self.profile_bar.selected.connect(self.on_profile)
         self.profile_bar.create.connect(self.on_create)
@@ -625,6 +639,8 @@ class MainWindow(QMainWindow):
             c.lat_bar.setFixedHeight(px(5))
             c.crown.setIconSize(QSize(px(18), px(18)))
             c._key = None
+        self.test_panel.rescale()
+        self._apply_view()
         self.slow_tick()
 
     def toggle_fullscreen(self):
@@ -674,16 +690,21 @@ class MainWindow(QMainWindow):
     def changeEvent(self, e):
         if e.type() == QEvent.Type.WindowStateChange and self.tray and self.isMinimized():
             QTimer.singleShot(0, self.hide)    # minimalizacja = do zasobnika, bez przycisku na pasku zadań
+        if e.type() in (QEvent.Type.WindowStateChange, QEvent.Type.ActivationChange):
+            self.sync_block()                  # blokada testu tylko przy aktywnym oknie (klik w grę = pad wraca)
         super().changeEvent(e)
 
     def showEvent(self, e):
         super().showEvent(e)
+        self.sync_block()
         self.live_tick()
         self.live_timer.start()
 
     def hideEvent(self, e):
         super().hideEvent(e)
         self.live_timer.stop()                 # ukryte okno nie odrysowuje pada
+        self.test_panel.cancel()               # pomiar dryfu nie trwa w tle
+        self.sync_block()                      # schowane okno (zasobnik) - gra znowu dostaje pada
 
     def show_log(self, on):
         """Panel dziennika na dole okna (ikona w nagłówku)."""
@@ -696,7 +717,8 @@ class MainWindow(QMainWindow):
         self.settings.setValue("split", self.split.saveState())
         self.settings.setValue("log_open", self.log_btn.isChecked())
         self.settings.setValue("slot", self.ed.slot)
-        self.settings.setValue("view", self.view)
+        self.settings.setValue("view", self.edit_view)
+        self.settings.setValue("test_block", self.test_panel.block.isChecked())
         self.settings.sync()
 
     def open_settings(self):
@@ -793,6 +815,9 @@ class MainWindow(QMainWindow):
 
     def quit(self):
         self.flush()
+        self.test_panel.cancel()
+        for i in range(C.NUM_PADS):            # zamknięcie z widoku Test: wyjście do gry wraca przed sprzątaniem
+            P.block(i, False)
         self.save_settings()
         if self.tray:
             self.tray.hide()
@@ -806,13 +831,51 @@ class MainWindow(QMainWindow):
             self.profile_bar.close_new()
         for c in self.cards:
             c.set_selected(c.slot == slot)
+        self.test_panel.set_slot(slot)
+        self.sync_block()
         self.refresh_all()
 
     def set_view(self, view):
-        self.view = view
+        was_test, self.view = self.view == "test", view
+        if view != "test":
+            self.edit_view = view
+        self.seg.set(view)
+        self.exit_hold = None
+        self._apply_view()
+        if was_test != (view == "test"):
+            self.test_panel.activate(view == "test")
+        self.sync_block()
         self.live_tick()
 
+    def _apply_view(self):
+        """Widok Test: prawy panel testu, rysunek bez plakietek i klikania, podpowiedź pod padem."""
+        test = self.view == "test"
+        self.right_stack.setCurrentIndex(1 if test else 0)
+        self.pad.set_test(test)
+        if test:
+            hint = _("Naciskaj przyciski, ruszaj gałkami, dotykaj touchpada - wszystko widać na żywo.")
+            if self.fullscreen():
+                hint += " " + _("Przytrzymaj ○, aby wyjść z testu.")
+        else:
+            hint = _("Kliknij część pada, aby ją zremapować.")
+            self.pad.set_selected(self.part)
+        self.pad_hint.setText(hint)
+
+    def sync_block(self):
+        """Blokada wyjścia do gry: tylko testowany pad, tylko w widoku Test, przy włączonej opcji i aktywnym oknie -
+        przejście do gry (inne okno na pierwszym planie), minimalizacja albo schowanie od razu oddają jej pada."""
+        on = (self.view == "test" and self.test_panel.block.isChecked() and self.isVisible() and not self.isMinimized()
+              and self.isActiveWindow())
+        for i in range(C.NUM_PADS):
+            P.block(i, on and i == self.ed.slot)
+
+    def on_block_toggled(self, _on):
+        self.save_settings()
+        self.sync_block()
+
     def on_part(self, name):
+        if self.view == "test":
+            return
         self.part = name
         self.pad.set_selected(name)
         self.part_page.show_part(name)
@@ -914,11 +977,26 @@ class MainWindow(QMainWindow):
 
     def live_tick(self):
         """Rysunek pada na żywo (30 Hz, tylko widoczne okno); w trybie TV także sterowanie oknem padem."""
-        self.nav.tick(time.monotonic())
+        now = time.monotonic()
+        self.nav.tick(now)
         live = P.live(self.ed.slot)
         s = "_out" if self.view == "out" else ""
         self.pad.set_live(live["pressed" + s], live["ls" + s], live["rs" + s], live["l2" + s], live["r2" + s])
-        self.gyro_page.set_live(self.ed.key == live["active"], live["gyro_on"])
+        if self.view == "test":
+            t = self.test_panel.tick(now, live)
+            self.pad.set_touch(t["touch"], t["tp"])
+            self._exit_hold(now, "circle" in live["pressed"])
+        else:
+            self.gyro_page.set_live(self.ed.key == live["active"], live["gyro_on"])
+
+    def _exit_hold(self, now, held):
+        """Tryb TV: przytrzymane ○ testowanego pada (który nie steruje wtedy oknem) wychodzi z widoku Test."""
+        if not (held and self.fullscreen()):
+            self.exit_hold = None
+        elif self.exit_hold is None:
+            self.exit_hold = now
+        elif now - self.exit_hold >= EXIT_HOLD_S:
+            self.set_view(self.edit_view)
 
     def slow_tick(self):
         """Co 400 ms; błąd w jednym przebiegu nie może zatrzymać odświeżania na zawsze."""

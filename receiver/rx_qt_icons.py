@@ -21,7 +21,9 @@ EXTRA_TIPS = {"crown": "Pad master", "mouse": "Touchpad jako mysz", "touchpad": 
               "fullscreen": "Pełny ekran", "rumble": "Wibracja", "gear": "Ustawienia", "update": "Aktualizuj",
               "backup": "Kopie ustawień", "stopwatch": "Opóźnienie", "plus": "Nowy profil gry",
               "press": "Przycisk → gra", "reset": "Wyzeruj", "log": "Dziennik zdarzeń", "copy": "Kopiuj",
-              "trash": "Wyczyść", "phone": "Nadajnik", "lightbar": "Lightbar", "wake": "Wake-on-LAN"}
+              "trash": "Wyczyść", "phone": "Nadajnik", "lightbar": "Lightbar", "wake": "Wake-on-LAN",
+              "target": "Dryf gałek", "gyro": "Kalibracja żyroskopu", "shield": "Blokada wyjścia do gry",
+              "pulse": "Ruch pada"}
 SIZES = (16, 20, 24, 32, 48)
 
 
@@ -328,6 +330,61 @@ def _wake(p):
     p.drawArc(QRectF(15.5, 5.5, 3, 3), -40 * 16, 120 * 16)
 
 
+def _target(p):
+    """Celownik z kropką poza środkiem - gałka, która "ucieka" ze środka (dryf)."""
+    p.setPen(_pen(FG, 1.6))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawEllipse(QPointF(12, 12), 8, 8)
+    p.setPen(_pen(DIM, 1.2))
+    p.drawLine(QPointF(12, 2.5), QPointF(12, 6))
+    p.drawLine(QPointF(12, 18), QPointF(12, 21.5))
+    p.drawLine(QPointF(2.5, 12), QPointF(6, 12))
+    p.drawLine(QPointF(18, 12), QPointF(21.5, 12))
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QColor("#ffb547"))
+    p.drawEllipse(QPointF(14.5, 9.5), 2.4, 2.4)
+
+
+def _gyro(p):
+    """Żyroskop: koło z dwiema orbitami i osią."""
+    p.setPen(_pen(FG, 1.5))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawEllipse(QPointF(12, 12), 8.5, 8.5)
+    p.setPen(_pen("#5b9bff", 1.5))
+    p.drawEllipse(QPointF(12, 12), 8.5, 3.4)
+    p.setPen(_pen(DIM, 1.3))
+    p.drawEllipse(QPointF(12, 12), 3.4, 8.5)
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(FG)
+    p.drawEllipse(QPointF(12, 12), 1.8, 1.8)
+
+
+def _shield(p):
+    """Tarcza z poziomą kreską - wyjście do gry zablokowane."""
+    path = QPainterPath(QPointF(12, 3))
+    path.lineTo(19, 6)
+    path.cubicTo(19, 13, 16.5, 18, 12, 21)
+    path.cubicTo(7.5, 18, 5, 13, 5, 6)
+    path.closeSubpath()
+    p.setPen(_pen(FG, 1.6))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawPath(path)
+    p.setPen(_pen("#ff6b6b", 2.0))
+    p.drawLine(QPointF(9, 11.5), QPointF(15, 11.5))
+
+
+def _pulse(p):
+    """Wykres z falą - ruch pada (gyro i akcelerometr) na żywo."""
+    p.setPen(_pen(DIM, 1.2))
+    p.drawLine(QPointF(3, 20), QPointF(21, 20))
+    path = QPainterPath(QPointF(3, 13))
+    for x, y in ((7, 13), (9.5, 6), (12.5, 18), (15, 10), (17, 13), (21, 13)):
+        path.lineTo(x, y)
+    p.setPen(_pen("#3ecf8e", 1.8))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawPath(path)
+
+
 def _draw(p, name):
     if name in FACE:
         _face(p, name)
@@ -340,7 +397,8 @@ def _draw(p, name):
          "tv": _tv, "power": _power, "touchpad": _touchpad, "restart": _restart, "window": _window,
          "fullscreen": _fullscreen, "rumble": _rumble, "gear": _gear, "update": _update, "backup": _backup,
          "stopwatch": _stopwatch, "plus": _plus, "press": _press, "reset": _reset, "log": _log, "copy": _copy,
-         "trash": _trash, "phone": _phone, "lightbar": _lightbar, "wake": _wake}[name](p)
+         "trash": _trash, "phone": _phone, "lightbar": _lightbar, "wake": _wake, "target": _target, "gyro": _gyro,
+         "shield": _shield, "pulse": _pulse}[name](p)
 
 
 def pixmap(name, size=24, dim=False):
@@ -368,4 +426,5 @@ def icon(name, dim=False):
 def has_icon(name):
     return name in FACE or name in BADGES or name.startswith("dpad_") or name in (
         "ps", "share", "options", "crown", "mouse", "touchpad", "tv", "power", "restart", "window", "fullscreen", "rumble", "gear",
-        "update", "backup", "stopwatch", "plus", "press", "reset", "log", "copy", "trash", "phone", "lightbar", "wake")
+        "update", "backup", "stopwatch", "plus", "press", "reset", "log", "copy", "trash", "phone", "lightbar", "wake",
+        "target", "gyro", "shield", "pulse")

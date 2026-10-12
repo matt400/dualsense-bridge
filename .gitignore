@@ -250,5 +250,12 @@ slots.json.tmp
 # Wake-on-LAN i zdarzenia nadajnika - ustawienia z okna receivera zapisane na telefonie
 wol.json
 wol.json.tmp
+# kalibracja żyroskopu z okna receivera zapisana na telefonie (per pad)
+gyro_cal.json
+gyro_cal.json.tmp
+# korekcja dryfu gałek per pad (receiver)
+padcal.json
+padcal.json.tmp
+padcal.json.bad
 # kopie ustawień z aktualizacji (receiver/rx_backup.py)
 receiver/backups/

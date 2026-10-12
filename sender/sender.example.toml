@@ -7,6 +7,7 @@
 # max_pads = 2
 # slots_file = "slots.json"   # pad (MAC) -> stały slot także po restarcie (gracz 1 / 2 w grze); "" = bez pamięci
 # wol_file = "wol.json"       # Wake-on-LAN i zdarzenia do dziennika: ustawienia z okna receivera zapisane na telefonie
+# gyro_cal_file = "gyro_cal.json"   # kalibracja żyroskopu z okna receivera per pad (MAC); "" = bez zapisu
 # grab_pad = true
 # grab_touch = true
 # tap_click = true
@@ -20,7 +21,7 @@
 # motion_deadband_acc = 16
 # rescan_s = 2.0
 # stick_deadzone = 3
-# calibrate_s = 1.0
+# calibrate_s = 1.0   # kalibracja gyro przy starcie - pomijana dla pada skalibrowanego z okna receivera
 # calibrate_max_range = 4096
 # autobias = true
 # autobias_s = 1.0

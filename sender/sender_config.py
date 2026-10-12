@@ -16,6 +16,7 @@ DEFAULTS = {
     "max_pads": 2,
     "slots_file": "slots.json",    # pad (MAC) -> stały slot także po restarcie (gracz 1 / 2 w grze); "" = bez pamięci
     "wol_file": "wol.json",        # Wake-on-LAN i zdarzenia do dziennika - ustawienia z okna receivera; "" = bez zapisu
+    "gyro_cal_file": "gyro_cal.json",  # kalibracja żyroskopu z okna receivera per pad (MAC); "" = bez zapisu
     "grab_pad": True,
     "grab_touch": True,
     "tap_click": True,
@@ -100,6 +101,7 @@ def init(argv=None):
     C.MAX_PADS = int(cfg["max_pads"])
     C.SLOTS_FILE = _beside(cfg["slots_file"])
     C.WOL_FILE = _beside(cfg["wol_file"])
+    C.GYRO_CAL_FILE = _beside(cfg["gyro_cal_file"])
     C.GRAB_PAD, C.GRAB_TOUCH, C.TAP_CLICK = bool(cfg["grab_pad"]), bool(cfg["grab_touch"]), bool(cfg["tap_click"])
     C.TAP_MAX_S, C.TAP_MAX_MOVE = float(cfg["tap_max_s"]), int(cfg["tap_max_move"])
     C.PAD_MIN_DT = max(0.0, float(cfg["pad_min_dt"]))

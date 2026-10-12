@@ -3,8 +3,9 @@ import threading
 import time
 import traceback
 
+import rx_padcal
 from proto import SeqFilter
-from rx_buttons import apply_remap, apply_sticks, pressed_inputs
+from rx_buttons import apply_remap, apply_sticks, pressed_inputs, profile_size
 from rx_config import C
 from rx_shape import gyro_mouse_velocity, gyro_rates, gyro_stick, merge_triggers, shape_stick, shape_trigger
 
@@ -31,6 +32,7 @@ states = wake = want = plugged = last_seen = alive = ignore_until = None
 mouse_mode = tp_down = swallow = last_v = last_touch = batt_info = None
 pad_id = remap_maps = None
 override = active = info = pps = sender_info = None
+probe = gyro_cal = None
 
 
 def new_state():
@@ -42,6 +44,8 @@ def new_state():
         "rawst": (128, 128, 128, 128),                                   # (lx, ly, rx, ry) surowe
         "acc": (0, 0, 0), "gyro": (0, 0, 0),
         "touch": ((0, 0, 0, 0), (0, 0, 0, 0)), "tp": False,
+        "rtp": 0,                            # klik touchpada na żywo (0/1/2) także w trybie myszy - widok Test
+        "blocked": False,                    # widok Test: gra dostaje neutralny stan, mysz i skróty nie działają
         "batt_dsu": 5, "batt_ds4": 0x1B,
         "ver": 0,
         "ts": 0,                                                         # kiedy (us) przyszła ostatnia zmiana stanu
@@ -55,7 +59,7 @@ def new_state():
 def init(store_):
     global states, wake, want, plugged, last_seen, alive, ignore_until, mouse_mode
     global tp_down, swallow, last_v, last_touch, batt_info, pad_id, remap_maps, store
-    global override, active, info, pps, sender_info
+    global override, active, info, pps, sender_info, probe, gyro_cal
     n = C.NUM_PADS
     store = store_
     states = [new_state() for _ in range(n)]
@@ -78,6 +82,8 @@ def init(store_):
     info = [None] * n                                # (ping ms | None, Hz pada, Hz ruchu, czas) z pakietu info
     pps = [0.0] * n                                  # pakiety stanu na sekundę
     sender_info = [None] * n                         # (wersja nadajnika, sposoby wibracji, powód) z pakietu version; None = stary
+    probe = [None] * n                               # pomiar dryfu (rx_drift): lista próbek (lx, ly, rx, ry) albo None
+    gyro_cal = [None] * n                            # ostatni pakiet calres: (stan, flagi, zapisany, bieżący, czas, odebrano)
 
 
 def run_forever(name, fn, *args):
@@ -130,7 +136,8 @@ def recompute(s, prof):
     lx, ly, rx, ry = apply_sticks(prof["sticks"], *s["rawst"])
     lx, ly = shape_stick(lx, ly, tun.get("left"))
     rx, ry = shape_stick(rx, ry, tun.get("right"))
-    s["gyro_on"] = bool(g) and g["mode"] != "off" and (g["hold"] == "always" or g["hold"] in pressed_inputs(*s["raw"]))
+    s["gyro_on"] = (bool(g) and g["mode"] != "off" and not s["blocked"]
+                    and (g["hold"] == "always" or g["hold"] in pressed_inputs(*s["raw"])))
     s["gyro_vel"] = None
     if s["gyro_on"]:
         rates = gyro_rates(s["gyro"], g, C.GYRO_RES)
@@ -178,14 +185,48 @@ def active_key(i):
     return base
 
 
-def effective_profile(i, key):
+def effective_profile(i, key, drift=True):
     """Profil do użycia na padzie: profil gry dziedziczy z profilu pada efekty spustów, których sam nie ustawia
-    (pozostałe części profilu gry zastępują profil pada w całości, jak dotąd)."""
+    (pozostałe części profilu gry zastępują profil pada w całości, jak dotąd); korekcja dryfu gałek tego pada
+    (rx_padcal) działa w każdym profilu jako minimum strefy martwej (drift=False - bez niej: liczba zmian profilu)."""
     prof = store.get(key)
     base = profile_key(i)
     if key != base:
         prof["triggers"] = merge_triggers(store.get(base)["triggers"], prof["triggers"])
-    return prof
+    return rx_padcal.apply_drift(prof, rx_padcal.drift(base)) if drift else prof
+
+
+def profile_changes(i):
+    """Liczba zmian profilu w użyciu (karta pada, log) - bez korekcji dryfu, która nie jest częścią profilu."""
+    return profile_size(effective_profile(i, active[i], drift=False))
+
+
+NEUTRAL_OUT = {**new_state(), "ver": None}
+
+
+def output(i):
+    """Stan slotu dla gry (raport DS4, DSU) - wołać pod lock. Zablokowany slot (widok Test) = neutralny stan: puszczone
+    przyciski, gałki w środku, bez ruchu i dotyku; bateria i czas próbki jak naprawdę."""
+    s = states[i]
+    if not s["blocked"]:
+        return s
+    return {**NEUTRAL_OUT, "batt_dsu": s["batt_dsu"], "batt_ds4": s["batt_ds4"], "ts": s["ts"], "ver": s["ver"]}
+
+
+def set_blocked(i, on):
+    """Widok Test: wyjście slotu do gry neutralne (on) albo z powrotem na żywo. -> True, gdy się zmieniło."""
+    with lock:
+        s = states[i]
+        if s["blocked"] == on:
+            return False
+        s["blocked"] = on
+        recompute(s, remap_maps[i])
+        s["lat"] = s["blat"] = None
+        s["ver"] += 1
+    notify(i)
+    if s["gyro_vel"]:
+        gyro_wake.set()
+    return True
 
 
 def reload_profile(i):
@@ -234,8 +275,8 @@ def set_game(exe):
 def reset_state(i):
     """Neutralny stan pada (puszczone przyciski, wyśrodkowane drążki)."""
     with lock:
-        ver = states[i]["ver"] + 1
+        ver, blocked = states[i]["ver"] + 1, states[i]["blocked"]
         states[i].update(new_state())
-        states[i]["ver"] = ver
+        states[i]["ver"], states[i]["blocked"] = ver, blocked
         states[i]["ts"] = time.monotonic_ns() // 1000
     notify(i)

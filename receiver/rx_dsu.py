@@ -151,7 +151,7 @@ def tx_thread():
                     last_sent[slot] = mono
                     sent_alive[slot] = al
                     counters[slot] += 1
-                    pkts.append(dsu_data(slot, s, counters[slot]))
+                    pkts.append(dsu_data(slot, S.output(slot), counters[slot]))   # widok Test: neutralny
         if C.DSU_BATCH and pkts:
             batch = b"".join(pkts)
             for a in clients:

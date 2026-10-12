@@ -6,8 +6,8 @@ import time
 import zlib
 
 import sender_net as net
-from proto import (KEY_BIT, LAT_NONE, SENDER_VERSION, T_CLICK, T_IDENT, T_MOUSE, T_STATE, T_STATE2, T_TOUCH, T_VERSION,
-                   TRIG2_OFF, WHY_OFF, clamp, trig2_from_legacy)
+from proto import (CAP_CALIB, KEY_BIT, LAT_NONE, RAW_STICKS_MAX_S, SENDER_VERSION, T_CLICK, T_IDENT, T_MOUSE, T_STATE,
+                   T_STATE2, T_TOUCH, T_VERSION, TRIG2_OFF, WHY_OFF, clamp, trig2_from_legacy)
 from sender_config import BURST_DELAYS, C, IDLE_TP, NEUTRAL_PAD, PAD_ABS, STICK_AXES
 
 
@@ -70,13 +70,18 @@ class Ctrl:
         self.fb = None                # ostatni feedback z PC (mała, duża, r, g, b) - powrót po lokalnym błysku
         self.wol_timer = None         # odliczanie przytrzymania kombinacji Wake-on-LAN (sender_wol)
         self._pulse_timer = None
+        self.stick_dz = C.STICK_DZ    # strefa martwa gałek; 0 na czas pomiaru dryfu z okna (CMD_RAW_STICKS)
+        self._raw_timer = None
+        self.gyro_bias = [0.0, 0.0, 0.0]   # bias żyroskopu odejmowany przed wysłaniem (kalibracja / autobias)
+        self.cal_request = 0          # kalibracja z okna: tyle sekund (stream_motion ją zaczyna), 0 = brak
+        self.cal_cmd_t = -1.0         # kiedy przyszło ostatnie polecenie kalibracji (powtórki UDP)
 
     def devices(self):
         return [d for d in (self.pad_dev, self.motion_dev, self.touch_dev) if d]
 
     def set_abs(self, code, value):
         v = 0 if value < 0 else 255 if value > 255 else value
-        if C.STICK_DZ and code in STICK_AXES and abs(v - 128) <= C.STICK_DZ:
+        if self.stick_dz and code in STICK_AXES and abs(v - 128) <= self.stick_dz:
             v = 128
         self.pad[code] = v
 
@@ -114,7 +119,8 @@ class Ctrl:
     def send_ident(self):
         net.emit(T_IDENT, self.idx, pad_ident(self.key).encode("ascii", "replace")[:17])
         r = self.rumble
-        net.emit(T_VERSION, self.idx, SENDER_VERSION, r.bits if r is not None else 0, r.why if r is not None else WHY_OFF)
+        net.emit(T_VERSION, self.idx, SENDER_VERSION, (r.bits if r is not None else 0) | CAP_CALIB,
+                 r.why if r is not None else WHY_OFF)
 
     def mark_event(self, e):
         """Zdarzenie z jądra zmieniło stan (przycisk, gałka, ruch): zapamiętaj czas najstarszej niewysłanej zmiany."""
@@ -272,8 +278,28 @@ class Ctrl:
         if self.rumble is not None:
             self.rumble.set_triggers(self.triggers)
 
+    def set_raw_sticks(self, secs):
+        """Pomiar dryfu z okna: gałki bez strefy martwej nadajnika przez secs sekund (0 = od razu z powrotem).
+        Wraca sama po czasie - receiver, który zniknie w trakcie pomiaru, nie zostawi pada bez strefy martwej.
+        Stan jest odczytany od nowa: gałka przycięta do 128 musi pokazać prawdziwe położenie (i odwrotnie)."""
+        if self._raw_timer is not None:
+            self._raw_timer.cancel()
+            self._raw_timer = None
+        secs = clamp(secs, 0, RAW_STICKS_MAX_S)
+        self.stick_dz = 0 if secs else C.STICK_DZ
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        if secs and loop is not None:
+            self._raw_timer = loop.call_later(secs, self.set_raw_sticks, 0)
+        if self.pad_dev is not None:
+            self.resync()
+            if loop is not None:
+                self.request_send()
+
     def cancel_timers(self):
-        for name in ("_state_timer", "_touch_timer", "wol_timer", "_pulse_timer"):
+        for name in ("_state_timer", "_touch_timer", "wol_timer", "_pulse_timer", "_raw_timer"):
             t = getattr(self, name)
             if t is not None:
                 t.cancel()

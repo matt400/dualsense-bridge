@@ -1,14 +1,16 @@
-"""Sender: polecenia z PC (wyłączenie pada), wyłączanie po bezczynności i pakiety info (ping, Hz) dla okna receivera."""
+"""Sender: polecenia z PC (wyłączenie pada, kalibracja gyro, gałki bez strefy martwej), wyłączanie po bezczynności
+i pakiety info (ping, Hz) dla okna receivera."""
 import asyncio
 import re
 import time
 from subprocess import DEVNULL, PIPE
 
+import sender_calib as calib
 import sender_net as net
 import sender_state as state
 import sender_update
 import sender_events as events
-from proto import CMD_POWER_OFF, CMD_UPDATE, E_POWER_OFF, T_INFO
+from proto import CAL_STATUS, CMD_GYRO_CAL, CMD_POWER_OFF, CMD_RAW_STICKS, CMD_UPDATE, E_POWER_OFF, T_INFO
 from sender_config import C
 
 MAC_RE = re.compile(r"[0-9a-f]{2}(?::[0-9a-f]{2}){5}", re.IGNORECASE)
@@ -56,7 +58,7 @@ async def power_off(c, reason):
         print(f"Controller {c.idx}: power off failed: {err.decode(errors='replace').strip() or proc.returncode}")
 
 
-def on_command(idx, cmd, _arg):
+def on_command(idx, cmd, arg):
     if cmd == CMD_UPDATE:                  # dotyczy całego nadajnika, nie pada (idx = 255)
         _spawn(sender_update.run())
         return
@@ -65,6 +67,13 @@ def on_command(idx, cmd, _arg):
         return
     if cmd == CMD_POWER_OFF:
         _spawn(power_off(c, "requested from PC"))
+    elif cmd == CMD_GYRO_CAL:            # kalibracja żyroskopu z okna (arg sekund) albo sam stan (arg 0)
+        if arg:
+            calib.request(c, arg)
+        else:
+            calib.report(c, CAL_STATUS)
+    elif cmd == CMD_RAW_STICKS:          # pomiar dryfu: gałki bez strefy martwej nadajnika przez arg sekund
+        c.set_raw_sticks(arg)
 
 
 async def info_loop():
