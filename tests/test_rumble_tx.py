@@ -162,7 +162,7 @@ async def main():
     open(path3, "wb").close()
     d = FFDev()
     r = R.Rumble(5, d, "auto", hidraw=(path3, True))
-    assert r.methods == ["evdev", "hidraw"] and r.bits == 3, r.methods
+    assert r.methods == ["evdev", "hidraw"] and r.bits == 7, (r.methods, r.bits)   # 4 = opór spustów (raport HID)
     r.set(70, 140)
     assert ("upload", 140 * 257, 70 * 257) in d.log and frames(path3)[-1][5:7] == bytes([70, 140]), "obie drogi naraz"
     d.fail = True

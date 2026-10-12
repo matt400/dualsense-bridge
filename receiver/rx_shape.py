@@ -4,6 +4,7 @@ Ustawienia są częścią profilu remapowania (brak klucza = domyślnie, bez zmi
   tuning = {"left" | "right": {"dz", "outer", "curve", "anti"},   # ułamki wychylenia 0..1, krzywa = wykładnik
             "l2" | "r2": {"dz", "max"}}                           # wartości spustu 0..255
   gyro   = {"mode": "off" | "stick" | "mouse", "hold": "always" | <wejście>, "sens", "inv_x", "inv_y", "anti"}
+  triggers = {"l2" | "r2": {"start": 0-9, "force": 1-8}}           # stały opór spustu DualSense (nadajnik, raport HID)
 Kształtowanie działa na WYJŚCIU (to, co dostaje gra, po zamianie gałek), gyro dodaje się do prawej gałki.
 """
 import math
@@ -13,6 +14,7 @@ STICK_LIMITS = {"dz": (0.0, 0.5), "outer": (0.5, 1.0), "curve": (0.3, 3.0), "ant
 TRIG_DEF = {"dz": 0, "max": 255}
 GYRO_DEF = {"mode": "off", "hold": "always", "sens": 1.0, "inv_x": False, "inv_y": False, "anti": 0.0}
 GYRO_MODES = ("off", "stick", "mouse")
+TRIG_FX_DEF = {"start": 0, "force": 0}        # opór spustu: początek (strefa 0-9 = 0-90 % skoku), siła 0 = brak
 
 GYRO_DPS_FULL = 150.0    # tryb gałki: pełne wychylenie przy tylu °/s (dzielone przez sens)
 GYRO_PX_PER_DEG = 10.0   # tryb myszy: pikseli na stopień obrotu (mnożone przez sens)
@@ -48,6 +50,27 @@ def normalize_tuning(t):
         if ne != TRIG_DEF:
             out[name] = ne
     return out
+
+
+def normalize_triggers(t):
+    """Opór spustów: tylko L2 / R2 z siłą > 0, początek 0-9, siła 1-8 (jak w proto)."""
+    from proto import TRIG_FORCE_MAX, TRIG_START_MAX
+    t = t if isinstance(t, dict) else {}
+    out = {}
+    for name in ("l2", "r2"):
+        e = t.get(name)
+        if not isinstance(e, dict):
+            continue
+        force = round(_num(e.get("force"), 0, TRIG_FORCE_MAX, 0))
+        if force:
+            out[name] = {"start": round(_num(e.get("start"), 0, TRIG_START_MAX, 0)), "force": force}
+    return out
+
+
+def trigger_values(t):
+    """Znormalizowany opór spustów -> pakiet trig (L2 początek, L2 siła, R2 początek, R2 siła)."""
+    l2, r2 = t.get("l2", TRIG_FX_DEF), t.get("r2", TRIG_FX_DEF)
+    return l2["start"], l2["force"], r2["start"], r2["force"]
 
 
 def normalize_gyro(g, inputs):

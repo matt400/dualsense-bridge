@@ -9,7 +9,7 @@ import evdev
 
 import sender_state as state
 import sender_streams as streams
-from proto import T_BYE
+from proto import LAT_NONE, T_BYE
 from sender_config import C, IDLE_TP, SETTLE_S
 from sender_ctrl import Ctrl
 from sender_rumble import Rumble
@@ -132,6 +132,12 @@ def dispatch_feedback(idx, vals):
             c.apply_feedback(*vals)
 
 
+def dispatch_triggers(idx, vals):
+    for c in state.active.values():
+        if c.idx == idx:
+            c.set_triggers(vals)
+
+
 def grab(dev, label):
     try:
         dev.grab()
@@ -178,6 +184,7 @@ async def _run_extra(c, kind, dev, coro):
             c.tp = 0
         else:
             c.motion = [0] * 6
+            c.bt_us = LAT_NONE                # bez urządzenia ruchu nie ma znaczników czasu pada
         if not c.closing:                     # przy zamykaniu pada send_neutral wyśle to samo
             if kind == "touch":
                 c.send_touch(force=True)
@@ -202,6 +209,8 @@ async def run_ctrl(c):
     try:
         c.init_state()
         c.rumble = Rumble(c.idx, c.pad_dev, C.RUMBLE)
+        if any(c.triggers):                   # opór spustów przyszedł z PC, zanim pad był gotowy
+            c.rumble.set_triggers(c.triggers)
         print(f"== Controller {c.idx} ({c.key})")
         print(f"   Pad:    {c.pad_dev.name} ({c.pad_dev.path})")
         print(f"   Motion: {c.motion_dev.name if c.motion_dev else 'NOT FOUND'}")

@@ -65,7 +65,7 @@ ok("aktualizacja: pasek 'Dostępna aktualizacja: N zmian - tytuł' i 'Nadajnik m
 # ---------- zakładki ustawień ----------
 win.open_settings(); pump(100)
 dlg = win.settings_dlg
-assert [dlg.tabs.tabText(i) for i in range(dlg.tabs.count())] == ["Tryb konsoli", "Mysz", "Master", "Okno"]
+assert [dlg.tabs.tabText(i) for i in range(dlg.tabs.count())] == ["Tryb konsoli", "Mysz", "Master", "Okno", "Kopie"]
 assert dlg.toggle_button == "r2" and "R2" in dlg.pick_name.text() and not dlg.pick_icon.pixmap().isNull()
 assert dlg.auto_on.isChecked(), "domyślnie: tryb konsoli po połączeniu mastera"
 assert not dlg.tabs.tabIcon(2).isNull(), "zakładki z ikonami"
@@ -163,21 +163,22 @@ import rx_i18n
 rx_i18n.set_lang("en"); w2 = rx_qt.create_window(os.path.join(TMP, "ui2.ini")); w2.show(); pump(100)
 from PySide6.QtWidgets import QPushButton as _QPB
 texts = {b.text() for b in w2.findChildren(_QPB)}
-assert {"Save", "Revert", "Settings", "Quit"} <= texts, texts
-assert w2.tabs.tabText(0) == "Selected" and w2.cards[0].off.text() == "Power off"
+tips = {b.toolTip().split(" - ")[0] for b in w2.findChildren(_QPB) if b.property("iconic")}
+assert {"Save", "Revert"} <= texts and {"Settings", "Quit", "Update", "Restart"} <= tips, (texts, tips)
+assert w2.tabs.tabText(0) == "Selected" and w2.cards[0].off.toolTip().startswith("Power off")
 w2.hide(); rx_i18n.set_lang("pl")
 pulses = []
 F.pulse = lambda i, kind, force=False: pulses.append((i, kind, force))
 card0.rumble.click(); pump()
-assert pulses == [(0, "test", True)] and card0.rumble.text() == "Wibracja", pulses
+assert pulses == [(0, "test", True)] and card0.rumble.toolTip().startswith("Test wibracji"), pulses
 ok("pełny ekran (F11, przycisk, ustawienia), język (restart, okno po angielsku), lista programów, test wibracji")
 
 # ---------- przycisk Restart w nagłówku i ikona okna ----------
 from PySide6.QtWidgets import QPushButton
-btn = next(b for b in win.findChildren(QPushButton) if b.text() == "Restart")
+btn = next(b for b in win.findChildren(QPushButton) if b.toolTip().startswith("Restart"))
 S.restart = False; closed.clear()
 btn.click(); pump()
-assert S.restart is False and btn.text() == "Restart?", "pierwszy klik tylko uzbraja"
+assert S.restart is False and btn.text() == "Restart?", "pierwszy klik tylko uzbraja (ikona pokazuje pytanie)"
 btn.click(); pump()
 assert S.restart is True and closed, "drugi klik: restart receivera"
 S.restart = False
@@ -192,7 +193,7 @@ results = iter([rx_update.Result(True, False, "Masz najnowszą wersję"),
 rx_update.update = lambda: (time.sleep(0.1), next(results))[1]
 import time
 btn = win.update_btn
-assert btn.text() == "Aktualizuj" and not btn.icon().isNull()
+assert btn.text() == "" and btn.toolTip().startswith("Aktualizuj") and not btn.icon().isNull(), "sama ikona"
 S.restart = False; closed.clear()
 btn.click(); btn.click(); pump(20)
 assert not btn.isEnabled() and btn.text() == "Aktualizuję…", "w trakcie: przycisk zablokowany"
@@ -235,4 +236,23 @@ msg = ctypes.wintypes.MSG(message=rx_qt.WM_QUERYENDSESSION)
 assert rx_qt.SessionEndFilter().nativeEventFilter(b"windows_generic_MSG", ctypes.addressof(msg)) == (False, 0)
 assert offs == ["wyłączanie Windows"] * 2, "WM_QUERYENDSESSION -> tryb konsoli OFF przed wyłączeniem Windows"
 ok("koniec sesji Windows wyłącza tryb konsoli")
+# ---------- Ustawienia -> Kopie: lista, kopia teraz, przywrócenie (2 kliknięcia) -> restart ----------
+import rx_backup, rx_qt_console
+rx_qt_console.RESTORE_RESTART_MS = 50
+with open(C.SETTINGS_PATH, "w") as f: f.write('{"mouse": {"sens": 2.0}}')
+dlg = win.settings_dlg; dlg.hide(); dlg.present(); pump()
+dlg.tabs.setCurrentIndex(4); pump()
+n0 = len(rx_backup.list_backups())
+dlg._backup_now(); pump()
+rows = [dlg.backup_rows.itemAt(k).widget() for k in range(dlg.backup_rows.count())]
+assert len(rx_backup.list_backups()) == n0 + 1 and len(rows) == min(n0 + 1, rx_backup.KEEP) and "✓" in dlg.status.text()
+with open(C.SETTINGS_PATH, "w") as f: f.write('{"mouse": {"sens": 3.0}}')
+restore = next(b for b in rows[0].findChildren(QPushButton))
+S.restart = False; closed.clear()
+restore.click(); pump(); assert S.restart is False and json.load(open(C.SETTINGS_PATH))["mouse"]["sens"] == 3.0
+restore.click(); pump(300)
+assert json.load(open(C.SETTINGS_PATH))["mouse"]["sens"] == 2.0 and S.restart is True, "przywrócenie -> restart"
+assert rx_backup.list_backups()[0].reason == "restore" and not dlg.save_btn.isEnabled(), "Zapisz zablokowany do restartu"
+S.restart = False
+ok("Ustawienia -> Kopie: kopia teraz, przywrócenie po drugim kliknięciu, kopia bieżących, restart")
 print("GUI USTAWIEŃ (MYSZ / MASTER) OK")

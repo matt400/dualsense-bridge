@@ -1,6 +1,7 @@
 """Sender: pętle odczytu urządzeń evdev (pad, ruch, touchpad, bateria) i heartbeat."""
 import array
 import asyncio
+import collections
 import fcntl
 import time
 
@@ -8,7 +9,7 @@ from evdev import ecodes as ec
 
 import sender_state as state
 from sender_config import AUTOBIAS_MAX_STEP, BURST_DELAYS, C, IDLE_TP, TOUCH_H, TOUCH_W, PAD_ABS
-from proto import KEY_BIT, clamp
+from proto import KEY_BIT, LAT_NONE, clamp
 
 
 def _eviocgmtslots(nslots):
@@ -49,6 +50,33 @@ class RateMeter:
         if len(g) < 10:
             return None
         return len(g) / sum(g), g[int(len(g) * 0.99)] * 1000, g[-1] * 1000   # Hz, p99 ms, max ms
+
+
+class BtDelay:
+    """Opóźnienie Bluetooth ponad minimum: pad stempluje każdy raport własnym zegarem (MSC_TIMESTAMP z urządzenia
+    ruchu, µs), jądro - czasem odbioru. Różnica = stała nieznana (zegary) + opóźnienie radia; jej minimum z ostatnich
+    WINDOW_US to najlepszy przypadek, a nadwyżka nad nim - kolejka / retransmisje BT. Krótkie okno: dryf kwarców
+    pada i telefonu (50 ppm = 0.1 ms na 2 s) nie udaje opóźnienia. Minimum w oknie: kolejka monotoniczna, O(1)."""
+
+    WINDOW_US = 2_000_000
+
+    def __init__(self):
+        self.epoch, self.last = 0, None
+        self.win = collections.deque()        # (czas jądra, różnica), różnice rosnące
+
+    def sample(self, kernel_us, pad_us):
+        pad_us &= 0xFFFFFFFF                  # licznik pada ma 32 bity (przepełnienie co ~71 min)
+        if self.last is not None and pad_us < self.last - 0x80000000:
+            self.epoch += 1 << 32
+        self.last = pad_us
+        d = kernel_us - pad_us - self.epoch
+        win = self.win
+        while win and win[-1][1] >= d:
+            win.pop()
+        win.append((kernel_us, d))
+        while win[0][0] < kernel_us - self.WINDOW_US:
+            win.popleft()
+        return min(LAT_NONE - 1, d - win[0][1])
 
 
 async def stream_pad(c):
@@ -92,6 +120,7 @@ async def stream_pad(c):
             dropping = True
         elif et == ec.EV_SYN and e.code == ec.SYN_REPORT and dirty:
             dirty = False
+            c.mark_event(e)
             c.note_input(time.monotonic())
             if burst:
                 burst = False
@@ -128,6 +157,7 @@ async def stream_motion(c):
     win_min, win_max = [1 << 60] * 3, [-(1 << 60)] * 3
     msum, mn = [0] * 6, 0       # suma próbek od ostatniego pakietu: wysyłamy ŚREDNIĄ, nie przypadkową ostatnią próbkę
     meter = c.meters.setdefault("motion", RateMeter()) if C.STATS else None
+    bt = BtDelay()
     if cal_end:
         print(f"Controller {c.idx}: calibrating gyro for {C.CAL_S}s - keep the pad still")
     dropping = False
@@ -146,6 +176,8 @@ async def stream_motion(c):
                     pass
         if e.type == ec.EV_ABS and 0 <= e.code <= 5:
             v[e.code] = e.value
+        elif e.type == ec.EV_MSC and e.code == ec.MSC_TIMESTAMP:
+            c.bt_us = bt.sample(e.sec * 1_000_000 + e.usec, e.value)
         elif e.type == ec.EV_SYN and e.code == ec.SYN_REPORT:
             now = time.monotonic()
             c.reports["motion"] += 1
@@ -196,6 +228,7 @@ async def stream_motion(c):
                    round(a[3] - bias[0]), round(a[4] - bias[1]), round(a[5] - bias[2])]
             if c.pending or any(abs(new[k] - m[k]) > (C.DB_ACC if k < 3 else C.DB_GYRO) for k in range(6)):
                 c.motion = new
+                c.mark_event(e)
                 c.request_send()
 
 

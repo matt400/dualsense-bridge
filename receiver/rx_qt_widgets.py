@@ -1,10 +1,11 @@
-"""Receiver: małe widżety okna - suwak z wartością, przycisk z potwierdzeniem, pasek baterii, przełącznik."""
+"""Receiver: małe widżety okna - suwak z wartością, przycisk z potwierdzeniem, pasek baterii, przełącznik,
+zwijana sekcja "Zaawansowane", pasek odcinków opóźnienia."""
 from PySide6.QtCore import QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFontMetrics, QPainter
+from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPainterPath
 from PySide6.QtWidgets import (QButtonGroup, QComboBox, QFrame, QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout,
                                QWidget)
 
-from rx_qt_style import OK, TRACK, set_prop
+from rx_qt_style import LINE, OK, TRACK, px, set_prop
 
 
 def label(text="", role=None, wrap=False):
@@ -20,6 +21,18 @@ def button(text, primary=False, small=False):
     b.setProperty("primary", primary)
     b.setProperty("small", small)
     b.setCursor(Qt.CursorShape.PointingHandCursor)
+    b.setFocusPolicy(Qt.FocusPolicy.TabFocus)    # fokus z klawiatury / pada (tryb TV), klik myszą go nie zostawia
+    return b
+
+
+def icon_button(name, tip_text, size=20):
+    """Przycisk z samą ikoną (rx_qt_icons) i podpowiedzią - nagłówek okna, karta pada."""
+    from rx_qt_icons import icon
+    b = button("")
+    b.setProperty("iconic", True)
+    b.setIcon(icon(name))
+    b.setIconSize(QSize(px(size), px(size)))
+    b.setToolTip(tip_text)
     return b
 
 
@@ -141,9 +154,9 @@ class SliderRow(QWidget):
 
     changed = Signal(float)      # tylko po ruchu użytkownika, nie po set()
 
-    def __init__(self, caption, lo, hi, step, unit=""):
+    def __init__(self, caption, lo, hi, step, unit="", fmt=None):
         super().__init__()
-        self.lo, self.step, self.unit = lo, step, unit
+        self.lo, self.step, self.unit, self.fmt = lo, step, unit, fmt   # fmt(v) -> tekst wartości (zamiast unit)
         self.title, self.val = label(caption, "dim", wrap=True), label("", "val")
         self.slider = _Slider(Qt.Orientation.Horizontal)
         self.slider.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -159,6 +172,8 @@ class SliderRow(QWidget):
         lay.addWidget(self.slider)
 
     def _text(self, v):
+        if self.fmt is not None:
+            return self.fmt(v)
         return f"{round(v)}%" if self.unit == "%" else f"{v:.2f}×" if self.unit == "x" else str(round(v))
 
     def value(self):
@@ -178,15 +193,22 @@ class SliderRow(QWidget):
 
 class ConfirmButton(QPushButton):
     """Przycisk, który wymaga drugiego kliknięcia w ciągu kilku sekund (zamiast okna dialogowego): pierwsze
-    kliknięcie zmienia napis i kolor na czerwony, drugie wysyła `confirmed`."""
+    kliknięcie zmienia napis i kolor na czerwony, drugie wysyła `confirmed`. iconic: sama ikona, po uzbrojeniu napis."""
 
     confirmed = Signal()
 
-    def __init__(self, text, armed="Sure?", timeout_ms=3000, small=False):
-        super().__init__(text)
-        self._text, self._armed = text, armed
+    def __init__(self, text, armed="Sure?", timeout_ms=3000, small=False, iconic=None, tip=""):
+        super().__init__("" if iconic else text)
+        self._text, self._armed = ("" if iconic else text), armed
         self.setProperty("small", small)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+        if iconic:
+            from rx_qt_icons import icon
+            self.setProperty("iconic", True)
+            self.setIcon(icon(iconic))
+            self.setIconSize(QSize(px(20), px(20)))
+            self.setToolTip(tip or text)
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.setInterval(timeout_ms)
@@ -206,6 +228,81 @@ class ConfirmButton(QPushButton):
         self._timer.stop()
         self.setText(self._text)
         set_prop(self, "armed", False)
+
+
+class Collapsible(QWidget):
+    """Zwijana sekcja ("▸ ZAAWANSOWANE"): rzadko zmieniane ustawienia schowane, żeby panel nie przytłaczał.
+    set_open(True) z kodu, gdy w środku jest coś zmienionego (widać, że ustawienie działa)."""
+
+    toggled = Signal(bool)
+
+    def __init__(self, title, *items, opened=False):
+        super().__init__()
+        self._title = title
+        self.head = QPushButton()
+        self.head.setObjectName("fold")
+        self.head.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.head.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+        self.head.clicked.connect(lambda: self.set_open(not self.body.isVisibleTo(self)))
+        self.body = QWidget()
+        bl = QVBoxLayout(self.body)
+        bl.setContentsMargins(0, 2, 0, 0)
+        bl.setSpacing(10)
+        for it in items:
+            if isinstance(it, QWidget):
+                bl.addWidget(it)
+            else:
+                bl.addLayout(it)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(4)
+        lay.addWidget(self.head)
+        lay.addWidget(self.body)
+        self.set_open(opened)
+
+    def is_open(self):
+        return self.body.isVisibleTo(self)
+
+    def set_open(self, on):
+        on = bool(on)
+        self.body.setVisible(on)
+        self.head.setText(("▾  " if on else "▸  ") + self._title)
+        self.toggled.emit(on)
+
+
+class SegmentBar(QWidget):
+    """Cienki pasek z kolorowych odcinków (składniki opóźnienia): szerokość odcinka = jego udział w sumie."""
+
+    def __init__(self, height=6):
+        super().__init__()
+        self.setFixedHeight(height)
+        self.parts = ()
+
+    def sizeHint(self):
+        return QSize(120, self.height())
+
+    def set(self, parts):
+        """parts = [(wartość, kolor)]; pusta lista = sam tor."""
+        parts = tuple((max(0.0, v), c) for v, c in parts)
+        if parts != self.parts:
+            self.parts = parts
+            self.update()
+
+    def paintEvent(self, _e):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        w, h = self.width(), self.height()
+        track = QPainterPath()
+        track.addRoundedRect(QRectF(0, 0, w, h), h / 2, h / 2)
+        p.setClipPath(track)
+        p.fillRect(QRectF(0, 0, w, h), QColor(LINE))
+        total = sum(v for v, _ in self.parts)
+        x = 0.0
+        for k, (v, color) in enumerate(self.parts):
+            seg = w * v / total if total > 0 else 0
+            last = k == len(self.parts) - 1
+            p.fillRect(QRectF(x, 0, seg if last else max(0.0, seg - 1.5), h), QColor(color))
+            x += seg
 
 
 class BatteryBar(QWidget):

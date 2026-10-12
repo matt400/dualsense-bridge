@@ -1,5 +1,8 @@
 """Receiver: panele prawej kolumny okna - wybór profilu, edytor wybranej części pada, gyro i lista zmian.
 
+Na wierzchu tylko to, co zmienia się najczęściej (co robi przycisk, skąd gałka, opór spustu); strojenie reakcji
+(strefy martwe, krzywe) jest w zwijanej sekcji "Zaawansowane", otwartej sama, gdy coś w niej zmieniono.
+
 Panele czytają i zmieniają Editor (rx_editor) i sygnałem `edited` mówią oknu, że profil się zmienił
 (okno odświeża plakietki, status i wysyła profil na pad z krótkim opóźnieniem).
 """
@@ -9,10 +12,13 @@ from PySide6.QtWidgets import (QCheckBox, QCompleter, QFrame, QHBoxLayout, QLine
                                QToolButton, QVBoxLayout, QWidget)
 
 import rx_buttons as B
+import rx_status as ST
+from proto import TRIG_FORCE_MAX, TRIG_START_MAX
 from rx_editor import GYRO_MODES, L3_OF, SHORT, STICK_NAME, STICK_OF
 from rx_qt_style import set_prop
 from rx_qt_icons import pixmap
-from rx_qt_widgets import Combo, ConfirmButton, SliderRow, button, field, input_items, label
+from rx_qt_widgets import (Collapsible, Combo, ConfirmButton, SliderRow, button, field, icon_button, input_items, label,
+                           left)
 
 NONE = "__none"
 def targets():
@@ -58,8 +64,7 @@ class ProfileBar(QWidget):
         self.combo = Combo()
         self.combo.changed.connect(lambda key: self.selected.emit(key))
         self.combo.setToolTip(_("● = profil teraz w użyciu"))
-        self.add = button(_("+ Gra"), small=True)
-        self.add.setToolTip(_("Nowy profil dla gry"))
+        self.add = icon_button("plus", _("Nowy profil dla gry"), 18)
         self.add.clicked.connect(self._open_new)
         self.remove = ConfirmButton(_("Usuń"), _("Usunąć?"), small=True)
         self.remove.confirmed.connect(self.delete)
@@ -165,18 +170,30 @@ class PartPage(QWidget):
         self.dflt = button(_("Domyślnie"), small=True)
         self.dflt.clicked.connect(lambda: self._reset_button(self.name))
         lay.addWidget(self.dflt, 0, Qt.AlignmentFlag.AlignLeft)
-        self.trig = QWidget()
+
+        self.trig = QWidget()                        # tylko L2 / R2: opór spustu i (zwinięta) reakcja
         tl = _vbox(self.trig)
-        self.trig_title = label("", "h2")
+        tl.addSpacing(4)
+        tl.addWidget(label(_("OPÓR SPUSTU"), "h2"))
+        self.fx_force = SliderRow(_("Siła oporu"), 0, TRIG_FORCE_MAX, 1,
+                                  fmt=lambda v: _("wył.") if v < 0.5 else f"{round(v)} / {TRIG_FORCE_MAX}")
+        self.fx_start = SliderRow(_("Opór od (skok spustu)"), 0, TRIG_START_MAX * 10, 10, "%")
+        self.fx_force.changed.connect(lambda v: self._trigger_fx(force=round(v)))
+        self.fx_start.changed.connect(lambda v: self._trigger_fx(start=round(v / 10)))
+        tl.addWidget(self.fx_force)
+        tl.addWidget(self.fx_start)
+        tl.addWidget(label(_("Stały opór DualSense, np. do wyścigów - najlepiej w profilu gry. Gra przez DS4 go nie "
+                             "ustawi, więc robi to nadajnik."), "dim", wrap=True))
+        self.fx_warn = label("", wrap=True)
+        tl.addWidget(self.fx_warn)
         self.tdz = SliderRow(_("Strefa martwa (ignoruj lekkie dotknięcia do)"), 0, 200, 1)
         self.tmax = SliderRow(_("Pełne wciśnięcie od"), 55, 255, 1)
         self.tdef = button(_("Domyślna reakcja"), small=True)
         self.tdz.changed.connect(lambda v: self._tune(self.name, dz=round(v)))
         self.tmax.changed.connect(lambda v: self._tune(self.name, max=round(v)))
         self.tdef.clicked.connect(lambda: self._reset_tuning(self.name))
-        for wd in (self.trig_title, self.tdz, self.tmax):
-            tl.addWidget(wd)
-        tl.addWidget(self.tdef, 0, Qt.AlignmentFlag.AlignLeft)
+        self.trig_adv = Collapsible(_("ZAAWANSOWANE: REAKCJA SPUSTU"), self.tdz, self.tmax, left(self.tdef))
+        tl.addWidget(self.trig_adv)
         lay.addWidget(self.trig)
         lay.addStretch(1)
         return scrolled(w)
@@ -202,7 +219,6 @@ class PartPage(QWidget):
         self.l3.changed.connect(lambda v: self._set_button(L3_OF[self.name], v))
         lay.addWidget(self.l3_caption)
         lay.addWidget(self.l3)
-        lay.addWidget(label(_("REAKCJA"), "h2"))
         self.dz = SliderRow(_("Strefa martwa"), 0, 50, 1, "%")
         self.outer = SliderRow(_("Pełne wychylenie od"), 50, 100, 1, "%")
         self.curve = SliderRow(_("Krzywa (powyżej 1 = dokładniejsze małe ruchy)"), 0.3, 3, 0.05, "x")
@@ -211,11 +227,12 @@ class PartPage(QWidget):
         self.outer.changed.connect(lambda v: self._tune(STICK_OF[self.name], outer=r3(v / 100)))
         self.curve.changed.connect(lambda v: self._tune(STICK_OF[self.name], curve=r3(v)))
         self.anti.changed.connect(lambda v: self._tune(STICK_OF[self.name], anti=r3(v / 100)))
-        for wd in (self.dz, self.outer, self.curve, self.anti):
-            lay.addWidget(wd)
         self.sdef = button(_("Domyślna reakcja"), small=True)
         self.sdef.clicked.connect(lambda: self._reset_tuning(STICK_OF[self.name]))
-        lay.addWidget(self.sdef, 0, Qt.AlignmentFlag.AlignLeft)
+        self.stick_adv = Collapsible(_("ZAAWANSOWANE: REAKCJA GAŁKI"), self.dz, self.outer, self.curve, self.anti,
+                                     left(self.sdef))
+        lay.addSpacing(4)
+        lay.addWidget(self.stick_adv)
         lay.addStretch(1)
         return scrolled(w)
 
@@ -237,6 +254,12 @@ class PartPage(QWidget):
         self.ed.clear_tuning(name)
         self.refresh()
         self.edited.emit()
+
+    def _trigger_fx(self, **patch):
+        if self.name in B.TRIGGERS:
+            self.ed.set_trigger_fx(self.name, **patch)
+            self.fx_start.setEnabled(self.ed.trigger_fx(self.name)["force"] > 0)
+            self.edited.emit()
 
     def _stick(self, **patch):
         if self.name in STICK_OF:
@@ -273,6 +296,7 @@ class PartPage(QWidget):
             self.outer.set(t["outer"] * 100)
             self.curve.set(t["curve"])
             self.anti.set(t["anti"] * 100)
+            self.stick_adv.set_open(out in ed.prof["tuning"] or self.stick_adv.is_open())
             self.stack.setCurrentIndex(2)
             return
         trig = name in B.TRIGGERS
@@ -283,11 +307,23 @@ class PartPage(QWidget):
         self.dst.set_data(self._target(name))
         self.trig.setVisible(trig)
         if trig:
-            t = ed.tuning(name)
-            self.trig_title.setText(_("REAKCJA {b} (TO, CO DOSTAJE GRA)").format(b=SHORT[name]))
+            t, fx = ed.tuning(name), ed.trigger_fx(name)
             self.tdz.set(t["dz"])
             self.tmax.set(t["max"])
+            self.trig_adv.set_open(name in ed.prof["tuning"] or self.trig_adv.is_open())
+            self.fx_force.set(fx["force"])
+            self.fx_start.set(fx["start"] * 10)
+            self.fx_start.setEnabled(fx["force"] > 0)
+            self.update_caps()
         self.stack.setCurrentIndex(1)
+
+    def update_caps(self):
+        """Ostrzeżenie pod oporem spustu, gdy nadajnik tego pada go nie ustawi (co 400 ms z okna - tani odczyt)."""
+        text, level = ST.triggers_status(self.ed.slot) if self.name in B.TRIGGERS else ("", "")
+        if text != self.fx_warn.text():
+            self.fx_warn.setText(("⚠  " + text) if text else "")
+        self.fx_warn.setVisible(bool(text))
+        set_prop(self.fx_warn, "level", level)
 
 
 class GyroPage(QWidget):
@@ -369,7 +405,7 @@ class GyroPage(QWidget):
 
 
 class ChangesPage(QWidget):
-    """Lista zmian względem ustawień domyślnych; × cofa jedną pozycję."""
+    """Lista zmian względem ustawień domyślnych; × cofa jedną pozycję, "Usuń wszystkie" (2 kliknięcia) - cały profil."""
 
     undone = Signal()      # cofnięto pozycję - okno musi odświeżyć wszystkie panele
 
@@ -378,7 +414,11 @@ class ChangesPage(QWidget):
         self.ed, self._sig = ed, None
         self.box = QWidget()
         self.lay = _vbox(self.box, 4)
-        _vbox(self).addWidget(scrolled(self.box))
+        outer = _vbox(self, 8)
+        outer.addWidget(scrolled(self.box), 1)
+        self.reset = ConfirmButton(_("Usuń wszystkie"), _("Usunąć wszystkie?"), small=True)
+        self.reset.setToolTip(_("Usuń wszystkie zmiany w tym profilu"))
+        outer.addLayout(left(self.reset))
 
     def refresh(self):
         """-> liczba zmian. Wiersze są przebudowywane tylko, gdy lista się zmieniła (suwak daje wiele zmian na sekundę)."""
@@ -397,6 +437,7 @@ class ChangesPage(QWidget):
             if not changes:
                 self.lay.addWidget(label(_("Brak zmian - wszystko działa domyślnie."), "dim", wrap=True))
             self.lay.addStretch(1)
+            self.reset.setVisible(bool(changes))
         return len(changes)
 
     def _row(self, text, undo):

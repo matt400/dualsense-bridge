@@ -10,6 +10,9 @@ sprawiał, że pad przyjmował tylko jeden z nich. Diody gracza zostają nietkni
            "evdev" / "hidraw" / "off"
 
 Raport: USB 0x02 (63 B), Bluetooth 0x31 (78 B: numer sekwencji, znacznik 0x10, na końcu CRC32 z ziarnem 0xA2).
+Ten sam raport niesie stały opór spustów (adaptive triggers) z profilu gry na PC - gry przez wirtualnego DS4 go
+nie ustawią, a sterownik jądra nie ma takiej funkcji. Pad trzyma efekt spustu do następnej zmiany; raporty bez flag
+spustów (wibracja, kolor, sterownik) go nie ruszają.
 Pad trzyma ostatnią moc silników - receiver odświeża wibrację co 0.5 s, a strażnik tutaj zatrzymuje ją, gdy
 odświeżenia ustaną (zgubione pakiety, zamknięta gra), żeby pad nie wibrował bez końca.
 """
@@ -25,9 +28,12 @@ import zlib
 from evdev import ecodes as ec
 from evdev import ff
 
-from proto import WHY_ACCESS, WHY_NO_HIDRAW, WHY_NOT_FOUND, WHY_OFF, WHY_OK, WHY_OPEN
+from proto import CAP_TRIGGERS, TRIG_FORCE_MAX, TRIG_START_MAX, WHY_ACCESS, WHY_NO_HIDRAW, WHY_NOT_FOUND, WHY_OFF, WHY_OK, WHY_OPEN
 
 FLAG0_COMPAT_VIBRATION, FLAG0_HAPTICS_SELECT = 0x01, 0x02
+FLAG0_RIGHT_TRIGGER, FLAG0_LEFT_TRIGGER = 0x04, 0x08    # valid_flag0: efekt prawego / lewego spustu z tego raportu
+RIGHT_TRIGGER_AT, LEFT_TRIGGER_AT, TRIGGER_LEN = 10, 21, 11
+TRIG_FEEDBACK, TRIG_OFF = 0x21, 0x05      # efekty spustu: "Feedback" (opór od strefy) i wyłączenie
 FLAG2_COMPAT_VIBRATION2 = 0x04            # nowsze oprogramowanie pada (jak use_vibration_v2 w jądrze)
 FLAG1_LIGHTBAR = 0x04                     # valid_flag1: kolor lightbara z tego raportu
 LIGHTBAR_AT = 44                          # lightbar_red / green / blue we wspólnej części raportu
@@ -58,12 +64,34 @@ def firmware_version(fd):
     return buf[FW_VERSION_AT] | buf[FW_VERSION_AT + 1] << 8 if buf[0] == FW_REPORT else None
 
 
-def output_report(bt, seq, small, large, v2=None, rgb=None):
-    """Raport wyjściowy DualSense: wibracja i (opcjonalnie) kolor lightbara. small = silnik prawy (słaby),
-    large = lewy (mocny), 0..255. v2: True = oprogramowanie pada >= 2.21 (flaga "vibration v2"), False = starsze,
-    None = nieznane -> obie flagi (jak sterownik jądra: starsze pady wymagają flagi v1, nowsze v2)."""
+def trigger_effect(start, force):
+    """Stały opór spustu (efekt "Feedback" 0x21, 11 B): od strefy `start` (0-9, strefa = 10 % skoku) do końca, siła
+    `force` 1-8 we wszystkich tych strefach; force 0 -> efekt Off (spust bez oporu). Bity: 10 stref aktywnych
+    (2 B) i po 3 bity siły na strefę (4 B), little endian."""
+    out = bytearray(TRIGGER_LEN)
+    if not force or not 0 <= start <= TRIG_START_MAX:
+        out[0] = TRIG_OFF
+        return bytes(out)
+    level = min(force, TRIG_FORCE_MAX) - 1
+    zones = sum(1 << z for z in range(start, 10))
+    forces = sum(level << (3 * z) for z in range(start, 10))
+    out[0] = TRIG_FEEDBACK
+    out[1:3] = zones.to_bytes(2, "little")
+    out[3:7] = forces.to_bytes(4, "little")
+    return bytes(out)
+
+
+def output_report(bt, seq, small, large, v2=None, rgb=None, triggers=None):
+    """Raport wyjściowy DualSense: wibracja i (opcjonalnie) kolor lightbara i opór spustów. small = silnik prawy
+    (słaby), large = lewy (mocny), 0..255. v2: True = oprogramowanie pada >= 2.21 (flaga "vibration v2"), False =
+    starsze, None = nieznane -> obie flagi (jak sterownik jądra: starsze pady wymagają flagi v1, nowsze v2).
+    triggers: (efekt L2, efekt R2) z trigger_effect() albo None = spusty bez zmian."""
     common = bytearray(47)
     common[0] = FLAG0_HAPTICS_SELECT | (0 if v2 else FLAG0_COMPAT_VIBRATION)
+    if triggers is not None:
+        common[0] |= FLAG0_RIGHT_TRIGGER | FLAG0_LEFT_TRIGGER
+        common[LEFT_TRIGGER_AT:LEFT_TRIGGER_AT + TRIGGER_LEN] = triggers[0]
+        common[RIGHT_TRIGGER_AT:RIGHT_TRIGGER_AT + TRIGGER_LEN] = triggers[1]
     common[2], common[3] = small & 0xFF, large & 0xFF        # motor_right, motor_left
     common[38] = FLAG2_COMPAT_VIBRATION2 if v2 is not False else 0   # valid_flag2
     if rgb is not None:
@@ -164,6 +192,7 @@ class Rumble:
         self.logged = 0               # ile pierwszych poleceń wibracji zapisać w logu (diagnostyka)
         self.cur = (0, 0)
         self.rgb = None               # kolor lightbara wysyłany razem z wibracją (tylko raport HID)
+        self.trig = None              # opór spustów (L2, R2) ustawiony na padzie albo None = nigdy nie ruszany
         self.t_set = 0.0
         self._watch = None
         self._repeat = None
@@ -189,8 +218,9 @@ class Rumble:
 
     @property
     def bits(self):
-        """Sposoby jako bity (pakiet wersji do receivera): 1 = sterownik, 2 = raport HID."""
-        return ("evdev" in self.methods) | ("hidraw" in self.methods) << 1
+        """Sposoby jako bity (pakiet wersji do receivera): 1 = sterownik, 2 = raport HID, 4 = opór spustów."""
+        hid = "hidraw" in self.methods
+        return ("evdev" in self.methods) | hid << 1 | (CAP_TRIGGERS if hid else 0)
 
     def describe(self):
         parts = []
@@ -241,6 +271,25 @@ class Rumble:
         self._arm_watchdog()
         if changed:
             self._arm_repeat()
+
+    def set_triggers(self, vals):
+        """Opór spustów (L2 początek, L2 siła, R2 początek, R2 siła). -> True, gdy wysłany do pada (raport HID).
+        Receiver odświeża go co kilka sekund, więc pad po ponownym połączeniu wraca do efektu z profilu."""
+        if "hidraw" not in self.methods:
+            return False
+        trig = (trigger_effect(*vals[:2]), trigger_effect(*vals[2:4]))
+        if trig != self.trig:
+            print(f"Controller {self.idx}: trigger resistance L2 {vals[0]}/{vals[1]} R2 {vals[2]}/{vals[3]}")
+        self.trig = trig
+        try:
+            self.seq = (self.seq + 1) & 0x0F
+            os.write(self.fd, output_report(self.bt, self.seq, *self.cur, self.v2, self.rgb, trig))
+        except (BlockingIOError, InterruptedError):
+            return False                    # pełna kolejka - następne odświeżenie z PC dośle efekt
+        except OSError as e:
+            print(f"Controller {self.idx}: trigger effect via hidraw failed ({e!r})")
+            return False
+        return True
 
     def _arm_repeat(self):
         if self._repeat is not None:
@@ -308,6 +357,8 @@ class Rumble:
                 setattr(self, name, None)
         if self.cur != (0, 0):
             self._send(0, 0)
+        if self.trig is not None and any(t[0] != TRIG_OFF for t in self.trig):
+            self.set_triggers((0, 0, 0, 0))      # nadajnik się zamyka - spust nie może zostać twardy
         if "evdev" in self.methods and self.ff_id is not None:
             try:
                 self.dev.erase_effect(self.ff_id)

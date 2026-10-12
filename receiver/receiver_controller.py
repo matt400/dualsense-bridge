@@ -77,7 +77,7 @@ def main():
     gc.collect()
     gc.freeze()        # obiekty ze startu nie są już skanowane przez GC - krótsze, rzadsze pauzy w wątkach czasu rzeczywistego
     slot_threads = [S.start_thread(f"slot{i}", rx_ds4.slot_thread, i) for i in range(C.NUM_PADS)]
-    S.start_thread("feedback", rx_feedback.feedback_thread, rx_net.send_feedback)
+    S.start_thread("feedback", rx_feedback.feedback_thread, rx_net.send_feedback, rx_net.send_triggers)
     S.start_thread("gyro mouse", rx_gyro.mouse_thread)
     if C.GAME_PROFILES:
         S.start_thread("game watch", rx_games.watch_thread)

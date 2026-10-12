@@ -6,7 +6,8 @@ import time
 import zlib
 
 import sender_net as net
-from proto import (KEY_BIT, SENDER_VERSION, T_CLICK, T_IDENT, T_MOUSE, T_STATE, T_TOUCH, T_VERSION, WHY_OFF, clamp)
+from proto import (KEY_BIT, LAT_NONE, SENDER_VERSION, T_CLICK, T_IDENT, T_MOUSE, T_STATE, T_STATE2, T_TOUCH, T_VERSION,
+                   WHY_OFF, clamp)
 from sender_config import BURST_DELAYS, C, IDLE_TP, NEUTRAL_PAD, PAD_ABS, STICK_AXES
 
 
@@ -56,6 +57,11 @@ class Ctrl:
         self._state_timer = None
         self.last_touch_send = 0.0
         self._touch_timer = None
+        # pomiar opóźnienia (pakiet state2): czas w jądrze [µs, zegar zdarzeń evdev] najstarszej niewysłanej zmiany,
+        # opóźnienie Bluetooth ponad minimum w tamtej chwili i bieżące (z sender_streams.BtDelay)
+        self.t_event = None
+        self.ev_bt = self.bt_us = LAT_NONE
+        self.triggers = (0, 0, 0, 0)  # opór spustów z PC (L2 początek, siła, R2 początek, siła)
 
     def devices(self):
         return [d for d in (self.pad_dev, self.motion_dev, self.touch_dev) if d]
@@ -102,14 +108,33 @@ class Ctrl:
         r = self.rumble
         net.emit(T_VERSION, self.idx, SENDER_VERSION, r.bits if r is not None else 0, r.why if r is not None else WHY_OFF)
 
+    def mark_event(self, e):
+        """Zdarzenie z jądra zmieniło stan (przycisk, gałka, ruch): zapamiętaj czas najstarszej niewysłanej zmiany."""
+        if self.t_event is None:
+            sec = getattr(e, "sec", None)            # zdarzenia w testach nie mają czasu
+            if sec is not None:
+                self.t_event = sec * 1_000_000 + e.usec
+                self.ev_bt = self.bt_us
+
     def send_state(self, force=False):
         key = (*self.pad, *self.hat, self.mask, self.batt, self.flags, *self.motion)
         self.pending = False
         if not force and key == self.last_key:
             return
+        fresh = key != self.last_key
         self.last_key = key
         self.t_state = time.monotonic()
-        net.emit(T_STATE, self.idx, *key)
+        ev, self.t_event = self.t_event, None
+        pc = net.pc_clock.now_us()
+        if pc is None:                                   # receiver bez pong2 (starszy) albo brak synchronizacji
+            net.emit(T_STATE, self.idx, *key)
+            return
+        phone = bt = LAT_NONE                            # powtórka (heartbeat, seria) - bez pomiaru
+        if fresh and ev is not None:
+            age = time.time_ns() // 1000 - ev            # zegar zdarzeń evdev = CLOCK_REALTIME
+            if 0 <= age < LAT_NONE:
+                phone, bt = age, self.ev_bt
+        net.emit(T_STATE2, self.idx, *key, pc, phone, bt)
 
     def request_send(self):
         """Wyślij zmieniony stan z limitem pad_min_dt: pierwsza zmiana po ciszy idzie jeszcze w tej iteracji pętli
@@ -197,6 +222,13 @@ class Ctrl:
             except OSError as e:
                 print(f"Controller {self.idx}: lightbar unavailable: {e!r}")
                 self.led = None
+
+    def set_triggers(self, vals):
+        """Opór spustów z profilu (pakiet trig). Tylko raport HID - sterownik jądra nie ma takiej funkcji."""
+        vals = tuple(vals)
+        self.triggers = vals
+        if self.rumble is not None:
+            self.rumble.set_triggers(vals)
 
     def cancel_timers(self):
         for name in ("_state_timer", "_touch_timer"):

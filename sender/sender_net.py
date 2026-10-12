@@ -4,7 +4,7 @@ import collections
 import socket
 import time
 
-from proto import BODY, RTT_NONE, Codec, SeqFilter, T_CMD, T_FB, T_PING, T_PONG
+from proto import BODY, RTT_NONE, Codec, SeqFilter, T_CMD, T_FB, T_PING, T_PONG, T_PONG2, T_TRIG
 import sender_state as state
 from sender_config import C
 
@@ -18,10 +18,42 @@ pongs = 0
 fb_filter = SeqFilter(1.0)            # z oknem czasowym: restart receivera (losowe seq) nie blokuje feedbacku
 on_feedback = None                    # callback(idx, (small, large, r, g, b)) ustawiany w main
 on_command = None                     # callback(idx, cmd, arg) ustawiany w main
+on_triggers = None                    # callback(idx, (l2 początek, l2 siła, r2 początek, r2 siła)) ustawiany w main
 BUILD_S = 5.0                         # co tyle wersja kodu nadajnika (pakiet build) do okna receivera
 PING_S = 0.25                         # 4 pingi/s: mediana z 2 s jest stabilna, a pojedynczy skok jej nie zmienia
 recent_rtt = collections.deque(maxlen=8)   # ostatnie pomiary - do pakietu info (okno w GUI receivera)
 last_pong = 0.0
+
+
+class PcClock:
+    """Zegar PC widziany z telefonu: przesunięcie jak w NTP z pongów pong2 (czas PC w chwili odpowiedzi).
+    Bierzemy pomiar o najmniejszym RTT z ostatnich SYNC_N (~3 s): jego błąd to najwyżej połowa tego RTT (Ethernet:
+    ~0.1 ms), a krótkie okno ogranicza dryf kwarców (50 ppm = 0.15 ms na 3 s). Bez pong2 przez SYNC_MAX_AGE_S
+    (starszy receiver, przerwa w sieci) = brak zegara - stan idzie zwykłym pakietem, bez pomiaru."""
+
+    SYNC_N, SYNC_MAX_AGE_S = 12, 3.0
+
+    def __init__(self):
+        self.samples = collections.deque(maxlen=self.SYNC_N)   # (rtt ns, przesunięcie µs)
+        self.offset_us = None
+        self.t_sync = 0.0
+
+    def pong(self, t0_ns, pc_us, t3_ns):
+        rtt = t3_ns - t0_ns
+        if rtt < 0 or rtt > 1_000_000_000:
+            return
+        self.samples.append((rtt, pc_us - (t0_ns + t3_ns) // 2000))
+        self.offset_us = min(self.samples)[1]
+        self.t_sync = time.monotonic()
+
+    def now_us(self):
+        """Czas PC teraz [µs, młodsze 32 bity] albo None (brak synchronizacji)."""
+        if self.offset_us is None or time.monotonic() - self.t_sync > self.SYNC_MAX_AGE_S:
+            return None
+        return (time.perf_counter_ns() // 1000 + self.offset_us) & 0xFFFFFFFF or 1    # 0 zarezerwowane
+
+
+pc_clock = PcClock()
 
 
 def rtt_x10():
@@ -101,7 +133,10 @@ def on_readable():
         if p is None:
             continue
         t, idx, sq = p
-        if t == T_PONG:
+        if t == T_PONG2:              # zegar PC do pomiaru opóźnienia (RTT liczy zwykły pong zaraz po nim)
+            t0, pc_us = BODY[T_PONG2].unpack_from(data, 4)
+            pc_clock.pong(t0, pc_us, time.perf_counter_ns())
+        elif t == T_PONG:
             rtt = (time.perf_counter_ns() - BODY[T_PONG].unpack_from(data, 4)[0]) / 1e6
             rtts.append(rtt)
             recent_rtt.append(rtt)
@@ -115,6 +150,9 @@ def on_readable():
         elif t == T_CMD:
             if fb_filter.fresh(("cmd", idx), sq, time.monotonic()) and on_command is not None:
                 on_command(idx, *BODY[T_CMD].unpack_from(data, 4))
+        elif t == T_TRIG:
+            if fb_filter.fresh(("trig", idx), sq, time.monotonic()) and on_triggers is not None:
+                on_triggers(idx, BODY[T_TRIG].unpack_from(data, 4))
 
 
 async def pinger():
