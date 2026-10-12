@@ -138,11 +138,11 @@ def trigger_target(i):
 
 def triggers_tick(i, now, send_trig):
     """Efekty spustów z profilu slotu: zmiana -> od razu (kilka razy), stałe efekty -> odświeżanie co TRIG_REFRESH_S.
-    Bez efektów i bez wcześniejszej zmiany nic nie wysyła - pad zostaje z domyślnymi spustami."""
+    Pierwszy przebieg po połączeniu pada wysyła stan zawsze, także "bez efektów": nadajnik i pad mogą mieć efekty
+    z poprzedniego uruchomienia receivera (restart po aktualizacji, zamknięcie w trakcie gry z klikiem na R2) - bez
+    tego spust zostawał twardy, gdy profil w użyciu po starcie nie ma efektów. Potem bez efektów nic nie odświeża."""
     vals = trigger_target(i)
     last = trig_sent[i]
-    if last is None and not any(vals):
-        return
     if last is None or last[0] != vals:
         trig_sent[i] = (vals, now)
         send_trig(i, vals, TRIG_REPEAT)

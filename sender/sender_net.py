@@ -48,9 +48,14 @@ class PcClock:
         rtt = t3_ns - t0_ns
         if rtt < 0 or rtt > 1_000_000_000:
             return
+        now = time.monotonic()
+        if now - self.t_sync > self.SYNC_MAX_AGE_S:
+            # po przerwie stare pomiary nie pasują: restart PC (inny zegar) albo dryf kwarców (50 ppm = 180 ms na godzinę);
+            # pomiar o najmniejszym RTT sprzed przerwy wygrywałby z nowymi przez SYNC_N pongów
+            self.samples.clear()
         self.samples.append((rtt, pc_us - (t0_ns + t3_ns) // 2000))
         self.offset_us = min(self.samples)[1]
-        self.t_sync = time.monotonic()
+        self.t_sync = now
 
     def now_us(self):
         """Czas PC teraz [µs, młodsze 32 bity] albo None (brak synchronizacji)."""

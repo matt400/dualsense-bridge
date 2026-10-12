@@ -131,7 +131,8 @@ async def gyro_cal():
     await asyncio.gather(task, return_exceptions=True)
     c.cancel_timers()
     res = [v for t, _i, v in sent if t == T_CALRES]
-    assert [v[0] for v in res] == [CAL_RUNNING, CAL_OK], res
+    assert [v[0] for v in res] == [CAL_RUNNING, CAL_OK, CAL_OK, CAL_OK], res
+    assert res[1] == res[2] == res[3], "wynik 3x z tymi samymi wartościami (UDP; receiver odrzuca powtórki)"
     st, flags, *rest = res[-1]
     assert flags & CALF_STORED and tuple(rest[:3]) == tuple(rest[3:6]) == (1200, -800, 300) and rest[6] > 0, res[-1]
     states = [v for t, _i, v in sent if t == T_STATE]

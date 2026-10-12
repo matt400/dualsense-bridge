@@ -145,7 +145,12 @@ S.alive[0] = True
 F.trig_sent[0] = None
 S.remap_maps[0] = normalize_profile({})
 F.triggers_tick(0, 100.0, send)
-assert trig == [], "bez oporu i bez wcześniejszej zmiany nic nie idzie (pad zostaje z domyślnymi spustami)"
+assert trig == [(0, (0, 0, 0, 0), F.TRIG_REPEAT)], \
+    "po połączeniu stan idzie zawsze - pad mógł zostać z efektami z poprzedniego uruchomienia receivera"
+F.triggers_tick(0, 100.0 + 3 * F.TRIG_REFRESH_S, send)
+assert len(trig) == 1, "bez efektów - bez odświeżania"
+trig.clear()
+F.trig_sent[0] = None
 S.remap_maps[0] = p
 F.triggers_tick(0, 100.0, send); F.triggers_tick(0, 100.5, send)
 assert trig == [(0, (0, 0, 3, 6), F.TRIG_REPEAT)], "zmiana od razu, kilka kopii (UDP)"
@@ -171,4 +176,43 @@ S.sender_info[0] = (6, 3, 0); assert ST.triggers_status(0)[1] == "warn"
 S.sender_info[0] = (6, 7, 0); assert ST.triggers_status(0) == ("", "")
 S.alive[0] = False; S.sender_info[0] = None; assert ST.triggers_status(0) == ("", "")
 ok("status oporu: stary nadajnik / brak HID / działa / pad niepodłączony")
+
+# ---------- podłączenie wirtualnego DS4: zmiana sprzed niego to nie opóźnienie ----------
+import threading
+import rx_ds4
+
+
+class SlowPad:                                            # tworzenie DS4 w ViGEm trwa (tu 0.3 s)
+    def __init__(self):
+        time.sleep(0.3)
+
+    def register_notification(self, cb):
+        pass
+
+    def unregister_notification(self):
+        pass
+
+    def update_extended_report(self, rep):
+        pass
+
+
+rx_ds4.vg.VDS4Gamepad = SlowPad
+rx_ds4.init()
+L.clear(0); L.reset_buttons(0)
+arr = time.perf_counter_ns()
+with S.lock:                                              # pierwszy stan po połączeniu, zanim DS4 istnieje
+    S.states[0]["lat"] = (arr, 500, LAT_NONE, 800)
+    S.states[0]["blat"] = (arr, 500, LAT_NONE, 800)
+S.want[0].set()
+t = threading.Thread(target=rx_ds4.slot_thread, args=(0,), daemon=True)
+t.start()
+end = time.monotonic() + 3
+while not S.plugged[0] and time.monotonic() < end:
+    time.sleep(0.01)
+time.sleep(0.05)
+S.want[0].clear(); S.wake[0].set(); t.join(2)
+assert S.plugged[0] is False and not L._samples.get(0) and not L._buttons.get(0), \
+    "czas tworzenia DS4 nie trafia do pomiaru (skok max / średniej po każdym połączeniu)"
+S.push = None
+ok("wirtualny DS4: zmiana sprzed podłączenia nie jest próbką opóźnienia")
 print("FEATURES OK")

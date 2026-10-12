@@ -4,6 +4,7 @@ Pad z zapisaną kalibracją (gyro_cal_file) nie kalibruje się przy starcie - od
 nie trzeba go odkładać po włączeniu. Autobias (sender_streams) dalej dostraja bias w pamięci, zapis się nie zmienia.
 Kalibracja z okna (CMD_GYRO_CAL): pad leży nieruchomo przez arg sekund; wynik (pakiet calres) wraca do receivera.
 """
+import asyncio
 import json
 import os
 import re
@@ -11,7 +12,7 @@ import time
 
 import sender_net as net
 from proto import CAL_FEW, CAL_MAX_S, CAL_MOVED, CAL_OK, CALF_STORED, T_CALRES, clamp
-from sender_config import C
+from sender_config import BURST_DELAYS, C
 
 MIN_SAMPLES = 20
 DUP_S = 0.3              # polecenie przychodzi 3x (UDP) - powtórki w tym czasie nie zaczynają kalibracji od nowa
@@ -79,12 +80,22 @@ class GyroCal:
         return CAL_OK, [sum(a) / len(a) for a in axes]
 
 
-def report(c, status):
-    """Pakiet calres do receivera: stan, zapisany bias i ten, którego nadajnik teraz używa."""
+def report(c, status, repeat=False):
+    """Pakiet calres do receivera: stan, zapisany bias i ten, którego nadajnik teraz używa. repeat: wynik kalibracji
+    idzie jeszcze dwa razy (BURST_DELAYS) z tymi samymi wartościami - zgubiony pakiet nie zostawi okna z "brak
+    odpowiedzi" przy kalibracji, która się udała i jest zapisana; receiver odrzuca powtórki."""
     st = stored(c.key)
     sb = [round(x) for x in st["bias"]] if st else [0, 0, 0]
-    net.emit(T_CALRES, c.idx, status, CALF_STORED if st else 0, *sb, *(round(x) for x in c.gyro_bias),
-             st["t"] if st else 0)
+    vals = (status, CALF_STORED if st else 0, *sb, *(round(x) for x in c.gyro_bias), st["t"] if st else 0)
+    net.emit(T_CALRES, c.idx, *vals)
+    if not repeat:
+        return
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    for d in BURST_DELAYS:
+        loop.call_later(d, lambda: net.emit(T_CALRES, c.idx, *vals))
 
 
 def request(c, secs, now=None):
@@ -95,7 +106,7 @@ def request(c, secs, now=None):
         return
     c.cal_cmd_t = now
     if c.motion_dev is None:            # pad bez czujnika ruchu (np. jeszcze się łączy) - nie ma czego kalibrować
-        report(c, CAL_FEW)
+        report(c, CAL_FEW, repeat=True)
         return
     c.cal_request = secs
 
@@ -119,4 +130,4 @@ def finish(c, result):
         print(f"Controller {c.idx}: gyro calibrated {[round(b) for b in bias]}" + (" (saved)" if saved else ""))
     else:
         print(f"Controller {c.idx}: gyro calibration rejected ({'pad was moving' if status == CAL_MOVED else 'no data'})")
-    report(c, status)
+    report(c, status, repeat=True)
