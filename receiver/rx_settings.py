@@ -14,6 +14,7 @@ razu: apply() podmienia obiekt `cur` (jedno przypisanie - wątki sieci czytają 
 from rx_i18n import _
 import json
 import os
+import string
 from dataclasses import asdict, dataclass, field, fields, replace
 
 from proto import mac_bytes, mac_text
@@ -32,7 +33,11 @@ def _num(lo, hi, kind=int):
 
 def _choice(options):
     def check(v):
-        if v not in options:
+        try:
+            known = v in options
+        except TypeError:             # lista / obiekt z JSON w słowniku opcji (unhashable) - zła wartość, nie awaria
+            known = False
+        if not known:
             raise ValueError(f"expected one of {tuple(options)}")
         return v
     return check
@@ -151,9 +156,10 @@ class PadLight:
 def _color(v):
     if v == "":
         return ""
-    if not (isinstance(v, str) and len(v) == 7 and v[0] == "#"):
+    # dokładnie 6 cyfr szesnastkowych: int(..., 16) przepuszczał "#0x1234", "# 12345" i "#12_345", a potem
+    # rx_lightbar.hex_rgb wywracał wątek feedbacku przy każdym odświeżeniu
+    if not (isinstance(v, str) and len(v) == 7 and v[0] == "#" and all(c in string.hexdigits for c in v[1:])):
         raise ValueError("expected #rrggbb")
-    int(v[1:], 16)
     return v.lower()
 
 
@@ -168,7 +174,7 @@ def _pads(v):
                 raise ValueError("expected an object")
             out[_text(k)] = PadLight(mode=_choice(LIGHT_MODES)(raw.get("mode", "solid")), color=_color(raw.get("color", "")),
                                      blink=_bool(raw.get("blink", True)))
-        except ValueError as e:
+        except (ValueError, TypeError) as e:
             print(f"Settings: lightbar for {k!r} ignored ({e})")
     return out
 
@@ -258,7 +264,7 @@ def _section(cls, raw, base, name):
             continue
         try:
             values[f.name] = cls.V[f.name](raw[f.name])
-        except ValueError as e:
+        except (ValueError, TypeError) as e:       # TypeError: nieoczekiwany typ z ręcznej edycji - nie awaria startu
             print(f"Settings: bad {name}.{f.name} = {raw[f.name]!r} ({e}) - using {getattr(base, f.name)!r}")
     return replace(base, **values)
 

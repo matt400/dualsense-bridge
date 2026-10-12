@@ -184,6 +184,22 @@ assert R.defaults(0.5, 25).lightbar.low_pct == 25 and R.defaults(0.5, 99).lightb
 assert s.lightbar.get("11:22:33:44:55:66") == R.PadLight("battery", "", True) and R.LightbarConfig().get("x") == R.PadLight()
 ok("settings.json: lightbar per pad + domyślny, Wake-on-LAN, dziennik; złe wartości -> domyślne")
 
+# ręczna edycja: lista / obiekt tam, gdzie wybór z listy (unhashable) nie może wywalić startu receivera;
+# kolor tylko #rrggbb - "#0x1234" przechodził int(..., 16), a potem wywracał wątek feedbacku (hex_rgb)
+raw = json.load(open(path))
+raw["log"]["level"] = ["info"]
+raw["ui"] = {"lang": {"pl": 1}}
+raw["master"] = {"when_absent": ["all"]}
+raw["lightbar"]["pads"] = {"*": {"mode": ["solid"]}, "aa:bb:cc:dd:ee:ff": {"color": "#0x1234"},
+                           "11:22:33:44:55:66": {"color": "# 12345"}, "22:22:33:44:55:66": {"color": "#12_345"},
+                           "33:22:33:44:55:66": {"color": "#A0b1C2"}}
+json.dump(raw, open(path, "w"))
+s3 = R.load(path)
+assert s3.log.level == "info" and s3.ui.lang == "pl" and s3.master.when_absent == "all", s3
+assert set(s3.lightbar.pads) == {"33:22:33:44:55:66"} and s3.lightbar.pads["33:22:33:44:55:66"].color == "#a0b1c2", s3.lightbar.pads
+assert all(LB.hex_rgb(p.color) for p in s3.lightbar.pads.values())
+ok("settings.json: zły typ (lista / obiekt) i zły kolor -> domyślne, bez wyjątku")
+
 # ---------- lightbar ----------
 assert LB.battery_rgb(10, 15) == (255, 0, 0) and LB.battery_rgb(15, 15) == (255, 0, 0)
 assert LB.battery_rgb(100, 15) == LB.battery_rgb(80, 15) == (0, 220, 60)

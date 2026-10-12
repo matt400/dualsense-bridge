@@ -58,6 +58,8 @@ def load(path=None):
     try:
         with open(path, encoding="utf-8") as f:
             raw = json.load(f)
+        if not isinstance(raw, dict):             # np. ręcznie wpisana liczba / lista - nie może wywalić startu usługi
+            raise ValueError("expected a JSON object")
         learned = mac_text(mac_bytes(raw.pop("learned_mac", "")))
         cfg = _valid(replace(WolCfg(), **{k: v for k, v in raw.items() if k in WolCfg.__dataclass_fields__}))
     except FileNotFoundError:
@@ -180,7 +182,9 @@ def learn():
 
 
 def send(mac, addrs):
-    """Magic packet na każdy adres i port WOL_PORTS. -> lista błędów ([] = wysłano)."""
+    """Magic packet na każdy adres i port WOL_PORTS. -> lista błędów, po jednym na nieudaną wysyłkę ([] = wysłano).
+    Bez usuwania powtórek: fire() porównuje liczbę błędów z liczbą wysyłek (ten sam błąd na obu portach to dwie
+    nieudane wysyłki - po złączeniu brak sieci wyglądał jak częściowy sukces)."""
     pkt = magic_packet(mac)
     errors = []
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
@@ -191,7 +195,7 @@ def send(mac, addrs):
                     s.sendto(pkt, (a, port))
                 except OSError as e:
                     errors.append(f"{a}: {e.strerror or e}")
-    return list(dict.fromkeys(errors))
+    return errors
 
 
 def receiver_alive(now=None):
@@ -228,8 +232,9 @@ def fire(c, now=None):
         c.local_pulse("fail")
         return False
     addrs = targets()
-    errors = send(mac, addrs)
-    if len(errors) >= len(addrs) * len(WOL_PORTS):
+    failed = send(mac, addrs)
+    errors = list(dict.fromkeys(failed))          # do logu bez powtórek (ten sam błąd na każdym porcie)
+    if len(failed) >= len(addrs) * len(WOL_PORTS):
         print(f"Controller {c.idx}: Wake-on-LAN failed: {'; '.join(errors)}")
         events.error(E_WOL_FAIL, c.idx, errors[0])
         c.local_pulse("fail")

@@ -70,6 +70,7 @@ class Ctrl:
         self.fb = None                # ostatni feedback z PC (mała, duża, r, g, b) - powrót po lokalnym błysku
         self.wol_timer = None         # odliczanie przytrzymania kombinacji Wake-on-LAN (sender_wol)
         self._pulse_timer = None
+        self._pulse_back = None       # (0, 0, r, g, b) - stan po trwającym błysku
         self.stick_dz = C.STICK_DZ    # strefa martwa gałek; 0 na czas pomiaru dryfu z okna (CMD_RAW_STICKS)
         self._raw_timer = None
         self.gyro_bias = [0.0, 0.0, 0.0]   # bias żyroskopu odejmowany przed wysłaniem (kalibracja / autobias)
@@ -255,12 +256,18 @@ class Ctrl:
         return None
 
     def local_pulse(self, kind):
-        """Potwierdzenie na padzie bez receivera (Wake-on-LAN): wibracja i kolor na chwilę, potem poprzedni stan."""
+        """Potwierdzenie na padzie bez receivera (Wake-on-LAN): wibracja i kolor na chwilę, potem poprzedni kolor.
+        Powrót bez wibracji: receiver milczy, a ostatni feedback z PC (np. wibracja gry sprzed wyłączenia komputera,
+        już zatrzymana przez strażnika) nie może jej włączyć od nowa. Błysk w trakcie błysku wraca do koloru sprzed
+        pierwszego, a nie do koloru błysku."""
         small, large, rgb, dur = LOCAL_PULSES[kind]
-        back = self.fb or (0, 0, *(self.led_rgb() or (0, 0, 64)))
-        self.apply_feedback(small, large, *rgb, remember=False)
         if self._pulse_timer is not None:
             self._pulse_timer.cancel()
+            back = self._pulse_back
+        else:
+            back = (0, 0, *(self.fb[2:] if self.fb else self.led_rgb() or (0, 0, 64)))
+        self._pulse_back = back
+        self.apply_feedback(small, large, *rgb, remember=False)
         try:
             self._pulse_timer = asyncio.get_running_loop().call_later(dur, self._pulse_end, back)
         except RuntimeError:

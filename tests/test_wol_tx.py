@@ -80,6 +80,9 @@ W.load()
 assert W.cfg == W.WolCfg(enabled=True), W.cfg
 open(C.WOL_FILE, "w").write("{zepsuty")
 W.load(); assert W.cfg == W.WolCfg(enabled=True)
+for raw in (5, ["x"], "tekst", None):                     # poprawny JSON, ale nie obiekt - start usługi nie może paść
+    json.dump(raw, open(C.WOL_FILE, "w"))
+    W.load(); assert W.cfg == W.WolCfg(enabled=True), raw
 ok("scfg: zapis do wol.json tylko przy zmianie, wczytanie po restarcie, złe wartości -> domyślne")
 
 # ---------- adresy: ARP, broadcast sieci ----------
@@ -120,7 +123,35 @@ assert rx.recv(200) == magic_packet(bytes.fromhex("aabbccddeeff"))
 errs = W.send(bytes(6), ["999.1.1.1"])
 assert len(errs) == 1 and "999.1.1.1" in errs[0], errs
 W.WOL_PORTS = real_ports
+errs = W.send(bytes(6), ["999.1.1.1", "998.1.1.1"])
+assert len(errs) == 2 * len(W.WOL_PORTS), "każda nieudana wysyłka liczy się osobno (fire porównuje z liczbą wysyłek)"
 ok("magic packet wysłany na adres i port; zły adres = opis błędu, bez wyjątku")
+
+# brak sieci: ten sam błąd na każdym porcie i adresie = porażka, a nie "wysłano" (czerwony błysk, zdarzenie błędu)
+class _Pad:
+    idx, wol_timer = 0, None
+
+    def __init__(self):
+        self.pulses = []
+
+    def local_pulse(self, kind):
+        self.pulses.append(kind)
+
+
+real_send, real_targets = W.send, W.targets
+W.targets = lambda: ["192.168.1.255", "255.255.255.255", "192.168.1.4"]
+W.send = lambda mac, addrs: [f"{a}: Network is unreachable" for a in addrs for _p in W.WOL_PORTS]
+W.cfg = W.WolCfg(mac="aa:bb:cc:dd:ee:ff", events=True); E.set_enabled(True); E._queue.clear()
+net.last_pong, W._last_sent = 0.0, 0.0
+pad = _Pad()
+assert W.fire(pad) is False and pad.pulses == ["fail"] and E._queue[-1][3] == E_WOL_FAIL, (pad.pulses, list(E._queue))
+W.send = lambda mac, addrs: [f"{addrs[0]}: Network is unreachable"] * len(W.WOL_PORTS)   # jeden adres zawiódł
+W._last_sent = 0.0
+pad = _Pad()
+assert W.fire(pad) is True and pad.pulses == ["wol"], "część adresów doszła - wysłano"
+W.send, W.targets = real_send, real_targets
+E.set_enabled(False); E._queue.clear()
+ok("Wake-on-LAN bez sieci (ten sam błąd wszędzie) = błąd, nie sukces; częściowy błąd = wysłano")
 
 
 # ---------- kombinacja na padzie ----------
@@ -218,6 +249,19 @@ async def pulse():
     c.apply_feedback(10, 20, 4, 5, 6)                # PC odpowiedział w trakcie - jego stan wygrywa
     await asyncio.sleep(0.7)
     assert c.rumble.calls[-1] == (10, 20, (4, 5, 6)) and c.fb == (10, 20, 4, 5, 6), c.rumble.calls[-3:]
+    # PC zgasł w trakcie wibracji gry: ostatni feedback ma moc silników - powrót po błysku jej nie włącza od nowa
+    c.apply_feedback(180, 255, 7, 8, 9)
+    c.local_pulse("wol")
+    await asyncio.sleep(0.6)
+    assert c.rumble.calls[-1] == (0, 0, (7, 8, 9)), c.rumble.calls[-3:]
+    # błysk w trakcie błysku wraca do koloru sprzed pierwszego, nie do koloru błysku
+    c.fb = None
+    c.rumble.rgb = (0, 0, 64)
+    c.local_pulse("wol")
+    c.rumble.rgb = (255, 255, 255)                   # raport HID ma teraz kolor błysku
+    c.local_pulse("fail")
+    await asyncio.sleep(0.7)
+    assert c.rumble.calls[-1] == (0, 0, (0, 0, 64)), c.rumble.calls[-3:]
     c.cancel_timers()
 
 asyncio.run(pulse())
