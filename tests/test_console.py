@@ -1,5 +1,5 @@
 """Tryb konsoli (rx_console): config, podwójne kliknięcie, ON/OFF, auto-OFF, start, błędy poleceń, wybór przycisku."""
-import json, os, sys, time, types
+import json, os, sys, threading, time, types
 sys.path.insert(0, os.path.dirname(__file__))
 from rxenv import *                                              # noqa
 import rx_audio, rx_console
@@ -32,7 +32,9 @@ def new_console(**kw):
     Testy kliknięć używają PS (trudniejszy przypadek: PS jest też modyfikatorem skrótów)."""
     kw.setdefault("toggle_button", "ps")
     c = Console(ConsoleConfig(**kw)); calls.clear(); c.start()
-    wait_for(lambda: ("display", c.cfg.startup_mode) in calls); calls.clear()
+    idle = threading.Event()
+    c._jobs.put(idle.set)                  # zadania idą po kolei: start (ekran I dźwięk) jest już w całości wykonany
+    idle.wait(5); calls.clear()
     rx_console.ctl = c
     return c
 
