@@ -21,9 +21,9 @@ DEFAULTS = {
     "tap_max_s": 0.2,
     "tap_max_move": 40,
     "heartbeat_s": 0.05,
-    "pad_min_dt": 0.004,           # min odstęp pakietów stanu (4 ms = 250 Hz = max wirtualnego DS4); pierwszy pakiet po ciszy
+    "pad_min_dt": 0.001,           # min odstęp pakietów stanu (1 ms = 1000 Hz; było 4 ms - do 3 ms opóźnienia gałek); pierwszy po ciszy
                                    # idzie od razu, zmiany w oknie zlewają się w jeden pakiet na końcu okna; 0 = bez limitu
-    "motion_min_dt": 0.004,        # j.w. dla ruchu; próbki gyro/acc w oknie są uśredniane (mniej szumu przy 500-1000 Hz)
+    "motion_min_dt": 0.001,        # j.w. dla ruchu; próbki gyro/acc w oknie są uśredniane
     "motion_deadband_gyro": 128,
     "motion_deadband_acc": 16,
     "rescan_s": 2.0,
@@ -34,7 +34,7 @@ DEFAULTS = {
     "autobias_s": 1.0,
     "autobias_range": 1024,
     "battery_poll_s": 5.0,
-    "touch_coalesce_ms": 5,        # DS4/DSU dotyk: max 1 pakiet na tyle ms (0 = każda zmiana); było 50 = 20 Hz
+    "touch_coalesce_ms": 2,        # DS4/DSU dotyk: max 1 pakiet na tyle ms (0 = każda zmiana)
     "touch_deadzone": 2,           # ignoruj zmiany palca mniejsze niż tyle jednostek (szum czujnika)
     "touch_start_move": 5,         # mysz: kursor rusza dopiero po przesunięciu o tyle (brak drgania przy tapie)
     "gestures": True,              # 2 palce = przewijanie, tap 2 palcami = prawy przycisk myszy

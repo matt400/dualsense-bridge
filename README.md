@@ -93,7 +93,8 @@ DualSense ──Bluetooth──> telefon: sender/ ──UDP 5005──> PC: rece
   pierwszy.
 - **Niskie opóźnienia:**
   - przyciski wysyłane natychmiast, z powtórkami na wypadek zgubionego pakietu,
-  - gałki i ruch zlewane do 250 Hz i uśredniane,
+  - gałki, ruch i dotyk bez opóźnienia do 1000 Hz (szybsze serie raportów zlewane, ostatni stan zawsze dochodzi),
+  - na PC raport wirtualnego DS4 idzie od razu z wątku, który odebrał pakiet (bez przekazywania do innego wątku),
   - priorytety wątków i procesów, timer 1 ms na Windows,
   - telefon (z `doas`): procesor bez głębokiego uśpienia (PM QoS), nadajnik na najszybszych rdzeniach i z planistą
     czasu rzeczywistego - wybudzenie z uśpienia klastra (Snapdragon 845 do ~6.5 ms) nie opóźnia już pada ani pingu.
@@ -206,7 +207,7 @@ Najczęściej zmieniane:
 | Ustawienie | Gdzie | Domyślnie | Co robi |
 |---|---|---|---|
 | `host` | sender | 192.168.1.4 | IP komputera z receiverem |
-| `pad_min_dt` | sender | 0.004 | min. odstęp pakietów stanu (4 ms = 250 Hz) |
+| `pad_min_dt` | sender | 0.001 | min. odstęp pakietów stanu (1 ms = 1000 Hz) |
 | `idle_off_min` | sender | 15 | wyłącz pada po tylu minutach bez użycia, 0 = nigdy |
 | `low_latency` | sender | true | procesor telefonu bez głębokiego uśpienia + najszybsze rdzenie (wymaga `doas`) |
 | `cpu_latency_us` | sender | 50 | `low_latency`: maks. czas wybudzenia procesora w µs |

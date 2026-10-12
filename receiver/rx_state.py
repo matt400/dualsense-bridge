@@ -104,8 +104,15 @@ def sender_online(now=None):
     return (now or time.monotonic()) - last_pkt < SENDER_TIMEOUT
 
 
+push = None        # rx_ds4.push: raport do wirtualnego DS4 od razu w wątku zmiany (bez rx_ds4 - tylko budzenie)
+
+
 def notify(i):
-    wake[i].set()
+    """Zmiana stanu slotu i: raport DS4 od razu (rx_ds4.push), serwer DSU wysyła swoim wątkiem."""
+    if push is not None:
+        push(i)
+    else:
+        wake[i].set()
     dsu_wake.set()
 
 

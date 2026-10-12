@@ -112,18 +112,17 @@ class Ctrl:
         net.emit(T_STATE, self.idx, *key)
 
     def request_send(self):
-        """Wyślij zmieniony stan z limitem pad_min_dt: pierwsza zmiana po ciszy idzie natychmiast (zero dodanego
-        opóźnienia), kolejne w oknie zlewają się w jeden pakiet na jego końcu (trailing) - nic nie ginie, a przy
-        1000 Hz raportów z pada (BT potrafi dostarczyć je seriami) nie zalewamy łącza ani odbiornika."""
+        """Wyślij zmieniony stan z limitem pad_min_dt: pierwsza zmiana po ciszy idzie jeszcze w tej iteracji pętli
+        (call_soon - dziesiątki µs), kolejne w oknie zlewają się w jeden pakiet na jego końcu - nic nie ginie.
+        call_soon zamiast wysłania od razu: jeden raport pada trafia do trzech urządzeń evdev (przyciski / gałki,
+        ruch, touchpad), ich zdarzenia przychodzą w tej samej iteracji pętli - zmiany gałek i ruchu z jednego raportu
+        idą jednym pakietem, a nie dwoma (drugi dopiero po pad_min_dt)."""
         self.pending = True
+        if self._state_timer is not None:
+            return                     # wysłanie zaplanowane - zabierze też tę zmianę
         wait = C.PAD_MIN_DT - (time.monotonic() - self.t_state)
-        if wait <= 0:
-            if self._state_timer is not None:
-                self._state_timer.cancel()
-                self._state_timer = None
-            self.send_state()
-        elif self._state_timer is None:
-            self._state_timer = asyncio.get_running_loop().call_later(wait, self._state_flush)
+        loop = asyncio.get_running_loop()
+        self._state_timer = loop.call_soon(self._state_flush) if wait <= 0 else loop.call_later(wait, self._state_flush)
 
     def _state_flush(self):
         self._state_timer = None
