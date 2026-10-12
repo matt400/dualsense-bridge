@@ -171,9 +171,19 @@ async def _run_extra(c, kind, dev, coro):
     finally:
         if getattr(c, KIND_ATTR[kind]) is dev:
             setattr(c, KIND_ATTR[kind], None)
+        # ostatnie wartości nie mogą zostać w odbiorniku: gyro z chwili utraty (np. 50 °/s) kręciłoby celowaniem
+        # żyroskopem bez końca, a palec przyłożony do touchpada zostałby "przyłożony" w grze
         if kind == "touch":
             c.touch = IDLE_TP
             c.tp = 0
+        else:
+            c.motion = [0] * 6
+        if not c.closing:                     # przy zamykaniu pada send_neutral wyśle to samo
+            if kind == "touch":
+                c.send_touch(force=True)
+                c.send_click()
+            else:
+                c.send_state(force=True)
         for fn in (dev.ungrab, dev.close):
             try:
                 fn()

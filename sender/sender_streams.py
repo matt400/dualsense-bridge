@@ -113,8 +113,7 @@ async def heartbeat():
             if slow:
                 c.send_ident()
                 c.send_click()
-                if c.touch_dev:
-                    c.send_touch(force=True)
+                c.send_touch(force=True)      # także bez touchpada: zgubiony pakiet "puszczenia" palca dojdzie
         n += 1
         await asyncio.sleep(C.HEARTBEAT_S)
 
