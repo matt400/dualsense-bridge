@@ -136,6 +136,9 @@ win.set_screen_choice("")
 ok("ekran okna: lista ekranów, zapis, przeniesienie, brak ekranu")
 
 # ---------- pełny ekran, język, dozwolone programy, test wibracji ----------
+import os
+is_ci = os.getenv("CI") == "true"
+
 assert not win.fullscreen()
 win.toggle_fullscreen(); pump(100)
 
