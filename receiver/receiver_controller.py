@@ -10,8 +10,7 @@ Pliki: proto.py (wspólny), rx_config.py, rx_state.py, rx_buttons.py (remap + re
        okno: rx_qt.py (okno, zasobnik), rx_qt_pad.py (rysunek pada), rx_qt_panels.py, rx_qt_widgets.py, rx_qt_style.py,
        rx_qt_console.py (okno ustawień: konsola, mysz, master, okno), rx_qt_icons.py (ikony przycisków),
        rx_i18n.py (język okna: polski / angielski),
-       rx_editor.py (model edycji profilu), rx_profiles.py, rx_status.py, rx_icon.py;
-       opcjonalnie rx_web.py + rx_remap_ui.html (edytor w przeglądarce, remap_ui = true).
+       rx_editor.py (model edycji profilu), rx_profiles.py, rx_status.py, rx_icon.py.
 
 Wirtualny DS4 powstaje dopiero po pierwszym pakiecie z danego slotu i znika, gdy nadajnik
 zgłosi rozłączenie pada (pakiet 8) albo milczy dłużej niż unplug_s.
@@ -62,7 +61,6 @@ def main():
     import rx_net
     import rx_settings
     import rx_state as S
-    import rx_web
 
     S.init(rx_buttons.RemapStore(C.REMAP_PATH))
     rx_settings.apply(rx_settings.load(C.SETTINGS_PATH, rx_settings.defaults(C.MOUSE_SENS)))
@@ -74,7 +72,6 @@ def main():
     rx_ds4.init()
     rx_net.init()
     rx_dsu.start()
-    rx_web.start()
     rx_console.init()   # ekran i dźwięk wg startup_mode (extend: oba ekrany aktywne, nigdy bez obrazu)
 
     gc.collect()
@@ -117,7 +114,6 @@ def main():
         print("\nStopped.")
     finally:
         S.stop.set()
-        rx_web.stop()
         for i in range(C.NUM_PADS):
             S.want[i].clear()
             rx_net.clear_slot(i)

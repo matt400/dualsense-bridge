@@ -81,7 +81,6 @@ DualSense ──Bluetooth──> telefon: sender/ ──UDP 5005──> PC: rece
     (`settings.json`);
   - **Okno:** ekran, na którym pojawia się okno (na środku; gdy ekranu nie ma, okno zostaje na dostępnym), okno albo
     pełny ekran (też F11 i przycisk w nagłówku), język: polski / English (zmiana po restarcie).
-- **Edytor w przeglądarce** (opcjonalny, `remap_ui = true`): to samo co w oknie, w Edge/Chrome.
 - **Wyłączanie pada** z PC albo samo po bezczynności (domyślnie 15 min).
 - **Wibracja:** jednocześnie przez sterownik (evdev FF) i bezpośrednio raportem HID przez `/dev/hidrawN`
   (nadajnik przez `doas`), z flagami zależnymi od firmware pada, kolor lightbara w tym samym raporcie; ustawienie `rumble` w `sender.toml`. Karta pada
@@ -164,10 +163,22 @@ Wersja (commit i data) jest w nagłówku okna obok nazwy, a wersja nadajnika prz
 receivera = żółty kolor. Wymaga klonów git po obu stronach (`git clone https://github.com/matt400/dualsense-bridge`;
 na telefonie potem `doas ./install-service.sh` z nowego folderu i `doas apk add git`) oraz Git for Windows.
 Ustawienia i profile (`console.json`, `settings.json`, `remap.json`, `sender.toml`, `slots.json`) zostają nietknięte.
+
+Repozytorium jest prywatne, a usługa nadajnika nie ma Twojego klucza SSH (brak agenta, klucz z hasłem) - git pull na
+telefonie kończył się `Could not read from remote repository`. Jednorazowo na telefonie, jako zwykły użytkownik
+(bez `doas`):
+
+```
+cd dualsense-bridge/sender
+./setup-update-key.sh      # tworzy klucz tylko do odczytu w .git/ i wypisuje, co wkleić na GitHubie
+./setup-update-key.sh      # po dodaniu klucza: sprawdza dostęp ("OK - nadajnik ma dostęp")
+```
+
+Powód nieudanej aktualizacji nadajnika jest widoczny w oknie na PC (np. `Permission denied (publickey)`).
 Bez okna: `update.bat` w głównym folderze (tylko receiver).
 
-Autostart nadajnika na telefonie - usługa systemowa działająca jako root (wibracja przez `/dev/hidraw`, tryb niskich
-opóźnień), OpenRC albo systemd wykrywane samo:
+Autostart nadajnika na telefonie - usługa systemd działająca jako root (wibracja przez `/dev/hidraw`, tryb niskich
+opóźnień):
 
 ```
 cd sender
@@ -175,7 +186,7 @@ cp sender.example.toml sender.toml      # ustaw host = IP komputera
 doas ./install-service.sh               # albo: doas ./install-service.sh 192.168.1.4 --key SEKRET
 ```
 
-Log: `/var/log/dualsense-sender.log` (OpenRC) albo `journalctl -u dualsense-sender` (systemd). Usunięcie:
+Klucz może zawierać spacje i znaki specjalne. Log: `journalctl -u dualsense-sender -f`. Usunięcie:
 `doas ./install-service.sh --remove`. Wcześniejszy własny autostart nadajnika trzeba wyłączyć - drugi nadajnik
 nie wystartuje (`Another sender is already running`).
 
@@ -241,8 +252,7 @@ Nadajnik zapisuje stały przydział pad → slot w `sender/slots.json` (`slots_f
 ## Struktura
 
 ```
-receiver/   Windows: receiver_controller.py (start), rx_*.py (moduły), rx_qt*.py (okno),
-            rx_web.py + rx_remap_ui.html (opcjonalny edytor w przeglądarce)
+receiver/   Windows: receiver_controller.py (start), rx_*.py (moduły), rx_qt*.py (okno)
 sender/     Linux:   sender_controller.py (start), sender_*.py (moduły)
 tests/      testy na Linuksie z zaślepkami Windows i urządzeń evdev
 ```
@@ -252,7 +262,7 @@ tests/      testy na Linuksie z zaślepkami Windows i urządzeń evdev
 ## Testy
 
 ```
-pip install evdev ruff PySide6-Essentials playwright   # playwright: test edytora w przeglądarce (opcjonalnie)
+pip install evdev ruff PySide6-Essentials
 ./tests/run_tests.sh
 ```
 
@@ -266,7 +276,7 @@ Testy obejmują:
 - tryb konsoli z zaślepionymi poleceniami ekranu, dźwięku i powiadomień (config, podwójne kliknięcie, auto-OFF, błędy);
 - pad master (uprawnienia, akcje PS + przycisk, przejęcie), auto-ON trybu konsoli, R2 z histerezą,
   stabilizację kliku touchpada, `slots.json`;
-- okno receivera (Qt offscreen, bez ekranu) i edytor w headless Chromium;
+- okno receivera (Qt offscreen, bez ekranu);
 - regresje z przeglądu bugów (`test_review.py`, `test_review_tx.py`).
 
 Działanie z prawdziwym padem, ViGEm, `DisplaySwitch.exe`, przełączaniem dźwięku (pycaw) i powiadomieniami Windows trzeba

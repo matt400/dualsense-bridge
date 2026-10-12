@@ -33,9 +33,6 @@ DEFAULTS = {
     "stats": False,          # wypisuj statystyki pakietów co 1 s
     "log_file": "",          # np. "receiver.log" (przydatne z pythonw / autostartem)
     "remap_file": "remap.json",  # profile remapowania (przycisk Save w oknie)
-    "remap_ui": False,       # dodatkowy edytor remapowania w przeglądarce (to samo co w oknie), tylko 127.0.0.1
-    "remap_ui_app": True,    # edytor w osobnym oknie (Edge/Chrome --app); False = zwykła karta przeglądarki
-    "remap_ui_port": 8765,   # pierwszy próbowany port (kolejne 9, gdy zajęty); 0 = losowy
     "gui": True,             # okno (pady, bateria, remapowanie; --no-gui wyłącza)
     "tray": True,            # minimalizacja do zasobnika systemowego
     "gui_topmost": False,    # okno zawsze na wierzchu
@@ -187,9 +184,6 @@ def init(argv=None):
     C.REMAP_PATH = os.path.join(script_dir, cfg["remap_file"])
     C.CONSOLE_PATH = os.path.join(script_dir, "console.json")   # ustawienia trybu konsoli (rx_console.py)
     C.SETTINGS_PATH = os.path.join(script_dir, "settings.json")  # mysz i pad master (rx_settings.py, okno -> Ustawienia)
-    C.REMAP_UI = bool(cfg["remap_ui"])
-    C.REMAP_UI_PORT = int(cfg["remap_ui_port"])
-    C.REMAP_UI_APP = bool(cfg["remap_ui_app"])
     for k, allowed in CHOICES.items():
         if cfg[k] not in allowed:
             print(f"WARNING: {k} = {cfg[k]!r} is not one of {allowed} - using {DEFAULTS[k]!r}")

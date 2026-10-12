@@ -18,6 +18,7 @@ SENDER_TIMEOUT = 3.0                       # cisza dłuższa niż tyle (3 pingi)
 
 peer = None        # adres ostatniego nadajnika (dla feedbacku / pong)
 sender_build = None  # (commit, czas commita, stan aktualizacji UPD_*, czas odbioru) z pakietu build nadajnika
+sender_update_msg = ""  # powód błędu ostatniej aktualizacji nadajnika (pakiet updmsg)
 last_pkt = 0.0     # kiedy przyszedł ostatni poprawny pakiet - do wskaźnika online
 store = None       # RemapStore
 dsu_wake = threading.Event()

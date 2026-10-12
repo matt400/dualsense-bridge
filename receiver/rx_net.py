@@ -8,7 +8,7 @@ import rx_master as master
 import rx_mouse as mouse
 import rx_state as S
 from proto import (BODY, RTT_NONE, Codec, T_BYE, T_CLICK, T_CMD, T_FB, T_IDENT, T_INFO, T_MOUSE, T_PING, T_PONG, T_VERSION,
-                   T_STATE, T_TOUCH, T_BUILD, clamp)
+                   T_STATE, T_TOUCH, T_BUILD, T_UPDMSG, clamp)
 from rx_buttons import MASK_ALL, PS_BIT, profile_size
 
 from rx_config import C
@@ -309,6 +309,10 @@ def net_loop():
                 stats.clear()
                 t_print = now
 
+        if t == T_UPDMSG:  # powód błędu aktualizacji nadajnika (przychodzi przed pakietem build z wynikiem)
+            S.peer = addr
+            S.sender_update_msg = BODY[T_UPDMSG].unpack_from(data, 4)[0].rstrip(b"\0").decode("utf-8", "ignore")
+            continue
         if t == T_BUILD:  # wersja kodu nadajnika i stan jego aktualizacji (dotyczy całego nadajnika, idx 255)
             S.peer = addr
             on_build(data, now)

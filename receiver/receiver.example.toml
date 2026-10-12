@@ -25,9 +25,6 @@
 # stats = false   # wypisuj statystyki pakietów co 1 s
 # log_file = ""   # np. "receiver.log" (przydatne z pythonw / autostartem)
 # remap_file = "remap.json"   # profile remapowania (przycisk Save w oknie)
-# remap_ui = false   # dodatkowy edytor remapowania w przeglądarce (to samo co w oknie), tylko 127.0.0.1
-# remap_ui_app = true   # edytor w osobnym oknie (Edge/Chrome --app); False = zwykła karta przeglądarki
-# remap_ui_port = 8765   # pierwszy próbowany port (kolejne 9, gdy zajęty); 0 = losowy
 # gui = true   # okno (pady, bateria, remapowanie; --no-gui wyłącza)
 # tray = true   # minimalizacja do zasobnika systemowego
 # gui_topmost = false   # okno zawsze na wierzchu

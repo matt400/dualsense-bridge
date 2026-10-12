@@ -44,7 +44,7 @@ for content in ({"profiles": [1, 2]}, {"profiles": "x"}, [1]):
         print("   ", repr(e))
     check(good, f"remap.json {content!r} -> brak profili zamiast awarii przy starcie")
 ok_, _msg = P.apply(0, S.profile_key(0), {"buttons": ["cross"], "sticks": [1]})
-check(ok_ and S.remap_maps[0]["buttons"] == {}, "edytor w przeglądarce: zły profil w żądaniu nie wywraca obsługi")
+check(ok_ and S.remap_maps[0]["buttons"] == {}, "zły profil (np. ręcznie edytowany remap.json) nie wywraca zastosowania")
 
 # ---------- klucz HMAC liczbą w .toml / .json ----------
 cfg = os.path.join(TMP, "key.json")
@@ -178,6 +178,27 @@ else:
     d._load_mouse(m)
     got = d.collect_settings().mouse
     check(got == m, f"maksymalne wartości myszy przechodzą przez okno bez zmian: {got}")
+
+# ---------- powód błędu aktualizacji nadajnika (pakiet updmsg) trafia do okna ----------
+from proto import T_PING, T_UPDMSG
+pkts = [(N.codec.pack(T_UPDMSG, 255, "Permission denied (publickey) żółw".encode()), ("10.0.0.9", 5005)),
+        (N.codec.pack(T_PING, 255, 1), ("10.0.0.9", 5005))]
+class FakeSock:
+    def recvfrom(self, n):
+        if not pkts:
+            S.stop.set()
+            raise TimeoutError
+        return pkts.pop(0)
+    def sendto(self, *a):
+        pass
+real_sock, real_send = N.in_sock, N.send_peer
+N.in_sock = FakeSock()
+S.sender_update_msg = ""
+N.net_loop()
+S.stop.clear()
+N.in_sock = real_sock
+check(S.sender_update_msg == "Permission denied (publickey) żółw" and S.peer == ("10.0.0.9", 5005),
+      f"pakiet z powodem błędu aktualizacji nadajnika: {S.sender_update_msg!r}")
 
 print("WSZYSTKO OK" if not fails else f"FAIL: {fails}")
 sys.exit(1 if fails else 0)

@@ -18,6 +18,8 @@ opcjonalnie 8 B HMAC-SHA256 (gdy ustawiony klucz).
                          bit 2 = raport HID przez hidraw; 0 = brak), powód braku (WHY_*)
  13 build   "7sIB"       nadajnik -> PC co 5 s i po aktualizacji (idx = 255): commit kodu nadajnika (7 znaków skrótu),
                          czas commita (unix), stan aktualizacji UPD_*; starszy receiver ignoruje nieznany typ
+ 14 updmsg  "120s"       nadajnik -> PC po aktualizacji (idx = 255): powód błędu git pull (UTF-8, ucięty) - okno pokazuje
+                         go zamiast "szczegóły w logu na telefonie"; starszy receiver ignoruje nieznany typ
 
 Na końcu: wspólne funkcje gita (wersja kodu, aktualizacja git pull) - receiver i nadajnik aktualizują się tak samo.
 """
@@ -25,6 +27,7 @@ import hmac
 import json
 import os
 import random
+import shlex
 import shutil
 import struct
 import subprocess
@@ -34,7 +37,7 @@ VER = 2
 HDR0 = VER << 4
 
 (T_STATE, T_TOUCH, T_CLICK, T_MOUSE, T_PING, T_FB, T_PONG, T_BYE, T_IDENT, T_CMD, T_INFO, T_VERSION,
- T_BUILD) = range(1, 14)
+ T_BUILD, T_UPDMSG) = range(1, 15)
 SENDER_VERSION = 5
 RUMBLE_EVDEV, RUMBLE_HIDRAW = 1, 2
 # dlaczego nie ma wibracji przez raport HID (pakiet version): ok, rumble=off, brak uprawnień, jądro bez hidraw,
@@ -60,9 +63,10 @@ BODY = {
     T_INFO: struct.Struct("!HHH"),
     T_VERSION: struct.Struct("!BBB"),           # wersja nadajnika, sposoby wibracji (bity), powód WHY_*
     T_BUILD: struct.Struct("!7sIB"),            # commit nadajnika, czas commita, stan aktualizacji UPD_*
+    T_UPDMSG: struct.Struct("!120s"),           # powód błędu aktualizacji nadajnika (UTF-8)
 }
 BODY_LEN = {t: s.size for t, s in BODY.items()}
-assert BODY_LEN == {1: 36, 2: 12, 3: 1, 4: 5, 5: 8, 6: 5, 7: 8, 8: 0, 9: 17, 10: 2, 11: 6, 12: 3, 13: 12}, BODY_LEN
+assert BODY_LEN == {1: 36, 2: 12, 3: 1, 4: 5, 5: 8, 6: 5, 7: 8, 8: 0, 9: 17, 10: 2, 11: 6, 12: 3, 13: 12, 14: 120}, BODY_LEN
 
 # kody evdev przycisków DualSense -> bit w masce (kolejność = pozycja bitu w pakiecie stanu)
 PAD_KEYS = (304, 305, 307, 308, 310, 311, 314, 315, 316, 317, 318)
@@ -147,6 +151,13 @@ def load_config(path, defaults=None):
 
 # ---------------- git: wersja kodu i aktualizacja (receiver i nadajnik) ----------------
 GIT_PATHS = (r"C:\Program Files\Git\cmd\git.exe", r"C:\Program Files (x86)\Git\cmd\git.exe")
+# klucz wdrożeniowy (tylko do odczytu) nadajnika i jego known_hosts - w .git, więc nigdy nie trafiają do repozytorium;
+# tworzy je sender/setup-update-key.sh. Usługa (root -> właściciel repozytorium) nie ma agenta SSH ani hasła do klucza.
+DEPLOY_KEY = os.path.join(".git", "dualsense-deploy-key")
+KNOWN_HOSTS = os.path.join(".git", "dualsense-known-hosts")
+# ogólne zakończenie każdego błędu połączenia - prawdziwy powód jest w liniach przed nim
+_GENERIC = ("fatal: could not read from remote repository", "please make sure you have the correct access rights",
+            "and the repository exists")
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
@@ -157,20 +168,58 @@ def find_git():
     return next((p for p in (*GIT_PATHS, local) if os.path.isfile(p)), None)
 
 
+def ssh_command(root):
+    """GIT_SSH_COMMAND dla nadajnika: BatchMode (bez pytania o hasło - usługa nie ma terminala, git by wisiał) i klucz
+    wdrożeniowy, jeśli jest. None = bez zmian (Windows: własne ssh / plink / Git Credential Manager)."""
+    if os.name != "posix" or "GIT_SSH_COMMAND" in os.environ or "GIT_SSH" in os.environ:
+        return None
+    cmd = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15"]
+    key = os.path.join(root, DEPLOY_KEY)
+    if os.path.isfile(key):
+        cmd += ["-i", key, "-o", "IdentitiesOnly=yes", "-o", f"UserKnownHostsFile={os.path.join(root, KNOWN_HOSTS)}",
+                "-o", "StrictHostKeyChecking=accept-new"]
+    return " ".join(shlex.quote(c) for c in cmd)
+
+
 def _owner(root):
     """Root (usługa nadajnika) uruchamia gita jako właściciel repozytorium: pliki po pull nie należą do roota,
     a git nie odmawia pracy w cudzym repozytorium ("dubious ownership"). -> kwargs dla subprocess."""
+    env = dict(os.environ)
+    if os.name == "posix":            # nadajnik: https bez danych logowania = błąd zamiast czekania na terminal
+        env["GIT_TERMINAL_PROMPT"] = "0"  # (Windows: Git Credential Manager może pokazać okno logowania)
+    if ssh := ssh_command(root):
+        env["GIT_SSH_COMMAND"] = ssh
     if os.name != "posix" or os.geteuid() != 0:
-        return {}
+        return {"env": env}
     st = os.stat(root)
     if st.st_uid == 0:
-        return {}
+        return {"env": env}
     import pwd
     try:
-        home = pwd.getpwuid(st.st_uid).pw_dir
+        pw = pwd.getpwuid(st.st_uid)
+        home, name = pw.pw_dir, pw.pw_name
     except KeyError:
-        home = root
-    return {"user": st.st_uid, "group": st.st_gid, "env": {**os.environ, "HOME": home}}
+        home, name = root, str(st.st_uid)
+    env.update(HOME=home, USER=name, LOGNAME=name)
+    # extra_groups=[]: bez grup roota (np. 0) - proces gita ma tylko uprawnienia właściciela
+    return {"user": st.st_uid, "group": st.st_gid, "extra_groups": [], "env": env}
+
+
+_AUTH = ("permission denied (publickey", "host key verification failed", "could not read username",
+         "authentication failed", "repository not found", "terminal prompts disabled", "passphrase")
+
+
+def is_auth_error(msg):
+    """Błąd dostępu do prywatnego repozytorium (klucz SSH / logowanie) - rozwiązanie: sender/setup-update-key.sh."""
+    m = (msg or "").lower()
+    return any(k in m for k in _AUTH)
+
+
+def git_error(text):
+    """Powód błędu gita w jednej linii: bez ogólnego "Could not read from remote repository..." na końcu."""
+    lines = [x.strip() for x in (text or "").splitlines() if x.strip()]
+    useful = [x for x in lines if not x.lower().startswith(_GENERIC)] or lines
+    return " / ".join(useful[:3])
 
 
 def git(root, *args, git_exe=None, timeout=15):
@@ -202,8 +251,7 @@ def git_pull(root, git_exe=None):
         old = git(root, "rev-parse", "HEAD", git_exe=git_exe).stdout.strip()
         p = git(root, "pull", "--ff-only", git_exe=git_exe, timeout=120)
         if p.returncode:
-            lines = [x.strip() for x in (p.stderr or p.stdout).splitlines() if x.strip()]
-            return UPD_FAILED, " / ".join(lines[-3:]), old, old, []
+            return UPD_FAILED, git_error(p.stderr or p.stdout), old, old, []
         new = git(root, "rev-parse", "HEAD", git_exe=git_exe).stdout.strip()
         if new == old:
             return UPD_NO_CHANGE, "", old, new, []

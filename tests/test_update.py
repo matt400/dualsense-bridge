@@ -67,4 +67,14 @@ U.find_git = real
 assert not r.ok and "Git for Windows" in r.text
 assert U.ROOT == os.path.dirname(os.path.abspath(sys.argv[1])), "repozytorium = folder nad receiver/"
 ok("folder bez .git (ZIP) i brak programu git: czytelny komunikat")
+
+from proto import UPD_FAILED, UPD_NO_CHANGE
+b = ("a1b2c3d", 0, UPD_FAILED)
+assert "szczegóły w logu" in U.sender_text(b), "starszy nadajnik bez powodu: odesłanie do logu"
+t = U.sender_text(b, "git@github.com: Permission denied (publickey).")
+assert "Permission denied (publickey)" in t and "setup-update-key.sh" in t, t
+t = U.sender_text(b, "fatal: unable to access: Could not resolve host: github.com")
+assert "Could not resolve host" in t and "setup-update-key.sh" not in t, "błąd sieci - bez podpowiedzi o kluczu"
+assert "najnowsza" in U.sender_text(("a1b2c3d", 0, UPD_NO_CHANGE), "stary powód"), "powód tylko przy błędzie"
+ok("wynik aktualizacji nadajnika: powód błędu z telefonu w oknie, podpowiedź klucza tylko przy braku dostępu")
 print("UPDATE OK")
