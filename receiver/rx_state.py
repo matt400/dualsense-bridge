@@ -19,6 +19,7 @@ SENDER_TIMEOUT = 3.0                       # cisza dłuższa niż tyle (3 pingi)
 peer = None        # adres ostatniego nadajnika (dla feedbacku / pong)
 sender_build = None  # (commit, czas commita, stan aktualizacji UPD_*, czas odbioru) z pakietu build nadajnika
 sender_update_msg = ""  # powód błędu ostatniej aktualizacji nadajnika (pakiet updmsg)
+sender_wol = None  # (MAC komputera, broadcast) - tego użyje Wake-on-LAN nadajnika (pakiet build2); "" = nie zna
 last_pkt = 0.0     # kiedy przyszedł ostatni poprawny pakiet - do wskaźnika online
 store = None       # RemapStore
 dsu_wake = threading.Event()
@@ -47,6 +48,7 @@ def new_state():
         "gyro_on": False,                    # gyro aktywne (tryb gałki lub myszy i spełniony warunek "hold")
         "gyro_vel": None,                    # prędkość kursora z gyro [px/s] w trybie myszy, None = wyłączone
         "lat": None,                         # pomiar opóźnienia ostatniej zmiany (rx_net -> rx_ds4 -> rx_latency)
+        "blat": None,                        # to samo, tylko dla zmiany przycisku / D-pada / spustu (przycisk -> gra)
     }
 
 

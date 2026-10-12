@@ -11,6 +11,11 @@ from proto import (KEY_BIT, LAT_NONE, SENDER_VERSION, T_CLICK, T_IDENT, T_MOUSE,
 from sender_config import BURST_DELAYS, C, IDLE_TP, NEUTRAL_PAD, PAD_ABS, STICK_AXES
 
 
+# lokalne potwierdzenia nadajnika: (mała wibracja, duża, kolor, czas s)
+LOCAL_PULSES = {"wol": (0, 200, (255, 255, 255), 0.5),     # wysłano Wake-on-LAN - biały błysk
+                "fail": (0, 120, (255, 0, 0), 0.6)}        # nie wysłano (brak MAC / sieci) - czerwony
+
+
 def find_led(pad_dev):
     try:
         ev = os.path.realpath(f"/sys/class/input/{os.path.basename(pad_dev.path)}")
@@ -62,6 +67,9 @@ class Ctrl:
         self.t_event = None
         self.ev_bt = self.bt_us = LAT_NONE
         self.triggers = (0, 0, 0, 0)  # opór spustów z PC (L2 początek, siła, R2 początek, siła)
+        self.fb = None                # ostatni feedback z PC (mała, duża, r, g, b) - powrót po lokalnym błysku
+        self.wol_timer = None         # odliczanie przytrzymania kombinacji Wake-on-LAN (sender_wol)
+        self._pulse_timer = None
 
     def devices(self):
         return [d for d in (self.pad_dev, self.motion_dev, self.touch_dev) if d]
@@ -201,7 +209,12 @@ class Ctrl:
         self.send_click()
 
     # ---- feedback z PC ----
-    def apply_feedback(self, small, large, r, g, b):
+    def apply_feedback(self, small, large, r, g, b, remember=True):
+        if remember:
+            self.fb = (small, large, r, g, b)
+            if self._pulse_timer is not None:      # PC ustawił coś nowego - lokalny błysk nie przywróci starego
+                self._pulse_timer.cancel()
+                self._pulse_timer = None
         if self.rumble is not None and self.rumble.owns_lightbar:
             self.rumble.set(small, large, (r, g, b))     # wibracja i kolor w jednym raporcie HID
             return
@@ -223,6 +236,34 @@ class Ctrl:
                 print(f"Controller {self.idx}: lightbar unavailable: {e!r}")
                 self.led = None
 
+    def led_rgb(self):
+        """Bieżący kolor lightbara (raport HID albo sysfs) albo None."""
+        if self.rumble is not None and self.rumble.rgb is not None:
+            return self.rumble.rgb
+        if self.led:
+            try:
+                with open(self.led + "/multi_intensity") as f:
+                    return tuple(int(x) for x in f.read().split()[:3])
+            except (OSError, ValueError):
+                pass
+        return None
+
+    def local_pulse(self, kind):
+        """Potwierdzenie na padzie bez receivera (Wake-on-LAN): wibracja i kolor na chwilę, potem poprzedni stan."""
+        small, large, rgb, dur = LOCAL_PULSES[kind]
+        back = self.fb or (0, 0, *(self.led_rgb() or (0, 0, 64)))
+        self.apply_feedback(small, large, *rgb, remember=False)
+        if self._pulse_timer is not None:
+            self._pulse_timer.cancel()
+        try:
+            self._pulse_timer = asyncio.get_running_loop().call_later(dur, self._pulse_end, back)
+        except RuntimeError:
+            self._pulse_timer = None
+
+    def _pulse_end(self, back):
+        self._pulse_timer = None
+        self.apply_feedback(*back, remember=False)
+
     def set_triggers(self, vals):
         """Opór spustów z profilu (pakiet trig). Tylko raport HID - sterownik jądra nie ma takiej funkcji."""
         vals = tuple(vals)
@@ -231,7 +272,7 @@ class Ctrl:
             self.rumble.set_triggers(vals)
 
     def cancel_timers(self):
-        for name in ("_state_timer", "_touch_timer"):
+        for name in ("_state_timer", "_touch_timer", "wol_timer", "_pulse_timer"):
             t = getattr(self, name)
             if t is not None:
                 t.cancel()

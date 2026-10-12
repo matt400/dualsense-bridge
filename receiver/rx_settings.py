@@ -1,7 +1,12 @@
-"""Receiver: ustawienia zmieniane w oknie bez restartu (settings.json obok skryptu) - mysz touchpada i pad master.
+"""Receiver: ustawienia zmieniane w oknie bez restartu (settings.json obok skryptu).
 
-  mouse   czułość kursora i stabilizacja fizycznego kliknięcia touchpada (rx_mouse)
-  master  który pad jest masterem, co wolno tylko jemu i akcje systemowe "PS + przycisk" (rx_master)
+  mouse     czułość kursora i stabilizacja fizycznego kliknięcia touchpada (rx_mouse)
+  master    który pad jest masterem, co wolno tylko jemu i akcje systemowe "PS + przycisk" (rx_master)
+  ui        język okna
+  lightbar  kolor lightbara, gdy gra nic nie ustawiła (per pad, wg MAC), miganie przy niskiej baterii i jej próg
+            (ten sam próg ma ostrzeżenie na karcie pada) - rx_feedback, rx_lightbar
+  wol       Wake-on-LAN z pada (PS + przycisk przy milczącym receiverze) - wysyłane do nadajnika (pakiet scfg)
+  log       dziennik zdarzeń w oknie: poziom, limit linii, zdarzenia z nadajnika
 
 Brak pliku / błędna wartość -> domyślna (komunikat w logu, plik poprawiany przy zapisie). Zmiana z okna działa od
 razu: apply() podmienia obiekt `cur` (jedno przypisanie - wątki sieci czytają zawsze spójną całość).
@@ -11,6 +16,7 @@ import json
 import os
 from dataclasses import asdict, dataclass, field, fields, replace
 
+from proto import mac_bytes, mac_text
 from rx_buttons import BUTTON_CODES
 
 # ---------------- funkcje sprawdzające (wartość z JSON -> wartość albo ValueError) ----------------
@@ -129,11 +135,118 @@ class UiConfig:
 UiConfig.V = {"lang": _choice(("pl", "en"))}
 
 
+# ---------------- lightbar ----------------
+LIGHT_MODES = {"solid": "Stały kolor", "battery": "Kolor wg stanu baterii"}
+DEFAULT_PAD = "*"                 # ustawienie lightbara dla padów bez własnego wpisu
+
+
+@dataclass(frozen=True, slots=True)
+class PadLight:
+    mode: str = "solid"           # solid | battery - tylko gdy gra nie ustawiła koloru
+    color: str = ""               # "#rrggbb" dla trybu solid; "" = idle_lightbar z receiver.toml
+    blink: bool = True            # niska bateria: czerwone miganie (także nad kolorem z gry)
+
+
+def _color(v):
+    if v == "":
+        return ""
+    if not (isinstance(v, str) and len(v) == 7 and v[0] == "#"):
+        raise ValueError("expected #rrggbb")
+    int(v[1:], 16)
+    return v.lower()
+
+
+def _pads(v):
+    """{"*" | MAC: {"mode", "color", "blink"}} -> {klucz: PadLight}; złe wpisy pomijane."""
+    if not isinstance(v, dict):
+        raise ValueError("expected {pad: {mode, color, blink}}")
+    out = {}
+    for k, raw in v.items():
+        try:
+            if not isinstance(raw, dict):
+                raise ValueError("expected an object")
+            out[_text(k)] = PadLight(mode=_choice(LIGHT_MODES)(raw.get("mode", "solid")), color=_color(raw.get("color", "")),
+                                     blink=_bool(raw.get("blink", True)))
+        except ValueError as e:
+            print(f"Settings: lightbar for {k!r} ignored ({e})")
+    return out
+
+
+@dataclass(frozen=True, slots=True)
+class LightbarConfig:
+    low_pct: int = 15             # próg niskiej baterii [%] - miganie i ostrzeżenie na karcie (startowo low_batt z toml)
+    pads: dict = field(default_factory=dict)
+
+    V = None
+
+    def get(self, key):
+        return self.pads.get(key) or self.pads.get(DEFAULT_PAD) or PadLight()
+
+
+LOW_PCT = (5, 50)
+LightbarConfig.V = {"low_pct": _num(*LOW_PCT), "pads": _pads}
+
+# ---------------- Wake-on-LAN ----------------
+WOL_BUTTONS = ("options", "share", "cross", "circle", "triangle", "square", "l1", "r1", "l3", "r3")
+WOL_HOLD_MS = (300, 5000)
+
+
+def _mac(v):
+    if v == "":
+        return ""
+    if not isinstance(v, str) or mac_bytes(v) is None:
+        raise ValueError("expected a MAC address aa:bb:cc:dd:ee:ff")
+    return mac_text(mac_bytes(v))
+
+
+def _ipv4(v):
+    if v == "":
+        return ""
+    import ipaddress
+    try:
+        return str(ipaddress.IPv4Address(v))
+    except (ValueError, TypeError):
+        raise ValueError("expected an IPv4 address") from None
+
+
+@dataclass(frozen=True, slots=True)
+class WolConfig:
+    enabled: bool = True
+    mac: str = ""                 # MAC karty sieciowej komputera; "" = nadajnik sam (tablica ARP telefonu)
+    bcast: str = ""               # adres broadcast; "" = nadajnik sam (sieć do PC + 255.255.255.255)
+    button: str = "options"       # PS + ten przycisk przytrzymane, gdy receiver nie odpowiada
+    hold_ms: int = 1000
+
+    V = None
+
+
+WolConfig.V = {"enabled": _bool, "mac": _mac, "bcast": _ipv4, "button": _choice(WOL_BUTTONS), "hold_ms": _num(*WOL_HOLD_MS)}
+
+# ---------------- dziennik zdarzeń ----------------
+LOG_LEVELS = {"info": "Wszystko", "warn": "Ostrzeżenia i błędy", "error": "Tylko błędy"}
+LOG_LINES = (50, 5000)
+
+
+@dataclass(frozen=True, slots=True)
+class LogConfig:
+    level: str = "info"           # najniższy pokazywany poziom
+    max_lines: int = 500          # tyle ostatnich linii w panelu
+    sender: bool = False          # zdarzenia z nadajnika (pakiet event) - nadajnik wysyła je tylko, gdy to włączone
+
+    V = None
+
+
+LogConfig.V = {"level": _choice(LOG_LEVELS), "max_lines": _num(*LOG_LINES), "sender": _bool}
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     mouse: MouseConfig = field(default_factory=MouseConfig)
     master: MasterConfig = field(default_factory=MasterConfig)
     ui: UiConfig = field(default_factory=UiConfig)
+    lightbar: LightbarConfig = field(default_factory=LightbarConfig)
+    wol: WolConfig = field(default_factory=WolConfig)
+    log: LogConfig = field(default_factory=LogConfig)
 
 
 def _section(cls, raw, base, name):
@@ -153,8 +266,9 @@ cur = Settings()
 _listeners = []
 
 
-def defaults(mouse_sens=0.5):
-    return Settings(MouseConfig(sens=mouse_sens), MasterConfig())
+def defaults(mouse_sens=0.5, low_batt=15):
+    return Settings(MouseConfig(sens=mouse_sens), MasterConfig(),
+                    lightbar=LightbarConfig(low_pct=min(LOW_PCT[1], max(LOW_PCT[0], int(low_batt)))))
 
 
 def load(path, base=None):
@@ -173,16 +287,15 @@ def load(path, base=None):
     def sec(k):
         return raw.get(k) if isinstance(raw.get(k), dict) else {}
 
-    return Settings(_section(MouseConfig, sec("mouse"), base.mouse, "mouse"),
-                    _section(MasterConfig, sec("master"), base.master, "master"),
-                    _section(UiConfig, sec("ui"), base.ui, "ui"))
+    return Settings(*(_section(type(getattr(base, f.name)), sec(f.name), getattr(base, f.name), f.name)
+                      for f in fields(Settings)))
 
 
 def save(s, path):
     """Zapis atomowy (plik tymczasowy + zamiana)."""
     tmp = path + ".tmp"
     data = {"version": 1, "mouse": asdict(s.mouse), "master": {**asdict(s.master), "only_master": list(s.master.only_master)},
-            "ui": asdict(s.ui)}
+            "ui": asdict(s.ui), "lightbar": asdict(s.lightbar), "wol": asdict(s.wol), "log": asdict(s.log)}
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
         f.write("\n")

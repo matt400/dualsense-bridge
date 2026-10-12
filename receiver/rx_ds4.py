@@ -6,10 +6,12 @@ import time
 
 import vgamepad as vg
 
+import rx_events as ev
 import rx_feedback as F
 import rx_latency
 import rx_state as S
 from rx_config import C
+from rx_i18n import _
 from rx_report import build_report
 from rx_winapi import boost_thread
 
@@ -39,12 +41,17 @@ class Out:
             s = S.states[idx]
             build_report(s, self.counter, S.mouse_mode[idx], self.ba)
             lat, s["lat"] = s["lat"], None
+            blat, s["blat"] = s["blat"], None
         self.counter += 1
         ctypes.memmove(ctypes.addressof(self.rep), self.view, 63)
         self.pad.update_extended_report(self.rep)
         self.last = time.perf_counter()
-        if lat is not None:
-            rx_latency.add(idx, lat, time.perf_counter_ns())
+        if lat is not None or blat is not None:
+            done = time.perf_counter_ns()
+            if lat is not None:
+                rx_latency.add(idx, lat, done)
+            if blat is not None:
+                rx_latency.add_button(idx, blat, done)
 
 
 outs = []                 # Out per slot albo None (wirtualny DS4 niepodłączony)
@@ -138,6 +145,8 @@ def slot_thread(idx):
             err_str = repr(e)
             if err_str != last_err:
                 print(f"Slot {idx}: virtual DS4 error: {e!r} (is ViGEmBus installed?)")
+                ev.error(_("{pad}: błąd wirtualnego DS4: {err} (czy ViGEmBus jest zainstalowany?)").format(
+                    pad=ev.pad_name(idx), err=err_str))
                 last_err = err_str
             # want zostaje: ponowna próba za chwilę w tej samej pętli. Wyczyszczenie udawało rozłączenie pada -
             # następny pakiet "łączył" go od nowa (rx_console.pad_connected: auto-ON trybu konsoli co sekundę)

@@ -7,9 +7,10 @@ import time
 
 import evdev
 
+import sender_events as events
 import sender_state as state
 import sender_streams as streams
-from proto import LAT_NONE, T_BYE
+from proto import E_ERROR, E_PAD_OFF, E_PAD_ON, LAT_NONE, T_BYE
 from sender_config import C, IDLE_TP, SETTLE_S
 from sender_ctrl import Ctrl
 from sender_rumble import Rumble
@@ -219,6 +220,7 @@ async def run_ctrl(c):
         if C.GRAB_PAD:
             grab(c.pad_dev, f"Pad {c.idx}")
         c.send_ident()        # receiver od razu wie, który to pad (profil remapowania)
+        events.info(E_PAD_ON, c.idx, c.key or "")
         tasks.append(asyncio.create_task(streams.stream_pad(c)))
         tasks.append(asyncio.create_task(streams.stream_battery(c)))
         for kind in ("motion", "touch"):          # osobne zadania: ich utrata nie rozłącza pada
@@ -235,8 +237,10 @@ async def run_ctrl(c):
             exc = t.exception()
             if exc and not isinstance(exc, OSError):
                 print(f"Controller {c.idx} error: {exc!r}")
+                events.error(E_ERROR, c.idx, repr(exc))
     except OSError as e:
         print(f"Controller {c.idx}: device error: {e}")
+        events.error(E_ERROR, c.idx, str(e))
     finally:
         c.closing = True
         for t in tasks + list(c.extra):
@@ -259,6 +263,7 @@ async def run_ctrl(c):
             emit(T_BYE, c.idx)
         state.active.pop(c.key, None)
         print(f"Controller {c.idx}: disconnected (waiting for reconnect)")
+        events.info(E_PAD_OFF, c.idx)
 
 
 async def supervisor():

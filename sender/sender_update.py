@@ -7,12 +7,13 @@ Pakiet build (commit, czas commita, stan) idzie co 5 s - okno receivera pokazuje
 """
 import asyncio
 import os
+import socket
 import time
 
 import proto
 import sender_net as net
 import sender_state as state
-from proto import T_BUILD, T_UPDMSG, UPD_DONE, UPD_NONE, UPD_RUNNING
+from proto import T_BUILD, T_BUILD2, T_UPDMSG, UPD_DONE, UPD_NONE, UPD_RUNNING
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REQUIREMENTS = "sender/requirements.txt"
@@ -40,7 +41,14 @@ def send_build():
     i po ponownym kliknięciu Aktualizuj w ciągu REPEAT_GUARD_S (wtedy nadajnik nie próbuje drugi raz)."""
     if status == proto.UPD_FAILED and fail_msg:
         net.emit(T_UPDMSG, 255, fail_msg.encode("utf-8")[:T_UPDMSG_MAX])
-    net.emit(T_BUILD, 255, version[0].encode("ascii", "replace")[:7], version[1], status)
+    commit = version[0].encode("ascii", "replace")[:7]
+    if net.new_receiver():            # nowy receiver: razem z adresami Wake-on-LAN (okno pokazuje wykryty MAC)
+        import sender_wol
+        mac = sender_wol.target_mac() or bytes(6)
+        bcast = sender_wol.cfg.bcast or sender_wol.auto_bcast()
+        net.emit(T_BUILD2, 255, commit, version[1], status, mac, socket.inet_aton(bcast) if bcast else bytes(4))
+    else:
+        net.emit(T_BUILD, 255, commit, version[1], status)
 
 
 async def run():

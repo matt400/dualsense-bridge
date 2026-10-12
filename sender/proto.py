@@ -22,6 +22,9 @@ opcjonalnie 8 B HMAC-SHA256 (gdy ustawiony klucz).
                          go zamiast "szczegóły w logu na telefonie"; starszy receiver ignoruje nieznany typ
  15 trig    "4B"         PC -> nadajnik: stały opór spustów z profilu gry: L2 początek 0-9, L2 siła 0-8, R2 początek,
                          R2 siła (siła 0 = bez oporu); tylko przez raport HID (hidraw); tylko do nadajnika v6+
+  0 event   "HBBH56s"    nadajnik -> PC (idx = slot pada albo 255): zdarzenie do dziennika w oknie - numer (powtórka
+                         nie dubluje wpisu), poziom EV_*, kod E_*, wiek [s] (zdarzenie sprzed połączenia z receiverem,
+                         np. wysłany Wake-on-LAN), argument (UTF-8); tylko gdy receiver włączył je w pakiecie scfg
 
 Warianty dłuższe (typ w nagłówku ten sam, rozpoznawane po długości - typ ma tylko 4 bity, a starsza strona odrzuca
 nieznaną długość, więc wariant idzie tylko do strony, o której wiadomo, że go zna):
@@ -30,6 +33,12 @@ nieznaną długość, więc wariant idzie tylko do strony, o której wiadomo, ż
                          2 s [µs] (LAT_NONE = brak). Nadajnik wysyła go dopiero, gdy dostaje pong2 (receiver go zna)
   pong2  (typ 7) "QQ"    PC -> nadajnik zaraz przed zwykłym pong: echo pingu, czas PC [µs] - nadajnik liczy przesunięcie
                          zegarów (jak NTP, z pomiaru o najmniejszym RTT); starszy nadajnik odrzuca długość, bierze pong
+  scfg   (typ 10) "B6s4sBH"  PC -> nadajnik (idx = 255), przy zmianie i co 5 s: flagi SCFG_*, MAC komputera do Wake-on-LAN
+                         (zera = sam z tablicy ARP telefonu), adres broadcast (zera = sam), przycisk kombinacji z PS (numer
+                         bitu w masce przycisków), czas przytrzymania [ms]; nadajnik zapisuje to u siebie (wol.json), bo
+                         przy wyłączonym PC nie ma tego skąd wziąć; starszy nadajnik odrzuca długość
+  build2 (typ 13) "7sIB6s4s" nadajnik -> PC: build + MAC komputera i broadcast, których użyje Wake-on-LAN (zera = nie zna);
+                         tylko do receivera, od którego przyszedł scfg (starszy odrzuciłby długość i nie znałby wersji)
 
 Na końcu: wspólne funkcje gita (wersja kodu, aktualizacja git pull) - receiver i nadajnik aktualizują się tak samo.
 """
@@ -46,11 +55,11 @@ import threading
 VER = 2
 HDR0 = VER << 4
 
-(T_STATE, T_TOUCH, T_CLICK, T_MOUSE, T_PING, T_FB, T_PONG, T_BYE, T_IDENT, T_CMD, T_INFO, T_VERSION,
- T_BUILD, T_UPDMSG, T_TRIG) = range(1, 16)
-T_STATE2, T_PONG2 = 0x101, 0x107               # warianty dłuższe: tylko w programie, w nagłówku typ 1 / 7
-WIRE = {T_STATE2: T_STATE, T_PONG2: T_PONG}
-SENDER_VERSION = 6
+(T_EVENT, T_STATE, T_TOUCH, T_CLICK, T_MOUSE, T_PING, T_FB, T_PONG, T_BYE, T_IDENT, T_CMD, T_INFO, T_VERSION,
+ T_BUILD, T_UPDMSG, T_TRIG) = range(16)
+T_STATE2, T_PONG2, T_SCFG, T_BUILD2 = 0x101, 0x107, 0x10A, 0x10D   # warianty dłuższe: tylko w programie
+WIRE = {T_STATE2: T_STATE, T_PONG2: T_PONG, T_SCFG: T_CMD, T_BUILD2: T_BUILD}
+SENDER_VERSION = 7
 RUMBLE_EVDEV, RUMBLE_HIDRAW, CAP_TRIGGERS = 1, 2, 4     # bity pakietu version (CAP_TRIGGERS: opór spustów działa)
 LAT_NONE = 0xFFFF                                       # pole opóźnienia w state2: brak pomiaru (powtórka, brak danych)
 TRIG_START_MAX, TRIG_FORCE_MAX = 9, 8                   # opór spustu: strefa początku 0-9 (co 10 %), siła 1-8
@@ -61,6 +70,11 @@ CMD_POWER_OFF, CMD_UPDATE = 1, 2
 # stan aktualizacji nadajnika (pakiet build): brak, trwa, bez zmian, zaktualizowano (restart), błędy
 UPD_NONE, UPD_RUNNING, UPD_NO_CHANGE, UPD_DONE, UPD_NOT_GIT, UPD_NO_GIT, UPD_FAILED = range(7)
 RTT_NONE = 0xFFFF
+SCFG_WOL, SCFG_EVENTS = 1, 2                            # flagi pakietu scfg: Wake-on-LAN, zdarzenia do dziennika
+EV_INFO, EV_WARN, EV_ERROR = range(3)                   # poziom zdarzenia (pakiet event)
+# kody zdarzeń nadajnika (pakiet event) - tekst w oknie receivera (rx_events.SENDER_TEXT), argument w {arg}
+(E_START, E_PAD_ON, E_PAD_OFF, E_POWER_OFF, E_WOL, E_WOL_FAIL, E_NO_RECEIVER, E_NET_DOWN, E_ERROR) = range(1, 10)
+WOL_PORTS = (9, 7)                                      # magic packet: discard i echo (karty sieciowe słuchają każdego)
 
 HDR = struct.Struct("!BBH")
 BODY = {
@@ -79,13 +93,16 @@ BODY = {
     T_BUILD: struct.Struct("!7sIB"),            # commit nadajnika, czas commita, stan aktualizacji UPD_*
     T_UPDMSG: struct.Struct("!120s"),           # powód błędu aktualizacji nadajnika (UTF-8)
     T_TRIG: struct.Struct("!4B"),               # opór spustów: L2 początek, L2 siła, R2 początek, R2 siła
+    T_EVENT: struct.Struct("!HBBH56s"),         # numer, poziom EV_*, kod E_*, wiek [s], argument (UTF-8)
     T_STATE2: struct.Struct("!6BbbHBB6iIHH"),   # stan + czas wysłania (zegar PC), telefon, Bluetooth [µs]
     T_PONG2: struct.Struct("!QQ"),              # echo pingu, czas PC [µs]
+    T_SCFG: struct.Struct("!B6s4sBH"),          # flagi SCFG_*, MAC PC, broadcast, bit przycisku kombinacji, przytrzymanie ms
+    T_BUILD2: struct.Struct("!7sIB6s4s"),       # build + MAC PC i broadcast, których użyje Wake-on-LAN
 }
 STATE_FIELDS = 17                               # pola stanu w state / state2 (bez pomiaru opóźnienia)
 BODY_LEN = {t: s.size for t, s in BODY.items()}
-assert BODY_LEN == {1: 36, 2: 12, 3: 1, 4: 5, 5: 8, 6: 5, 7: 8, 8: 0, 9: 17, 10: 2, 11: 6, 12: 3, 13: 12, 14: 120,
-                    15: 4, T_STATE2: 44, T_PONG2: 16}, BODY_LEN
+assert BODY_LEN == {0: 62, 1: 36, 2: 12, 3: 1, 4: 5, 5: 8, 6: 5, 7: 8, 8: 0, 9: 17, 10: 2, 11: 6, 12: 3, 13: 12, 14: 120,
+                    15: 4, T_STATE2: 44, T_PONG2: 16, T_SCFG: 14, T_BUILD2: 22}, BODY_LEN
 # (typ w nagłówku, długość treści) -> typ w programie
 BY_SIZE = {(WIRE.get(t, t), s.size): t for t, s in BODY.items()}
 
@@ -96,6 +113,32 @@ KEY_BIT = {c: 1 << k for k, c in enumerate(PAD_KEYS)}
 
 def clamp(v, lo, hi):
     return max(lo, min(hi, v))
+
+
+def mac_bytes(text):
+    """"aa:bb:cc:dd:ee:ff" / "AA-BB-..." / "aabbccddeeff" -> 6 B albo None (zły zapis)."""
+    h = "".join(c for c in (text or "") if c not in ":-. ").lower()
+    if len(h) != 12:
+        return None
+    try:
+        b = bytes.fromhex(h)
+    except ValueError:
+        return None
+    return b if any(b) else None
+
+
+def mac_text(b):
+    return ":".join(f"{x:02x}" for x in b) if b and any(b) else ""
+
+
+def magic_packet(mac):
+    """Wake-on-LAN: 6 x 0xFF i 16 x MAC (6 B)."""
+    return b"\xff" * 6 + bytes(mac) * 16
+
+
+def cstr(b):
+    """Pole tekstowe pakietu (dopełnione zerami) -> str."""
+    return b.rstrip(b"\0").decode("utf-8", "replace")
 
 
 class Codec:

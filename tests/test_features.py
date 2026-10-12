@@ -86,7 +86,7 @@ assert rx_net._latency((arr // 1000 + 50, 1500, 300), arr)[3] == 0, "zegary prze
 assert rx_net._latency((arr // 1000 - 3_000_000, 1500, 300), arr) is None, "sieć > 1 s = zły zegar, nie pomiar"
 ok("pomiar sieci: zegar PC, przepełnienie 32 bitów, ujemne -> 0, absurd odrzucony")
 
-# ---------- rx_latency: mediany odcinków, p99 sumy, okno ----------
+# ---------- rx_latency: średnie odcinków, średnia / p95 / max sumy, okno ----------
 now = time.perf_counter_ns()
 assert L.summary(0, now) is None
 for k in range(L.MIN_SAMPLES - 1):
@@ -95,22 +95,27 @@ assert L.summary(0, now) is None, "za mało próbek"
 L.add(0, (now - 2_000_000, 1000, LAT_NONE, 500), now - 1_000_000)
 sm = L.summary(0, now)
 assert (sm.phone, sm.net, sm.pc, sm.bt, sm.n) == (1.0, 0.5, 1.0, 0.2, L.MIN_SAMPLES), sm
-assert abs(sm.total - 2.7) < 1e-9 and sm.p99 >= sm.total
+assert abs(sm.avg - (9 * 2.7 + 2.5) / 10) < 1e-9 and sm.p95 == sm.max == 2.7, sm
 L.add(0, (now - 5_000_000_000, 1, 1, 1), now)
 assert L.summary(0, now).n == L.MIN_SAMPLES, "próbka z DS4 podłączonym po 5 s czekania odrzucona"
 assert L.summary(0, now + int(L.WINDOW_S * 1e9) + 1) is None, "stare próbki wypadają z okna"
+rows = [(None, 1000, 0, 0)] * 95 + [(None, 5000, 0, 0)] * 4 + [(None, 20_000, 0, 0)]
+st100 = L._summarize(rows)
+assert (st100.p95, st100.max, st100.n) == (1.0, 20.0, 100) and abs(st100.avg - (95 + 20 + 20) / 100) < 1e-9, st100
+assert L._summarize(rows + [(None, 5000, 0, 0)]).p95 == 5.0, "p95 = 95. percentyl metodą najbliższej rangi"
 parts = ST.latency_parts(sm)
 assert [k for k, *_ in parts] == ["bt", "phone", "net", "pc"]
-assert [k for k, *_ in ST.latency_parts(L.Summary(sm.total, sm.p99, None, sm.phone, sm.net, sm.pc, sm.n))] \
+assert [k for k, *_ in ST.latency_parts(L.Summary(sm.avg, sm.p95, sm.max, None, sm.phone, sm.net, sm.pc, sm.n))] \
     == ["phone", "net", "pc"], "starszy nadajnik bez znaczników pada: bez odcinka Bluetooth"
+assert ST.stats_text(sm) == "p95 2.7 · max 2.7"
 S.alive[0] = True; S.info[0] = None; S.link_loss = 0.0
 assert ST.latency_level(sm, 0, time.monotonic()) == "ok"
-assert ST.latency_level(L.Summary(20, 30, None, 1, 1, 1, 50), 0, time.monotonic()) == "bad"
+assert ST.latency_level(L.Summary(20, 30, 40, None, 1, 1, 1, 50), 0, time.monotonic()) == "bad"
 S.link_loss = 3.0
 assert ST.latency_level(sm, 0, time.monotonic()) == "warn", "utrata pakietów podnosi poziom mimo małego opóźnienia"
 S.link_loss = 0.0
 L.clear(0); assert L.summary(0, now) is None
-ok("rx_latency: mediany odcinków, suma, p99, okno 5 s, poziomy, czyszczenie")
+ok("rx_latency: średnie odcinków, średnia / p95 / max sumy, okno 5 s, poziomy, czyszczenie")
 
 # handle(): state2 zapisuje pomiar najstarszej czekającej zmiany, powtórka go nie nadpisuje
 S.want[0].set(); S.alive[0] = True

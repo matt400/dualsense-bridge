@@ -8,6 +8,7 @@ import time
 from evdev import ecodes as ec
 
 import sender_state as state
+import sender_wol as wol
 from sender_config import AUTOBIAS_MAX_STEP, BURST_DELAYS, C, IDLE_TP, TOUCH_H, TOUCH_W, PAD_ABS
 from proto import KEY_BIT, LAT_NONE, clamp
 
@@ -127,6 +128,7 @@ async def stream_pad(c):
                 c.send_state()
                 for d in BURST_DELAYS:
                     loop.call_later(d, c.send_state, True)
+                wol.on_mask(c)            # PS + przycisk przytrzymane przy milczącym receiverze = Wake-on-LAN
             else:
                 c.request_send()
 

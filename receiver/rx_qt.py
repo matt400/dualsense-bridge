@@ -16,12 +16,14 @@ import time
 
 from PySide6.QtCore import QAbstractNativeEventFilter, QEvent, QSettings, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QIcon, QKeySequence, QPixmap, QShortcut
-from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QMainWindow, QMenu, QSystemTrayIcon, QTabWidget,
-                               QToolButton, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QMainWindow, QMenu, QSplitter, QSystemTrayIcon,
+                               QTabWidget, QToolButton, QVBoxLayout, QWidget)
 
 import rx_console
+import rx_events as ev
 import rx_feedback as F
 import rx_games
+import rx_latency
 import rx_master
 import rx_profiles as P
 import rx_state as S
@@ -36,11 +38,12 @@ from rx_editor import Editor
 from rx_icon import ICON_LOW, ICON_OK, icon_png, render_icon
 from rx_qt_console import ConsoleSettings
 from rx_qt_icons import icon, pixmap
+from rx_qt_log import LogPanel
 from rx_qt_pad import PadView
 from rx_qt_panels import ChangesPage, GyroPage, PartPage, ProfileBar
 from rx_qt_style import DIM, LEVEL, SEGMENT, TV_SCALE, apply_theme, px, set_prop
 from rx_qt_tv import PadNav
-from rx_qt_widgets import BatteryBar, ConfirmButton, Segmented, SegmentBar, button, icon_button, label
+from rx_qt_widgets import BatteryBar, ConfirmButton, Segmented, SegmentBar, button, icon_button, icon_label, label
 
 LIVE_MS, SLOW_MS, APPLY_MS = 33, 400, 150
 UPDATE_WAIT_S = 60.0       # tyle najwyżej czekamy na wynik aktualizacji nadajnika (git pull na telefonie)
@@ -133,21 +136,34 @@ class PadCard(QFrame):
         bl.addLayout(batt)
         lat = QHBoxLayout()
         lat.setSpacing(px(6))
-        self.lat_icon = label("")
-        pm = pixmap("stopwatch", px(16) * 2)
-        pm.setDevicePixelRatio(2)
-        self.lat_icon.setPixmap(pm)
-        self.lat = label("", "big")                  # mediana opóźnienia pad -> gra (albo ping, gdy brak pomiaru)
-        self.lat_p99 = label("", "small")
+        self.lat_icon = icon_label("stopwatch", px(16))
+        self.lat = label("", "big")                  # średnie opóźnienie pad -> gra (albo ping, gdy brak pomiaru)
+        self.lat_stats = label("", "small")          # p95 · max
         self.mode_icon = label("")
         lat.addWidget(self.lat_icon)
         lat.addWidget(self.lat)
-        lat.addWidget(self.lat_p99, 0, Qt.AlignmentFlag.AlignBottom)
+        lat.addWidget(self.lat_stats, 0, Qt.AlignmentFlag.AlignBottom)
         lat.addStretch(1)
         lat.addWidget(self.mode_icon)
         bl.addLayout(lat)
         self.lat_bar = SegmentBar(px(5))
         bl.addWidget(self.lat_bar)
+        self.btn_row = QWidget()                      # przycisk -> gra: tylko naciśnięcia (bez gałek i gyro)
+        br = QHBoxLayout(self.btn_row)
+        br.setContentsMargins(0, 0, 0, 0)
+        br.setSpacing(px(6))
+        self.btn_icon = icon_label("press", px(16))
+        self.btn_lat = label("", "val")
+        self.btn_stats = label("", "small")
+        self.btn_reset = icon_button("reset", _("Wyzeruj pomiar przycisk → gra"), 14)
+        self.btn_reset.setProperty("mini", True)
+        self.btn_reset.clicked.connect(self.reset_buttons)
+        br.addWidget(self.btn_icon)
+        br.addWidget(self.btn_lat)
+        br.addWidget(self.btn_stats, 0, Qt.AlignmentFlag.AlignBottom)
+        br.addStretch(1)
+        br.addWidget(self.btn_reset)
+        bl.addWidget(self.btn_row)
         self.profile = label("", "dim")
         bl.addWidget(self.profile)
         lay.addWidget(self.body)
@@ -172,30 +188,48 @@ class PadCard(QFrame):
     def set_selected(self, on):
         set_prop(self, "selected", on)
 
+    def reset_buttons(self):
+        rx_latency.reset_buttons(self.slot)
+        self._lat = None
+        self._update_latency(time.monotonic())
+
     def _update_latency(self, now):
         """Opóźnienie: zmienia się co odświeżenie - osobno od reszty karty (tylko gdy coś się zmieniło)."""
         i = self.slot
-        summ = ST.latency(i)
+        summ, press = ST.latency(i), ST.button_latency(i)
         link = ST.link_text(i, now)
         level = ST.latency_level(summ, i, now) if S.alive[i] else ""
         if summ is None:
             text = ST.ping_text(i, now)
             sig = (text, "", (), link, level if text != "—" else "")
         else:
-            text = f"{summ.total:.1f} ms"
             parts = ST.latency_parts(summ)
-            sig = (text, f"p99 {summ.p99:.1f}", tuple((k, round(v, 1)) for k, _t, v in parts), link, level)
-        if sig == self._lat:
+            sig = (f"{summ.avg:.1f} ms", ST.stats_text(summ), tuple((k, round(v, 1)) for k, _t, v in parts), link, level)
+        bsig = None if press is None else (f"{press.avg:.1f} ms", ST.stats_text(press), ST.lat_level(press), press.n)
+        if (sig, bsig) == self._lat:
             return
-        self._lat = sig
+        self._lat = (sig, bsig)
         self.lat.setText(sig[0])
-        self.lat_p99.setText(sig[1])
+        self.lat_stats.setText(sig[1])
         set_prop(self.lat, "level", sig[4])
         self.lat_bar.set([(v, SEGMENT[k]) for k, v in sig[2]])
         self.lat_bar.setVisible(bool(sig[2]))
         tip = self._latency_tip(summ, link)
-        for w in (self.lat, self.lat_icon, self.lat_p99, self.lat_bar):
+        for w in (self.lat, self.lat_icon, self.lat_stats, self.lat_bar):
             w.setToolTip(tip)
+        self.btn_row.setVisible(bsig is not None)
+        if bsig is not None:
+            self.btn_lat.setText(bsig[0])
+            self.btn_stats.setText(bsig[1])
+            set_prop(self.btn_lat, "level", bsig[2])
+            btip = self._button_tip(press)
+            for w in (self.btn_icon, self.btn_lat, self.btn_stats):
+                w.setToolTip(btip)
+
+    @staticmethod
+    def _rows(summ):
+        return [f"<span style='color:{SEGMENT[k]}'>■</span>&nbsp; {name}: <b>{v:.2f} ms</b>"
+                for k, name, v in ST.latency_parts(summ)]
 
     @staticmethod
     def _latency_tip(summ, link):
@@ -205,14 +239,23 @@ class PadCard(QFrame):
             rows = [f"<b>{_('Opóźnienie pad → gra')}</b>",
                     dim.format(_("Brak pomiaru: pad leży albo nadajnik jest w starszej wersji (Aktualizuj)."))]
         else:
-            rows = [f"<b>{_('Opóźnienie pad → gra')}: {summ.total:.1f} ms</b> &nbsp;"
-                    + dim.format(_("p99 {ms} ms · {n} próbek z 5 s").format(ms=f"{summ.p99:.1f}", n=summ.n))]
-            rows += [f"<span style='color:{SEGMENT[k]}'>■</span>&nbsp; {name}: <b>{v:.2f} ms</b>"
-                     for k, name, v in ST.latency_parts(summ)]
-            rows.append(dim.format(_("Mediany odcinków. Stała część radia Bluetooth (~1–2 ms) jest niemierzalna.")))
+            rows = [f"<b>{_('Opóźnienie pad → gra')}: {summ.avg:.1f} ms</b> &nbsp;"
+                    + dim.format(_("średnia · {stats} ms · {n} próbek z 5 s").format(stats=ST.stats_text(summ), n=summ.n)),
+                    *PadCard._rows(summ),
+                    dim.format(_("Średnie odcinków. Stała część radia Bluetooth (~1–2 ms) jest niemierzalna."))]
         if link:
             rows.append(dim.format(link))
         return "<br>".join(rows)
+
+    @staticmethod
+    def _button_tip(summ):
+        dim = f"<span style='color:{DIM}'>{{}}</span>"
+        return "<br>".join([
+            f"<b>{_('Przycisk → gra')}: {summ.avg:.1f} ms</b> &nbsp;"
+            + dim.format(_("średnia · {stats} ms · {n} z ostatnich {keep} naciśnięć").format(
+                stats=ST.stats_text(summ), n=summ.n, keep=rx_latency.BUTTON_KEEP)),
+            *PadCard._rows(summ),
+            dim.format(_("Tylko przyciski, D-pad i spusty (wciśnięcie / puszczenie) - bez gałek i żyroskopu."))])
 
     def update_state(self, now):
         """Odświeża kartę (tylko to, co się zmieniło). -> True, gdy bateria pada jest na wyczerpaniu."""
@@ -222,10 +265,10 @@ class PadCard(QFrame):
         if shown:
             self._update_latency(now)
         pct, flags = S.batt_info[i]
-        low = ST.is_low(i, C.LOW_BATT)
+        low = ST.is_low(i, ST.low_pct())
         master = rx_master.is_master(i)
         key = (alive, want, pct, flags, S.plugged[i], S.mouse_mode[i], profile_size(S.remap_maps[i]), S.active[i],
-               master, S.pad_id[i], S.sender_info[i])
+               master, S.pad_id[i], S.sender_info[i], ST.low_pct())
         if key == self._key:
             return low                        # nic się nie zmieniło - nie dotykaj widżetów
         self._key = key
@@ -251,7 +294,7 @@ class PadCard(QFrame):
             self.bar.set(None, LEVEL["ok"])
             self.pct.setText(_("b/d"))
         else:
-            self.bar.set(pct, LEVEL[ST.battery_level(pct, charging, C.LOW_BATT)])
+            self.bar.set(pct, LEVEL[ST.battery_level(pct, charging, ST.low_pct())])
             self.pct.setText(f"{pct}%" + (" ⚡" if charging else ""))
         set_prop(self.pct, "level", "bad" if low else "")
         n = profile_size(S.remap_maps[i])
@@ -325,6 +368,13 @@ class MainWindow(QMainWindow):
             screen = QApplication.primaryScreen().availableGeometry()
             self.move(screen.center() - self.rect().center())
         self.place_on_screen()
+        split = settings.value("split")
+        if split:
+            self.split.restoreState(split)
+        else:
+            self.split.setSizes([px(560), px(190)])
+        self.log_btn.setChecked(settings.value("log_open", "false") in (True, "true"))
+        self.log_panel.setVisible(self.log_btn.isChecked())
         self.slow_tick()
         self.slow_timer.start()                # działa także przy ukrytym oknie (zasobnik, bateria, Ctrl+C)
 
@@ -340,13 +390,22 @@ class MainWindow(QMainWindow):
         outer.setSpacing(0)
         outer.addWidget(self._header())
         outer.addWidget(self._banner())
-        body = QHBoxLayout()
+        main = QWidget()
+        body = QHBoxLayout(main)
         body.setContentsMargins(px(16), px(16), px(16), px(16))
         body.setSpacing(px(16))
         body.addWidget(self._left())
         body.addLayout(self._center(), 1)
         body.addWidget(self._right())
-        outer.addLayout(body, 1)
+        self.log_panel = LogPanel()             # dziennik zdarzeń: wysuwany z dołu (ikona w nagłówku), wysokość do ustawienia
+        self.split = QSplitter(Qt.Orientation.Vertical)
+        self.split.setChildrenCollapsible(False)
+        self.split.setHandleWidth(px(4))
+        self.split.addWidget(main)
+        self.split.addWidget(self.log_panel)
+        self.split.setStretchFactor(0, 1)
+        self.log_panel.setMinimumHeight(px(120))
+        outer.addWidget(self.split, 1)
         # minimalny rozmiar wynika z układu (kolumny + najmniejszy rysunek pada) - jawne minimum mniejsze niż on
         # pozwalało ścisnąć okno tak, że prawy panel zachodził na rysunek
 
@@ -365,6 +424,9 @@ class MainWindow(QMainWindow):
                                     _("Wersja nieznana - folder nie jest klonem git"))
         self.sender = label("")
         self.sender.setObjectName("pill")
+        self.log_btn = icon_button("log", _("Dziennik zdarzeń") + " - " + _("Połączenia padów, master, tryb konsoli, błędy, aktualizacje"))
+        self.log_btn.setCheckable(True)
+        self.log_btn.toggled.connect(self.show_log)
         self.fs_btn = icon_button("fullscreen", _("Pełny ekran (F11)"))
         self.fs_btn.clicked.connect(self.toggle_fullscreen)
         settings_btn = icon_button("gear", _("Ustawienia") + " - " + _("Tryb konsoli, mysz touchpada, pad master, okno, język"))
@@ -386,9 +448,9 @@ class MainWindow(QMainWindow):
         lay.addStretch(1)
         lay.addWidget(self.sender)
         lay.addSpacing(px(10))
-        for b in (self.fs_btn, settings_btn, self.update_btn, restart_btn, quit_btn):
+        for b in (self.log_btn, self.fs_btn, settings_btn, self.update_btn, restart_btn, quit_btn):
             lay.addWidget(b)
-        self._iconic = [self.fs_btn, settings_btn, self.update_btn, restart_btn, quit_btn]
+        self._iconic = [self.log_btn, self.fs_btn, settings_btn, self.update_btn, restart_btn, quit_btn]
         return bar
 
     def _banner(self):
@@ -623,8 +685,16 @@ class MainWindow(QMainWindow):
         super().hideEvent(e)
         self.live_timer.stop()                 # ukryte okno nie odrysowuje pada
 
+    def show_log(self, on):
+        """Panel dziennika na dole okna (ikona w nagłówku)."""
+        self.log_panel.setVisible(on)
+        self.log_btn.setToolTip(_("Schowaj dziennik zdarzeń") if on else
+                                _("Dziennik zdarzeń") + " - " + _("Połączenia padów, master, tryb konsoli, błędy, aktualizacje"))
+
     def save_settings(self):
         self.settings.setValue("geometry", self.saveGeometry())
+        self.settings.setValue("split", self.split.saveState())
+        self.settings.setValue("log_open", self.log_btn.isChecked())
         self.settings.setValue("slot", self.ed.slot)
         self.settings.setValue("view", self.view)
         self.settings.sync()
@@ -704,6 +774,7 @@ class MainWindow(QMainWindow):
             parts.append(_("nadajnik niepołączony - zaktualizuje się następnym razem"))
         text = " · ".join(parts)
         print(f"Update: {text}")
+        (ev.info if r.ok else ev.error)(_("Aktualizacja: {text}").format(text=text))
         self.update_btn.disarm()                   # sama ikona (napis "Aktualizuję…" był tylko w trakcie)
         self.update_btn.setEnabled(not r.changed)
         self.update_btn.setToolTip(text)
@@ -873,12 +944,13 @@ class MainWindow(QMainWindow):
             if S.want[i].is_set() or S.alive[i]:
                 tips.append(_("Pad {n}").format(n=i + 1) + ": "
                             + (f"{pct}%" + (_(" (ładuje się)") if charging else "") if known else _("b/d")))
-            if ST.is_low(i, C.LOW_BATT) and not self.warned[i]:
+            if ST.is_low(i, ST.low_pct()) and not self.warned[i]:
                 self.warned[i] = True
+                ev.warn(_("{pad}: niska bateria ({pct}%)").format(pad=ev.pad_name(i), pct=pct))
                 if self.tray and C.cfg["low_batt_notify"]:
                     self.tray.showMessage(_("Niska bateria"), _("Pad {n}").format(n=i + 1) + f": {pct}%",
                                           QSystemTrayIcon.MessageIcon.Warning, 8000)
-            elif self.warned[i] and (charging or (known and pct > C.LOW_BATT + 5)):
+            elif self.warned[i] and (charging or (known and pct > ST.low_pct() + 5)):
                 self.warned[i] = False
         title = _("DualSense bridge - NISKA BATERIA") if low_any else "DualSense bridge"
         if title != self.windowTitle():
@@ -895,6 +967,7 @@ class MainWindow(QMainWindow):
             self.tray.setToolTip(tip)
             self.tray.setIcon(self.icons[low_any])
         self.tip, self.low_any = tip, low_any
+        self.log_panel.tick()
 
 
 def _int(v, default):

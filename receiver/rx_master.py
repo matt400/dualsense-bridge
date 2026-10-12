@@ -19,6 +19,7 @@ from rx_i18n import _
 import threading
 from dataclasses import replace
 
+import rx_events as ev
 import rx_feedback as F
 import rx_mouse
 import rx_settings
@@ -106,9 +107,19 @@ def mouse_follows_master(force=False):
             print(f"Controller {i}: touchpad -> {'MOUSE' if on else 'DS4 touch'} mode (follows the master pad)")
 
 
+def master_label(pad):
+    """"Pad 2 (aa:bb:...)" dla podłączonego mastera, sam klucz dla niepodłączonego, "brak" bez mastera."""
+    if not pad:
+        return _("brak")
+    i = next((i for i in range(len(slots)) if S.pad_id[i] and S.profile_key(i) == pad), None)
+    return f"{ev.pad_name(i)} ({pad})" if i is not None else pad
+
+
 def _master_changed(old, new):
     if old.master.pad != new.master.pad:
         mouse_follows_master(force=True)
+        if slots:                      # nie przy wczytaniu settings.json na starcie (przed init)
+            ev.info(_("Master: {pad}").format(pad=master_label(new.master.pad)))
 
 
 rx_settings.on_change(_master_changed)
@@ -253,3 +264,4 @@ def _do(i, action):
             W.sleep_pc() if action == "sleep" else W.shutdown_pc()
     except Exception as e:
         print(f"Controller {i}: master action {action} failed: {e!r}")
+        ev.error(_("{pad}: akcja mastera {action} nieudana: {err}").format(pad=ev.pad_name(i), action=action, err=repr(e)))

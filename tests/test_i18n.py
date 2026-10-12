@@ -5,7 +5,9 @@ from rxenv import RX                                                  # noqa  (z
 import rx_i18n
 from rx_buttons import LABELS
 from rx_editor import GYRO_MODES, NEW_GAME_HINT, STICK_NAME
-from rx_settings import ABSENT, MASTER_ACTIONS, MASTER_FEATURES
+from rx_settings import ABSENT, LIGHT_MODES, LOG_LEVELS, MASTER_ACTIONS, MASTER_FEATURES
+from rx_events import SENDER_TEXT
+from rx_qt_icons import EXTRA_TIPS
 
 keys = set()
 for f in glob.glob(os.path.join(RX, "*.py")):
@@ -16,6 +18,7 @@ for f in glob.glob(os.path.join(RX, "*.py")):
 # teksty trzymane w słownikach i tłumaczone przy wyświetlaniu: _(LABELS[n]) itd.
 keys |= set(LABELS.values()) | set(STICK_NAME.values()) | set(GYRO_MODES.values()) | {NEW_GAME_HINT}
 keys |= {t for t, _ in MASTER_FEATURES.values()} | {t for t, _ in MASTER_ACTIONS.values()} | set(ABSENT.values())
+keys |= set(LIGHT_MODES.values()) | set(LOG_LEVELS.values()) | set(SENDER_TEXT.values()) | set(EXTRA_TIPS.values())
 keys |= {"Wynik", "Fizycznie", "Rozszerz: oba ekrany aktywne", "Tylko monitor", "— nie zmieniaj dźwięku —",
          "Zapisano - {file}", "Usunięto - {file}", "Pad master", "Touchpad jako mysz", "Touchpad jako dotyk DS4",
          "Tryb konsoli", "Wyłącz", "Uruchom ponownie", "Ekran", "Pełny ekran", "Wibracja"}
