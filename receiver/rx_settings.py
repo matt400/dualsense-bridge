@@ -55,8 +55,9 @@ class MouseConfig:
     V = None                        # funkcje sprawdzające - ustawiane niżej (pole klasy, nie instancji)
 
 
-MouseConfig.V = {"sens": _num(0.05, 5.0, float), "click_freeze_ms": _num(0, 600), "click_rewind_ms": _num(0, 300),
-                 "drag_threshold": _num(0, 600)}
+# zakresy wspólne dla walidacji settings.json i suwaków w oknie ustawień (suwak węższy niż walidacja obcinał zapis)
+MOUSE_LIMITS = {"sens": (0.05, 5.0), "click_freeze_ms": (0, 600), "click_rewind_ms": (0, 300), "drag_threshold": (0, 600)}
+MouseConfig.V = {k: _num(lo, hi, float if k == "sens" else int) for k, (lo, hi) in MOUSE_LIMITS.items()}
 
 # ---------------- pad master ----------------
 # co można zastrzec tylko dla mastera: klucz -> (opis w oknie, ikona z rx_qt_icons); kolejność = kolejność w oknie

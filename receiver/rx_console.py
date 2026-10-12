@@ -299,7 +299,7 @@ class Console:
         return exe if exe and exe not in self.cfg.allowed_apps else None
 
     def _auto_on(self, i):
-        if self.on:
+        if self.on or not master.is_master(i):     # w kolejce mógł zmienić się pad w slocie albo master
             return
         if (exe := self.blocked_by()) is not None:
             print(f"Console: master connected, {exe} in the foreground - console mode waits until it is not")

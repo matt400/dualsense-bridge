@@ -27,7 +27,7 @@ from rx_i18n import LANGS
 from rx_qt_icons import icon
 from rx_qt_style import set_prop
 from rx_qt_widgets import Combo, SliderRow, button, field, group, icon_label, input_items, label, left, pair
-from rx_settings import ABSENT, COMBO_BUTTONS, MASTER_ACTIONS, MASTER_FEATURES, MasterConfig, MouseConfig
+from rx_settings import ABSENT, COMBO_BUTTONS, MASTER_ACTIONS, MASTER_FEATURES, MOUSE_LIMITS, MasterConfig, MouseConfig
 
 CAPTURE_TIMEOUT_MS = 15000
 NO_AUDIO = "— nie zmieniaj dźwięku —"
@@ -138,10 +138,11 @@ class ConsoleSettings(QDialog):
         return [switching, tv, games, note]
 
     def _mouse_tab(self):
-        self.sens = SliderRow(_("Czułość kursora"), 0.05, 5.0, 0.05, "x")   # zakres jak MouseConfig i PS + ↑/↓ (do 5×)
-        self.freeze = SliderRow(_("Kursor stoi po wciśnięciu i puszczeniu kliku [ms]"), 0, 400, 10)
-        self.rewind = SliderRow(_("Cofnij ruch sprzed kliknięcia [ms] (docisk palca przesuwa kursor)"), 0, 200, 10)
-        self.drag = SliderRow(_("Przeciąganie z wciśniętym klikiem zaczyna się po (jednostki touchpada)"), 0, 300, 5)
+        lim = MOUSE_LIMITS                  # te same zakresy co settings.json - zapis nie obcina wartości
+        self.sens = SliderRow(_("Czułość kursora"), *lim["sens"], 0.05, "x")
+        self.freeze = SliderRow(_("Kursor stoi po wciśnięciu i puszczeniu kliku [ms]"), *lim["click_freeze_ms"], 10)
+        self.rewind = SliderRow(_("Cofnij ruch sprzed kliknięcia [ms] (docisk palca przesuwa kursor)"), *lim["click_rewind_ms"], 5)
+        self.drag = SliderRow(_("Przeciąganie z wciśniętym klikiem zaczyna się po (jednostki touchpada)"), *lim["drag_threshold"], 5)
         dflt = button(_("Domyślne"), small=True)
         dflt.clicked.connect(lambda: self._load_mouse(MouseConfig(sens=C.MOUSE_SENS)))
         cursor = group(_("KURSOR"),

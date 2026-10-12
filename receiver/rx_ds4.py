@@ -87,8 +87,9 @@ def slot_thread(idx):
             if err_str != last_err:
                 print(f"Slot {idx}: virtual DS4 error: {e!r} (is ViGEmBus installed?)")
                 last_err = err_str
-            S.want[idx].clear()   # kolejny pakiet spróbuje ponownie
-            time.sleep(1)
+            # want zostaje: ponowna próba za chwilę w tej samej pętli. Wyczyszczenie udawało rozłączenie pada -
+            # następny pakiet "łączył" go od nowa (rx_console.pad_connected: auto-ON trybu konsoli co sekundę)
+            S.stop.wait(1.0)
         finally:
             S.plugged[idx] = False
             if pad is not None:

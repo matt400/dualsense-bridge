@@ -3,7 +3,7 @@ import json, os, sys, time, types
 sys.path.insert(0, os.path.dirname(__file__))
 from rxenv import *                                              # noqa
 import rx_buttons as B, rx_config, rx_console, rx_master, rx_profiles as P, rx_settings
-from proto import T_STATE
+from proto import T_BYE, T_IDENT, T_STATE
 from rx_settings import MasterConfig, MouseConfig, Settings
 
 fails = []
@@ -70,7 +70,6 @@ time.sleep(0.15); state(1)
 
 # ---------- master: "zamknij grę" zamyka okno, które sprawdził ----------
 A = "aa:aa:aa:aa:aa:01"
-from proto import T_IDENT
 feed(T_IDENT, 0, A.encode()); state(0)
 rx_settings.apply(Settings(MouseConfig(), MasterConfig(pad=A, actions={"pause": "", "close_game": "triangle",
                                                                         "sleep": "", "shutdown": ""})))
@@ -119,6 +118,66 @@ else:
         rx_update.update = real_update
     check(len(out) == 1 and not out[0].ok and not out[0].changed and "git" in out[0].text,
           "błąd aktualizacji wraca do okna (przycisk nie zostaje na zawsze w 'Aktualizuję…')")
+
+# ---------- odłączenie po ciszy: inny pad w tym slocie nie jest "masterem" ----------
+connected = []
+real_pc = rx_console.pad_connected
+rx_console.pad_connected = lambda i: connected.append((i, rx_master.is_master(i)))
+M_ID = "aa:aa:aa:aa:aa:09"
+rx_settings.apply(Settings(MouseConfig(), MasterConfig(pad=M_ID)))
+feed(T_IDENT, 1, M_ID.encode()); state(1)
+check(rx_master.is_master(1), "master w slocie 1")
+S.last_seen[1] = time.monotonic() - C.UNPLUG_S - 1
+N.check_stale(time.monotonic())
+check(S.pad_id[1] is None and not rx_master.is_master(1), "po unplug_s ciszy slot zapomina identyfikator pada")
+connected.clear()
+feed(T_IDENT, 1, b"bb:bb:bb:bb:bb:09"); state(1)
+check(connected and not any(m for _i, m in connected), f"inny pad w slocie mastera nie włącza trybu konsoli: {connected}")
+rx_console.pad_connected = real_pc
+c = rx_console.Console(rx_console.ConsoleConfig())
+applied = []
+c._apply = lambda on, *a, **k: applied.append(on)
+c._auto_on(1)                                       # zadanie z kolejki dla slotu, w którym mastera już nie ma
+check(applied == [], "auto-ON z kolejki sprawdza mastera w chwili wykonania")
+rx_settings.apply(rx_settings.defaults())
+feed(T_BYE, 1)
+
+# ---------- błąd ViGEm nie udaje ponownego połączenia pada ----------
+import threading, rx_ds4
+attempts = []
+class BrokenPad:
+    def __init__(self):
+        attempts.append(1)
+        raise OSError("ViGEmBus not installed")
+rx_ds4.vg.VDS4Gamepad = BrokenPad
+connected.clear()
+rx_console.pad_connected = lambda i: connected.append(i)
+S.ignore_until[1] = 0.0
+S.want[0].clear()                                   # slot 0 nie czeka w kolejce (wait_turn)
+t = threading.Thread(target=rx_ds4.slot_thread, args=(1,), daemon=True)
+t.start()
+end = time.monotonic() + 2.4
+while time.monotonic() < end:
+    state(1); time.sleep(0.05)
+rx_console.pad_connected = real_pc
+check(len(attempts) >= 2, f"ViGEm: kolejne próby utworzenia pada ({len(attempts)})")
+check(connected.count(1) == 1, f"błąd ViGEm nie jest nowym połączeniem pada (pad_connected {connected.count(1)}x)")
+S.want[1].clear(); S.stop.set(); S.wake[1].set(); t.join(3); S.stop.clear()
+
+# ---------- okno ustawień: suwaki myszy nie obcinają wartości z settings.json ----------
+try:
+    from PySide6.QtWidgets import QApplication
+    app = QApplication.instance() or QApplication([])
+    import rx_qt_console
+except Exception as e:
+    print(f"SKIP suwaki myszy ({e!r})")
+else:
+    d = rx_qt_console.ConsoleSettings()
+    hi = {k: v[1] for k, v in rx_settings.MOUSE_LIMITS.items()}
+    m = MouseConfig(**hi)
+    d._load_mouse(m)
+    got = d.collect_settings().mouse
+    check(got == m, f"maksymalne wartości myszy przechodzą przez okno bez zmian: {got}")
 
 print("WSZYSTKO OK" if not fails else f"FAIL: {fails}")
 sys.exit(1 if fails else 0)

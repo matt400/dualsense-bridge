@@ -259,6 +259,9 @@ def check_stale(now):
             print(f"Controller {i}: no data for {C.UNPLUG_S}s - unplugging virtual DS4")
             S.want[i].clear()
             S.wake[i].set()
+            # jak po pakiecie bye: następny pad w tym slocie (może inny) musi przysłać swój identyfikator - inaczej
+            # dostałby profil poprzedniego, a gdy tamten był masterem, włączyłby tryb konsoli i uprawnienia mastera
+            clear_slot(i, forget_id=True)
 
 
 def net_loop():
