@@ -13,6 +13,7 @@ Uruchomienie bez okna: python receiver\\rx_update.py
 import os
 import subprocess
 import sys
+import threading
 import time
 from dataclasses import dataclass
 
@@ -94,6 +95,9 @@ class Available:
 
 
 available = None               # Available z ostatniego udanego sprawdzenia albo None (nie sprawdzono / błąd)
+# git fetch w tle i git pull z przycisku naraz walczyłyby o te same referencje ("cannot lock ref ...") - pull mógł
+# się nie udać. Aktualizacja czeka na trwające sprawdzenie, sprawdzenie pomija kolejkę, gdy trwa aktualizacja.
+_git_lock = threading.Lock()
 
 
 def check_available(root=ROOT, git=None):
@@ -102,6 +106,15 @@ def check_available(root=ROOT, git=None):
     git = git or find_git()
     if git is None or not os.path.isdir(os.path.join(root, ".git")):
         return None
+    if not _git_lock.acquire(blocking=False):
+        return None                            # trwa aktualizacja - sprawdzimy następnym razem
+    try:
+        return _check(root, git)
+    finally:
+        _git_lock.release()
+
+
+def _check(root, git):
     try:
         if proto.git(root, "fetch", "--quiet", git_exe=git, timeout=60, env=QUIET_ENV).returncode:
             return None
@@ -145,7 +158,8 @@ def update(root=ROOT, git=None, pip=True):
     git = git or find_git()
     if git is None:
         return Result(False, False, _("Nie znaleziono git - zainstaluj Git for Windows (git-scm.com)"))
-    state, msg, old, new, files = proto.git_pull(root, git)
+    with _git_lock:                            # nie w trakcie sprawdzania GitHuba w tle
+        state, msg, old, new, files = proto.git_pull(root, git)
     if state == UPD_FAILED:
         return Result(False, False, _("git pull nie powiódł się: {msg}").format(msg=msg), old, old)
     if state != UPD_DONE:

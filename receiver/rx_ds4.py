@@ -125,6 +125,8 @@ def slot_thread(idx):
                 if not S.want[idx].is_set() or S.stop.is_set():
                     break
                 with o.lock:
+                    if not S.wake[idx].is_set():
+                        continue           # w międzyczasie wysłał go push (wątek sieci) - bez drugiego takiego samego
                     S.wake[idx].clear()
                     o.send(idx)
         except Exception as e:

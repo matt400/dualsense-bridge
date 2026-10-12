@@ -283,10 +283,39 @@ for x in (20, 30, 40):                                    # seria szybsza niż p
 time.sleep(0.05)
 check(reports[-1][2] == 40, f"seria szybsza niż pad_hz: ostatni stan dosłany przez wątek slotu: {[r[2] for r in reports]}")
 check(len(reports) <= 4, "seria zlana (nie więcej raportów niż zmian)")
+import random as _r
+rng = _r.Random(5); reports.clear(); seq = []
+for k in range(300):                                      # zmiany w nieregularnych odstępach wokół limitu pad_hz
+    v = 1 + k % 250
+    state(0, sticks=(v, 128, 128, 128)); seq.append(v)
+    time.sleep(rng.choice((0, 0, 0.0004, 0.0009, 0.0011, 0.002)))
+time.sleep(0.05)
+vals = [r[2] for r in reports]
+dups = sum(1 for a, b in zip(vals, vals[1:]) if a == b)
+check(dups == 0, f"bez zdublowanych raportów (push + wątek slotu): {dups} duplikatów na {len(vals)}")
+check(vals[-1] == seq[-1], "ostatni stan zawsze dochodzi")
 S.want[0].clear(); S.wake[0].set(); t.join(2)
 check(rx_ds4.outs[0] is None and not S.plugged[0], "odłączenie: push nie używa już odłączonego pada")
 state(0, sticks=(50, 128, 128, 128))                      # po odłączeniu tylko budzi wątek slotu, bez wyjątku
 S.push = None
+
+# ---------- git: sprawdzanie w tle i aktualizacja nie biegną naraz ----------
+import rx_update
+held = threading.Event(); release = threading.Event()
+def hold():
+    with rx_update._git_lock:
+        held.set(); release.wait(2)
+th = threading.Thread(target=hold); th.start(); held.wait(2)
+real_isdir = rx_update.os.path.isdir
+rx_update.os.path.isdir = lambda p: True
+t0 = time.monotonic(); r = rx_update.check_available(TMP, git="git")
+check(r is None and time.monotonic() - t0 < 0.1, "trwa aktualizacja -> sprawdzenie w tle pominięte od razu")
+rx_update.proto.git_pull, real_pull = (lambda root, git: (rx_update.UPD_NO_CHANGE, "", "a", "a", [])), rx_update.proto.git_pull
+threading.Timer(0.3, release.set).start()
+t0 = time.monotonic(); rx_update.update(TMP, git="git", pip=False)
+check(time.monotonic() - t0 >= 0.25, "aktualizacja czeka na koniec trwającego sprawdzenia")
+rx_update.proto.git_pull, rx_update.os.path.isdir = real_pull, real_isdir
+th.join(2)
 
 print("WSZYSTKO OK" if not fails else f"FAIL: {fails}")
 sys.exit(1 if fails else 0)
