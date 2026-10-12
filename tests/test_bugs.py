@@ -1,5 +1,5 @@
 """Reprodukcje bugów z przeglądu - każdy test powinien przechodzić PO poprawkach."""
-import sys, os, time, threading, json, urllib.request
+import sys, os, time, threading, json
 sys.path.insert(0, os.path.dirname(__file__))
 from rxenv import *                              # noqa
 import rx_games
@@ -48,20 +48,12 @@ with contextlib.redirect_stdout(buf):
 check("brak komunikatów o profilu dla niepodłączonego pada", "Controller 1" not in buf.getvalue())
 W.foreground_exe = lambda: "msedge.exe"; rx_games.poll_once()
 
-# B26: edytor - wybrany profil gry ma być aktywny (podgląd "Result" i test na padzie), gdy okno gry nie jest aktywne
-import rx_web
-C.REMAP_UI = True; C.REMAP_UI_PORT = 0; rx_web.start()
-def call(path, body=None):
-    req = urllib.request.Request(rx_web.base_url + path, data=None if body is None else json.dumps(body).encode(),
-                                 headers={"X-Token": rx_web.token, "Content-Type": "application/json"})
-    try:
-        with urllib.request.urlopen(req) as r: return r.status, json.loads(r.read())
-    except urllib.error.HTTPError as e: return e.code, json.loads(e.read())
-code, r = call("/api/use", {"slot": 0, "key": base + "@g.exe"})
-check("POST /api/use ustawia edytowany profil jako aktywny", code == 200 and S.active[0] == base + "@g.exe")
-check("/api/use odrzuca nieistniejący profil", call("/api/use", {"slot": 0, "key": base + "@nope.exe"})[0] == 400)
+# B26: wybrany w oknie profil gry ma być aktywny (podgląd "Wynik" i test na padzie), gdy okno gry nie jest aktywne
+import rx_profiles as P
+check("wybór profilu gry w oknie ustawia go jako aktywny", P.use(0, base + "@g.exe") and S.active[0] == base + "@g.exe")
+check("nieistniejący profil odrzucony", not P.use(0, base + "@nope.exe"))
 W.foreground_exe = lambda: "g.exe"; rx_games.poll_once(); W.foreground_exe = lambda: "explorer.exe"; rx_games.poll_once()
-check("powrót do gry / zmiana okna kasuje wybór z edytora", S.active[0] == base)
+check("powrót do gry / zmiana okna kasuje wybór z okna", S.active[0] == base)
 
 # B24: równoległe przełączanie profilu z kilku wątków - końcowy stan spójny z active_key()
 store.save(base + "@h.exe", {"buttons": {"cross": "square"}})
@@ -76,18 +68,6 @@ ts = [threading.Thread(target=flip), threading.Thread(target=web), threading.Thr
 ok = S.active[0] == S.active_key(0) and S.remap_maps[0] == store.get(S.active[0])
 check("spójny profil po równoległych zmianach", ok)
 S.set_game(None)
-import socket
-web_port = rx_web.server.server_address[1]
-rx_web.stop()
-probe = socket.socket()
-probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)   # jak HTTPServer: TIME_WAIT po zapytaniach nie przeszkadza, aktywny nasłuch tak
-try:
-    probe.bind(("127.0.0.1", web_port)); probe.listen(); port_free = True
-except OSError:
-    port_free = False
-finally:
-    probe.close()
-check("rx_web.stop() zwalnia port edytora (restart dostaje ten sam URL)", port_free)
 
 # rotacja logu: plik trzymany przez inny proces (Windows: stary receiver po restarcie) nie może wyłączyć logowania
 import rx_config

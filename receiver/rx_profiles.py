@@ -1,4 +1,4 @@
-"""Receiver: operacje na profilach remapowania wspólne dla okna (rx_qt) i edytora w przeglądarce (rx_web)."""
+"""Receiver: operacje na profilach remapowania dla okna (rx_qt, rx_editor)."""
 from rx_i18n import _
 import re
 
@@ -6,23 +6,8 @@ import rx_buttons as B
 import rx_net
 import rx_state as S
 from proto import CMD_POWER_OFF
-from rx_config import C
 
 EXE_RE = re.compile(r"[a-z0-9_.()+\-][a-z0-9_.()+\- ]{0,78}\.exe")
-
-
-def slot_ok(slot):
-    return isinstance(slot, int) and not isinstance(slot, bool) and 0 <= slot < C.NUM_PADS
-
-
-def key_for(slot, key):
-    """Klucz profilu z żądania, sprawdzony: profil pada albo "<pad>@<gra.exe>" tego samego pada; inaczej None."""
-    base = S.profile_key(slot)
-    if not key or key == base:
-        return base
-    if isinstance(key, str) and key.startswith(base + "@") and EXE_RE.fullmatch(key[len(base) + 1:]):
-        return key
-    return None
 
 
 def game_key(slot, text):
@@ -31,11 +16,6 @@ def game_key(slot, text):
     if exe and not exe.endswith(".exe"):
         exe += ".exe"
     return f"{S.profile_key(slot)}@{exe}" if EXE_RE.fullmatch(exe) else None
-
-
-def info(key):
-    return {"key": key, "label": S.profile_label(key), "profile": S.store.get(key),
-            "saved": S.store.get_saved(key), "in_file": S.store.in_file(key)}
 
 
 def apply(slot, key, profile, save=False):

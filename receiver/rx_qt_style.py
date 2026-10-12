@@ -1,4 +1,4 @@
-"""Receiver: motyw okna (ciemny, ta sama paleta co edytor w przeglądarce): kolory, QSS, paleta Qt."""
+"""Receiver: motyw okna (ciemny): kolory, QSS, paleta Qt."""
 from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import QApplication
 

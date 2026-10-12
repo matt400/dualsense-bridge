@@ -85,10 +85,13 @@ asyncio.run(main())
 # ---------- root uruchamia gita jako właściciel repozytorium ----------
 st = types.SimpleNamespace(st_uid=1000, st_gid=1000)
 with mock.patch("os.geteuid", return_value=0), mock.patch("os.stat", return_value=st), \
-        mock.patch("pwd.getpwuid", return_value=types.SimpleNamespace(pw_dir="/home/user")):
+        mock.patch("proto.ssh_command", return_value=None), \
+        mock.patch("pwd.getpwuid", return_value=types.SimpleNamespace(pw_dir="/home/user", pw_name="user")):
     kw = proto._owner(work)
-assert kw["user"] == 1000 and kw["group"] == 1000 and kw["env"]["HOME"] == "/home/user", kw
+assert kw["user"] == 1000 and kw["group"] == 1000 and kw["extra_groups"] == [] and kw["env"]["HOME"] == "/home/user" \
+    and kw["env"]["USER"] == "user", kw
 with mock.patch("os.geteuid", return_value=1000):
-    assert proto._owner(work) == {}
-ok("usługa (root): git jako właściciel repozytorium - pliki nie należą potem do roota")
+    kw = proto._owner(work)
+assert "user" not in kw and kw["env"]["GIT_TERMINAL_PROMPT"] == "0" and "BatchMode=yes" in kw["env"]["GIT_SSH_COMMAND"], kw
+ok("usługa (root): git jako właściciel repozytorium (bez grup roota); git nigdy nie czeka na hasło")
 print("UPDATE TX OK")

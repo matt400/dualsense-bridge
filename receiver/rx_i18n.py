@@ -368,6 +368,11 @@ EN = {
         "and doas ./install-service.sh from the new folder",
     "nadajnik: brak git na telefonie (doas apk add git)": "sender: git missing on the phone (doas apk add git)",
     "nadajnik: git pull nie powiódł się (szczegóły w logu na telefonie)": "sender: git pull failed (details in the phone log)",
+    "nadajnik: git pull nie powiódł się: {msg}": "sender: git pull failed: {msg}",
+    "usługa na telefonie nie ma dostępu do prywatnego repozytorium - na telefonie raz: "
+    "sender/setup-update-key.sh (klucz tylko do odczytu, instrukcja w skrypcie)":
+        "the phone service has no access to the private repository - run once on the phone: "
+        "sender/setup-update-key.sh (read-only key, the script explains the steps)",
     "nadajnik nie odpowiedział": "the sender did not respond",
     "Folder nie jest repozytorium git (pobrany jako ZIP?) - sklonuj: git clone https://github.com/matt400/dualsense-bridge":
         "The folder is not a git repository (downloaded as ZIP?) - clone it: git clone https://github.com/matt400/dualsense-bridge",

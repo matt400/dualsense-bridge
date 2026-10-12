@@ -2,7 +2,7 @@
 
 CMD_UPDATE -> git pull --ff-only w folderze repozytorium (nadrzędnym dla sender/), jako właściciel repozytorium,
 gdy nadajnik działa jako root (usługa) -> pakiet build ze stanem (UPD_*) -> po pobraniu nowego kodu restart nadajnika
-(os.execv: ten sam PID, więc supervise-daemon / systemd nic nie zauważają; ręcznie uruchomiony też wraca).
+(os.execv: ten sam PID, więc systemd nic nie zauważa; ręcznie uruchomiony też wraca).
 Pakiet build (commit, czas commita, stan) idzie co 5 s - okno receivera pokazuje wersję nadajnika.
 """
 import asyncio
@@ -12,10 +12,11 @@ import time
 import proto
 import sender_net as net
 import sender_state as state
-from proto import T_BUILD, UPD_DONE, UPD_NONE, UPD_RUNNING
+from proto import T_BUILD, T_UPDMSG, UPD_DONE, UPD_NONE, UPD_RUNNING
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REQUIREMENTS = "sender/requirements.txt"
+T_UPDMSG_MAX = proto.BODY[T_UPDMSG].size
 REPEAT_GUARD_S = 30.0          # polecenie przychodzi 3x (UDP) - kolejne w tym czasie są ignorowane
 TEXT = {proto.UPD_NO_CHANGE: "already up to date", UPD_DONE: "updated - restarting",
         proto.UPD_NOT_GIT: "folder is not a git clone (git clone https://github.com/matt400/dualsense-bridge)",
@@ -50,9 +51,14 @@ async def run():
     status = st
     detail = msg or (f"{old[:7]} -> {new[:7]}" if st == UPD_DONE else ROOT if st == proto.UPD_NOT_GIT else "")
     print(f"Update: {TEXT.get(st, st)}" + (f" ({detail})" if detail else ""))
+    if st == proto.UPD_FAILED and proto.is_auth_error(msg):
+        print("Update: no access to the private repository from the service - run once on the phone: "
+              f"{os.path.join(ROOT, 'sender', 'setup-update-key.sh')}")
     if st == UPD_DONE and REQUIREMENTS in files:
         print(f"Update: {REQUIREMENTS} changed - install new packages (doas apk add ... / pip install -r)")
-    for _ in range(3):                       # wynik musi dotrzeć do receivera przed restartem
+    for _ in range(3):                       # wynik musi dotrzeć do receivera przed restartem; powód błędu przed stanem
+        if msg:
+            net.emit(T_UPDMSG, 255, msg.encode("utf-8")[:T_UPDMSG_MAX])
         send_build()
         await asyncio.sleep(0.05)
     if st == UPD_DONE:

@@ -41,7 +41,7 @@ SENDER_TEXT = {
     UPD_NOT_GIT: "nadajnik: folder na telefonie to nie klon git - na telefonie: "
                  "git clone https://github.com/matt400/dualsense-bridge i doas ./install-service.sh z nowego folderu",
     UPD_NO_GIT: "nadajnik: brak git na telefonie (doas apk add git)",
-    UPD_FAILED: "nadajnik: git pull nie powiódł się (szczegóły w logu na telefonie)",
+    UPD_FAILED: "nadajnik: git pull nie powiódł się (szczegóły w logu na telefonie)",   # starszy nadajnik bez powodu
     UPD_RUNNING: "nadajnik nie odpowiedział",
 }
 _version = None
@@ -66,10 +66,16 @@ def describe(commit, ts):
     return f"{commit} · {time.strftime('%d.%m.%Y', time.localtime(ts))}" if ts else commit
 
 
-def sender_text(build):
-    """Wynik aktualizacji nadajnika z pakietu build (None = nadajnik sprzed tej funkcji)."""
+def sender_text(build, msg=""):
+    """Wynik aktualizacji nadajnika z pakietu build (None = nadajnik sprzed tej funkcji); msg = powód błędu (updmsg)."""
     if build is None:
         return _("nadajnik w starej wersji - zaktualizuj go raz ręcznie (git pull na telefonie)")
+    if build[2] == UPD_FAILED and msg:
+        text = _("nadajnik: git pull nie powiódł się: {msg}").format(msg=msg)
+        if proto.is_auth_error(msg):
+            text += " · " + _("usługa na telefonie nie ma dostępu do prywatnego repozytorium - na telefonie raz: "
+                              "sender/setup-update-key.sh (klucz tylko do odczytu, instrukcja w skrypcie)")
+        return text
     return _(SENDER_TEXT.get(build[2], "nadajnik nie odpowiedział"))
 
 
