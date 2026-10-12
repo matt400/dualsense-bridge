@@ -21,6 +21,13 @@ net.init()
 got = {"cmd": [], "fb": []}
 net.on_command = lambda i, cmd, arg: got["cmd"].append((i, cmd))
 net.on_feedback = lambda i, v: got["fb"].append((i, v))
+# Wake-on-LAN i zdarzenia: ustawienia z okna receivera idą do nadajnika (scfg), zdarzenia wracają do dziennika
+import rx_events as ev, rx_settings as R, sender_events, sender_wol
+from proto import E_WOL
+TC.WOL_FILE = os.path.join(TMP, "wol_e2e.json")
+net.on_scfg = sender_wol.apply_scfg
+R.apply(R.Settings(log=R.LogConfig(sender=True), wol=R.WolConfig(mac="aa:bb:cc:dd:ee:ff", button="triangle")))
+ev.clear()
 
 async def main():
     loop = asyncio.get_running_loop()
@@ -35,6 +42,13 @@ async def main():
     print("   stan:", S.alive[0], S.pad_id[0], S.states[0]["lx"])
     assert S.alive[0] and S.pad_id[0] == "aa:bb:cc:dd:ee:ff" and S.states[0]["lx"] == 255
     assert S.info[0] is not None and S.info[0][0] is not None and S.info[0][0] < 50, S.info[0]
+    assert sender_wol.cfg.mac == "aa:bb:cc:dd:ee:ff" and sender_wol.cfg.button == 2 and sender_events.enabled, sender_wol.cfg
+    assert os.path.exists(TC.WOL_FILE), "nadajnik zapisał ustawienia z receivera"
+    sender_events.info(E_WOL, 0, "aa:bb:cc:dd:ee:ff")
+    await asyncio.sleep(0.6)
+    sev = [e for e in ev.since(0) if e.sender]
+    assert len(sev) == 1 and "aa:bb:cc:dd:ee:ff" in sev[0].text, [e.text for e in ev.since(0)]
+    assert any(not e.sender and "online" in e.text.lower() for e in ev.since(0)), "nadajnik online w dzienniku"
     N.send_cmd(0, CMD_POWER_OFF)
     F.pulse(0, "profile")
     await asyncio.sleep(0.5)
@@ -47,7 +61,7 @@ async def main():
     await asyncio.sleep(0.2)
     assert not S.alive[0] and not S.want[0].is_set()
     pinger.cancel(); info.cancel()
-    print(f"OK   end-to-end UDP: stan, ident -> profil, ping {S.info[0] and S.info[0][0]} ms, info, "
-          f"wyłączenie (3 pakiety), potwierdzenie {fbv[0]} -> {fbv[-1]}, bye")
+    print(f"OK   end-to-end UDP: stan, ident -> profil, ping {S.info[0] and S.info[0][0]} ms, info, scfg -> wol.json, "
+          f"zdarzenie nadajnika w dzienniku, wyłączenie (3 pakiety), potwierdzenie {fbv[0]} -> {fbv[-1]}, bye")
 asyncio.run(main())
 print("E2E OK")

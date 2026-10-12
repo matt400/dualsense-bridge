@@ -55,11 +55,21 @@ t_ns = time.perf_counter_ns()
 for k in range(20):
     rx_latency.add(0, (t_ns - 3_000_000, 1500, LAT_NONE if k % 2 else 400, 600), t_ns - 2_000_000 + k)
 win.slow_tick(); pump(20)
-assert c0.lat.text().endswith(" ms") and "p99" in c0.lat_p99.text() and c0.lat_bar.isVisible(), c0.lat.text()
+assert c0.lat.text().endswith(" ms") and c0.lat_stats.text().startswith("p95 ") and " · max " in c0.lat_stats.text() \
+    and c0.lat_bar.isVisible(), (c0.lat.text(), c0.lat_stats.text())
 assert [col for _v, col in c0.lat_bar.parts] == [rx_qt.SEGMENT[k] for k in ("bt", "phone", "net", "pc")], c0.lat_bar.parts
-assert "Phone (kernel → send)" in c0.lat.toolTip() and "Network" in c0.lat.toolTip()
+assert "Phone (kernel → send)" in c0.lat.toolTip() and "Network" in c0.lat.toolTip() and "average" in c0.lat.toolTip()
+assert not c0.btn_row.isVisible(), "bez naciśnięć - bez wiersza przycisk -> gra"
+rx_latency.add_button(0, (t_ns - 3_000_000, 1000, 200, 500), t_ns - 2_000_000)
+win.slow_tick(); pump(20)
+assert c0.btn_row.isVisible() and c0.btn_lat.text() == "2.7 ms" and c0.btn_stats.text() == "p95 2.7 · max 2.7", \
+    (c0.btn_lat.text(), c0.btn_stats.text())
+assert "Button → game" in c0.btn_lat.toolTip() and "1 of the last 100 presses" in c0.btn_lat.toolTip(), c0.btn_lat.toolTip()
 rx_latency.clear(0); win.slow_tick()
-ok("karta pada: opóźnienie pad -> gra z odcinkami, ping przed pomiarem, szczegóły łącza w podpowiedzi")
+assert c0.btn_row.isVisible(), "cisza / koniec okna 5 s nie kasuje ostatnich naciśnięć"
+c0.btn_reset.click(); pump(5)
+assert not c0.btn_row.isVisible() and rx_latency.buttons(0) is None, "reset z karty"
+ok("karta pada: opóźnienie pad -> gra (średnia, p95, max) z odcinkami, przycisk -> gra z resetem, ping przed pomiarem")
 assert "online" in win.sender.text() and "192.168.1.50" in win.sender.toolTip()   # adres w podpowiedzi (wąskie okno)
 S.batt_info[0] = (10, 0); win.slow_tick()
 assert c0.property("low") is True and win.windowTitle().endswith("LOW BATTERY") and win.warned[0]

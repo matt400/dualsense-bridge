@@ -1,25 +1,31 @@
-"""Receiver: okno ustawień (tray -> Ustawienia, albo przycisk w nagłówku okna) - pięć zakładek:
+"""Receiver: okno ustawień (tray -> Ustawienia, albo przycisk w nagłówku okna) - siedem zakładek:
 
   Tryb konsoli  przycisk pada wybierasz naciśnięciem go na padzie (rx_console.arm_capture), urządzenia audio to lista
                 aktywnych wyjść Windows (rx_audio, Odśwież); "Przetestuj" włącza tryb konsoli na kilka sekund
                 z wartościami z okna (jeszcze niezapisanymi) i sam wraca do extend
   Mysz          czułość kursora touchpada i stabilizacja kliknięcia (rx_settings.MouseConfig)
   Master        pad master, funkcje tylko dla niego, akcje "PS + przycisk" (rx_settings.MasterConfig, rx_master)
+  Lightbar      kolor, gdy gra nic nie ustawiła (stały / wg baterii) i miganie przy niskiej baterii - per pad (MAC)
+                albo domyślnie dla wszystkich; próg niskiej baterii (ten sam ma ostrzeżenie na karcie pada)
+  Wake-on-LAN   PS + przycisk przytrzymane na padzie, gdy receiver nie odpowiada -> nadajnik budzi komputer; MAC
+                i broadcast wpisane albo automatyczne (wykryte przez nadajnik - widać je tutaj)
   Okno          ekran, na którym pojawia się okno (receiver_ui.ini, MainWindow.place_on_screen)
   Kopie         kopie settings.json / console.json / remap.json z aktualizacji (rx_backup): przywróć (dwa kliknięcia,
                 potem restart receivera) albo zrób kopię teraz
 
-"Zapisz": mysz i master działają od razu (settings.json, bez restartu). Zmiana trybu konsoli zapisuje console.json
+"Zapisz": mysz, master, lightbar i Wake-on-LAN działają od razu (settings.json, bez restartu). Zmiana trybu konsoli zapisuje console.json
 i prosi właściciela okna o restart receivera (sygnał saved) - po restarcie obowiązuje startup_mode jak przy autostarcie.
 """
 from rx_i18n import _
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtWidgets import (QCheckBox, QDialog, QGridLayout, QHBoxLayout, QPlainTextEdit, QSpinBox, QTabWidget,
-                               QVBoxLayout, QWidget)
+from PySide6.QtGui import QColor
+from PySide6.QtWidgets import (QCheckBox, QColorDialog, QDialog, QGridLayout, QHBoxLayout, QLineEdit, QPlainTextEdit,
+                               QSpinBox, QTabWidget, QVBoxLayout, QWidget)
 
 import rx_audio
 import rx_backup
 import rx_console
+import rx_lightbar
 import rx_update
 import rx_settings
 import rx_state as S
@@ -30,9 +36,10 @@ from rx_display import DPI_VALUES
 from rx_i18n import LANGS
 from rx_qt_icons import icon
 from rx_qt_style import set_prop
-from rx_qt_widgets import (Combo, ConfirmButton, SliderRow, button, field, group, icon_label, input_items, label, left,
-                           pair)
-from rx_settings import ABSENT, COMBO_BUTTONS, MASTER_ACTIONS, MASTER_FEATURES, MOUSE_LIMITS, MasterConfig, MouseConfig
+from rx_qt_widgets import (Combo, ConfirmButton, SliderRow, button, field, group, icon_button, icon_label, input_items, label,
+                           left, pair)
+from rx_settings import (ABSENT, COMBO_BUTTONS, DEFAULT_PAD, LIGHT_MODES, LOW_PCT, MASTER_ACTIONS, MASTER_FEATURES, MOUSE_LIMITS,
+                         WOL_BUTTONS, WOL_HOLD_MS, LightbarConfig, MasterConfig, MouseConfig, PadLight, WolConfig)
 
 CAPTURE_TIMEOUT_MS = 15000
 NO_AUDIO = "— nie zmieniaj dźwięku —"
@@ -50,8 +57,8 @@ class ConsoleSettings(QDialog):
         super().__init__(parent)
         self.setObjectName("root")
         self.setWindowTitle(_("Ustawienia"))
-        self.setMinimumWidth(560)
-        self.resize(600, 760)
+        self.setMinimumWidth(640)
+        self.resize(860, 780)
         self.toggle_button = ConsoleConfig().toggle_button
         self.captured.connect(self._on_captured)
         self._cap_timer = QTimer(self, singleShot=True, interval=CAPTURE_TIMEOUT_MS)
@@ -69,6 +76,9 @@ class ConsoleSettings(QDialog):
         self.tabs.addTab(_page(self._console_tab()), icon("tv"), _("Tryb konsoli"))
         self.tabs.addTab(_page(self._mouse_tab()), icon("mouse"), _("Mysz"))
         self.tabs.addTab(_page(self._master_tab()), icon("crown"), _("Master"))
+        self.tabs.addTab(_page(self._light_tab()), icon("lightbar"), _("Lightbar"))
+        self.wol_page = _page(self._wol_tab())
+        self.tabs.addTab(self.wol_page, icon("wake"), _("Wake-on-LAN"))
         self.tabs.addTab(_page(self._window_tab()), icon("window"), _("Okno"))
         self.tabs.addTab(_page(self._backup_tab()), icon("backup"), _("Kopie"))
         lay.addWidget(self.tabs, 1)
@@ -297,6 +307,162 @@ class ConsoleSettings(QDialog):
                                 "(krótka wibracja = trzymaj dalej). Wyłączenie PC daje 10 s na \"shutdown /a\"."), "dim", wrap=True))
         return [who, rights, actions]
 
+    def _light_tab(self):
+        self._lights, self._color, self._light_key, self._loading = {}, "", DEFAULT_PAD, False
+        self.low_pct = _spin(*LOW_PCT, 1, " %")
+        low = group(_("NISKA BATERIA"),
+                    field(_("Próg niskiej baterii"), self.low_pct),
+                    label(_("Ten sam próg ma ostrzeżenie na karcie pada i powiadomienie z zasobnika. Ładujący się pad "
+                            "nie miga."), "dim", wrap=True))
+        self.light_pad = Combo()
+        self.light_pad.changed.connect(self._pick_light_pad)
+        self.light_own = QCheckBox(_("Własne ustawienie dla tego pada (inaczej domyślne)"))
+        self.light_own.toggled.connect(self._light_edited)
+        self.light_mode = Combo([(k, _(v), "lightbar") for k, v in LIGHT_MODES.items()])
+        self.light_mode.changed.connect(self._light_edited)
+        self.light_color = button("", small=True)
+        self.light_color.setToolTip(_("Wybierz kolor"))
+        self.light_color.clicked.connect(self._pick_color)
+        reset_color = icon_button("reset", _("Kolor domyślny (idle_lightbar z receiver.toml)"), 16)
+        reset_color.clicked.connect(lambda: self._set_color(""))
+        colors = QHBoxLayout()
+        colors.setSpacing(8)
+        colors.addWidget(self.light_color, 1)
+        colors.addWidget(reset_color)
+        self.light_blink = QCheckBox(_("Miganie na czerwono przy niskiej baterii (także w grze)"))
+        self.light_blink.toggled.connect(self._light_edited)
+        pad = group(_("KOLOR LIGHTBARA"),
+                    label(_("Gra ma pierwszeństwo: ten kolor świeci, dopóki gra sama nie ustawi lightbara. Miganie przy niskiej "
+                            "baterii działa zawsze, a potwierdzenia (np. złoty błysk mastera) są na wierzchu."), "dim", wrap=True),
+                    field(_("Pad"), self.light_pad), self.light_own,
+                    pair(field(_("Tryb"), self.light_mode), field(_("Kolor"), _wrap(colors))),
+                    self.light_blink)
+        return [low, pad]
+
+    def _wol_tab(self):
+        self.wol_on = QCheckBox(_("Budzenie komputera z pada"))
+        self.wol_on.setIcon(icon("wake"))
+        self.wol_btn = Combo(input_items(WOL_BUTTONS, text=True))
+        self.wol_hold = _spin(*WOL_HOLD_MS, 100, " ms")
+        combo = QHBoxLayout()
+        combo.setSpacing(8)
+        combo.addWidget(icon_label("ps"))
+        combo.addWidget(label("+"))
+        combo.addWidget(self.wol_btn, 1)
+        self.wol_mac, self.wol_bcast = QLineEdit(), QLineEdit()
+        self.wol_mac.setPlaceholderText("auto")
+        self.wol_bcast.setPlaceholderText("auto")
+        self.wol_seen = label("", "dim", wrap=True)
+        how = group(_("WAKE-ON-LAN"),
+                    label(_("Gdy komputer nie odpowiada (wyłączony / uśpiony), przytrzymanie tej kombinacji na padzie wysyła "
+                            "z telefonu magic packet. Przy działającym komputerze kombinacja idzie do receivera jak zwykle "
+                            "(np. pauza mastera), więc nic nie koliduje. Pad potwierdza wysłanie białym błyskiem, błąd - czerwonym."),
+                          "dim", wrap=True),
+                    self.wol_on,
+                    pair(field(_("Kombinacja na padzie"), _wrap(combo)), field(_("Przytrzymanie"), self.wol_hold)))
+        addr = group(_("ADRESY"),
+                     pair(field(_("MAC karty sieciowej komputera"), self.wol_mac), field(_("Adres broadcast"), self.wol_bcast)),
+                     self.wol_seen,
+                     label(_("Puste = automatycznie: nadajnik zapamiętuje MAC komputera z tablicy ARP telefonu, póki komputer "
+                             "działa, i wysyła na broadcast swojej sieci. Komputer musi mieć włączony Wake-on-LAN w BIOS / UEFI "
+                             "i we właściwościach karty sieciowej (najlepiej przewodowej)."), "dim", wrap=True))
+        return [how, addr]
+
+    # ---------- lightbar ----------
+    def _load_light(self, cfg):
+        self.low_pct.setValue(cfg.low_pct)
+        self._lights = dict(cfg.pads)
+        items, known = [(DEFAULT_PAD, _("Domyślne - pady bez własnego ustawienia"), "lightbar")], {DEFAULT_PAD}
+        for i in range(C.NUM_PADS):
+            key = S.profile_key(i)
+            if key not in known and S.pad_id[i] and (S.alive[i] or S.want[i].is_set()):
+                known.add(key)
+                items.append((key, _("Pad {n}  ·  {key}").format(n=i + 1, key=key)))
+        items += [(k, _("{key}  (niepodłączony)").format(key=k)) for k in self._lights if k not in known]
+        self.light_pad.set_items(items)
+        self.light_pad.set_data(DEFAULT_PAD)
+        self._pick_light_pad(DEFAULT_PAD)
+
+    def _pick_light_pad(self, key):
+        self._light_key = key
+        light = self._lights.get(key) or self._lights.get(DEFAULT_PAD) or PadLight()
+        self._loading = True
+        self.light_own.setVisible(key != DEFAULT_PAD)
+        self.light_own.setChecked(key == DEFAULT_PAD or key in self._lights)
+        self.light_mode.set_data(light.mode)
+        self.light_blink.setChecked(light.blink)
+        self._set_color(light.color, store=False)
+        self._loading = False
+        self._light_enable()
+
+    def _light_enable(self):
+        own = self.light_own.isChecked()
+        for w in (self.light_mode, self.light_color, self.light_blink):
+            w.setEnabled(own)
+        self.light_color.setEnabled(own and self.light_mode.currentData() == "solid")
+
+    def _set_color(self, hex_color, store=True):
+        self._color = hex_color
+        rgb = rx_lightbar.hex_rgb(hex_color) if hex_color else C.IDLE_RGB
+        text = rx_lightbar.rgb_hex(rgb) + ("" if hex_color else _("  (domyślny)"))
+        fg = "#000000" if sum(rgb) > 380 else "#ffffff"
+        self.light_color.setText(text)
+        self.light_color.setStyleSheet(f"background: {rx_lightbar.rgb_hex(rgb)}; color: {fg};")
+        if store:
+            self._light_edited()
+
+    def _pick_color(self):
+        start = QColor(*(rx_lightbar.hex_rgb(self._color) if self._color else C.IDLE_RGB))
+        c = QColorDialog.getColor(start, self, _("Kolor lightbara"))
+        if c.isValid():
+            self._set_color(c.name())
+
+    def _light_edited(self, *_args):
+        if getattr(self, "_loading", False):
+            return
+        key = self._light_key
+        if key != DEFAULT_PAD and not self.light_own.isChecked():
+            self._lights.pop(key, None)
+        else:
+            self._lights[key] = PadLight(mode=self.light_mode.currentData(), color=self._color,
+                                         blink=self.light_blink.isChecked())
+        self._light_enable()
+
+    # ---------- Wake-on-LAN ----------
+    def _load_wol(self, w):
+        self.wol_on.setChecked(w.enabled)
+        self.wol_btn.set_data(w.button)
+        self.wol_hold.setValue(w.hold_ms)
+        self.wol_mac.setText(w.mac)
+        self.wol_bcast.setText(w.bcast)
+        self._wol_seen()
+
+    def _wol_seen(self):
+        """Co nadajnik wykrył sam (pakiet build2) - podpowiedź w pustych polach."""
+        seen = S.sender_wol
+        mac, bcast = seen if seen else ("", "")
+        self.wol_mac.setPlaceholderText(_("auto: {v}").format(v=mac) if mac else "auto")
+        self.wol_bcast.setPlaceholderText(_("auto: {v}").format(v=bcast) if bcast else "auto")
+        if seen is None:
+            self.wol_seen.setText(_("Nadajnik nie podał jeszcze adresów (offline albo starsza wersja - Aktualizuj)."))
+        else:
+            self.wol_seen.setText(_("Nadajnik użyje: MAC {mac}, broadcast {bcast}.").format(
+                mac=mac or _("nieznany - wpisz go albo uruchom receiver, gdy nadajnik działa"), bcast=bcast or "255.255.255.255"))
+        set_prop(self.wol_seen, "level", "warn" if seen is not None and not mac else "")
+
+    def _collect_wol(self):
+        """-> WolConfig albo ValueError z opisem pola."""
+        try:
+            mac = rx_settings.WolConfig.V["mac"](self.wol_mac.text().strip())
+        except ValueError:
+            raise ValueError(_("Zły adres MAC - wpisz np. aa:bb:cc:dd:ee:ff albo zostaw puste.")) from None
+        try:
+            bcast = rx_settings.WolConfig.V["bcast"](self.wol_bcast.text().strip())
+        except ValueError:
+            raise ValueError(_("Zły adres broadcast - wpisz np. 192.168.1.255 albo zostaw puste.")) from None
+        return WolConfig(enabled=self.wol_on.isChecked(), mac=mac, bcast=bcast, button=self.wol_btn.currentData(),
+                         hold_ms=self.wol_hold.value())
+
     # ---------- dane ----------
     def present(self):
         """Pokazuje okno; świeżo otwarte ma wartości z działającej konfiguracji (nie z poprzedniej, anulowanej edycji)."""
@@ -312,6 +478,8 @@ class ConsoleSettings(QDialog):
         self._load_backups()
         self._load_mouse(rx_settings.cur.mouse)
         self._load_master(rx_settings.cur.master)
+        self._load_light(rx_settings.cur.lightbar)
+        self._load_wol(rx_settings.cur.wol)
         cfg = rx_console.ctl.cfg if rx_console.ctl else ConsoleConfig()
         self.set_button(cfg.toggle_button)
         self.dbl.setValue(cfg.double_click_ms)
@@ -386,7 +554,9 @@ class ConsoleSettings(QDialog):
                               only_master=tuple(k for k, cb in self.features.items() if cb.isChecked()),
                               actions={k: c.currentData() or "" for k, c in self.actions.items()},
                               claim_hold=self.claim.isChecked())
-        return rx_settings.Settings(mouse, master, rx_settings.UiConfig(lang=self.lang.currentData()))
+        return rx_settings.Settings(mouse, master, rx_settings.UiConfig(lang=self.lang.currentData()),
+                                    LightbarConfig(low_pct=self.low_pct.value(), pads=dict(self._lights)),
+                                    self._collect_wol(), rx_settings.cur.log)
 
     def collect(self):
         return ConsoleConfig(toggle_button=self.toggle_button, double_click_ms=self.dbl.value(),
@@ -437,7 +607,12 @@ class ConsoleSettings(QDialog):
         QTimer.singleShot(int((rx_console.TEST_S + 5) * 1000), lambda: self.test_btn.setEnabled(True))
 
     def _save(self):
-        new = self.collect_settings()
+        try:
+            new = self.collect_settings()
+        except ValueError as e:
+            self.tabs.setCurrentIndex(self.tabs.indexOf(self.wol_page))
+            self._status(str(e), "bad")
+            return
         used = [b for b in new.master.actions.values() if b]
         if len(used) != len(set(used)):
             self.tabs.setCurrentIndex(2)

@@ -1,25 +1,30 @@
 """Receiver: odbiór pakietów z nadajnika, obsługa zdarzeń, wykrywanie ciszy."""
+import socket
 import time
 
 import rx_console
+import rx_events as ev
 import rx_feedback as F
 import rx_hotkeys as hotkeys
 import rx_latency
 import rx_master as master
 import rx_mouse as mouse
+import rx_settings
 import rx_state as S
-from proto import (BODY, LAT_NONE, RTT_NONE, STATE_FIELDS, WIRE, Codec, T_BYE, T_CLICK, T_CMD, T_FB, T_IDENT, T_INFO,
-                   T_MOUSE, T_PING, T_PONG, T_PONG2, T_VERSION, T_STATE, T_STATE2, T_TOUCH, T_TRIG, T_BUILD, T_UPDMSG,
-                   clamp)
-from rx_buttons import MASK_ALL, PS_BIT, profile_size
+from proto import (BODY, LAT_NONE, PAD_KEYS, RTT_NONE, SCFG_EVENTS, SCFG_WOL, STATE_FIELDS, WIRE, Codec, T_BYE, T_CLICK,
+                   T_CMD, T_EVENT, T_FB, T_IDENT, T_INFO, T_MOUSE, T_PING, T_PONG, T_PONG2, T_SCFG, T_VERSION, T_STATE,
+                   T_STATE2, T_TOUCH, T_TRIG, T_BUILD, T_BUILD2, T_UPDMSG, clamp, cstr, mac_bytes, mac_text)
+from rx_buttons import BUTTON_CODES, MASK_ALL, PS_BIT, TRIG_ON, profile_size
 
 from rx_config import C
+from rx_i18n import _
 from rx_winapi import bind_udp, boost_thread
 
 RX_TYPES = {T_STATE, T_STATE2, T_TOUCH, T_CLICK, T_MOUSE, T_PING, T_BYE, T_IDENT, T_INFO, T_VERSION}   # typy, które receiver przyjmuje
 ST_TOUCH, ST_MOUSE, ST_INFO = BODY[T_TOUCH], BODY[T_MOUSE], BODY[T_INFO]
 STATES = (T_STATE, T_STATE2)
 MAX_NET_US = 1_000_000          # sieć dłużej niż 1 s = zły zegar (np. zaraz po restarcie), nie pomiar
+SCFG_S = 5.0                    # co tyle ustawienia Wake-on-LAN / zdarzeń do nadajnika (po jego restarcie też je ma)
 
 
 class LinkStats:
@@ -58,6 +63,7 @@ codec = None
 in_sock = None
 _warned_idx = set()
 _digital = [None] * 4    # ostatni stan przycisków (maska, d-pad, spusty wciśnięte) per slot - zmiana = obsługa skrótów
+_pressed = [None] * 4    # (maska, d-pad, L2 >= TRIG_ON, R2 >= TRIG_ON) per slot - zmiana = próbka "przycisk -> gra"
 
 
 def init():
@@ -88,14 +94,38 @@ def send_feedback(i, vals):
 
 def send_cmd(i, cmd, arg=0):
     """Polecenie do nadajnika (3x - UDP może zgubić pakiet; nadajnik ignoruje powtórki)."""
-    for _ in range(3):
+    for _n in range(3):
         send_peer(codec.pack(T_CMD, i, cmd, arg))
 
 
 def send_triggers(i, vals, repeat=1):
     """Opór spustów (L2 początek, siła, R2 początek, siła) do nadajnika; zmiana idzie kilka razy (zgubiony pakiet)."""
-    for _ in range(repeat):
+    for _n in range(repeat):
         send_peer(codec.pack(T_TRIG, i, *vals))
+
+
+def scfg_values(s=None):
+    """Ustawienia dla nadajnika (pakiet scfg): Wake-on-LAN i zdarzenia do dziennika."""
+    s = s or rx_settings.cur
+    w = s.wol
+    flags = (SCFG_WOL if w.enabled else 0) | (SCFG_EVENTS if s.log.sender else 0)
+    return (flags, mac_bytes(w.mac) or bytes(6), socket.inet_aton(w.bcast) if w.bcast else bytes(4),
+            PAD_KEYS.index(BUTTON_CODES[w.button]), w.hold_ms)
+
+
+def send_scfg(repeat=1):
+    if codec is None or S.peer is None:      # start (ustawienia wczytane przed gniazdem) / nadajnik jeszcze nieznany
+        return
+    for _n in range(repeat):
+        send_peer(codec.pack(T_SCFG, 255, *scfg_values()))
+
+
+def _settings_changed(old, new):
+    if (old.wol, old.log.sender) != (new.wol, new.log.sender):
+        send_scfg(3)
+
+
+rx_settings.on_change(_settings_changed)
 
 
 def batt_codes(pct, flags):
@@ -118,13 +148,14 @@ def clear_slot(i, forget_id=False):
     S.batt_info[i] = (255, 0)
     S.info[i] = None
     S.seen.forget(lambda k: k[1] == i)
-    _digital[i] = None
+    _digital[i] = _pressed[i] = None
     hotkeys.reset(i)
     master.reset(i)
     rx_latency.clear(i)                # pomiary opóźnienia poprzedniego pada nie mieszają się z następnym
     with S.lock:
-        S.states[i]["lat"] = None
+        S.states[i]["lat"] = S.states[i]["blat"] = None
     if forget_id:                      # pad fizycznie odszedł - następny w tym slocie przyśle swój ident
+        rx_latency.reset_buttons(i)    # ostatnie naciśnięcia (bez limitu czasu) należały do tamtego pada
         S.sender_info[i] = None
         with S.profile_lock:
             S.pad_id[i] = None
@@ -160,12 +191,14 @@ def handle(t, i, data, arr=0):
         S.ignore_until[i] = time.monotonic() + 1.0   # spóźnione pakiety nie mogą go odtworzyć
         if was:
             print(f"Controller {i}: disconnected by sender")
+            ev.info(_("{pad} rozłączony").format(pad=ev.pad_name(i)))
         return
     S.last_seen[i] = time.monotonic()
     if not S.alive[i]:
         S.alive[i] = True
         print(f"Controller {i}: data stream started")
     if not S.want[i].is_set():
+        ev.info(_("{pad} połączony").format(pad=ev.pad_name(i)))   # po krótkiej ciszy DS4 został - to nie nowe połączenie
         S.want[i].set()   # wątek slotu utworzy wirtualny DS4
         rx_console.pad_connected(i)       # pad master z już znanym identyfikatorem -> auto-ON trybu konsoli
     if t in STATES:
@@ -182,6 +215,9 @@ def handle(t, i, data, arr=0):
         lx, ly, lt, rx, ry, rt = v[:6]
         hx, hy = clamp(v[6], -1, 1), clamp(v[7], -1, 1)
         dig = (mask, hx, hy, lt >> 5, rt >> 5)   # spusty z dokładnością 1/8 (histereza spustu w trybie konsoli)
+        btn = (mask, hx, hy, lt >= TRIG_ON, rt >= TRIG_ON)
+        pressed = lat is not None and _pressed[i] is not None and btn != _pressed[i]   # pierwszy stan po połączeniu
+        _pressed[i] = btn                                                              # to nie naciśnięcie
         if dig != _digital[i]:              # skróty / master / tryb konsoli tylko przy zmianie przycisków,
             _digital[i] = dig               # a nie przy każdej próbce gyro i gałek (250 Hz)
             hotkeys.on_state(i, mask, hx, hy)          # najpierw skróty PS (nowe naciśnięcie PS), potem master,
@@ -198,6 +234,8 @@ def handle(t, i, data, arr=0):
             s["ts"] = now_us         # czas PRZYJŚCIA próbki - dla DSU lepszy niż czas budowania pakietu (jitter)
             if s["lat"] is None:     # pomiar najstarszej zmiany czekającej na raport (rx_ds4 kończy go w ViGEm)
                 s["lat"] = lat
+            if pressed and s["blat"] is None:   # osobno: najstarsza czekająca zmiana przycisku / spustu
+                s["blat"] = lat
             s["ver"] += 1
         S.notify(i)
         if s["gyro_vel"]:
@@ -258,6 +296,7 @@ def handle(t, i, data, arr=0):
             n = profile_size(S.remap_maps[i])
             print(f"Controller {i}: id {pid}, profile {S.profile_label(S.active[i])}"
                   + (f" ({n} changes)" if n else ""))
+            ev.info(_("{pad}: pad {id}").format(pad=ev.pad_name(i), id=pid))
     elif t == T_VERSION:
         v = BODY[T_VERSION].unpack_from(data, 4)
         if v != S.sender_info[i]:
@@ -268,13 +307,23 @@ def handle(t, i, data, arr=0):
         S.info[i] = (None if rtt == RTT_NONE else rtt / 10, pad_hz, motion_hz, time.monotonic())
 
 
-def on_build(data, now):
-    """Pakiet build: (commit nadajnika, czas commita, stan aktualizacji UPD_*) -> S.sender_build."""
-    h, ts, st = BODY[T_BUILD].unpack_from(data, 4)
-    b = (h.rstrip(b"\0").decode("ascii", "replace"), ts, st)
+def on_build(data, now, t=T_BUILD):
+    """Pakiet build / build2: (commit nadajnika, czas commita, stan aktualizacji UPD_*) -> S.sender_build;
+    build2 także adresy, których użyje Wake-on-LAN nadajnika -> S.sender_wol."""
+    v = BODY[t].unpack_from(data, 4)
+    b = (cstr(v[0]), v[1], v[2])
     if S.sender_build is None or S.sender_build[:3] != b:
-        print(f"Sender build {b[0] or '?'} (update state {st})")
+        print(f"Sender build {b[0] or '?'} (update state {v[2]})")
     S.sender_build = (*b, now)
+    if t == T_BUILD2:
+        S.sender_wol = (mac_text(v[3]), socket.inet_ntoa(v[4]) if any(v[4]) else "")
+
+
+def on_event(i, data):
+    """Pakiet event -> dziennik, gdy zdarzenia z nadajnika są włączone w panelu (powtórki odrzuca numer zdarzenia)."""
+    if rx_settings.cur.log.sender:
+        return ev.on_sender_event(i, data)
+    return None
 
 
 def check_stale(now):
@@ -283,9 +332,11 @@ def check_stale(now):
         silent = now - S.last_seen[i]
         if S.alive[i] and silent > C.STALE_S:
             print(f"Controller {i}: no data for {C.STALE_S}s - state reset")
+            ev.warn(_("{pad}: przerwa w sygnale ponad {s} s").format(pad=ev.pad_name(i), s=f"{C.STALE_S:g}"))
             clear_slot(i)
         if S.want[i].is_set() and silent > C.UNPLUG_S:
             print(f"Controller {i}: no data for {C.UNPLUG_S}s - unplugging virtual DS4")
+            ev.warn(_("{pad}: brak sygnału przez {s} s - odłączony").format(pad=ev.pad_name(i), s=f"{C.UNPLUG_S:g}"))
             S.want[i].clear()
             S.wake[i].set()
             # jak po pakiecie bye: następny pad w tym slocie (może inny) musi przysłać swój identyfikator - inaczej
@@ -293,9 +344,30 @@ def check_stale(now):
             clear_slot(i, forget_id=True)
 
 
+class SenderWatch:
+    """Nadajnik online / offline -> dziennik; pierwszy kontakt i co SCFG_S -> ustawienia dla nadajnika (scfg)."""
+
+    def __init__(self):
+        self.online, self.t_scfg = False, 0.0
+
+    def tick(self, now):
+        online = S.sender_online(now)
+        if online != self.online:
+            self.online = online
+            if online:
+                ev.info(_("Nadajnik online ({ip})").format(ip=S.peer[0] if S.peer else "?"))
+            else:
+                ev.warn(_("Nadajnik offline - brak pakietów od {s} s").format(s=f"{S.SENDER_TIMEOUT:g}"))
+                S.sender_wol = None
+        if online and now - self.t_scfg >= SCFG_S:
+            self.t_scfg = now
+            send_scfg()
+
+
 def net_loop():
     boost_thread()
     link = LinkStats(C.NUM_PADS)
+    watch = SenderWatch()
     stats = {}
     bad = 0
     t_print = t_check = time.monotonic()
@@ -316,6 +388,7 @@ def net_loop():
             t_check = now
             check_stale(now)
             link.tick(now)
+            watch.tick(now)
         if not data:
             continue
         if C.ALLOWED_IP and addr[0] != C.ALLOWED_IP:
@@ -343,9 +416,12 @@ def net_loop():
             S.peer = addr
             S.sender_update_msg = BODY[T_UPDMSG].unpack_from(data, 4)[0].rstrip(b"\0").decode("utf-8", "ignore")
             continue
-        if t == T_BUILD:  # wersja kodu nadajnika i stan jego aktualizacji (dotyczy całego nadajnika, idx 255)
+        if t in (T_BUILD, T_BUILD2):  # wersja kodu nadajnika i stan jego aktualizacji (cały nadajnik, idx 255)
             S.peer = addr
-            on_build(data, now)
+            on_build(data, now, t)
+            continue
+        if t == T_EVENT:  # zdarzenie nadajnika do dziennika (idx = slot pada albo 255)
+            on_event(i, data)
             continue
         if t == T_PING:   # ping -> pong2 (zegar PC dla pomiaru opóźnienia) i pong (RTT; starszy nadajnik zna tylko ten)
             S.peer = addr
@@ -369,3 +445,4 @@ def net_loop():
             handle(t, i, data, arr)
         except Exception as e:
             print("handle error:", repr(e))
+            ev.error(_("Błąd obsługi pakietu: {err}").format(err=repr(e)))

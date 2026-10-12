@@ -7,7 +7,8 @@ from subprocess import DEVNULL, PIPE
 import sender_net as net
 import sender_state as state
 import sender_update
-from proto import CMD_POWER_OFF, CMD_UPDATE, T_INFO
+import sender_events as events
+from proto import CMD_POWER_OFF, CMD_UPDATE, E_POWER_OFF, T_INFO
 from sender_config import C
 
 MAC_RE = re.compile(r"[0-9a-f]{2}(?::[0-9a-f]{2}){5}", re.IGNORECASE)
@@ -38,6 +39,7 @@ async def power_off(c, reason):
         print(f"Controller {c.idx}: power off skipped - not a Bluetooth pad ({c.key})")
         return
     print(f"Controller {c.idx}: powering off ({reason})")
+    events.info(E_POWER_OFF, c.idx, reason)
     try:
         proc = await asyncio.create_subprocess_exec("bluetoothctl", "disconnect", c.key, stdout=DEVNULL, stderr=PIPE)
     except FileNotFoundError:

@@ -5,7 +5,7 @@ import rx_state as S
 from proto import CAP_TRIGGERS, RUMBLE_EVDEV, RUMBLE_HIDRAW, WHY_ACCESS, WHY_NO_HIDRAW, WHY_NOT_FOUND, WHY_OFF
 
 INFO_MAX_AGE = 3.0   # pakiet "info" starszy niż tyle = brak danych o pingu i Hz
-LAT_WARN_MS, LAT_BAD_MS = 6.0, 15.0     # opóźnienie pad -> gra (mediana): powyżej = żółty / czerwony
+LAT_WARN_MS, LAT_BAD_MS = 6.0, 15.0     # opóźnienie pad -> gra (średnia): powyżej = żółty / czerwony
 
 
 def fresh_info(i, now):
@@ -56,12 +56,28 @@ def latency(i):
     return rx_latency.summary(i) if S.alive[i] else None
 
 
+def button_latency(i):
+    """Opóźnienie przycisk -> gra z ostatnich naciśnięć (rx_latency.Summary) albo None (pad odłączony / brak naciśnięć).
+    Zostaje po chwilowej ciszy pada - liczy się tylko przy zmianie pada w slocie albo resecie z okna."""
+    return rx_latency.buttons(i) if S.alive[i] else None
+
+
+def lat_level(summary):
+    """Poziom jakości samego opóźnienia (średnia): "ok" | "warn" | "bad" | "" (brak pomiaru)."""
+    if summary is None:
+        return ""
+    return "bad" if summary.avg > LAT_BAD_MS else "warn" if summary.avg > LAT_WARN_MS else "ok"
+
+
 def latency_level(summary, i, now):
-    """Poziom jakości z opóźnienia (mediana) i utraty pakietów: "ok" | "warn" | "bad"."""
-    link = link_level(i, now)
-    lat = "" if summary is None else "bad" if summary.total > LAT_BAD_MS else "warn" if summary.total > LAT_WARN_MS else "ok"
+    """Poziom jakości z opóźnienia (średnia) i utraty pakietów: "ok" | "warn" | "bad"."""
     order = ("ok", "warn", "bad")
-    return max((x for x in (link, lat) if x), key=order.index, default="ok")
+    return max((x for x in (link_level(i, now), lat_level(summary)) if x), key=order.index, default="ok")
+
+
+def stats_text(summary):
+    """"p95 3.1 · max 4.0" - druga, mała część napisu opóźnienia na karcie pada."""
+    return f"p95 {summary.p95:.1f} · max {summary.max:.1f}"
 
 
 def latency_parts(summary):
@@ -69,6 +85,12 @@ def latency_parts(summary):
     rows = [("bt", _("Bluetooth (ponad minimum)"), summary.bt), ("phone", _("Telefon (jądro → wysłanie)"), summary.phone),
             ("net", _("Sieć"), summary.net), ("pc", _("PC (odbiór → wirtualny DS4)"), summary.pc)]
     return [r for r in rows if r[2] is not None]
+
+
+def low_pct():
+    """Próg niskiej baterii [%] - wspólny dla ostrzeżenia na karcie i migania lightbara (Ustawienia -> Lightbar)."""
+    import rx_settings
+    return rx_settings.cur.lightbar.low_pct
 
 
 def battery_level(pct, charging, low_batt):

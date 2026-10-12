@@ -17,9 +17,16 @@ DualSense ──Bluetooth──> telefon: sender/ ──UDP 5005──> PC: rece
   jest cofany, przez ~150 ms po wciśnięciu i puszczeniu kursor stoi, a przeciąganie z wciśniętym klikiem zaczyna się
   dopiero po wyraźnym ruchu palca. Czułość i te czasy: Ustawienia → Mysz (działa od razu).
 - **Jedno okno do wszystkiego** (PySide6, ikona w zasobniku):
-  - po lewej karty padów: bateria, **prawdziwe opóźnienie pad → gra** (mediana i p99 z 5 s, z paskiem odcinków:
-    Bluetooth / telefon / sieć / PC), aktywny profil, test wibracji, wyłączenie pada, korona mastera; ping, utrata
-    pakietów i Hz w podpowiedzi; niepodłączony pad to sama nazwa;
+  - po lewej karty padów: bateria, **prawdziwe opóźnienie pad → gra** (średnia, p95 i max z 5 s, z paskiem odcinków:
+    Bluetooth / telefon / sieć / PC), pod nim **przycisk → gra** (to samo tylko dla naciśnięć - ostatnie 100, z resetem),
+    aktywny profil, test wibracji, wyłączenie pada, korona mastera; ping, utrata pakietów i Hz w podpowiedzi;
+    niepodłączony pad to sama nazwa;
+  - **dziennik zdarzeń** na dole okna (ikona listy w nagłówku): połączenia i rozłączenia padów, nadajnik online /
+    offline, zmiana mastera, tryb konsoli, błędy, aktualizacje, niska bateria; filtr poziomu (wszystko / ostrzeżenia i
+    błędy / tylko błędy), limit linii, kopiowanie, czyszczenie (dwa kliknięcia). Ikona telefonu włącza **zdarzenia z
+    nadajnika** (domyślnie wyłączone): połączenie pada z telefonem, wysłany Wake-on-LAN, utrata kontaktu z receiverem,
+    błędy - nadajnik trzyma je, póki receiver nie odpowiada, więc np. Wake-on-LAN pojawia się po starcie komputera
+    z prawdziwą godziną. Dziennik jest tylko w pamięci (restart go czyści), wysokość panelu da się przeciągnąć;
   - na środku rysunek pada na żywo: kliknij przycisk, spust albo gałkę, żeby ją zremapować lub dostroić;
   - po prawej profil (domyślny / per gra), zakładki **Selected**, **Gyro**, **Changes** i przycisk **Save** (Ctrl+S);
   - remapowanie przycisków i gałek, celowanie żyroskopem (prawa gałka / mysz); strefy martwe, krzywe i
@@ -83,25 +90,50 @@ DualSense ──Bluetooth──> telefon: sender/ ──UDP 5005──> PC: rece
 
   Przycisk z kombinacji (i samo PS) nie trafia do gry. Do akcji nie można użyć przycisków skrótów PS (Share, D-pad)
   ani R3. Gdy master nie jest podłączony: każdy może (domyślnie) albo nikt.
-- **Ustawienia** (ikona w zasobniku → Ustawienia, albo przycisk w oknie), pięć zakładek:
+- **Ustawienia** (ikona w zasobniku → Ustawienia, albo przycisk w oknie), siedem zakładek:
   - **Tryb konsoli:** przycisk pada wybierasz naciśnięciem go na padzie, czasy to pola liczbowe, urządzenia audio to
     listy aktywnych wyjść Windows, „Przetestuj” włącza tryb na 10 s z wartościami z okna. Zmiana trybu konsoli zapisuje
     `console.json` i restartuje receiver (niezapisane zmiany profilu remapowania przepadają);
   - **Mysz:** czułość i stabilizacja kliknięcia touchpada;
   - **Master:** pad master, co wolno tylko jemu, przyciski akcji. Mysz i master działają od razu, bez restartu
     (`settings.json`);
+  - **Lightbar:** kolor per pad / domyślny, tryb, miganie, próg niskiej baterii (od razu);
+  - **Wake-on-LAN:** włączenie, przycisk do pary z PS, czas przytrzymania, MAC i broadcast (puste = automatycznie);
   - **Okno:** ekran, na którym pojawia się okno (na środku; gdy ekranu nie ma, okno zostaje na dostępnym), okno albo
     pełny ekran (też F11 i przycisk w nagłówku), język: polski / English (zmiana po restarcie);
   - **Kopie:** kopie `settings.json`, `console.json` i `remap.json` zrobione przy aktualizacji (5 ostatnich, w
     `receiver/backups/`) albo ręcznie. „Przywróć” (dwa kliknięcia) najpierw zapisuje kopię bieżących plików - więc
     też da się to cofnąć - a potem uruchamia receiver od nowa.
+- **Lightbar** (Ustawienia → Lightbar), osobno dla każdego pada (MAC) albo domyślnie dla wszystkich:
+  - **gra ma pierwszeństwo** - własny kolor świeci, dopóki gra sama nie ustawi lightbara;
+  - tryb **stały kolor** (wybór koloru; pusty = `idle_lightbar`) albo **kolor wg baterii** (czerwony przy progu → żółty →
+    zielony od 80 %);
+  - **miganie na czerwono przy niskiej baterii** - także w grze (nad kolorem gry), nie przy ładowaniu; przy czerwonym
+    kolorze bazowym miga czerwony / zgaszony;
+  - potwierdzenia skrótów (złoty błysk mastera, profil, mysz) zawsze na wierzchu;
+  - **próg niskiej baterii** jest wspólny z ostrzeżeniem na karcie pada i powiadomieniem (`low_batt` z toml to tylko
+    wartość startowa).
+- **Wake-on-LAN z pada** (Ustawienia → Wake-on-LAN): gdy komputer nie odpowiada (wyłączony / uśpiony), **PS + Options
+  przytrzymane ~1 s** (przycisk i czas do wyboru) - telefon wysyła magic packet. Przy działającym komputerze ta sama
+  kombinacja idzie do receivera jak zwykle (np. pauza mastera), więc nic nie koliduje; samo długie PS się nie nadaje
+  (tak włącza się pada). Pad potwierdza białym błyskiem i wibracją, błąd (np. nieznany MAC) - czerwonym.
+  - MAC komputera: wpisany w oknie albo **automatycznie** - nadajnik odczytuje go z tablicy ARP telefonu, póki komputer
+    działa, i zapamiętuje; adres broadcast: wpisany albo broadcast sieci do PC + `255.255.255.255`; pakiet idzie też
+    prosto na IP komputera. Okno pokazuje, czego nadajnik użyje.
+  - Ustawienia trafiają do nadajnika (co 5 s i przy zmianie) i są zapisywane na telefonie w `sender/wol.json` - przy
+    wyłączonym komputerze nie ma ich skąd wziąć.
+  - Komputer musi mieć włączony Wake-on-LAN w BIOS / UEFI i we właściwościach karty sieciowej (Zarządzanie energią:
+    „Zezwalaj temu urządzeniu na wznawianie”, „Tylko magic packet”); najlepiej po kablu - przez Wi-Fi zwykle nie działa.
 - **Wyłączanie pada** z PC albo samo po bezczynności (domyślnie 15 min).
-- **Opóźnienie pad → gra** mierzone dla każdej zmiany stanu pada (przycisk, gałka, ruch), od chwili, gdy jądro
-  telefonu dostało raport z pada, do oddania raportu wirtualnemu DS4. Nadajnik zna zegar PC z odpowiedzi na ping
+- **Opóźnienie pad → gra** (średnia, p95, max; pasek = średnie odcinków) mierzone dla każdej zmiany stanu pada
+  (przycisk, gałka, ruch), od chwili, gdy jądro telefonu dostało raport z pada, do oddania raportu wirtualnemu DS4. Nadajnik zna zegar PC z odpowiedzi na ping
   (jak NTP, pomiar o najmniejszym RTT), więc sieć jest mierzona w jedną stronę, nie jako połowa pingu. Odcinki:
   **Bluetooth** - opóźnienie radia ponad najlepszy przypadek z 2 s (znaczniki czasu pada; stała część ~1-2 ms jest
   niemierzalna), **telefon** - jądro → wysłanie, **sieć**, **PC** - odbiór → ViGEm. Ze starszym nadajnikiem karta
   pokazuje sam ping; starszy receiver dostaje od nowego nadajnika zwykłe pakiety.
+  **Przycisk → gra** to ten sam pomiar tylko dla zmian przycisków, D-pada i spustów (przejście przez próg wciśnięcia,
+  bez gałek i żyroskopu): ostatnie 100 naciśnięć / puszczeń bez limitu czasu (naciśnięcia są rzadkie - 5 s dałoby
+  kilka próbek), kasowane przy zmianie pada w slocie albo ikoną ↻ na karcie.
 - **Wibracja:** jednocześnie przez sterownik (evdev FF) i bezpośrednio raportem HID przez `/dev/hidrawN`
   (nadajnik przez `doas`), z flagami zależnymi od firmware pada, kolor lightbara w tym samym raporcie; ustawienie `rumble` w `sender.toml`. Karta pada
   pokazuje „wibracja: sterownik + HID” albo powód jej braku (brak uprawnień / brak w jądrze / nie znaleziono pada /
@@ -262,7 +294,8 @@ Tryb konsoli ma własny plik `receiver/console.json` (obok skryptu). Brak pliku 
 | `tv_width`, `tv_height` | 2560, 1440 | rozdzielczość TV po włączeniu trybu (najwyższe odświeżanie dla niej; 0 = bez zmiany) |
 | `tv_scale` | 200 | skalowanie TV w %: 100, 125, 150, 175, 200, 225, 250, 300... (0 = bez zmiany) |
 
-Mysz touchpada i pad master są w `receiver/settings.json` (okno → Ustawienia → Mysz / Master, działa od razu).
+Mysz touchpada, pad master, lightbar, Wake-on-LAN i ustawienia dziennika są w `receiver/settings.json` (okno →
+Ustawienia, działa od razu). Nadajnik zapisuje ustawienia Wake-on-LAN z okna w `sender/wol.json`.
 Nadajnik zapisuje stały przydział pad → slot w `sender/slots.json` (`slots_file = ""` wyłącza).
 
 ## Rozwiązywanie problemów
@@ -276,6 +309,7 @@ Nadajnik zapisuje stały przydział pad → slot w `sender/slots.json` (`slots_f
 | Profil gry się nie włącza | gry z anti-cheatem mogą blokować odczyt nazwy procesu; przełącz ręcznie PS + d-pad |
 | `virtual DS4 error ... ViGEmBus` | zainstaluj sterownik ViGEmBus |
 | Pad nie wibruje | karta pada: „stary nadajnik” = skopiuj nowe pliki `sender/` na telefon, „brak uprawnień” = nadajnik nie działa jako root (`doas` albo usługa z `install-service.sh`), „brak w jądrze” = jądro telefonu bez `CONFIG_PLAYSTATION_FF` i `CONFIG_HIDRAW`, „nie znaleziono pada” = brak `/dev/hidraw` tego pada; na telefonie: `doas python3 sender_rumble.py --test` (wibruje każdym sposobem po kolei, bez sieci) i ustaw w `sender.toml` `rumble` na ten, który działa; log nadajnika `rumble via ...` i `rumble N/N from PC` (czy polecenie z PC dochodzi); przycisk „Wibracja” na karcie pada |
+| Wake-on-LAN nie budzi komputera | czerwony błysk = nadajnik nie zna MAC (Ustawienia → Wake-on-LAN: wpisz go albo uruchom raz komputer z działającym nadajnikiem); biały błysk, a PC śpi = WoL wyłączony w BIOS / sterowniku karty, karta Wi-Fi albo „Szybkie uruchamianie” Windows (wyłącz je przy WoL z pełnego wyłączenia); log nadajnika `Wake-on-LAN ... -> ...` |
 | Tryb konsoli nie reaguje | log receivera: `Console: double ... on controller N` = wykryte; `only the master pad can do that` = funkcja zastrzeżona dla mastera (Ustawienia → Master) |
 | Gra w co-op widzi pady dziwnie (Steam) | Steam → biblioteka → gra → Właściwości → Kontroler: spróbuj „Wyłącz Steam Input” (gra czyta dwa DS4 sama) albo odwrotnie; kolejność graczy w Big Picture → Ustawienia → Kontroler |
 
@@ -309,7 +343,10 @@ Testy obejmują:
 - okno receivera (Qt offscreen, bez ekranu);
 - kopie ustawień, pomiar opóźnienia (state2 / pong2, zegar PC, Bluetooth) i opór spustów w raporcie HID
   (`test_features.py`, `test_features_tx.py`);
-- regresje z przeglądu bugów (`test_review.py`, `test_review_tx.py`).
+- regresje z przeglądu bugów (`test_review.py`, `test_review_tx.py`);
+- przycisk → gra, dziennik zdarzeń (też zdarzenia nadajnika end-to-end), lightbar od baterii, ustawienia dla nadajnika
+  (`test_extras.py`, `test_extras_gui.py`) oraz Wake-on-LAN po stronie telefonu - kombinacja, ARP, broadcast, magic
+  packet, `wol.json` (`test_wol_tx.py`).
 
 Działanie z prawdziwym padem, ViGEm, `DisplaySwitch.exe`, przełączaniem dźwięku (pycaw) i powiadomieniami Windows trzeba
 sprawdzić ręcznie.

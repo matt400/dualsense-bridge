@@ -19,7 +19,9 @@ BADGES = {"l1": "L1", "r1": "R1", "l2": "L2", "r2": "R2", "l3": "L3", "r3": "R3"
 EXTRA_TIPS = {"crown": "Pad master", "mouse": "Touchpad jako mysz", "touchpad": "Touchpad jako dotyk DS4",
               "tv": "Tryb konsoli", "power": "Wyłącz", "restart": "Uruchom ponownie", "window": "Ekran",
               "fullscreen": "Pełny ekran", "rumble": "Wibracja", "gear": "Ustawienia", "update": "Aktualizuj",
-              "backup": "Kopie ustawień", "stopwatch": "Opóźnienie", "plus": "Nowy profil gry"}
+              "backup": "Kopie ustawień", "stopwatch": "Opóźnienie", "plus": "Nowy profil gry",
+              "press": "Przycisk → gra", "reset": "Wyzeruj", "log": "Dziennik zdarzeń", "copy": "Kopiuj",
+              "trash": "Wyczyść", "phone": "Nadajnik", "lightbar": "Lightbar", "wake": "Wake-on-LAN"}
 SIZES = (16, 20, 24, 32, 48)
 
 
@@ -250,6 +252,82 @@ def _plus(p):
     p.drawLine(QPointF(5, 12), QPointF(19, 12))
 
 
+def _press(p):
+    """Palec (strzałka) wciskający okrągły przycisk - opóźnienie samych naciśnięć."""
+    p.setPen(_pen(FG, 1.6))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawEllipse(QRectF(5, 13, 14, 7))
+    p.drawLine(QPointF(12, 3), QPointF(12, 11))
+    p.drawLine(QPointF(9, 8), QPointF(12, 11))
+    p.drawLine(QPointF(15, 8), QPointF(12, 11))
+
+
+def _reset(p):
+    """Strzałka zawracająca do zera."""
+    p.setPen(_pen(DIM, 1.8))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawArc(QRectF(5, 5, 14, 14), 100 * 16, 290 * 16)
+    p.drawLine(QPointF(5.5, 4.5), QPointF(5.5, 9.5))
+    p.drawLine(QPointF(5.5, 9.5), QPointF(10.5, 9.5))
+
+
+def _log(p):
+    """Lista wpisów z punktami."""
+    p.setPen(_pen(FG, 1.7))
+    for y in (7, 12, 17):
+        p.drawPoint(QPointF(5.5, y))
+        p.drawLine(QPointF(9, y), QPointF(19, y))
+
+
+def _copy(p):
+    p.setPen(_pen(FG, 1.6))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawRoundedRect(QRectF(9, 4, 10, 12), 2, 2)
+    p.setBrush(QColor("#161922"))
+    p.drawRoundedRect(QRectF(5, 8, 10, 12), 2, 2)
+
+
+def _trash(p):
+    p.setPen(_pen(FG, 1.6))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawLine(QPointF(5, 7), QPointF(19, 7))
+    p.drawLine(QPointF(10, 7), QPointF(10.5, 4.5))
+    p.drawLine(QPointF(10.5, 4.5), QPointF(13.5, 4.5))
+    p.drawLine(QPointF(13.5, 4.5), QPointF(14, 7))
+    path = QPainterPath(QPointF(7, 7))
+    path.lineTo(8, 20)
+    path.lineTo(16, 20)
+    path.lineTo(17, 7)
+    p.drawPath(path)
+
+
+def _phone(p):
+    p.setPen(_pen(FG, 1.6))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawRoundedRect(QRectF(7, 3, 10, 18), 2.5, 2.5)
+    p.drawLine(QPointF(11, 18), QPointF(13, 18))
+
+
+def _lightbar(p):
+    """Świecąca listwa (lightbar) z poświatą."""
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QColor(91, 155, 255, 70))
+    p.drawRoundedRect(QRectF(3, 8, 18, 8), 4, 4)
+    p.setBrush(QColor("#5b9bff"))
+    p.drawRoundedRect(QRectF(5, 10.5, 14, 3), 1.5, 1.5)
+
+
+def _wake(p):
+    """Symbol zasilania z falą sieci - budzenie komputera przez sieć."""
+    p.setPen(_pen(FG, 1.7))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawArc(QRectF(4, 6, 12, 12), 130 * 16, 280 * 16)
+    p.drawLine(QPointF(10, 4), QPointF(10, 11))
+    p.setPen(_pen(GOLD, 1.5))
+    p.drawArc(QRectF(13, 3, 8, 8), -40 * 16, 120 * 16)
+    p.drawArc(QRectF(15.5, 5.5, 3, 3), -40 * 16, 120 * 16)
+
+
 def _draw(p, name):
     if name in FACE:
         _face(p, name)
@@ -261,7 +339,8 @@ def _draw(p, name):
         {"ps": _ps, "share": _share, "options": _options, "crown": _crown, "mouse": _mouse,
          "tv": _tv, "power": _power, "touchpad": _touchpad, "restart": _restart, "window": _window,
          "fullscreen": _fullscreen, "rumble": _rumble, "gear": _gear, "update": _update, "backup": _backup,
-         "stopwatch": _stopwatch, "plus": _plus}[name](p)
+         "stopwatch": _stopwatch, "plus": _plus, "press": _press, "reset": _reset, "log": _log, "copy": _copy,
+         "trash": _trash, "phone": _phone, "lightbar": _lightbar, "wake": _wake}[name](p)
 
 
 def pixmap(name, size=24, dim=False):
@@ -289,4 +368,4 @@ def icon(name, dim=False):
 def has_icon(name):
     return name in FACE or name in BADGES or name.startswith("dpad_") or name in (
         "ps", "share", "options", "crown", "mouse", "touchpad", "tv", "power", "restart", "window", "fullscreen", "rumble", "gear",
-        "update", "backup", "stopwatch", "plus")
+        "update", "backup", "stopwatch", "plus", "press", "reset", "log", "copy", "trash", "phone", "lightbar", "wake")

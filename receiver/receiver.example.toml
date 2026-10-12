@@ -30,13 +30,13 @@
 # gui_topmost = false   # okno zawsze na wierzchu
 # gui_start_visible = false   # True = pokaż okno od razu po starcie
 # gui_wait_pad = false   # True = nie twórz okna ani ikony, dopóki żaden pad się nie połączy
-# low_batt = 15   # próg (%) niskiej baterii
+# low_batt = 15   # próg (%) niskiej baterii - tylko wartość startowa; potem Ustawienia -> Lightbar (settings.json)
 # low_batt_notify = true   # powiadomienie z zasobnika przy niskiej baterii
 # ps_modifier = true   # PS jako klawisz skrótów: krótkie PS trafia do gry po puszczeniu (+~0.1 s), PS + przycisk = skrót
 # ps_hold_s = 1.0   # tyle trzymania PS (bez innych przycisków) = ps_hold_action
 # ps_hold_action = "gamebar"   # gamebar (Win+G) | bigpicture (Steam Big Picture) | none
 # ps_share_action = "screenshot"   # screenshot (Win+PrtScr, do Obrazy\Zrzuty ekranu) | capture (Game Bar) | none
 # confirm = true   # potwierdzenia na padzie: krótka wibracja / mignięcie lightbara przy skrótach
-# idle_lightbar = [0, 0, 128]   # kolor lightbara po mignięciu, gdy gra sama go nie ustawia
+# idle_lightbar = [0, 0, 128]   # domyślny kolor lightbara, gdy gra sama go nie ustawia (Ustawienia -> Lightbar zmienia go per pad)
 # game_profiles = true   # automatyczny profil wg gry na pierwszym planie
 # game_ignore = []   # dodatkowe programy pomijane na liście "ostatnie gry" w edytorze (np. "obs64.exe")

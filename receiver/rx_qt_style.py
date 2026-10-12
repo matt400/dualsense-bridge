@@ -72,6 +72,11 @@ QPushButton[iconic="true"] {{ background: transparent; border: 1px solid transpa
 QPushButton[iconic="true"]:hover:!disabled {{ background: {TRACK}; border-color: {LINE}; }}
 QPushButton[iconic="true"]:focus {{ border-color: {ACCENT_HI}; }}
 QPushButton[iconic="true"][armed="true"] {{ background: {BAD}; border-color: {BAD}; padding: {p(5)} {p(10)}; }}
+QPushButton[iconic="true"][mini="true"] {{ padding: {p(2)}; border-radius: {p(6)}; }}
+QPushButton[iconic="true"]:checked {{ background: {TRACK}; border-color: {ACCENT}; }}
+QFrame#logpanel {{ background: {CARD}; border-top: 1px solid {BORDER}; }}
+QPlainTextEdit#log {{ background: {BG}; border: 1px solid {BORDER}; font-family: "Cascadia Mono", "Consolas", monospace;
+                      font-size: {p(12)}; padding: {p(4)} {p(6)}; }}
 QPushButton#fold {{ background: transparent; border: none; color: {DIM}; font-size: {p(11)}; font-weight: 700;
                     letter-spacing: 0.8px; padding: {p(4)} 0; text-align: left; }}
 QPushButton#fold:hover {{ color: {FG}; }}

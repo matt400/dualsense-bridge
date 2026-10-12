@@ -15,6 +15,7 @@ DEFAULTS = {
     "port": 5005,
     "max_pads": 2,
     "slots_file": "slots.json",    # pad (MAC) -> stały slot także po restarcie (gracz 1 / 2 w grze); "" = bez pamięci
+    "wol_file": "wol.json",        # Wake-on-LAN i zdarzenia do dziennika - ustawienia z okna receivera; "" = bez zapisu
     "grab_pad": True,
     "grab_touch": True,
     "tap_click": True,
@@ -60,6 +61,12 @@ NEUTRAL_PAD = (128, 128, 0, 128, 128, 0)
 C = SimpleNamespace()
 
 
+def _beside(name):
+    """Nazwa pliku względem folderu nadajnika (usługa startuje z innego katalogu); "" = wyłączone."""
+    name = str(name or "")
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), name) if name and not os.path.isabs(name) else name
+
+
 def init(argv=None):
     ap = argparse.ArgumentParser(description="DualSense UDP sender")
     # default=None: inaczej host z domyślnej wartości nadpisywałby host z --config
@@ -91,8 +98,8 @@ def init(argv=None):
         raise SystemExit(f"Nie można rozwiązać hosta {C.HOST!r}: {e}") from None
     C.PORT = int(cfg["port"])
     C.MAX_PADS = int(cfg["max_pads"])
-    sf = str(cfg["slots_file"] or "")
-    C.SLOTS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), sf) if sf and not os.path.isabs(sf) else sf
+    C.SLOTS_FILE = _beside(cfg["slots_file"])
+    C.WOL_FILE = _beside(cfg["wol_file"])
     C.GRAB_PAD, C.GRAB_TOUCH, C.TAP_CLICK = bool(cfg["grab_pad"]), bool(cfg["grab_touch"]), bool(cfg["tap_click"])
     C.TAP_MAX_S, C.TAP_MAX_MOVE = float(cfg["tap_max_s"]), int(cfg["tap_max_move"])
     C.PAD_MIN_DT = max(0.0, float(cfg["pad_min_dt"]))

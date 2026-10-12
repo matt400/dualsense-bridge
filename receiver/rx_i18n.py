@@ -405,15 +405,21 @@ EN = {
     "Nowy profil gry": "New game profile",
     # ---------- opóźnienie pad -> gra ----------
     "Opóźnienie pad → gra": "Latency pad → game",
-    "p99 {ms} ms · {n} próbek z 5 s": "p99 {ms} ms · {n} samples from 5 s",
+    "średnia · {stats} ms · {n} próbek z 5 s": "average · {stats} ms · {n} samples from 5 s",
     "Bluetooth (ponad minimum)": "Bluetooth (above minimum)",
     "Telefon (jądro → wysłanie)": "Phone (kernel → send)",
     "Sieć": "Network",
     "PC (odbiór → wirtualny DS4)": "PC (receive → virtual DS4)",
     "Brak pomiaru: pad leży albo nadajnik jest w starszej wersji (Aktualizuj).":
         "No measurement: the pad is idle or the sender is an older version (Update).",
-    "Mediany odcinków. Stała część radia Bluetooth (~1–2 ms) jest niemierzalna.":
-        "Medians of each segment. The fixed part of the Bluetooth radio (~1–2 ms) cannot be measured.",
+    "Średnie odcinków. Stała część radia Bluetooth (~1–2 ms) jest niemierzalna.":
+        "Segment averages. The fixed part of the Bluetooth radio (~1–2 ms) cannot be measured.",
+    "Przycisk → gra": "Button → game",
+    "średnia · {stats} ms · {n} z ostatnich {keep} naciśnięć": "average · {stats} ms · {n} of the last {keep} presses",
+    "Tylko przyciski, D-pad i spusty (wciśnięcie / puszczenie) - bez gałek i żyroskopu.":
+        "Buttons, D-pad and triggers only (press / release) - no sticks or gyro.",
+    "Wyzeruj pomiar przycisk → gra": "Reset the button → game measurement",
+    "Wyzeruj": "Reset",
     # ---------- opór spustów ----------
     "OPÓR SPUSTU": "TRIGGER RESISTANCE",
     "Siła oporu": "Resistance strength",
@@ -457,4 +463,103 @@ EN = {
     "kopia ustawień zapisana": "settings backed up",
     "brak ustawień do skopiowania": "no settings to back up",
     "kopia ustawień nieudana: {err}": "settings backup failed: {err}",
+    # ---------- dziennik zdarzeń ----------
+    "Dziennik zdarzeń": "Event log",
+    "DZIENNIK ZDARZEŃ": "EVENT LOG",
+    "Schowaj dziennik zdarzeń": "Hide the event log",
+    "Połączenia padów, master, tryb konsoli, błędy, aktualizacje": "Pad connections, master, console mode, errors, updates",
+    "Wszystko": "Everything",
+    "Ostrzeżenia i błędy": "Warnings and errors",
+    "Tylko błędy": "Errors only",
+    "Które wpisy pokazywać": "Which entries to show",
+    " linii": " lines",
+    "Limit linii w panelu (starsze znikają)": "Line limit in the panel (older lines disappear)",
+    "Kopiuj": "Copy",
+    "Kopiuj widoczne wpisy do schowka": "Copy the visible entries to the clipboard",
+    "Wyczyść": "Clear",
+    "Wyczyścić?": "Clear?",
+    "Wyczyść dziennik": "Clear the log",
+    "Zdarzenia z nadajnika: włączone": "Sender events: on",
+    "Zdarzenia z nadajnika: wyłączone": "Sender events: off",
+    "połączenia padów z telefonem, Wake-on-LAN, błędy nadajnika": "pad connections to the phone, Wake-on-LAN, sender errors",
+    "{pad} połączony": "{pad} connected",
+    "{pad} rozłączony": "{pad} disconnected",
+    "{pad}: pad {id}": "{pad}: pad {id}",
+    "{pad}: brak sygnału przez {s} s - odłączony": "{pad}: no signal for {s} s - unplugged",
+    "{pad}: przerwa w sygnale ponad {s} s": "{pad}: signal gap over {s} s",
+    "{pad}: niska bateria ({pct}%)": "{pad}: low battery ({pct}%)",
+    "{pad}: akcja mastera {action} nieudana: {err}": "{pad}: master action {action} failed: {err}",
+    "{pad}: błąd wirtualnego DS4: {err} (czy ViGEmBus jest zainstalowany?)":
+        "{pad}: virtual DS4 error: {err} (is ViGEmBus installed?)",
+    "Nadajnik online ({ip})": "Sender online ({ip})",
+    "Nadajnik offline - brak pakietów od {s} s": "Sender offline - no packets for {s} s",
+    "Błąd obsługi pakietu: {err}": "Packet handling error: {err}",
+    "Master: {pad}": "Master: {pad}",
+    "brak": "none",
+    "Tryb konsoli: {what} - błąd: {err}": "Console mode: {what} - error: {err}",
+    "Tryb konsoli: przełączenie pominięte - na pierwszym planie {exe}": "Console mode: switch skipped - {exe} in the foreground",
+    "Dostępna aktualizacja - nowych zmian: {n}": "Update available - new changes: {n}",
+    "Aktualizacja: {text}": "Update: {text}",
+    "Nadajnik uruchomiony (wersja {arg})": "Sender started (version {arg})",
+    "Pad {n} połączony z telefonem ({arg})": "Pad {n} connected to the phone ({arg})",
+    "Pad {n} rozłączony od telefonu": "Pad {n} disconnected from the phone",
+    "Pad {n} wyłączony przez nadajnik ({arg})": "Pad {n} switched off by the sender ({arg})",
+    "Wysłano Wake-on-LAN do {arg} (pad {n})": "Wake-on-LAN sent to {arg} (pad {n})",
+    "Wake-on-LAN nieudany: {arg}": "Wake-on-LAN failed: {arg}",
+    "Nadajnik stracił kontakt z receiverem": "The sender lost contact with the receiver",
+    "Sieć na telefonie niedostępna": "Network on the phone unavailable",
+    "Błąd nadajnika: {arg}": "Sender error: {arg}",
+    "Zdarzenie nadajnika {code}: {arg}": "Sender event {code}: {arg}",
+    # ---------- lightbar ----------
+    "Lightbar": "Lightbar",
+    "NISKA BATERIA": "LOW BATTERY",
+    "Próg niskiej baterii": "Low battery threshold",
+    "Ten sam próg ma ostrzeżenie na karcie pada i powiadomienie z zasobnika. Ładujący się pad nie miga.":
+        "The pad card warning and the tray notification use the same threshold. A charging pad doesn't blink.",
+    "KOLOR LIGHTBARA": "LIGHTBAR COLOUR",
+    "Gra ma pierwszeństwo: ten kolor świeci, dopóki gra sama nie ustawi lightbara. Miganie przy niskiej baterii działa "
+    "zawsze, a potwierdzenia (np. złoty błysk mastera) są na wierzchu.":
+        "The game comes first: this colour shows until the game sets the lightbar itself. Low battery blinking always "
+        "works, and confirmations (e.g. the master's gold flash) are on top.",
+    "Pad": "Pad",
+    "Domyślne - pady bez własnego ustawienia": "Default - pads without their own setting",
+    "Własne ustawienie dla tego pada (inaczej domyślne)": "Own setting for this pad (otherwise the default)",
+    "Kolor": "Colour",
+    "Stały kolor": "Solid colour",
+    "Kolor wg stanu baterii": "Colour by battery level",
+    "Wybierz kolor": "Pick a colour",
+    "Kolor lightbara": "Lightbar colour",
+    "Kolor domyślny (idle_lightbar z receiver.toml)": "Default colour (idle_lightbar from receiver.toml)",
+    "  (domyślny)": "  (default)",
+    "Miganie na czerwono przy niskiej baterii (także w grze)": "Blink red on low battery (also in games)",
+    # ---------- Wake-on-LAN ----------
+    "Wake-on-LAN": "Wake-on-LAN",
+    "WAKE-ON-LAN": "WAKE-ON-LAN",
+    "Budzenie komputera z pada": "Wake the computer from the pad",
+    "Gdy komputer nie odpowiada (wyłączony / uśpiony), przytrzymanie tej kombinacji na padzie wysyła z telefonu magic "
+    "packet. Przy działającym komputerze kombinacja idzie do receivera jak zwykle (np. pauza mastera), więc nic nie "
+    "koliduje. Pad potwierdza wysłanie białym błyskiem, błąd - czerwonym.":
+        "When the computer doesn't respond (off / asleep), holding this combination on the pad makes the phone send a "
+        "magic packet. While the computer is running, the combination goes to the receiver as usual (e.g. the master's "
+        "pause), so nothing clashes. The pad confirms with a white flash, an error with a red one.",
+    "Kombinacja na padzie": "Combination on the pad",
+    "Przytrzymanie": "Hold",
+    "ADRESY": "ADDRESSES",
+    "MAC karty sieciowej komputera": "Computer network card MAC",
+    "Adres broadcast": "Broadcast address",
+    "Puste = automatycznie: nadajnik zapamiętuje MAC komputera z tablicy ARP telefonu, póki komputer działa, i wysyła "
+    "na broadcast swojej sieci. Komputer musi mieć włączony Wake-on-LAN w BIOS / UEFI i we właściwościach karty "
+    "sieciowej (najlepiej przewodowej).":
+        "Empty = automatic: the sender remembers the computer's MAC from the phone's ARP table while the computer is "
+        "running, and sends to its network's broadcast. Wake-on-LAN must be enabled in the BIOS / UEFI and in the "
+        "network card properties (preferably wired).",
+    "auto: {v}": "auto: {v}",
+    "Nadajnik nie podał jeszcze adresów (offline albo starsza wersja - Aktualizuj).":
+        "The sender hasn't reported its addresses yet (offline or an older version - Update).",
+    "Nadajnik użyje: MAC {mac}, broadcast {bcast}.": "The sender will use: MAC {mac}, broadcast {bcast}.",
+    "nieznany - wpisz go albo uruchom receiver, gdy nadajnik działa": "unknown - enter it, or run the receiver while the sender is running",
+    "Zły adres MAC - wpisz np. aa:bb:cc:dd:ee:ff albo zostaw puste.":
+        "Invalid MAC address - enter e.g. aa:bb:cc:dd:ee:ff or leave it empty.",
+    "Zły adres broadcast - wpisz np. 192.168.1.255 albo zostaw puste.":
+        "Invalid broadcast address - enter e.g. 192.168.1.255 or leave it empty.",
 }

@@ -21,6 +21,7 @@ from dataclasses import dataclass
 
 import proto
 import rx_backup
+import rx_events as ev
 from proto import UPD_DONE, UPD_FAILED, UPD_NO_CHANGE, UPD_NO_GIT, UPD_NOT_GIT, UPD_RUNNING
 from rx_i18n import _
 
@@ -143,6 +144,7 @@ def _checker(stop):
         if r is not None:
             if r != available and r.behind:
                 print(f"Update available: {r.behind} change(s), latest {r.commit} {r.subject}")
+                ev.info(_("Dostępna aktualizacja - nowych zmian: {n}").format(n=r.behind) + (f" - {r.subject}" if r.subject else ""))
             available = r
         if stop.wait(CHECK_EVERY_S):
             return
@@ -181,6 +183,7 @@ def _backup(old, new):
         b = rx_backup.create("update", old, new)
     except OSError as e:
         print(f"Settings backup failed: {e!r}")
+        ev.error(_("kopia ustawień nieudana: {err}").format(err=repr(e)))
         return _("kopia ustawień nieudana: {err}").format(err=e)
     if b is None:
         return _("brak ustawień do skopiowania")

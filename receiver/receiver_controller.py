@@ -9,7 +9,8 @@ Pliki: proto.py (wspólny), rx_config.py, rx_state.py, rx_buttons.py (remap + re
        rx_settings.py (settings.json: mysz, pad master), rx_master.py (pad master: uprawnienia, PS + przycisk),
        okno: rx_qt.py (okno, zasobnik), rx_qt_pad.py (rysunek pada), rx_qt_panels.py, rx_qt_widgets.py, rx_qt_style.py,
        rx_qt_console.py (okno ustawień: konsola, mysz, master, okno), rx_qt_icons.py (ikony przycisków),
-       rx_i18n.py (język okna: polski / angielski),
+       rx_i18n.py (język okna: polski / angielski), rx_events.py + rx_qt_log.py (dziennik zdarzeń w oknie),
+       rx_lightbar.py (kolor lightbara: stały / wg baterii, miganie przy niskiej baterii),
        rx_editor.py (model edycji profilu), rx_profiles.py, rx_status.py, rx_icon.py.
 
 Wirtualny DS4 powstaje dopiero po pierwszym pakiecie z danego slotu i znika, gdy nadajnik
@@ -63,7 +64,7 @@ def main():
     import rx_state as S
 
     S.init(rx_buttons.RemapStore(C.REMAP_PATH))
-    rx_settings.apply(rx_settings.load(C.SETTINGS_PATH, rx_settings.defaults(C.MOUSE_SENS)))
+    rx_settings.apply(rx_settings.load(C.SETTINGS_PATH, rx_settings.defaults(C.MOUSE_SENS, C.LOW_BATT)))
     import rx_i18n
     rx_i18n.set_lang(rx_settings.cur.ui.lang)     # język okna i powiadomień (Ustawienia -> Okno)
     rx_mouse.init(C.NUM_PADS)

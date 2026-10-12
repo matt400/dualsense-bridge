@@ -1,8 +1,13 @@
 """Receiver: feedback do pada (wibracja, lightbar) z gry przez ViGEm + krótkie potwierdzenia skrótów,
-oraz opór spustów z aktywnego profilu (gra przez DS4 go nie ustawi - robi to nadajnik raportem HID)."""
+oraz opór spustów z aktywnego profilu (gra przez DS4 go nie ustawi - robi to nadajnik raportem HID).
+
+Lightbar: gdy gra nic nie ustawiła - kolor z ustawień pada (stały / wg baterii, rx_lightbar); niska bateria miga
+na czerwono także nad kolorem gry; potwierdzenia (np. złoty błysk mastera) zawsze na wierzchu."""
 import threading
 import time
 
+import rx_lightbar as L
+import rx_settings
 import rx_state as S
 from proto import clamp
 from rx_config import C
@@ -60,6 +65,9 @@ def init():
     S.on_remap = fb_event.set
 
 
+rx_settings.on_change(lambda _old, _new: fb_event.set())    # nowy kolor / tryb lightbara działa od razu
+
+
 def reset(i):
     """Nowy wirtualny DS4 w slocie: gra jeszcze nic nie ustawiła."""
     fb[i].update(set=False, small=0, large=0)
@@ -75,19 +83,33 @@ def pulse(i, kind, force=False):
         fb_event.set()
 
 
+def is_low(i, low_pct):
+    """Bateria znana, nie ładuje się i jest na progu albo poniżej (ten sam test co karta pada w oknie)."""
+    pct, flags = S.batt_info[i]
+    return pct <= 100 and not flags & 1 and pct <= low_pct
+
+
 def _target(i, now):
-    """-> (wartość feedbacku do wysłania, czy w ogóle sterujemy tym padem)."""
+    """-> (wartość feedbacku do wysłania, czy w ogóle sterujemy tym padem, czy lightbar miga)."""
     f = fb[i]
-    base = (tuple(clamp(f[k], 0, 255) for k in ("small", "large", "r", "g", "b")) if f["set"]
-            else (0, 0, *C.IDLE_RGB))
+    cfg = rx_settings.cur.lightbar
+    light = cfg.get(S.profile_key(i))
+    if f["set"]:                                  # gra ma pierwszeństwo
+        base, ours = tuple(clamp(f[k], 0, 255) for k in ("small", "large", "r", "g", "b")), True
+    else:
+        rgb, ours = L.own_color(light, S.batt_info[i][0], cfg.low_pct, C.IDLE_RGB)
+        base = (0, 0, *rgb)
+    blink = L.blinking(light, is_low(i, cfg.low_pct))
+    if blink:
+        base = (*base[:2], *L.blink_rgb(base[2:], now))
     p = pulses[i]
     if p is not None and now >= p[0]:
         pulses[i] = p = None
     if p is None:
-        # bez gry i bez potwierdzeń nie wysyłamy nic (pad zostaje z kolorem nadanym przez sterownik),
-        # ale po potwierdzeniu trzeba przywrócić kolor - stąd "fb_sent is not None"
-        return base, f["set"] or fb_sent[i] is not None
-    return (p[1], p[2], *(p[3] or base[2:])), True
+        # bez gry, bez własnego koloru i bez potwierdzeń nie wysyłamy nic (pad zostaje z kolorem nadanym przez
+        # sterownik), ale po potwierdzeniu trzeba przywrócić kolor - stąd "fb_sent is not None"
+        return base, ours or blink or fb_sent[i] is not None, blink
+    return (p[1], p[2], *(p[3] or base[2:])), True, blink
 
 
 def feedback_thread(send, send_trig=None):
@@ -114,18 +136,24 @@ def triggers_tick(i, now, send_trig):
 def _loop(send, send_trig=None):
     """Wysyła feedback przy zmianie, co 0.5 s w trakcie wibracji (odświeża jej timeout u nadajnika)
     i co 5 s w spoczynku (zgubiony pakiet nie zostawi złego koloru lightbara)."""
+    blink = False
     while not S.stop.is_set():
-        ends = [p[0] for p in pulses if p is not None]
-        fb_event.wait(max(0.0, min([0.5] + [e - time.monotonic() for e in ends])))
+        now = time.monotonic()
+        waits = [0.5] + [e - now for e in (p[0] for p in pulses if p is not None)]
+        if blink:
+            waits.append(L.next_edge(now) + 0.002)
+        fb_event.wait(max(0.0, min(waits)))
         fb_event.clear()
         now = time.monotonic()
+        blink = False
         for i in range(C.NUM_PADS):
             if not S.alive[i]:
                 fb_sent[i] = pulses[i] = trig_sent[i] = None
                 continue
             if send_trig is not None:
                 triggers_tick(i, now, send_trig)
-            val, ours = _target(i, now)
+            val, ours, b = _target(i, now)
+            blink = blink or b
             if not ours:
                 continue
             last = fb_sent[i]

@@ -6,6 +6,7 @@
 # port = 5005
 # max_pads = 2
 # slots_file = "slots.json"   # pad (MAC) -> stały slot także po restarcie (gracz 1 / 2 w grze); "" = bez pamięci
+# wol_file = "wol.json"       # Wake-on-LAN i zdarzenia do dziennika: ustawienia z okna receivera zapisane na telefonie
 # grab_pad = true
 # grab_touch = true
 # tap_click = true

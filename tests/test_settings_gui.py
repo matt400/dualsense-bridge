@@ -65,7 +65,7 @@ ok("aktualizacja: pasek 'Dostępna aktualizacja: N zmian - tytuł' i 'Nadajnik m
 # ---------- zakładki ustawień ----------
 win.open_settings(); pump(100)
 dlg = win.settings_dlg
-assert [dlg.tabs.tabText(i) for i in range(dlg.tabs.count())] == ["Tryb konsoli", "Mysz", "Master", "Okno", "Kopie"]
+assert [dlg.tabs.tabText(i) for i in range(dlg.tabs.count())] == ["Tryb konsoli", "Mysz", "Master", "Lightbar", "Wake-on-LAN", "Okno", "Kopie"]
 assert dlg.toggle_button == "r2" and "R2" in dlg.pick_name.text() and not dlg.pick_icon.pixmap().isNull()
 assert dlg.auto_on.isChecked(), "domyślnie: tryb konsoli po połączeniu mastera"
 assert not dlg.tabs.tabIcon(2).isNull(), "zakładki z ikonami"
@@ -124,7 +124,7 @@ dlg.present(); pump()
 scr = [dlg.screen_box.itemData(i) for i in range(dlg.screen_box.count())]
 names = [k for k, _ in rx_qt.screens()]
 assert scr == ["", *names], (scr, names)
-dlg.screen_box.set_data(names[0]); dlg.tabs.setCurrentIndex(3)
+dlg.screen_box.set_data(names[0]); dlg.tabs.setCurrentIndex(5)
 dlg.save_btn.click(); pump()
 assert win.screen_choice() == names[0] and win.settings.value("screen") == names[0], "wybrany ekran zapisany"
 win.move(-5000, -5000); win.place_on_screen()
@@ -241,7 +241,7 @@ import rx_backup, rx_qt_console
 rx_qt_console.RESTORE_RESTART_MS = 50
 with open(C.SETTINGS_PATH, "w") as f: f.write('{"mouse": {"sens": 2.0}}')
 dlg = win.settings_dlg; dlg.hide(); dlg.present(); pump()
-dlg.tabs.setCurrentIndex(4); pump()
+dlg.tabs.setCurrentIndex(6); pump()
 n0 = len(rx_backup.list_backups())
 dlg._backup_now(); pump()
 rows = [dlg.backup_rows.itemAt(k).widget() for k in range(dlg.backup_rows.count())]

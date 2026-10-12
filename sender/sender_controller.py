@@ -5,7 +5,8 @@
   doas python3 sender_controller.py --config sender.toml
 
 Pliki: proto.py (wspólny), sender_config.py, sender_state.py, sender_net.py,
-       sender_ctrl.py, sender_streams.py, sender_supervisor.py, sender_control.py, sender_rumble.py (wibracja).
+       sender_ctrl.py, sender_streams.py, sender_supervisor.py, sender_control.py, sender_rumble.py (wibracja),
+       sender_wol.py (Wake-on-LAN: PS + przycisk przy milczącym receiverze), sender_events.py (zdarzenia do okna PC).
 Konfiguracja: --config plik.toml|json (klucze jak w DEFAULTS), flagi CLI nadpisują plik.
 --stats pokazuje też realną częstotliwość raportów pada i ruchu (Hz, przerwy p99/max).
 Wyłączanie pada: przyciskiem "Off" w oknie receivera albo samo po idle_off_min minutach bez użycia
@@ -22,12 +23,15 @@ import traceback
 
 import sender_config
 import sender_control as control
+import sender_events as events
 import sender_net as net
 import sender_rt
 import sender_streams as streams
 import sender_state as state
 import sender_supervisor as sup
 import sender_update
+import sender_wol as wol
+from proto import E_ERROR, E_START
 from sender_config import C
 
 
@@ -45,6 +49,7 @@ async def forever(name, fn):
             errors += 1
             if errors == 1:
                 print(f"{name} error - restarting:\n{traceback.format_exc()}")
+                events.error(E_ERROR, 255, f"{name}: {e!r}")
             else:
                 print(f"{name} error #{errors} - restarting: {e!r}")
             await asyncio.sleep(min(5.0, 0.2 * errors))
@@ -95,10 +100,13 @@ if __name__ == "__main__":
     net.on_feedback = sup.dispatch_feedback
     net.on_command = control.on_command
     net.on_triggers = sup.dispatch_triggers
+    net.on_scfg = wol.apply_scfg
+    wol.load()                         # Wake-on-LAN i zdarzenia: ustawienia z okna receivera zapisane przy ostatnim scfg
     sender_rt.setup(C.LOW_LATENCY, C.CPU_LATENCY_US, C.RT_PRIORITY)
     gc.collect()
     gc.freeze()   # obiekty ze startu poza zasięgiem GC - krótsze pauzy
     sender_update.init()
+    events.info(E_START, 255, sender_update.version[0] or "?")
     try:
         asyncio.run(main())
     except (KeyboardInterrupt, asyncio.CancelledError):

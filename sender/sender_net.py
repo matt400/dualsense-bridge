@@ -4,7 +4,9 @@ import collections
 import socket
 import time
 
-from proto import BODY, RTT_NONE, Codec, SeqFilter, T_CMD, T_FB, T_PING, T_PONG, T_PONG2, T_TRIG
+from proto import (BODY, E_NET_DOWN, E_NO_RECEIVER, RTT_NONE, Codec, SeqFilter, T_CMD, T_FB, T_PING, T_PONG, T_PONG2,
+                   T_SCFG, T_TRIG)
+import sender_events as events
 import sender_state as state
 from sender_config import C
 
@@ -19,6 +21,10 @@ fb_filter = SeqFilter(1.0)            # z oknem czasowym: restart receivera (los
 on_feedback = None                    # callback(idx, (small, large, r, g, b)) ustawiany w main
 on_command = None                     # callback(idx, cmd, arg) ustawiany w main
 on_triggers = None                    # callback(idx, (l2 początek, l2 siła, r2 początek, r2 siła)) ustawiany w main
+on_scfg = None                        # callback(flagi, mac, broadcast, przycisk, przytrzymanie ms) ustawiany w main
+scfg_t = 0.0                          # kiedy przyszedł pakiet scfg - receiver zna build2 i zdarzenia
+NEW_RECEIVER_S = 30.0
+LEARN_S = 5.0                         # co tyle (przy działającym PC) MAC komputera z ARP do Wake-on-LAN
 BUILD_S = 5.0                         # co tyle wersja kodu nadajnika (pakiet build) do okna receivera
 PING_S = 0.25                         # 4 pingi/s: mediana z 2 s jest stabilna, a pojedynczy skok jej nie zmienia
 recent_rtt = collections.deque(maxlen=8)   # ostatnie pomiary - do pakietu info (okno w GUI receivera)
@@ -120,7 +126,7 @@ def emit(ptype, idx, *vals):
 
 
 def on_readable():
-    global pongs, last_pong
+    global pongs, last_pong, scfg_t
     s = sock
     if s is None:
         return
@@ -153,11 +159,32 @@ def on_readable():
         elif t == T_TRIG:
             if fb_filter.fresh(("trig", idx), sq, time.monotonic()) and on_triggers is not None:
                 on_triggers(idx, BODY[T_TRIG].unpack_from(data, 4))
+        elif t == T_SCFG:
+            now = time.monotonic()
+            if fb_filter.fresh(("scfg",), sq, now):
+                scfg_t = now
+                if on_scfg is not None:
+                    on_scfg(*BODY[T_SCFG].unpack_from(data, 4))
+
+
+def new_receiver(now=None):
+    """Receiver przysłał niedawno scfg - zna pakiety build2 i event."""
+    return scfg_t and (time.monotonic() if now is None else now) - scfg_t < NEW_RECEIVER_S
+
+
+def _receiver_watch(alive, was):
+    """Co ping: zdarzenia do receivera, gdy odpowiada; utrata odpowiedzi = zdarzenie (dojdzie po powrocie)."""
+    if alive:
+        events.flush(emit)
+    elif was:
+        events.warn(E_NO_RECEIVER)
 
 
 async def pinger():
     global pings_sent
     warned = False
+    alive = False
+    t_learn = 0.0
     last_print = time.monotonic()
     tx_prev = 0
     while True:
@@ -167,6 +194,13 @@ async def pinger():
             import sender_update                # sender_update importuje sender_net
             sender_update.send_build()
         await asyncio.sleep(PING_S)
+        now = time.monotonic()
+        was, alive = alive, now - last_pong < 3.0
+        _receiver_watch(alive, was)
+        if alive and now - t_learn >= LEARN_S:
+            t_learn = now
+            import sender_wol                   # sender_wol importuje sender_net
+            sender_wol.learn()
         if pings_sent >= 4 / PING_S and pongs == 0 and not warned:
             print("WARNING: no reply from receiver - check IP/port, firewall and --key")
             warned = True
@@ -196,5 +230,7 @@ async def sock_keeper():
             ok = open_sock(loop)
             if ok != up:
                 print("Network OK" if ok else "Network unavailable - retrying every 1 s")
+                if not ok:
+                    events.warn(E_NET_DOWN)
                 up = ok
         await asyncio.sleep(1.0)

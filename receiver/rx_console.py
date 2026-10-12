@@ -35,6 +35,7 @@ from dataclasses import asdict, dataclass, fields
 
 import rx_audio
 import rx_display
+import rx_events as ev
 import rx_master as master
 import rx_state as S
 import rx_winapi as W
@@ -231,6 +232,7 @@ def _step(what, fn, *args):
         fn(*args)
     except Exception as e:
         print(f"Console: {what} failed: {e!r}")
+        ev.error(_("Tryb konsoli: {what} - błąd: {err}").format(what=what, err=repr(e)))
 
 
 class Console:
@@ -276,6 +278,7 @@ class Console:
             if (exe := self.blocked_by()) is not None:
                 # w grze podwójne R2 to zwykła rozgrywka (gaz, strzał) - po cichu, bez czerwonego mignięcia
                 print(f"Console: double {self.cfg.toggle_button} on controller {i} ignored - {exe} in the foreground")
+                ev.info(_("Tryb konsoli: przełączenie pominięte - na pierwszym planie {exe}").format(exe=exe))
                 return
             if not master.check(i, "console"):   # może być zastrzeżone dla pada master
                 return
@@ -387,6 +390,7 @@ class Console:
         if audio := cfg.audio_tv if on else cfg.audio_pc:
             _step("audio", _audio, audio)
         print(f"Console: {'ON' if on else 'OFF'}" + (f" ({why})" if why else ""))
+        ev.info((_("Tryb konsoli włączony") if on else _("Tryb konsoli wyłączony")) + (f" ({why})" if why else ""))
         if toast:
             _step("toast", _toast, _("Tryb konsoli włączony") if on else _("Tryb konsoli wyłączony"), why)
 
