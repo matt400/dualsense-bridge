@@ -9,6 +9,7 @@ pad, fizyczne przyciski (przed remapowaniem). PS trzymane = skróty PS, nawigacj
   ✕                  kliknij (przycisk, pole wyboru), rozwiń listę, wybierz część pada
   ○                  wstecz: zwiń listę, zamknij Ustawienia, wyjdź z pełnego ekranu
   L1 / R1            poprzedni / następny pad (karta po lewej)
+W widoku Test testowany pad nie steruje oknem (jego przyciski są testowane); przytrzymane ○ wychodzi z testu.
 Przytrzymany kierunek powtarza krok (po REPEAT_DELAY_S co REPEAT_EVERY_S).
 """
 from PySide6.QtCore import QEvent, Qt
@@ -67,7 +68,10 @@ class PadNav:
 
     def _pressed(self):
         out = set()
+        testing = getattr(self.win, "view", None) == "test"
         for i in range(C.NUM_PADS):
+            if testing and i == self.win.ed.slot:
+                continue               # widok Test: testowany pad nie steruje oknem (wyjście: przytrzymane ○)
             if S.alive[i]:
                 raw = S.states[i]["raw"]
                 out |= B.pressed_inputs(*raw)

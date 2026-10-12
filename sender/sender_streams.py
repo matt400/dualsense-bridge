@@ -7,10 +7,11 @@ import time
 
 from evdev import ecodes as ec
 
+import sender_calib as calib
 import sender_state as state
 import sender_wol as wol
 from sender_config import AUTOBIAS_MAX_STEP, BURST_DELAYS, C, IDLE_TP, TOUCH_H, TOUCH_W, PAD_ABS
-from proto import KEY_BIT, LAT_NONE, clamp
+from proto import CAL_RUNNING, KEY_BIT, LAT_NONE, clamp
 
 
 def _eviocgmtslots(nslots):
@@ -149,19 +150,28 @@ async def heartbeat():
         await asyncio.sleep(C.HEARTBEAT_S)
 
 
+def _start_cal(c, now):
+    """Kalibracja przy starcie: pad z zapisaną kalibracją (z okna receivera) używa jej od razu, bez czekania."""
+    st = calib.stored(c.key)
+    if st is not None:
+        c.gyro_bias = list(st["bias"])
+        print(f"Controller {c.idx}: gyro bias {[round(b) for b in c.gyro_bias]} (saved calibration)")
+        return None
+    if C.CAL_S <= 0:
+        return None
+    print(f"Controller {c.idx}: calibrating gyro for {C.CAL_S}s - keep the pad still")
+    return calib.GyroCal(now, C.CAL_S, user=False)
+
+
 async def stream_motion(c):
     v = [0] * 6
     last = 0.0
-    bias = [0.0, 0.0, 0.0]
-    cal_end = time.monotonic() + C.CAL_S if C.CAL_S > 0 else 0.0
-    samples = []
+    cal = _start_cal(c, time.monotonic())
     win_t0, win_n, win_sum = time.monotonic(), 0, [0, 0, 0]
     win_min, win_max = [1 << 60] * 3, [-(1 << 60)] * 3
     msum, mn = [0] * 6, 0       # suma próbek od ostatniego pakietu: wysyłamy ŚREDNIĄ, nie przypadkową ostatnią próbkę
     meter = c.meters.setdefault("motion", RateMeter()) if C.STATS else None
     bt = BtDelay()
-    if cal_end:
-        print(f"Controller {c.idx}: calibrating gyro for {C.CAL_S}s - keep the pad still")
     dropping = False
     async for e in c.motion_dev.async_read_loop():
         if e.type == ec.EV_SYN and e.code == ec.SYN_DROPPED:
@@ -185,20 +195,15 @@ async def stream_motion(c):
             c.reports["motion"] += 1
             if meter is not None:
                 meter.tick(now)
-            if cal_end:
-                if now < cal_end:
-                    samples.append(v[3:6])
-                else:
-                    cal_end = 0.0
-                    if len(samples) >= 20:
-                        axes = list(zip(*samples, strict=True))
-                        if all(max(a) - min(a) <= C.CAL_MAX_RANGE for a in axes):
-                            bias = [sum(a) / len(a) for a in axes]
-                            print(f"Controller {c.idx}: gyro bias {[round(b) for b in bias]}")
-                        else:
-                            print(f"Controller {c.idx}: calibration skipped (pad was moving)")
-                    samples = []
-            if C.AUTOBIAS and not cal_end:
+            if c.cal_request:                 # kalibracja z okna receivera (pad leży nieruchomo)
+                cal = calib.GyroCal(now, c.cal_request, user=True)
+                c.cal_request = 0
+                calib.report(c, CAL_RUNNING)
+            if cal is not None and (r := cal.feed(now, v[3:6])) is not None:
+                (calib.finish if cal.user else calib.startup_done)(c, r)
+                cal = None
+            bias = c.gyro_bias
+            if C.AUTOBIAS and cal is None:
                 for k in range(3):
                     x = v[3 + k]
                     win_sum[k] += x
@@ -215,8 +220,8 @@ async def stream_motion(c):
                                 bias[k] += (target - bias[k]) * 0.5
                     win_t0, win_n, win_sum = now, 0, [0, 0, 0]
                     win_min, win_max = [1 << 60] * 3, [-(1 << 60)] * 3
-            if cal_end:
-                continue
+            if cal is not None and not cal.user:
+                continue                      # kalibracja startowa: ruchu jeszcze nie wysyłamy
             for k in range(6):
                 msum[k] += v[k]
             mn += 1

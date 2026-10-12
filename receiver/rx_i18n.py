@@ -603,4 +603,76 @@ EN = {
         "Invalid MAC address - enter e.g. aa:bb:cc:dd:ee:ff or leave it empty.",
     "Zły adres broadcast - wpisz np. 192.168.1.255 albo zostaw puste.":
         "Invalid broadcast address - enter e.g. 192.168.1.255 or leave it empty.",
+    # ---------- widok Test ----------
+    "Test": "Test",
+    "Wynik = to, co dostaje gra po remapowaniu. Fizycznie = to, co robi sam pad. Test = przyciski, spusty, gałki, "
+    "touchpad i ruch na żywo, dryf gałek, kalibracja żyroskopu.":
+        "Result = what the game gets after remapping. Physical = what the pad itself does. Test = buttons, triggers, "
+        "sticks, touchpad and motion live, stick drift, gyro calibration.",
+    "Naciskaj przyciski, ruszaj gałkami, dotykaj touchpada - wszystko widać na żywo.":
+        "Press buttons, move the sticks, touch the touchpad - everything shows live.",
+    "Przytrzymaj ○, aby wyjść z testu.": "Hold ○ to leave the test.",
+    "Blokuj wyjście do gry": "Block output to games",
+    "Blokada wyjścia do gry": "Output to games blocked",
+    "Na czas testu gra dostaje puszczone przyciski i gałki w środku tego pada; skróty pada, mysz touchpada i tryb "
+    "konsoli też nie reagują. Działa tylko przy aktywnym oknie - po przejściu do gry albo wyjściu z testu pad od razu "
+    "do niej wraca.":
+        "During the test, games get this pad with released buttons and centred sticks; pad shortcuts, touchpad mouse "
+        "and console mode don't react either. Only while this window is active - switching to the game or leaving the "
+        "test gives the pad back right away.",
+    "RUCH": "MOTION",
+    "Ruch pada": "Pad motion",
+    "Akcelerometr": "Accelerometer",
+    "GAŁKI - DRYF": "STICKS - DRIFT",
+    "Dryf gałek": "Stick drift",
+    "Skala pierwiastkowa: małe odchyłki są powiększone. Kropkowane okręgi: 5% i 25% wychylenia; niebieski: strefa "
+    "martwa z korekcji dryfu; żółty: szczyt ostatniego pomiaru.":
+        "Square-root scale: small deviations are magnified. Dotted circles: 5% and 25% deflection; blue: deadzone from "
+        "the drift correction; yellow: peak of the last measurement.",
+    "Puść gałki i odłóż pad - pomiar trwa {s} s.": "Let go of the sticks and put the pad down - the measurement takes {s} s.",
+    "Zmierz dryf": "Measure drift",
+    "Mierzę…": "Measuring…",
+    "Zastosuj": "Apply",
+    "Zapisuje proponowaną strefę martwą jako korekcję dryfu tego pada - działa od razu we wszystkich jego profilach "
+    "(także profilach gier).":
+        "Saves the proposed deadzone as this pad's drift correction - it works right away in all of its profiles "
+        "(game profiles too).",
+    "Zastosowano: L {l}, R {r}": "Applied: L {l}, R {r}",
+    "Korekcja dryfu usunięta": "Drift correction removed",
+    "Usuwa korekcję dryfu tego pada": "Removes this pad's drift correction",
+    "Korekcja dryfu: L {l} · R {r}": "Drift correction: L {l} · R {r}",
+    "Bez korekcji dryfu - strefa martwa tylko z profilu.": "No drift correction - deadzone from the profile only.",
+    "Brak próbek - pad niepodłączony?": "No samples - is the pad disconnected?",
+    "Gałka się ruszała - puść obie gałki i zmierz jeszcze raz.": "A stick was moving - let go of both sticks and measure again.",
+    "Lewa": "Left",
+    "Prawa": "Right",
+    "{s}: dryf {peak} → strefa martwa {dz}": "{s}: drift {peak} → deadzone {dz}",
+    "Nadajnik w starszej wersji przycina odchyłki do ~2% - kliknij Aktualizuj, żeby mierzyć dokładnie.":
+        "An older sender trims deviations up to ~2% - click Update to measure precisely.",
+    "ŻYROSKOP - KALIBRACJA": "GYRO - CALIBRATION",
+    "Kalibracja żyroskopu": "Gyro calibration",
+    "Połóż pad na płaskiej, stabilnej powierzchni i nie dotykaj go przez {s} s.":
+        "Put the pad on a flat, steady surface and don't touch it for {s} s.",
+    "Kalibruj żyroskop": "Calibrate gyro",
+    "Nadajnik liczy offset żyroskopu i zapisuje go na telefonie dla tego pada - po restarcie nie trzeba już kalibrować "
+    "przy starcie.":
+        "The sender measures the gyro offset and saves it on the phone for this pad - after a restart there's no need "
+        "to calibrate at startup any more.",
+    "Kalibruję - nie ruszaj pada…": "Calibrating - don't move the pad…",
+    "Skalibrowano i zapisano na telefonie.": "Calibrated and saved on the phone.",
+    "Skalibrowano (pad bez MAC - bez zapisu, do restartu nadajnika).":
+        "Calibrated (pad without a MAC - not saved, until the sender restarts).",
+    "Pad się ruszał - połóż go nieruchomo i spróbuj jeszcze raz.": "The pad was moving - put it down still and try again.",
+    "Brak danych z czujnika ruchu pada.": "No data from the pad's motion sensor.",
+    "Brak odpowiedzi nadajnika.": "No reply from the sender.",
+    "Pad niepodłączony.": "Pad not connected.",
+    "Kalibracja z okna wymaga nowszego nadajnika - kliknij Aktualizuj.":
+        "Calibrating from the window needs a newer sender - click Update.",
+    "Sprawdzam stan kalibracji…": "Checking calibration…",
+    "Zapisana kalibracja z {date}.": "Saved calibration from {date}.",
+    "Brak zapisanej kalibracji - nadajnik kalibruje pad przy starcie (pad musi wtedy leżeć).":
+        "No saved calibration - the sender calibrates the pad at startup (it must lie still then).",
+    "Offset teraz [°/s]: {v}": "Current offset [°/s]: {v}",
+    "{pad}: żyroskop skalibrowany": "{pad}: gyro calibrated",
+    "{pad}: kalibracja żyroskopu przerwana - pad się ruszał": "{pad}: gyro calibration aborted - the pad was moving",
 }

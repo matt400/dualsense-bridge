@@ -3,6 +3,7 @@
 Kształty pochodzą z rysunku SVG edytora w przeglądarce (ten sam układ 800x520); rysowane bezpośrednio, więc
 odświeżenie 30 razy na sekundę kosztuje niewiele, a trafianie w części jest dokładne (kontur, nie prostokąt).
 Klawiatura / pad w trybie TV (rx_qt_tv): ← / → przechodzą po częściach, Enter / Spacja wybiera część.
+Tryb testu (set_test): bez plakietek profilu i bez klikania; wartości spustów nad nimi, palce i klik na touchpadzie.
 """
 from rx_i18n import _
 import re
@@ -28,6 +29,9 @@ TRIG_FX = QColor("#a78bfa")                           # plakietka oporu spustu (
 NAV_ORDER = ("l2", "l1", "dpad_up", "dpad_left", "dpad_right", "dpad_down", "share", "left_stick", "ps", "right_stick",
              "options", "triangle", "square", "circle", "cross", "r1", "r2")
 STICK_TRAVEL = 14      # o tyle (jednostek rysunku) przesuwa się gałka przy pełnym wychyleniu
+TOUCH_RECT = QRectF(300, 112, 200, 96)                # touchpad na rysunku; dotyk z nadajnika w skali DS4 1920x943
+TOUCH_W, TOUCH_H = 1919, 942
+FINGER = (QColor("#ffb547"), QColor("#5bc0ff"))       # pierwszy / drugi palec
 
 _TOKENS = re.compile(r"[A-Za-z]|-?\d+(?:\.\d+)?")
 _ARGS = {"M": 2, "L": 2, "H": 1, "V": 1, "C": 6, "Q": 4}
@@ -160,6 +164,8 @@ class PadView(QWidget):
         self.hover = None
         self.live = {"on": frozenset(), "ls": (128, 128), "rs": (128, 128), "l2": 0, "r2": 0}
         self.badges = []
+        self.test = False                                 # widok Test: bez plakietek i klikania, dotyk na rysunku
+        self.touch_live = ((), 0)                         # (palce (x, y) w skali DS4, klik touchpada 0/1/2)
         self._tf = self._inv = QTransform()
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.TabFocus)
@@ -170,6 +176,20 @@ class PadView(QWidget):
     def set_selected(self, name):
         if name != self.selected:
             self.selected = name
+            self.update()
+
+    def set_test(self, on):
+        if on != self.test:
+            self.test = on
+            self.selected = self.hover = None
+            self.setCursor(Qt.CursorShape.ArrowCursor)
+            self.update()
+
+    def set_touch(self, touch, click):
+        """Dotyk na żywo (widok Test): palce ((aktywny, id, x, y), ...) i klik touchpada."""
+        live = (tuple((f[2], f[3]) for f in touch if f[0]), int(click))
+        if live != self.touch_live:
+            self.touch_live = live
             self.update()
 
     def set_profile(self, prof):
@@ -232,7 +252,8 @@ class PadView(QWidget):
         name = self._hit(e.position())
         if name != self.hover:
             self.hover = name
-            self.setCursor(Qt.CursorShape.PointingHandCursor if name else Qt.CursorShape.ArrowCursor)
+            pointer = name and not self.test
+            self.setCursor(Qt.CursorShape.PointingHandCursor if pointer else Qt.CursorShape.ArrowCursor)
             self.setToolTip(self.by_name[name].tip if name else "")
             self.update()
 
@@ -242,7 +263,7 @@ class PadView(QWidget):
             self.update()
 
     def mousePressEvent(self, e):
-        if e.button() == Qt.MouseButton.LeftButton:
+        if e.button() == Qt.MouseButton.LeftButton and not self.test:
             name = self._hit(e.position())
             if name:
                 self.part_clicked.emit(name)
@@ -257,7 +278,7 @@ class PadView(QWidget):
             self.hover = NAV_ORDER[i % len(NAV_ORDER)]
             self.setToolTip(self.by_name[self.hover].tip)
             self.update()
-        elif k in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space) and self.hover:
+        elif k in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space) and self.hover and not self.test:
             self.part_clicked.emit(self.hover)
         else:
             super().keyPressEvent(e)
@@ -294,8 +315,23 @@ class PadView(QWidget):
             self._part(p, part)
         for part in self.parts[-2:]:
             self._stick(p, part)
+        if self.test:
+            self._test_overlay(p)
+            return
         for cx, cy, text, bad in self.badges:
             self._badge(p, cx, cy, text, bad)
+
+    def _test_overlay(self, p):
+        """Widok Test: wartość spustów (0-255) nad nimi, palce na touchpadzie."""
+        for name in B.TRIGGERS:
+            r = self.by_name[name].path.boundingRect()
+            self._badge(p, r.center().x(), r.top() - 10, str(self.live[name]), False)
+        r = TOUCH_RECT
+        for n, (x, y) in enumerate(self.touch_live[0][:2]):
+            pt = QPointF(r.left() + x / TOUCH_W * r.width(), r.top() + y / TOUCH_H * r.height())
+            p.setPen(QPen(WHITE, 1.5))
+            p.setBrush(FINGER[n])
+            p.drawEllipse(pt, 6.5, 6.5)
 
     def _stage(self, p):
         r = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
@@ -308,13 +344,13 @@ class PadView(QWidget):
 
     def _decor(self, p):
         """Elementy bez remapowania: touchpad z paskami świetlnymi, mikrofon, podstawa D-pada."""
-        edge = QPen(QColor("#434a5c"), 2)
-        p.setPen(edge)
-        p.setBrush(QColor("#1a1d25"))
+        click = self.test and self.touch_live[1]
+        p.setPen(QPen(ACCENT if click else QColor("#434a5c"), 3 if click else 2))
+        p.setBrush(QColor("#1b2b4d") if click else QColor("#1a1d25"))
         p.drawPath(self.touch)
         p.setFont(self._font(12, QFont.Weight.Medium))
-        p.setPen(QColor("#5d6478"))
-        self._text(p, "TOUCHPAD", 400, 165)
+        p.setPen(WHITE if click else QColor("#5d6478"))
+        self._text(p, "TOUCHPAD" + (" ×2" if click == 2 else ""), 400, 165)
         bar = QPen(QColor(61, 139, 255, 217), 4)
         bar.setCapStyle(Qt.PenCapStyle.RoundCap)
         p.setPen(bar)

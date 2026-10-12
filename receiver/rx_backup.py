@@ -1,6 +1,6 @@
 """Receiver: kopie ustawień użytkownika przy aktualizacji (receiver/backups/), z przywracaniem w oknie.
 
-Pliki ustawień (settings.json, console.json, remap.json) są w .gitignore, więc git pull ich nie rusza - ale nowa wersja
+Pliki ustawień (settings.json, console.json, remap.json, padcal.json) są w .gitignore, więc git pull ich nie rusza - ale nowa wersja
 kodu przy starcie może je poprawić (migracja, walidacja). Kopia powstaje po udanym pobraniu nowego kodu, zanim
 receiver uruchomi się od nowa, czyli dokładnie w wersji zapisanej przez stary kod. Trzymamy KEEP ostatnich.
 
@@ -33,8 +33,9 @@ def files():
     (update.bat: rx_update bez startu receivera) - domyślne obok skryptu."""
     def path(attr, name):
         return getattr(C, attr, None) or os.path.join(HERE, name)
+    remap = path("REMAP_PATH", "remap.json")
     return {"settings.json": path("SETTINGS_PATH", "settings.json"), "console.json": path("CONSOLE_PATH", "console.json"),
-            "remap.json": path("REMAP_PATH", "remap.json")}
+            "remap.json": remap, "padcal.json": os.path.join(os.path.dirname(remap), "padcal.json")}
 
 
 def backup_dir():

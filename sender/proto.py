@@ -12,7 +12,9 @@ opcjonalnie 8 B HMAC-SHA256 (gdy ustawiony klucz).
   6 feedback (PC -> nadajnik) "5B" mała_wibracja duża_wibracja R G B
   8 bye     ""           nadajnik: pad rozłączony -> odłącz wirtualny DS4
   9 ident   "17s"        nadajnik: stały identyfikator pada (MAC) - klucz profilu remapowania
- 10 cmd     "BB"         PC -> nadajnik: polecenie, argument (CMD_POWER_OFF = wyłącz pada)
+ 10 cmd     "BB"         PC -> nadajnik: polecenie, argument (CMD_POWER_OFF = wyłącz pada; v9+: CMD_GYRO_CAL = kalibracja
+                         żyroskopu leżącego pada przez arg sekund, 0 = tylko stan; CMD_RAW_STICKS = gałki bez strefy
+                         martwej nadajnika przez arg sekund, 0 = koniec - pomiar dryfu w oknie)
  11 info    "HHH"        nadajnik -> PC co 1 s: ping x10 [ms] (0xFFFF = brak), Hz raportów pada, Hz ruchu
  12 version "BBB"        nadajnik -> PC razem z ident: wersja nadajnika, sposoby wibracji (bit 1 = sterownik evdev FF,
                          bit 2 = raport HID przez hidraw; 0 = brak), powód braku (WHY_*)
@@ -39,6 +41,9 @@ nieznaną długość, więc wariant idzie tylko do strony, o której wiadomo, ż
                          przy wyłączonym PC nie ma tego skąd wziąć; starszy nadajnik odrzuca długość
   build2 (typ 13) "7sIB6s4s" nadajnik -> PC: build + MAC komputera i broadcast, których użyje Wake-on-LAN (zera = nie zna);
                          tylko do receivera, od którego przyszedł scfg (starszy odrzuciłby długość i nie znałby wersji)
+  calres (typ 11) "BB3i3iI" nadajnik -> PC: odpowiedź na CMD_GYRO_CAL - stan CAL_*, flagi CALF_*, zapisany bias gyro (x, y, z
+                         w jednostkach evdev), bias używany teraz (z kalibracji przy starcie / autobias), czas zapisu (unix);
+                         tylko w odpowiedzi na polecenie (receiver v9+ je wysyła, więc zna ten wariant)
   trig2  (typ 15) "12B"  PC -> nadajnik: efekty spustów - L2: tryb TFX_*, a, b, c; R2: tryb, a, b, c; wibracja z gry na
                          spusty: flagi RFX_*, siła [%], częstotliwość [Hz], 0. Parametry trybu:
                            TFX_RES   a = początek 0-9 (strefa = 10 % skoku), b = siła 1-8
@@ -65,11 +70,12 @@ HDR0 = VER << 4
 
 (T_EVENT, T_STATE, T_TOUCH, T_CLICK, T_MOUSE, T_PING, T_FB, T_PONG, T_BYE, T_IDENT, T_CMD, T_INFO, T_VERSION,
  T_BUILD, T_UPDMSG, T_TRIG) = range(16)
-T_STATE2, T_PONG2, T_SCFG, T_BUILD2, T_TRIG2 = 0x101, 0x107, 0x10A, 0x10D, 0x10F   # warianty dłuższe: tylko w programie
-WIRE = {T_STATE2: T_STATE, T_PONG2: T_PONG, T_SCFG: T_CMD, T_BUILD2: T_BUILD, T_TRIG2: T_TRIG}
-SENDER_VERSION = 8
+T_STATE2, T_PONG2, T_SCFG, T_CALRES, T_BUILD2, T_TRIG2 = 0x101, 0x107, 0x10A, 0x10B, 0x10D, 0x10F   # warianty dłuższe
+WIRE = {T_STATE2: T_STATE, T_PONG2: T_PONG, T_SCFG: T_CMD, T_CALRES: T_INFO, T_BUILD2: T_BUILD, T_TRIG2: T_TRIG}
+SENDER_VERSION = 9
 RUMBLE_EVDEV, RUMBLE_HIDRAW, CAP_TRIGGERS = 1, 2, 4     # bity pakietu version (CAP_TRIGGERS: opór spustów działa)
 CAP_TRIG_FX = 8                                         # bit pakietu version: nadajnik zna trig2 (klik, wibracja, z gry)
+CAP_CALIB = 16                                          # bit pakietu version: CMD_GYRO_CAL i CMD_RAW_STICKS (v9+)
 LAT_NONE = 0xFFFF                                       # pole opóźnienia w state2: brak pomiaru (powtórka, brak danych)
 TRIG_START_MAX, TRIG_FORCE_MAX = 9, 8                   # opór spustu: strefa początku 0-9 (co 10 %), siła 1-8
 TFX_OFF, TFX_RES, TFX_CLICK, TFX_VIB = range(4)         # tryb efektu spustu (pakiet trig2)
@@ -82,7 +88,11 @@ TRIG2_OFF = (TFX_OFF, 0, 0, 0) * 2 + (0, 0, 0, 0)       # trig2: wszystko wyłą
 # dlaczego nie ma wibracji przez raport HID (pakiet version): ok, rumble=off, brak uprawnień, jądro bez hidraw,
 # nie znaleziono hidraw pada, inny błąd otwarcia
 WHY_OK, WHY_OFF, WHY_ACCESS, WHY_NO_HIDRAW, WHY_NOT_FOUND, WHY_OPEN = range(6)
-CMD_POWER_OFF, CMD_UPDATE = 1, 2
+CMD_POWER_OFF, CMD_UPDATE, CMD_GYRO_CAL, CMD_RAW_STICKS = 1, 2, 3, 4
+CAL_MAX_S, RAW_STICKS_MAX_S = 10, 30                    # najdłuższa kalibracja gyro / gałki bez strefy martwej [s]
+# stan w pakiecie calres: skalibrowano, pad się ruszał, za mało próbek (brak czujnika ruchu), sam stan (arg 0), trwa
+CAL_OK, CAL_MOVED, CAL_FEW, CAL_STATUS, CAL_RUNNING = range(5)
+CALF_STORED = 1                                         # flaga calres: nadajnik ma zapisany bias tego pada
 # stan aktualizacji nadajnika (pakiet build): brak, trwa, bez zmian, zaktualizowano (restart), błędy
 UPD_NONE, UPD_RUNNING, UPD_NO_CHANGE, UPD_DONE, UPD_NOT_GIT, UPD_NO_GIT, UPD_FAILED = range(7)
 RTT_NONE = 0xFFFF
@@ -113,13 +123,14 @@ BODY = {
     T_STATE2: struct.Struct("!6BbbHBB6iIHH"),   # stan + czas wysłania (zegar PC), telefon, Bluetooth [µs]
     T_PONG2: struct.Struct("!QQ"),              # echo pingu, czas PC [µs]
     T_SCFG: struct.Struct("!B6s4sBH"),          # flagi SCFG_*, MAC PC, broadcast, bit przycisku kombinacji, przytrzymanie ms
+    T_CALRES: struct.Struct("!BB3i3iI"),        # stan CAL_*, flagi CALF_*, zapisany bias xyz, bieżący bias xyz, czas zapisu
     T_BUILD2: struct.Struct("!7sIB6s4s"),       # build + MAC PC i broadcast, których użyje Wake-on-LAN
     T_TRIG2: struct.Struct("!12B"),             # efekty L2, R2 (tryb, a, b, c) + wibracja z gry (flagi, %, Hz, 0)
 }
 STATE_FIELDS = 17                               # pola stanu w state / state2 (bez pomiaru opóźnienia)
 BODY_LEN = {t: s.size for t, s in BODY.items()}
 assert BODY_LEN == {0: 62, 1: 36, 2: 12, 3: 1, 4: 5, 5: 8, 6: 5, 7: 8, 8: 0, 9: 17, 10: 2, 11: 6, 12: 3, 13: 12, 14: 120,
-                    15: 4, T_STATE2: 44, T_PONG2: 16, T_SCFG: 14, T_BUILD2: 22, T_TRIG2: 12}, BODY_LEN
+                    15: 4, T_STATE2: 44, T_PONG2: 16, T_SCFG: 14, T_CALRES: 30, T_BUILD2: 22, T_TRIG2: 12}, BODY_LEN
 # (typ w nagłówku, długość treści) -> typ w programie
 BY_SIZE = {(WIRE.get(t, t), s.size): t for t, s in BODY.items()}
 

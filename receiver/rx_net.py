@@ -11,18 +11,21 @@ import rx_master as master
 import rx_mouse as mouse
 import rx_settings
 import rx_state as S
-from proto import (BODY, LAT_NONE, PAD_KEYS, RTT_NONE, SCFG_EVENTS, SCFG_WOL, STATE_FIELDS, WIRE, Codec, T_BYE, T_CLICK,
-                   T_CMD, T_EVENT, T_FB, T_IDENT, T_INFO, T_MOUSE, T_PING, T_PONG, T_PONG2, T_SCFG, T_VERSION, T_STATE,
-                   T_STATE2, T_TOUCH, T_TRIG, T_TRIG2, TRIG2_OFF, T_BUILD, T_BUILD2, T_UPDMSG, clamp, cstr, mac_bytes, mac_text)
-from rx_buttons import BUTTON_CODES, MASK_ALL, PS_BIT, TRIG_ON, profile_size
+from proto import (BODY, CAL_MOVED, CAL_OK, LAT_NONE, PAD_KEYS, RTT_NONE, SCFG_EVENTS, SCFG_WOL, STATE_FIELDS, WIRE, Codec,
+                   T_BYE, T_CALRES, T_CLICK, T_CMD, T_EVENT, T_FB, T_IDENT, T_INFO, T_MOUSE, T_PING, T_PONG, T_PONG2, T_SCFG,
+                   T_VERSION, T_STATE, T_STATE2, T_TOUCH, T_TRIG, T_TRIG2, TRIG2_OFF, T_BUILD, T_BUILD2, T_UPDMSG, clamp, cstr,
+                   mac_bytes, mac_text)
+from rx_buttons import BUTTON_CODES, MASK_ALL, PS_BIT, TRIG_ON
 
 from rx_config import C
 from rx_i18n import _
 from rx_winapi import bind_udp, boost_thread
 
-RX_TYPES = {T_STATE, T_STATE2, T_TOUCH, T_CLICK, T_MOUSE, T_PING, T_BYE, T_IDENT, T_INFO, T_VERSION}   # typy, które receiver przyjmuje
+RX_TYPES = {T_STATE, T_STATE2, T_TOUCH, T_CLICK, T_MOUSE, T_PING, T_BYE, T_IDENT, T_INFO, T_VERSION,   # typy, które
+            T_CALRES}                                                                                  # receiver przyjmuje
 ST_TOUCH, ST_MOUSE, ST_INFO = BODY[T_TOUCH], BODY[T_MOUSE], BODY[T_INFO]
 STATES = (T_STATE, T_STATE2)
+MAX_PROBE = 20_000              # pomiar dryfu: bezpiecznik długości listy próbek
 MAX_NET_US = 1_000_000          # sieć dłużej niż 1 s = zły zegar (np. zaraz po restarcie), nie pomiar
 SCFG_S = 5.0                    # co tyle ustawienia Wake-on-LAN / zdarzeń do nadajnika (po jego restarcie też je ma)
 
@@ -159,6 +162,7 @@ def clear_slot(i, forget_id=False):
     if forget_id:                      # pad fizycznie odszedł - następny w tym slocie przyśle swój ident
         rx_latency.reset_buttons(i)    # ostatnie naciśnięcia (bez limitu czasu) należały do tamtego pada
         S.sender_info[i] = None
+        S.gyro_cal[i] = None           # kalibracja żyroskopu należała do tamtego pada
         with S.profile_lock:
             S.pad_id[i] = None
             S.override[i] = None
@@ -218,23 +222,28 @@ def handle(t, i, data, arr=0):
         hx, hy = clamp(v[6], -1, 1), clamp(v[7], -1, 1)
         dig = (mask, hx, hy, lt >> 5, rt >> 5)   # spusty z dokładnością 1/8 (histereza spustu w trybie konsoli)
         btn = (mask, hx, hy, lt >= TRIG_ON, rt >= TRIG_ON)
-        pressed = lat is not None and _pressed[i] is not None and btn != _pressed[i]   # pierwszy stan po połączeniu
-        _pressed[i] = btn                                                              # to nie naciśnięcie
+        blocked = S.states[i]["blocked"]    # widok Test: gra dostaje neutralny stan, skróty i master nie działają
+        pressed = (lat is not None and not blocked and _pressed[i] is not None   # pierwszy stan po połączeniu
+                   and btn != _pressed[i])                                       # to nie naciśnięcie
+        _pressed[i] = btn
         if dig != _digital[i]:              # skróty / master / tryb konsoli tylko przy zmianie przycisków,
             _digital[i] = dig               # a nie przy każdej próbce gyro i gałek (250 Hz)
-            hotkeys.on_state(i, mask, hx, hy)          # najpierw skróty PS (nowe naciśnięcie PS), potem master,
-            master.on_state(i, mask, hx, hy, lt, rt)   # który może oznaczyć to PS jako zużyte w kombinacji
-            rx_console.on_state(i, mask, hx, hy, lt, rt)
+            if not blocked:
+                hotkeys.on_state(i, mask, hx, hy)          # najpierw skróty PS (nowe naciśnięcie PS), potem master,
+                master.on_state(i, mask, hx, hy, lt, rt)   # który może oznaczyć to PS jako zużyte w kombinacji
+                rx_console.on_state(i, mask, hx, hy, lt, rt)
         with S.lock:
             s = S.states[i]
             s["raw"] = (mask, hx, hy, lt, rt)
             s["fwd"] = hotkeys.forward(i, mask, hx, hy)
             s["rawst"] = (lx, ly, rx, ry)
+            if (p := S.probe[i]) is not None and len(p) < MAX_PROBE:   # pomiar dryfu (rx_drift)
+                p.append(s["rawst"])
             s["acc"], s["gyro"] = v[11:14], v[14:17]      # przed recompute - gyro wpływa na prawą gałkę / mysz
             S.recompute(s, S.remap_maps[i])
             s["batt_dsu"], s["batt_ds4"] = bd, b4
             s["ts"] = now_us         # czas PRZYJŚCIA próbki - dla DSU lepszy niż czas budowania pakietu (jitter)
-            if s["lat"] is None:     # pomiar najstarszej zmiany czekającej na raport (rx_ds4 kończy go w ViGEm)
+            if s["lat"] is None and not blocked:   # pomiar najstarszej zmiany czekającej na raport (rx_ds4 - ViGEm)
                 s["lat"] = lat
             if pressed and s["blat"] is None:   # osobno: najstarsza czekająca zmiana przycisku / spustu
                 s["blat"] = lat
@@ -261,6 +270,10 @@ def handle(t, i, data, arr=0):
         if down == S.tp_down[i]:
             return
         S.tp_down[i] = down
+        S.states[i]["rtp"] = down          # widok Test: klik widać także w trybie myszy i przy blokadzie
+        if S.states[i]["blocked"]:
+            S.swallow[i] = False
+            return
         if down:
             rx_console.on_touch_click(i)
         if down and S.states[i]["raw"][0] & PS_BIT:   # PS + klik touchpada = zmiana trybu (na surowym PS)
@@ -283,7 +296,7 @@ def handle(t, i, data, arr=0):
                 S.states[i]["ver"] += 1
             S.notify(i)
     elif t == T_MOUSE:
-        if S.mouse_mode[i]:
+        if S.mouse_mode[i] and not S.states[i]["blocked"]:
             dx, dy, fl = ST_MOUSE.unpack_from(data, 4)
             mouse.mouse_rel(i, dx, dy, fl)
     elif t == T_IDENT:
@@ -295,7 +308,7 @@ def handle(t, i, data, arr=0):
                 S.reload_profile(i)
             rx_console.pad_connected(i)   # nowy pad w slocie - jeśli to master, auto-ON trybu konsoli
             master.mouse_follows_master()  # touchpad jako mysz: pad master (mógł właśnie dojść albo zmienić slot)
-            n = profile_size(S.remap_maps[i])
+            n = S.profile_changes(i)
             print(f"Controller {i}: id {pid}, profile {S.profile_label(S.active[i])}"
                   + (f" ({n} changes)" if n else ""))
             ev.info(_("{pad}: pad {id}").format(pad=ev.pad_name(i), id=pid))
@@ -307,6 +320,23 @@ def handle(t, i, data, arr=0):
     elif t == T_INFO:
         rtt, pad_hz, motion_hz = ST_INFO.unpack_from(data, 4)
         S.info[i] = (None if rtt == RTT_NONE else rtt / 10, pad_hz, motion_hz, time.monotonic())
+    elif t == T_CALRES:
+        on_calres(i, data)
+
+
+def on_calres(i, data):
+    """Odpowiedź nadajnika na kalibrację żyroskopu -> S.gyro_cal (okno); wynik kalibracji także do dziennika."""
+    v = BODY[T_CALRES].unpack_from(data, 4)
+    prev = S.gyro_cal[i]
+    S.gyro_cal[i] = (v[0], v[1], v[2:5], v[5:8], v[8], time.monotonic())
+    if prev is not None and prev[:5] == S.gyro_cal[i][:5]:
+        return                          # powtórka (polecenie idzie 3x - odpowiedź też)
+    if v[0] == CAL_OK:
+        print(f"Controller {i}: gyro calibrated, bias {list(v[2:5])}")
+        ev.info(_("{pad}: żyroskop skalibrowany").format(pad=ev.pad_name(i)))
+    elif v[0] == CAL_MOVED:
+        print(f"Controller {i}: gyro calibration rejected - pad was moving")
+        ev.warn(_("{pad}: kalibracja żyroskopu przerwana - pad się ruszał").format(pad=ev.pad_name(i)))
 
 
 def on_build(data, now, t=T_BUILD):

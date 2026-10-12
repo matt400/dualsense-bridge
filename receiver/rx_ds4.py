@@ -39,7 +39,7 @@ class Out:
         """Najświeższy stan slotu do ViGEm (wołać pod self.lock); kończy pomiar opóźnienia zmiany, którą niesie."""
         with S.lock:
             s = S.states[idx]
-            build_report(s, self.counter, S.mouse_mode[idx], self.ba)
+            build_report(S.output(idx), self.counter, S.mouse_mode[idx], self.ba)    # widok Test: neutralny
             lat, s["lat"] = s["lat"], None
             blat, s["blat"] = s["blat"], None
         self.counter += 1

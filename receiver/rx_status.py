@@ -111,7 +111,7 @@ def rumble_status(i):
     if info is None:
         return (_("wibracja: stary nadajnik"), "warn",
                 _("Skopiuj nowe pliki sender/ na telefon - starszy nadajnik nie wibruje bez obsługi wibracji w jądrze."))
-    bits, why = info[1], info[2]
+    bits, why = info[1] & (RUMBLE_EVDEV | RUMBLE_HIDRAW), info[2]     # reszta bitów to inne możliwości nadajnika
     if not bits:
         text, tip = {
             WHY_OFF: (_("wibracja: wyłączona"), _("W sender.toml ustaw rumble = \"auto\".")),
