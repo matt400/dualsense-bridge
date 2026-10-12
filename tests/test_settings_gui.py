@@ -37,6 +37,31 @@ card0.crown.click(); pump()
 assert rx_settings.cur.master.pad == "", "drugi klik na koronie mastera - bez mastera"
 ok("korona: klik = master, klik na masterze = brak mastera, zapis do pliku")
 
+# ---------- informacja o aktualizacji: pasek z opisem pod nagłówkiem, nie sam kolor ----------
+import rx_update
+import time as _t
+assert [rx_qt.n_changes(n) for n in (1, 2, 5, 12, 22, 25)] == ["1 zmiana", "2 zmiany", "5 zmian", "12 zmian", "22 zmiany",
+                                                               "25 zmian"]
+win.slow_tick(); pump()
+assert win.banner.isHidden(), "nic do zgłoszenia - bez paska"
+rx_update.available = rx_update.Available(3, "Nowy tryb konsoli", "abc1234")
+win.slow_tick(); pump()
+assert win.banner.isVisible() and "Dostępna aktualizacja: 3 zmiany  -  Nowy tryb konsoli" in win.banner_text.text(), \
+    win.banner_text.text()
+assert win.banner_btn.isEnabled()
+S.sender_build = ("0000000", 1_700_000_000, 0, _t.monotonic()); S.last_pkt = _t.monotonic()
+rx_update._version = ("1111111", 1_700_000_100, "x")
+win.online = None; win.slow_tick(); pump()
+assert "Nadajnik ma inną wersję (0000000) niż receiver (1111111)" in win.banner_text.text(), win.banner_text.text()
+win.banner.grab().save(os.path.join(os.path.dirname(__file__), "gui_update_banner.png"))
+rx_update.available = rx_update.Available(0)
+S.sender_build = ("1111111", 1_700_000_100, 0, _t.monotonic())
+win.online = None; win.slow_tick(); pump()
+assert win.banner.isHidden(), "aktualna wersja na GitHubie i ta sama w nadajniku - pasek znika"
+S.sender_build, S.last_pkt, rx_update._version = None, 0.0, None         # dalsze testy: nadajnik offline
+win.online = None; win.slow_tick()
+ok("aktualizacja: pasek 'Dostępna aktualizacja: N zmian - tytuł' i 'Nadajnik ma inną wersję', przycisk Aktualizuj")
+
 # ---------- zakładki ustawień ----------
 win.open_settings(); pump(100)
 dlg = win.settings_dlg

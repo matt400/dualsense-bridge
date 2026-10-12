@@ -23,6 +23,14 @@ def _(text):
 EN = {
     # ---------- okno główne ----------
     "Wynik": "Result",
+    "Dostępna aktualizacja: {n}": "Update available: {n}",
+    "Adres nadajnika: {ip}": "Sender address: {ip}",
+    "Nadajnik ma inną wersję ({s}) niż receiver ({r}) - Aktualizuj pobierze tę samą na obu":
+        "The sender has a different version ({s}) than the receiver ({r}) - Update gets the same one on both",
+    "Kliknij Aktualizuj w oknie": "Click Update in the window",
+    "{n} zmiana": "{n} change",
+    "{n} zmiany": "{n} changes",
+    "{n} zmian": "{n} changes",
     "Aktualizacja nie powiodła się: {err}": "Update failed: {err}",
     "Fizycznie": "Physical",
     "Pad {n}": "Pad {n}",

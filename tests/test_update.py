@@ -77,4 +77,21 @@ t = U.sender_text(b, "fatal: unable to access: Could not resolve host: github.co
 assert "Could not resolve host" in t and "setup-update-key.sh" not in t, "błąd sieci - bez podpowiedzi o kluczu"
 assert "najnowsza" in U.sender_text(("a1b2c3d", 0, UPD_NO_CHANGE), "stary powód"), "powód tylko przy błędzie"
 ok("wynik aktualizacji nadajnika: powód błędu z telefonu w oknie, podpowiedź klucza tylko przy braku dostępu")
+# ---------- sprawdzanie GitHuba w tle: ile zmian czeka (bez pobierania kodu) ----------
+chk = os.path.join(tmp, "chk")
+git(tmp, "clone", "-q", origin, chk)
+a = U.check_available(chk)
+assert a == U.Available(0), a
+commit(origin, "receiver/rx_x.py", "a = 5\n", "Pierwsza nowa")
+commit(origin, "receiver/rx_y.py", "b = 2\n", "Druga nowa: tryb X")
+before = open(os.path.join(chk, "receiver/rx_x.py")).read()
+a = U.check_available(chk)
+assert a.behind == 2 and a.subject == "Druga nowa: tryb X" and len(a.commit) == 7, a
+assert open(os.path.join(chk, "receiver/rx_x.py")).read() == before, "sprawdzenie nie zmienia plików"
+git(chk, "checkout", "-q", "--detach")
+assert U.check_available(chk) is None, "bez gałęzi śledzącej -> brak informacji (nie błąd)"
+assert U.check_available(tmp) is None, "nie klon -> brak informacji"
+git(chk, "remote", "set-url", "origin", os.path.join(tmp, "nie-ma"))
+assert U.check_available(chk) is None, "brak sieci / repo -> brak informacji"
+ok("sprawdzanie GitHuba: liczba zmian i tytuł najnowszej, bez zmiany plików; błędy -> brak informacji")
 print("UPDATE OK")

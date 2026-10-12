@@ -58,6 +58,14 @@ def make_icon(rgb):
     return ic
 
 
+def n_changes(n):
+    """'1 zmiana', '3 zmiany', '5 zmian', '22 zmiany' (polska odmiana) / '1 change', 'N changes'."""
+    if n == 1:
+        return _("{n} zmiana").format(n=n)
+    few = n % 10 in (2, 3, 4) and n % 100 not in (12, 13, 14)
+    return (_("{n} zmiany") if few else _("{n} zmian")).format(n=n)
+
+
 def _profile_label(key):
     label = S.profile_label(key)
     return _("domyślny") if label == "default" else label
@@ -222,6 +230,7 @@ class MainWindow(QMainWindow):
         self.warned = [False] * C.NUM_PADS     # powiadomienie o niskiej baterii wysłane raz na rozładowanie
         self.note_text, self.note_until = None, 0.0
         self.low_any, self.tip, self.online = False, None, None
+        self._banner_sig, self._upd_notified, self._sender_stale = None, None, None   # pasek aktualizacji
         self.settings_dlg = None               # okno ustawień trybu konsoli (tworzone przy pierwszym otwarciu)
 
         self.apply_timer = QTimer(self)
@@ -260,6 +269,7 @@ class MainWindow(QMainWindow):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
         outer.addWidget(self._header())
+        outer.addWidget(self._banner())
         body = QHBoxLayout()
         body.setContentsMargins(16, 16, 16, 16)
         body.setSpacing(16)
@@ -316,6 +326,47 @@ class MainWindow(QMainWindow):
         for b in (self.fs_btn, settings_btn, self.update_btn, restart_btn, quit_btn):
             lay.addWidget(b)
         return bar
+
+    def _banner(self):
+        """Pasek pod nagłówkiem, widoczny tylko, gdy jest coś do zrobienia: nowa wersja na GitHubie i / albo nadajnik
+        w innej wersji niż receiver. Napis z opisem (nie sam kolor) i przycisk Aktualizuj."""
+        bar = QFrame()
+        bar.setObjectName("banner")
+        lay = QHBoxLayout(bar)
+        lay.setContentsMargins(20, 7, 16, 7)
+        lay.setSpacing(10)
+        self.banner_text = label("", wrap=True)
+        set_prop(self.banner_text, "level", "warn")
+        self.banner_btn = ConfirmButton(_("Aktualizuj"), _("Aktualizować?"), small=True)
+        self.banner_btn.setIcon(icon("update"))
+        self.banner_btn.setProperty("primary", True)
+        self.banner_btn.confirmed.connect(self.start_update)
+        lay.addWidget(self.banner_text, 1)
+        lay.addWidget(self.banner_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+        bar.hide()
+        self.banner = bar
+        return bar
+
+    def _refresh_banner(self):
+        av, stale = rx_update.available, self._sender_stale
+        lines = []
+        if av is not None and av.behind:
+            lines.append("⬆  " + _("Dostępna aktualizacja: {n}").format(n=n_changes(av.behind))
+                         + (f"  -  {av.subject}" if av.subject else ""))
+        if stale:
+            lines.append("⚠  " + _("Nadajnik ma inną wersję ({s}) niż receiver ({r}) - Aktualizuj pobierze tę samą na obu")
+                         .format(s=stale[0], r=stale[1]))
+        sig = (tuple(lines), self.update_btn.isEnabled())
+        if sig == self._banner_sig:
+            return
+        self._banner_sig = sig
+        self.banner_text.setText("\n".join(lines))
+        self.banner_btn.setEnabled(self.update_btn.isEnabled())   # w trakcie aktualizacji zablokowany jak w nagłówku
+        self.banner.setVisible(bool(lines))
+        if self.tray and av is not None and av.behind and av.commit != self._upd_notified:
+            self._upd_notified = av.commit       # jedno powiadomienie na nową wersję, nie co 30 minut
+            self.tray.showMessage(_("Dostępna aktualizacja: {n}").format(n=n_changes(av.behind)),
+                                  av.subject or _("Kliknij Aktualizuj w oknie"), QSystemTrayIcon.MessageIcon.Information, 8000)
 
     def _left(self):
         w = QWidget()
@@ -506,22 +557,24 @@ class MainWindow(QMainWindow):
     def _sender_label(self, online, build):
         """'● Nadajnik online (ip) · a1b2c3d'; inna wersja niż receiver -> żółty i podpowiedź, żeby zaktualizować."""
         if not online:
+            self._sender_stale = None
             self.sender.setText(_("●  Nadajnik offline"))
             self.sender.setToolTip("")
             set_prop(self.sender, "level", "bad")
             return
         src = S.peer[0] if S.peer else ""
         mine = rx_update.version()[0]
-        text = _("●  Nadajnik online") + (f"  ({src})" if src else "")
+        text = _("●  Nadajnik online")                 # adres w podpowiedzi - napis mieści się przy 1000 px
         if build and build[0]:
             text += f"  ·  {build[0]}"
         stale = bool(build and build[0] and mine and build[0] != mine)
+        self._sender_stale = (build[0], mine) if stale else None   # opis w pasku aktualizacji (nie tylko kolor)
         tip = (_("Nadajnik: wersja {s}, receiver: {r} - kliknij Aktualizuj").format(
                    s=rx_update.describe(*build), r=rx_update.describe(*rx_update.version()[:2])) if stale else
                _("Nadajnik: wersja {s}").format(s=rx_update.describe(*build)) if build and build[0] else
                _("Nadajnik nie podaje wersji (starsza wersja albo nie klon git)"))
         self.sender.setText(text)
-        self.sender.setToolTip(tip)
+        self.sender.setToolTip((_("Adres nadajnika: {ip}").format(ip=src) + "\n" if src else "") + tip)
         set_prop(self.sender, "level", "warn" if stale else "ok")
 
     def start_update(self):
@@ -573,6 +626,8 @@ class MainWindow(QMainWindow):
         self.update_btn.setEnabled(not r.changed)
         self.update_btn.setToolTip(text)
         self.note(text, "ok" if r.ok else "bad")
+        if r.ok and not r.changed:
+            rx_update.available = rx_update.Available(0)      # sprawdzone przed chwilą: nic nowego
         if r.changed:
             QTimer.singleShot(UPDATE_RESTART_MS, self.restart)
 
@@ -723,6 +778,7 @@ class MainWindow(QMainWindow):
         if (online, build) != self.online:
             self.online = (online, build)
             self._sender_label(online, build)
+        self._refresh_banner()
         low_any, tips = False, []
         for c in self.cards:
             i = c.slot
@@ -815,6 +871,7 @@ def run_gui():
         if S.stop.is_set():
             return
     win = create_window()
+    rx_update.start_checker(S.stop)          # w tle: czy na GitHubie jest nowsza wersja (napis w nagłówku)
     app = QApplication.instance()
     try:
         signal.signal(signal.SIGINT, lambda *_: app.quit())   # Ctrl+C w konsoli = zwykłe zamknięcie (czyszczenie padów)
