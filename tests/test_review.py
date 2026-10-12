@@ -3,7 +3,7 @@ import json, os, sys, time, types
 sys.path.insert(0, os.path.dirname(__file__))
 from rxenv import *                                              # noqa
 import rx_buttons as B, rx_config, rx_console, rx_master, rx_profiles as P, rx_settings
-from proto import T_BYE, T_IDENT, T_STATE
+from proto import T_BYE, T_IDENT, T_MOUSE, T_STATE
 from rx_settings import MasterConfig, MouseConfig, Settings
 
 fails = []
@@ -231,6 +231,28 @@ check(cc.blocked_by() is None, "pusta lista dozwolonych: bez blokady także w gr
 cc = rx_console.Console(rx_console.ConsoleConfig())
 check(cc.blocked_by() == "eldenring.exe", "domyślna lista: gra blokuje")
 FG[0] = None
+
+# ---------- touchpad jako mysz idzie za masterem (korona przenosiła tylko uprawnienia) ----------
+rx_settings.apply(rx_settings.defaults())
+MA, MB = "aa:aa:aa:aa:aa:41", "bb:bb:bb:bb:bb:42"
+feed(T_IDENT, 0, MA.encode()); state(0); feed(T_IDENT, 1, MB.encode()); state(1)
+S.mouse_mode[:] = [i in C.MOUSE_PADS for i in range(C.NUM_PADS)]
+check(S.mouse_mode[:2] == [True, False], "bez mastera: mysz wg mouse_pads (slot 1)")
+rx_master.set_master(1, save=False)                       # korona na karcie pada 2
+check(S.mouse_mode[:2] == [False, True], f"master = pad 2 -> jego touchpad to mysz, pad 1 dotyk DS4: {S.mouse_mode[:2]}")
+calls.clear()
+feed(T_MOUSE, 1, 30, 0, 0)
+check(any(c[0] == "m" for c in calls), "ruch na touchpadzie mastera rusza kursorem")
+rx_master.set_master(0, save=False)
+check(S.mouse_mode[:2] == [True, False], "master z powrotem na pad 1 -> mysz wraca")
+rx_master.set_master(None, save=False)
+check(S.mouse_mode[:2] == [True, False], "bez mastera -> mouse_pads")
+rx_master.set_master(1, save=False)
+feed(T_BYE, 1)                                            # master się rozłączył
+check(S.mouse_mode[0] is True, "master niepodłączony -> mysz wg mouse_pads (pad 1 nie zostaje bez myszy)")
+time.sleep(1.1); feed(T_IDENT, 1, MB.encode()); state(1)  # master wraca
+check(S.mouse_mode[:2] == [False, True], "master wrócił -> znów jego touchpad to mysz")
+rx_settings.apply(rx_settings.defaults())
 
 print("WSZYSTKO OK" if not fails else f"FAIL: {fails}")
 sys.exit(1 if fails else 0)

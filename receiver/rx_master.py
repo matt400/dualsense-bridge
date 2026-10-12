@@ -20,6 +20,7 @@ import threading
 from dataclasses import replace
 
 import rx_feedback as F
+import rx_mouse
 import rx_settings
 import rx_state as S
 import rx_winapi as W
@@ -90,6 +91,27 @@ def check(i, feature):
     print(f"Controller {i}: {feature} - only the master pad can do that")
     F.pulse(i, "denied")
     return False
+
+
+def mouse_follows_master(force=False):
+    """Touchpad jako mysz idzie za masterem: pad master = mysz, pozostałe = dotyk DS4. Master nie jest podłączony
+    (albo force po zdjęciu mastera) -> mysz wg mouse_pads z konfiguracji. Bez mastera w ustawieniach nic nie zmienia
+    (ręczne przełączenie PS + klik touchpada zostaje). Woła się po zmianie mastera i po połączeniu / odejściu pada."""
+    if not rx_settings.cur.master.pad and not force:
+        return
+    ms = master_slot()
+    for i in range(len(slots)):
+        on = i == ms if ms is not None else i in C.MOUSE_PADS
+        if rx_mouse.set_mode(i, on):
+            print(f"Controller {i}: touchpad -> {'MOUSE' if on else 'DS4 touch'} mode (follows the master pad)")
+
+
+def _master_changed(old, new):
+    if old.master.pad != new.master.pad:
+        mouse_follows_master(force=True)
+
+
+rx_settings.on_change(_master_changed)
 
 
 def set_master(i, save=True):

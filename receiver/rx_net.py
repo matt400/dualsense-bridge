@@ -120,6 +120,8 @@ def clear_slot(i, forget_id=False):
             S.remap_maps[i] = S.store.get(S.active[i])
     S.reset_state(i)
     mouse.reset(i)
+    if forget_id:
+        master.mouse_follows_master()  # master odszedł -> mysz wg mouse_pads
 
 
 def handle(t, i, data):
@@ -195,13 +197,8 @@ def handle(t, i, data):
             hotkeys.mark_used(i)
             if not master.check(i, "mouse"):
                 return
-            S.mouse_mode[i] = not S.mouse_mode[i]
+            mouse.set_mode(i, not S.mouse_mode[i])
             F.pulse(i, "mouse" if S.mouse_mode[i] else "ds4")
-            mouse.reset(i)
-            with S.lock:
-                S.states[i]["tp"] = False
-                S.states[i]["ver"] += 1
-            S.notify(i)
             print(f"Controller {i}: touchpad -> {'MOUSE' if S.mouse_mode[i] else 'DS4 touch'} mode")
             return
         if not down and S.swallow[i]:
@@ -226,6 +223,7 @@ def handle(t, i, data):
                 S.override[i] = None
                 S.reload_profile(i)
             rx_console.pad_connected(i)   # nowy pad w slocie - jeśli to master, auto-ON trybu konsoli
+            master.mouse_follows_master()  # touchpad jako mysz: pad master (mógł właśnie dojść albo zmienić slot)
             n = profile_size(S.remap_maps[i])
             print(f"Controller {i}: id {pid}, profile {S.profile_label(S.active[i])}"
                   + (f" ({n} changes)" if n else ""))

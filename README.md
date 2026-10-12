@@ -62,7 +62,9 @@ DualSense ──Bluetooth──> telefon: sender/ ──UDP 5005──> PC: rece
 - **Pad master** (np. gdy grają dzieci): wybrane funkcje działają tylko na jednym padzie - tryb konsoli, akcje
   systemowe, długie PS, PS w grze / Steam, zrzut ekranu, zmiana profilu, mysz, czułość. Inny pad dostaje czerwone
   mignięcie lightbara. Master jest przypisany do pada (MAC), nie do slotu. Szybka zmiana: korona na karcie pada albo
-  **PS + R3 przytrzymane 3 s** na padzie (złoty błysk; można wyłączyć). Akcje systemowe mastera:
+  **PS + R3 przytrzymane 3 s** na padzie (złoty błysk; można wyłączyć). **Touchpad jako mysz idzie za masterem:**
+  touchpad mastera steruje kursorem, pozostałe pady mają dotyk DS4 (każdy pad dalej przełącza się PS + klik
+  touchpada); gdy mastera nie ma albo nie jest podłączony - wg `mouse_pads`. Akcje systemowe mastera:
 
   | Domyślnie | Akcja |
   |---|---|
