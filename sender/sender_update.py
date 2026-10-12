@@ -2,7 +2,7 @@
 
 CMD_UPDATE -> git pull --ff-only w folderze repozytorium (nadrzędnym dla sender/), jako właściciel repozytorium,
 gdy nadajnik działa jako root (usługa) -> pakiet build ze stanem (UPD_*) -> po pobraniu nowego kodu restart nadajnika
-(os.execv: ten sam PID, więc supervise-daemon / systemd nic nie zauważają; ręcznie uruchomiony też wraca).
+(os.execv: ten sam PID, więc systemd nic nie zauważa; ręcznie uruchomiony też wraca).
 Pakiet build (commit, czas commita, stan) idzie co 5 s - okno receivera pokazuje wersję nadajnika.
 """
 import asyncio

@@ -44,7 +44,7 @@ for content in ({"profiles": [1, 2]}, {"profiles": "x"}, [1]):
         print("   ", repr(e))
     check(good, f"remap.json {content!r} -> brak profili zamiast awarii przy starcie")
 ok_, _msg = P.apply(0, S.profile_key(0), {"buttons": ["cross"], "sticks": [1]})
-check(ok_ and S.remap_maps[0]["buttons"] == {}, "edytor w przeglądarce: zły profil w żądaniu nie wywraca obsługi")
+check(ok_ and S.remap_maps[0]["buttons"] == {}, "zły profil (np. ręcznie edytowany remap.json) nie wywraca zastosowania")
 
 # ---------- klucz HMAC liczbą w .toml / .json ----------
 cfg = os.path.join(TMP, "key.json")

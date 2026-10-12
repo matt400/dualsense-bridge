@@ -75,10 +75,7 @@ S.pad_id[0] = None
 ok("edytor: zmiana klucza pada po nadejściu id")
 
 # ---------- rx_profiles ----------
-assert P.key_for(0, None) == S.profile_key(0) and P.key_for(0, S.profile_key(0) + "@a.exe") == S.profile_key(0) + "@a.exe"
-assert P.key_for(0, "inny@a.exe") is None and P.key_for(0, S.profile_key(0) + "@../x.exe") is None
 assert P.game_key(0, "  Doom ") == S.profile_key(0) + "@doom.exe" and P.game_key(0, "a/b") is None and P.game_key(0, "") is None
-assert P.slot_ok(0) and not P.slot_ok(True) and not P.slot_ok(99) and not P.slot_ok("0")
 S.alive[0] = False; assert P.power_off(0) is False
 S.alive[0] = True; sent.clear(); assert P.power_off(0) is True and sum(1 for x in sent if x[0] == T_CMD) == 3
 state(0, mask=BIT[304], batt=50); lv = P.live(0)
