@@ -105,4 +105,5 @@ if __name__ == "__main__":
     if state.restart:                  # po aktualizacji: nowy kod w tym samym procesie (PID dla usługi bez zmian)
         print("Restarting with the updated code")
         sys.stdout.flush()
-        os.execv(sys.executable, [sys.executable, *sys.argv])
+        # orig_argv: z opcjami interpretera (usługa: python3 -u) - bez -u log po aktualizacji szedłby z opóźnieniem (bufor)
+        os.execv(sys.executable, [sys.executable, *sys.orig_argv[1:]])

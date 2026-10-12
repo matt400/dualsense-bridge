@@ -159,24 +159,29 @@ def send_keys(*vks):
     user32.SendInput(len(seq), (INPUT * len(seq))(*seq), INPUT_SIZE)
 
 
-def foreground_exe():
-    """Nazwa programu (np. "eldenring.exe", małe litery) aktywnego okna albo None."""
+def foreground_window():
+    """(uchwyt, nazwa programu małymi literami) aktywnego okna; (0, None) bez okna, (hwnd, None) bez dostępu."""
     hwnd = user32.GetForegroundWindow()
     if not hwnd:
-        return None
+        return 0, None
     pid = wt.DWORD()
     user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
     h = k32.OpenProcess(0x1000, False, pid.value)          # PROCESS_QUERY_LIMITED_INFORMATION
     if not h:
-        return None
+        return hwnd, None
     try:
         buf = ctypes.create_unicode_buffer(1024)
         size = wt.DWORD(len(buf))
         if not k32.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(size)):
-            return None
-        return ntpath.basename(buf.value).lower() or None
+            return hwnd, None
+        return hwnd, ntpath.basename(buf.value).lower() or None
     finally:
         k32.CloseHandle(h)
+
+
+def foreground_exe():
+    """Nazwa programu (np. "eldenring.exe", małe litery) aktywnego okna albo None."""
+    return foreground_window()[1]
 
 
 def _declare_foreground_api():
@@ -187,6 +192,8 @@ def _declare_foreground_api():
         k32.OpenProcess.argtypes = [wt.DWORD, wt.BOOL, wt.DWORD]
         k32.QueryFullProcessImageNameW.argtypes = [wt.HANDLE, wt.DWORD, wt.LPWSTR, ctypes.POINTER(wt.DWORD)]
         k32.CloseHandle.argtypes = [wt.HANDLE]
+        user32.PostMessageW.argtypes = [wt.HWND, wt.UINT, wt.WPARAM, wt.LPARAM]
+        user32.PostMessageW.restype = wt.BOOL
     except AttributeError:
         pass
 
@@ -194,10 +201,9 @@ def _declare_foreground_api():
 _declare_foreground_api()
 
 
-def close_foreground():
-    """WM_CLOSE do aktywnego okna (to samo, co krzyżyk / Alt+F4, ale bez klawiatury - działa też z grą jako admin
+def close_window(hwnd):
+    """WM_CLOSE do okna (to samo, co krzyżyk / Alt+F4, ale bez klawiatury - działa też z grą jako admin
     nie przez SendInput). -> True, gdy wysłano."""
-    hwnd = user32.GetForegroundWindow()
     return bool(hwnd) and bool(user32.PostMessageW(hwnd, 0x0010, 0, 0))     # WM_CLOSE
 
 

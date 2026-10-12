@@ -28,7 +28,8 @@ A, B = "aa:aa:aa:aa:aa:01", "bb:bb:bb:bb:bb:02"
 pulses = []
 F.pulse = lambda i, kind: pulses.append((i, kind))
 actions = []
-W.close_foreground = lambda: actions.append("close") or True
+W.close_window = lambda hwnd: actions.append("close") or True
+W.foreground_window = lambda: (1, S.game)          # aktywne okno = S.game ustawiane w testach
 W.sleep_pc = lambda: actions.append("sleep")
 W.shutdown_pc = lambda *a: actions.append("shutdown")
 

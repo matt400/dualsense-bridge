@@ -202,7 +202,7 @@ class PartPage(QWidget):
         self.l3.changed.connect(lambda v: self._set_button(L3_OF[self.name], v))
         lay.addWidget(self.l3_caption)
         lay.addWidget(self.l3)
-        lay.addWidget(label("RESPONSE", "h2"))
+        lay.addWidget(label(_("REAKCJA"), "h2"))
         self.dz = SliderRow(_("Strefa martwa"), 0, 50, 1, "%")
         self.outer = SliderRow(_("Pełne wychylenie od"), 50, 100, 1, "%")
         self.curve = SliderRow(_("Krzywa (powyżej 1 = dokładniejsze małe ruchy)"), 0.3, 3, 0.05, "x")

@@ -209,9 +209,12 @@ def _held(i, gen, button, action):
 # ---------------- akcje ----------------
 def _do(i, action):
     try:
+        hwnd = 0
         if action == "close_game":
-            exe = S.game or W.foreground_exe()
-            if not exe or exe in NO_CLOSE:
+            # okno sprawdzane i zamykane to TO SAMO okno: S.game bywa sprzed pół sekundy (rx_games), a "aktywne okno"
+            # w chwili zamykania mogło już być pulpitem lub Steamem (alt-tab w trakcie przytrzymania)
+            hwnd, exe = W.foreground_window()
+            if not hwnd or not exe or exe in NO_CLOSE:
                 print(f"Controller {i}: close game - foreground is {exe or 'nothing'}, not closing")
                 F.pulse(i, "denied")
                 return
@@ -221,7 +224,7 @@ def _do(i, action):
         if action == "pause":
             W.send_keys(W.VK_ESCAPE)
         elif action == "close_game":
-            W.close_foreground()
+            W.close_window(hwnd)
         elif action in ("sleep", "shutdown"):
             import rx_console                # rx_console importuje rx_master - import tutaj
             rx_console.power_off(_("wyłączanie komputera") if action == "shutdown" else _("usypianie komputera"))

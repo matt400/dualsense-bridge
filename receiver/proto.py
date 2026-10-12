@@ -207,7 +207,7 @@ def git_pull(root, git_exe=None):
         new = git(root, "rev-parse", "HEAD", git_exe=git_exe).stdout.strip()
         if new == old:
             return UPD_NO_CHANGE, "", old, new, []
-        files = git(root, "diff", "--name-only", old, new, git_exe=git_exe).stdout.split()
+        files = git(root, "diff", "--name-only", old, new, git_exe=git_exe).stdout.splitlines()   # nazwy ze spacjami
     except (OSError, subprocess.SubprocessError) as e:
         return UPD_FAILED, str(e), "", "", []
     return UPD_DONE, "", old, new, files

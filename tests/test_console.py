@@ -1,5 +1,5 @@
 """Tryb konsoli (rx_console): config, podwójne kliknięcie, ON/OFF, auto-OFF, start, błędy poleceń, wybór przycisku."""
-import json, os, sys, time, types
+import json, os, sys, threading, time, types
 sys.path.insert(0, os.path.dirname(__file__))
 from rxenv import *                                              # noqa
 import rx_audio, rx_console
@@ -27,12 +27,23 @@ def wait_for(pred, timeout=2.5):
         time.sleep(0.01)
     return pred()
 
+def idle(c, timeout=5.0):
+    """Czeka, aż wątek roboczy wykona wszystkie zadania z kolejki (zadania idą po kolei)."""
+    done = threading.Event()
+    c._jobs.put(done.set)
+    return done.wait(timeout)
+
+def turned(c, on=True):
+    """Tryb przełączony I całe przełączenie wykonane: _apply ustawia c.on na początku, a ekran / dźwięk / toast
+    po nim - sprawdzanie rejestru zaraz po zmianie c.on łapało przełączenie w połowie."""
+    return wait_for(lambda: c.on == on) and idle(c)
+
 def new_console(**kw):
     """Console z wątkiem roboczym; startup (extend) już przetworzony i wyczyszczony z rejestru.
     Testy kliknięć używają PS (trudniejszy przypadek: PS jest też modyfikatorem skrótów)."""
     kw.setdefault("toggle_button", "ps")
     c = Console(ConsoleConfig(**kw)); calls.clear(); c.start()
-    wait_for(lambda: ("display", c.cfg.startup_mode) in calls); calls.clear()
+    idle(c); calls.clear()                 # start (ekran I dźwięk) jest już w całości wykonany
     rx_console.ctl = c
     return c
 
@@ -89,13 +100,13 @@ ok("detector: przyciski, d-pad, spusty")
 # ---------- podwójne kliknięcie przełącza ON/OFF (przez prawdziwy rx_net.handle) ----------
 c = new_console(audio_tv="LG TV", audio_pc="Głośniki", double_click_ms=400)
 click(); time.sleep(0.05); click()
-check(wait_for(lambda: c.on), "podwójne kliknięcie PS -> ON")
+check(turned(c), "podwójne kliknięcie PS -> ON")
 check(calls == [("display", "tv"), ("tv", 2560, 1440, 200), ("audio", "LG TV"), ("toast", "Tryb konsoli włączony", "")],
       f"ON: ekran, rozdzielczość i skala TV, dźwięk TV, toast: {calls}")
 check(S.states[0]["raw"][0] == 0, "stan pada dalej śledzony (przyciski trafiają do gry)")
 calls.clear()
 click(); time.sleep(0.05); click()
-check(wait_for(lambda: not c.on), "drugie podwójne kliknięcie -> OFF")
+check(turned(c, False), "drugie podwójne kliknięcie -> OFF")
 check(calls == [("display", "extend"), ("audio", "Głośniki"), ("toast", "Tryb konsoli wyłączony", "")], f"OFF: ekran, dźwięk PC, toast: {calls}")
 ok("podwójne kliknięcie: ON (TV + audio_tv + toast), OFF (extend + audio_pc + toast)")
 
@@ -105,7 +116,7 @@ time.sleep(0.3)
 check(not c.on and not calls, "kliknięcia rzadsze niż double_click_ms nic nie przełączają")
 calls.clear(); time.sleep(0.5)        # poprzednie kliknięcie ma być poza oknem
 click(); time.sleep(0.05); click(); time.sleep(0.05); click()
-check(wait_for(lambda: c.on), "seria kliknięć przełącza")
+check(turned(c), "seria kliknięć przełącza")
 time.sleep(0.4)
 check(len([x for x in calls if x[0] == "toast"]) == 1, f"trzy szybkie kliknięcia = jedno przełączenie: {calls}")
 ok("rzadkie kliknięcia ignorowane, seria nie przełącza dwa razy")
@@ -169,9 +180,9 @@ def boom(*a, **k): raise OSError("brak polecenia")
 rx_console._display, rx_console._audio, rx_console._toast, rx_console._tv_mode = boom, boom, boom, boom
 c = new_console(audio_tv="X", audio_pc="Y"); calls.clear()
 c._jobs.put(c._toggle)
-check(wait_for(lambda: c.on), "wszystkie polecenia rzucają wyjątek, a tryb i tak się przełącza")
+check(turned(c), "wszystkie polecenia rzucają wyjątek, a tryb i tak się przełącza")
 c._jobs.put(c._toggle)
-check(wait_for(lambda: not c.on) and c._thread.is_alive(), "wątek roboczy żyje po błędach")
+check(turned(c, False) and c._thread.is_alive(), "wątek roboczy żyje po błędach")
 rx_console._display = lambda mode: calls.append(("display", mode))
 rx_console._audio = lambda name: calls.append(("audio", name))
 rx_console._toast = lambda title, msg="": calls.append(("toast", title, msg))
@@ -189,7 +200,7 @@ state(0, mask=BIT[SHARE] | BIT[PS])
 check(got == ["ps"], f"przechwycony nowo wciśnięty przycisk (a nie trzymany): {got}")
 state(0, mask=0); calls.clear(); c.on = False
 click(0, PS); click(0, PS)
-check(wait_for(lambda: c.on) and got == ["ps"], "po przechwyceniu callback jednorazowy, a podwójne kliknięcie znów działa")
+check(turned(c) and got == ["ps"], "po przechwyceniu callback jednorazowy, a podwójne kliknięcie znów działa")
 c.on = False; calls.clear()
 c.arm_capture(got.append); click(0, PS); click(0, PS); time.sleep(0.3)
 check(len(got) == 2 and not calls and not c.on, "podczas wyboru przycisku podwójne kliknięcie nie przełącza trybu")
@@ -245,7 +256,7 @@ time.sleep(0.2)
 check(not c.on, "PS naciskany przy trzymanym Share to też skrót")
 time.sleep(0.5)
 click(); time.sleep(0.05); click()
-check(wait_for(lambda: c.on), "zwykłe podwójne kliknięcie po skrótach dalej działa")
+check(turned(c), "zwykłe podwójne kliknięcie po skrótach dalej działa")
 c.close(restart=True)
 ok("skróty z PS (Share, d-pad, touchpad) nie liczą się jako kliknięcia")
 
@@ -289,7 +300,7 @@ c = new_console(toggle_button="r2"); calls.clear()
 def r2(v, mask=0):
     state(0, rt=v, mask=mask); time.sleep(0.03)
 r2(255); r2(0); r2(255); r2(0)
-check(wait_for(lambda: c.on), "podwójne pełne R2 -> ON")
+check(turned(c), "podwójne pełne R2 -> ON")
 c.on = False; calls.clear(); time.sleep(0.5)
 for v in (100, 200, 120, 199, 90, 0):                      # drżenie wokół progu to jedno naciśnięcie (histereza)
     r2(v)
@@ -313,15 +324,15 @@ MAC = "aa:bb:cc:00:00:01"
 rx_settings.apply(replace(rx_settings.cur, master=replace(rx_settings.cur.master, pad=MAC)))
 c = new_console(toggle_button="r2"); calls.clear()
 feed(T_IDENT, 1, MAC.encode())
-check(wait_for(lambda: c.on) and any(x[0] == "toast" and "master" in x[2] for x in calls), f"master połączony -> ON: {calls}")
+check(turned(c) and any(x[0] == "toast" and "master" in x[2] for x in calls), f"master połączony -> ON: {calls}")
 time.sleep(0.5)
 for v in (255, 0, 255, 0):
     state(1, rt=v); time.sleep(0.03)
-check(wait_for(lambda: not c.on), "podwójne R2 na masterze -> ręcznie OFF")
+check(turned(c, False), "podwójne R2 na masterze -> ręcznie OFF")
 time.sleep(0.3); feed(T_IDENT, 1, MAC.encode()); time.sleep(0.3)
 check(not c.on, "ten sam pad dalej połączony (ident bez zmian) - tryb zostaje wyłączony")
 feed(T_BYE, 1); time.sleep(1.1); feed(T_IDENT, 1, MAC.encode())
-check(wait_for(lambda: c.on), "ponowne połączenie mastera -> znów ON")
+check(turned(c), "ponowne połączenie mastera -> znów ON")
 c.close(restart=True)
 c = new_console(toggle_button="r2", auto_on_master=False); feed(T_BYE, 1); time.sleep(1.1)
 feed(T_IDENT, 1, MAC.encode()); time.sleep(0.3)
@@ -337,7 +348,7 @@ check(not c.on and rx_console.RESTART_ENV not in os.environ, "restart z wyłącz
 c.close(restart=True)
 os.environ[rx_console.RESTART_ENV] = "1"
 calls.clear(); c = Console(ConsoleConfig()); c.start()
-check(wait_for(lambda: c.on) and ("display", "tv") in calls, f"restart z włączonym trybem: od razu ON: {calls}")
+check(turned(c) and ("display", "tv") in calls, f"restart z włączonym trybem: od razu ON: {calls}")
 c.close(restart=True)
 rx_settings.apply(replace(rx_settings.cur, master=replace(rx_settings.cur.master, pad="")))
 ok("auto-ON: połączenie mastera, ręczne OFF, ponowne połączenie, wyłączalne, restart zachowuje stan")
@@ -355,7 +366,7 @@ check(not c.on and (0, "denied") not in pulses, f"gra na pierwszym planie: podw�
 rxenv.FG[0] = "steamwebhelper.exe"; time.sleep(0.5)
 for v in (255, 0, 255, 0):
     state(0, rt=v); time.sleep(0.03)
-check(wait_for(lambda: c.on), "Steam / Big Picture na pierwszym planie: przełącza")
+check(turned(c), "Steam / Big Picture na pierwszym planie: przełącza")
 c.close(restart=True)
 rx_settings.apply(replace(rx_settings.cur, master=replace(rx_settings.cur.master, pad=MAC)))
 c = new_console(toggle_button="r2"); calls.clear()
@@ -382,12 +393,12 @@ ok("gra na pierwszym planie: R2 zablokowane, auto-ON czeka do wyjścia z gry, li
 # ---------- wyłączenie / uśpienie PC z włączonym trybem konsoli ----------
 c = new_console(audio_pc="Speakers"); calls.clear()
 check(rx_console.power_off("x") is False and not calls, "tryb wyłączony: nic nie przełącza")
-c._jobs.put(lambda: c._apply(True, toast=False)); wait_for(lambda: c.on); calls.clear()
+c._jobs.put(lambda: c._apply(True, toast=False)); turned(c); calls.clear()
 check(rx_console.power_off("wyłączanie komputera") is True, "tryb włączony -> True")
 check(not c.on and ("display", "extend") in calls and ("audio", "Speakers") in calls and not any(x[0] == "toast" for x in calls),
       f"przed wyłączeniem: oba ekrany (Windows zapamięta układ), dźwięk PC, bez toastu: {calls}")
 calls.clear()
-c._jobs.put(lambda: c._apply(True, toast=False)); wait_for(lambda: c.on)
+c._jobs.put(lambda: c._apply(True, toast=False)); turned(c)
 c._jobs.put(lambda: time.sleep(1.0)); calls.clear()           # wątek roboczy zajęty
 rx_console.POWER_WAIT_S, wait = 0.2, rx_console.POWER_WAIT_S
 t0 = time.monotonic(); rx_console.power_off("x")

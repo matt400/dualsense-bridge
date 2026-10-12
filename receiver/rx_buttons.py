@@ -19,7 +19,7 @@ import os
 import threading
 
 from proto import PAD_KEYS
-from rx_shape import normalize_gyro, normalize_tuning
+from rx_shape import _byte, _unit, normalize_gyro, normalize_tuning
 
 BIT = {c: 1 << k for k, c in enumerate(PAD_KEYS)}
 MASK_ALL = (1 << len(PAD_KEYS)) - 1
@@ -52,7 +52,7 @@ def bits_from(mask, *tables):
 def normalize(m):
     """Czyści mapę: tylko znane nazwy, bez wpisów tożsamościowych."""
     out = {}
-    for src, dst in (m or {}).items():
+    for src, dst in (m.items() if isinstance(m, dict) else ()):    # zły typ (ręczna edycja remap.json, API) = pusta mapa
         if src not in INPUTS:
             continue
         if dst in (None, "", "none"):
@@ -126,8 +126,9 @@ STICKS = ("left", "right")
 def normalize_sticks(sm):
     """Czyści ustawienia gałek: zostają tylko odstępstwa od domyślnych (src = to samo wyjście, bez inwersji)."""
     out = {}
+    sm = sm if isinstance(sm, dict) else {}
     for name in STICKS:
-        e = (sm or {}).get(name)
+        e = sm.get(name)
         if not isinstance(e, dict):
             continue
         src = e.get("src", name)
@@ -163,7 +164,9 @@ def is_game_key(key):
 
 
 def _inv(v):
-    return min(255, 256 - v)   # 0<->255, środek 128 zostaje 128
+    """Odbicie osi wokół środka 128: 0 <-> 255, 128 zostaje 128 (jak _unit/_byte w rx_shape - pełne wychylenie
+    w obie strony daje pełne wychylenie, a nie 1)."""
+    return _byte(-_unit(v))
 
 
 def apply_sticks(sm, lx, ly, rx, ry):
@@ -210,6 +213,9 @@ class RemapStore:
             print(f"Remap file {self.path}: cannot read ({e}) - starting with no remaps")
             return
         profiles = data.get("profiles", {}) if isinstance(data, dict) else {}
+        if not isinstance(profiles, dict):
+            print(f"Remap file {self.path}: 'profiles' is not an object - starting with no remaps")
+            profiles = {}
         with self._lock:
             self.saved = {}
             for k, v in profiles.items():

@@ -23,6 +23,7 @@ def _(text):
 EN = {
     # ---------- okno główne ----------
     "Wynik": "Result",
+    "Aktualizacja nie powiodła się: {err}": "Update failed: {err}",
     "Fizycznie": "Physical",
     "Pad {n}": "Pad {n}",
     "Wyłącz": "Power off",

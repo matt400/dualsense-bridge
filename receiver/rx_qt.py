@@ -538,7 +538,15 @@ class MainWindow(QMainWindow):
             S.sender_build = (*S.sender_build[:2], UPD_RUNNING, time.monotonic())
         if S.sender_online():
             rx_net.send_cmd(255, CMD_UPDATE)
-        threading.Thread(target=lambda: self.update_done.emit(rx_update.update()), name="update", daemon=True).start()
+        threading.Thread(target=self._update_thread, name="update", daemon=True).start()
+
+    def _update_thread(self):
+        """Wyjątek (git zawieszony, brak dostępu do folderu) nie może zostawić przycisku na zawsze w "Aktualizuję…"."""
+        try:
+            r = rx_update.update()
+        except Exception as e:
+            r = rx_update.Result(False, False, _("Aktualizacja nie powiodła się: {err}").format(err=repr(e)))
+        self.update_done.emit(r)
 
     def _update_finished(self, r):
         """Receiver gotowy - czekamy (najwyżej UPDATE_WAIT_S) na wynik nadajnika, potem komunikat i restart."""
