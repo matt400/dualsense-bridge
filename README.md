@@ -202,6 +202,10 @@ Wszystkie ustawienia z wartościami domyślnymi i opisem są w `sender/sender.ex
 `receiver/receiver.example.toml`. Skopiuj plik bez `.example`, odkomentuj potrzebne linie i uruchom z
 `--config sender.toml` / `--config receiver.toml`. Pliki `*.toml` są w `.gitignore`, bo mogą zawierać klucz.
 
+Po zmianie wartości domyślnych nadajnik przy starcie sam poprawia w `sender.toml` linie ze **starymi wartościami
+domyślnymi** (np. `pad_min_dt = 0.004` -> `0.001`); własne ustawienia, komentarze i układ pliku zostają, kopia w
+`sender.toml.bak`. Ręcznie: `python3 sender/sender_migrate.py sender/sender.toml`.
+
 Najczęściej zmieniane:
 
 | Ustawienie | Gdzie | Domyślnie | Co robi |

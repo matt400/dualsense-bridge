@@ -225,6 +225,8 @@ __pycache__/
 # konfiguracja może zawierać klucz HMAC - do repo idą tylko *.example.toml
 *.toml
 !*.example.toml
+*.toml.bak
+*.toml.tmp
 !pyproject.toml
 *.log
 *.log.1

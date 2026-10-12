@@ -69,6 +69,9 @@ def init(argv=None):
     ap.add_argument("--stats", action="store_true", default=None, help="pokazuj RTT co 5 s")
     args = ap.parse_args(argv)
 
+    if args.config:                    # stare wartości domyślne w pliku -> nowe (własne ustawienia zostają)
+        import sender_migrate
+        sender_migrate.migrate(args.config)
     cfg = dict(DEFAULTS)
     cfg.update(load_config(args.config, DEFAULTS))
     for k in ("host", "key", "stats"):
