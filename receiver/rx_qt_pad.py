@@ -2,6 +2,7 @@
 
 Kształty pochodzą z rysunku SVG edytora w przeglądarce (ten sam układ 800x520); rysowane bezpośrednio, więc
 odświeżenie 30 razy na sekundę kosztuje niewiele, a trafianie w części jest dokładne (kontur, nie prostokąt).
+Klawiatura / pad w trybie TV (rx_qt_tv): ← / → przechodzą po częściach, Enter / Spacja wybiera część.
 """
 from rx_i18n import _
 import re
@@ -13,11 +14,19 @@ from PySide6.QtWidgets import QSizePolicy, QWidget
 
 import rx_buttons as B
 from rx_editor import L3_OF, SHORT
+from rx_qt_style import ACCENT as _ACCENT
+from rx_qt_style import BAD as _BAD
+from rx_qt_style import BG as _BG
 
 VIEW_X, VIEW_Y, VIEW_W, VIEW_H = 44, 24, 712, 484     # kadr rysunku (współrzędne SVG 800x520 bez pustych marginesów)
-ACCENT, BAD, DARK = QColor("#ffb300"), QColor("#ff6b6b"), QColor("#14161c")
-SHAPE, EDGE, ARROW = QColor("#3a3f4d"), QColor("#565d70"), QColor("#8e96ab")
+ACCENT, BAD, DARK = QColor(_ACCENT), QColor(_BAD), QColor(_BG)
+SHAPE, EDGE, ARROW = QColor("#343a48"), QColor("#525a6d"), QColor("#8e96ab")
 LABEL = QColor("#c9cddb")
+WHITE = QColor("#ffffff")
+TRIG_FX = QColor("#a78bfa")                           # plakietka oporu spustu (jak odcinek Bluetooth - fiolet)
+# kolejność części przy przechodzeniu strzałkami (tryb TV): od lewej do prawej, mniej więcej po rysunku
+NAV_ORDER = ("l2", "l1", "dpad_up", "dpad_left", "dpad_right", "dpad_down", "share", "left_stick", "ps", "right_stick",
+             "options", "triangle", "square", "circle", "cross", "r1", "r2")
 STICK_TRAVEL = 14      # o tyle (jednostek rysunku) przesuwa się gałka przy pełnym wychyleniu
 
 _TOKENS = re.compile(r"[A-Za-z]|-?\d+(?:\.\d+)?")
@@ -153,7 +162,8 @@ class PadView(QWidget):
         self.badges = []
         self._tf = self._inv = QTransform()
         self.setMouseTracking(True)
-        self.setMinimumSize(440, 300)
+        self.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+        self.setMinimumSize(320, 240)      # okno 1280 px (TV 2560×1440 przy 200 %) mieści się też w trybie TV
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
     # ---------- dane ----------
@@ -196,6 +206,10 @@ class PadView(QWidget):
             if out_name in prof["tuning"]:
                 r = self.by_name[out_name + "_stick"].path.boundingRect()
                 out.append((r.left() - 16 if out_name == "left" else r.right() + 16, r.center().y(), "∿", False))
+        for name, e in prof.get("triggers", {}).items():   # opór spustu DualSense: obok spustu, na zewnątrz
+            r = self.by_name[name].path.boundingRect()
+            out.append((r.left() - 20 if name == "l2" else r.right() + 20, r.center().y() + 8,
+                        _("opór {n}").format(n=e["force"]), "fx"))
         mode = prof["gyro"].get("mode", "off")
         if mode != "off":
             r = self.by_name["right_stick"].path.boundingRect()
@@ -226,6 +240,30 @@ class PadView(QWidget):
             if name:
                 self.part_clicked.emit(name)
 
+    def keyPressEvent(self, e):
+        """← / → : poprzednia / następna część (podświetlona jak pod kursorem), Enter / Spacja: wybierz."""
+        k = e.key()
+        if k in (Qt.Key.Key_Left, Qt.Key.Key_Right):
+            cur = self.hover if self.hover in NAV_ORDER else self.selected if self.selected in NAV_ORDER else None
+            step = 1 if k == Qt.Key.Key_Right else -1
+            i = NAV_ORDER.index(cur) + step if cur else (0 if step > 0 else -1)
+            self.hover = NAV_ORDER[i % len(NAV_ORDER)]
+            self.setToolTip(self.by_name[self.hover].tip)
+            self.update()
+        elif k in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space) and self.hover:
+            self.part_clicked.emit(self.hover)
+        else:
+            super().keyPressEvent(e)
+
+    def focusInEvent(self, e):
+        super().focusInEvent(e)
+        self.update()
+
+    def focusOutEvent(self, e):
+        super().focusOutEvent(e)
+        self.hover = None
+        self.update()
+
     # ---------- rysowanie ----------
     def paintEvent(self, _e):
         p = QPainter(self)
@@ -239,9 +277,9 @@ class PadView(QWidget):
         for part in self.parts[:2]:                    # spusty są za korpusem
             self._part(p, part)
         g = QLinearGradient(0, 96, 0, 496)
-        g.setColorAt(0, QColor("#3a4050"))
-        g.setColorAt(1, QColor("#232733"))
-        p.setPen(QPen(QColor("#555d72"), 2.5))
+        g.setColorAt(0, QColor("#353b4b"))
+        g.setColorAt(1, QColor("#1f232e"))
+        p.setPen(QPen(QColor("#4d5468"), 2.5))
         p.setBrush(g)
         p.drawPath(self.body)
         self._decor(p)
@@ -254,10 +292,10 @@ class PadView(QWidget):
 
     def _stage(self, p):
         r = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
-        g = QRadialGradient(r.center().x(), r.top() + r.height() * 0.35, max(r.width(), r.height()) * 0.7)
-        g.setColorAt(0, QColor("#232836"))
-        g.setColorAt(1, QColor("#181b23"))
-        p.setPen(QPen(QColor("#272b36"), 1))
+        g = QRadialGradient(r.center().x(), r.top() + r.height() * 0.38, max(r.width(), r.height()) * 0.7)
+        g.setColorAt(0, QColor("#1d2230"))
+        g.setColorAt(1, QColor("#12151c"))
+        p.setPen(QPen(ACCENT if self.hasFocus() else QColor("#252a36"), 1.5 if self.hasFocus() else 1))
         p.setBrush(g)
         p.drawRoundedRect(r, 16, 16)
 
@@ -287,17 +325,18 @@ class PadView(QWidget):
         if part.name in B.TRIGGERS:                       # spust: płynne wypełnienie zależne od wychylenia
             v = self.live[part.name] / 255
             if v > 0.02 and not on:
-                fill = QColor(_lerp(58, 255, v), _lerp(63, 179, v), _lerp(77, 0, v))
+                fill = QColor(_lerp(SHAPE.red(), ACCENT.red(), v), _lerp(SHAPE.green(), ACCENT.green(), v),
+                              _lerp(SHAPE.blue(), ACCENT.blue(), v))
         p.setPen(self._edge(part.name))
         p.setBrush(fill)
         p.drawPath(part.path)
         if part.arrow:
             p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(DARK if on else ARROW)
+            p.setBrush(WHITE if on else ARROW)
             p.drawPath(part.arrow)
         if part.sym:
             path, color = part.sym
-            pen = QPen(DARK if on else QColor(color), 2.4)
+            pen = QPen(WHITE if on else QColor(color), 2.4)
             pen.setCapStyle(Qt.PenCapStyle.RoundCap)
             pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
             p.setPen(pen)
@@ -305,7 +344,7 @@ class PadView(QWidget):
             p.drawPath(path)
         if part.label:
             p.setFont(self._font(12, QFont.Weight.DemiBold))
-            p.setPen(DARK if on else LABEL)
+            p.setPen(WHITE if on else LABEL)
             text, x, y = part.label
             if part.rot:
                 p.save()
@@ -323,7 +362,7 @@ class PadView(QWidget):
         cx, cy = STICK_CENTER[part.name]
         x, y = self.live["ls" if part.name == "left_stick" else "rs"]
         p.setPen(self._edge(part.name, QColor("#4a5062"), 2))
-        p.setBrush(QColor("#4b3a0c") if on else QColor("#1a1d25"))
+        p.setBrush(QColor("#1b2b4d") if on else QColor("#161922"))
         p.drawPath(part.path)
         ox, oy = (x - 128) / 127 * STICK_TRAVEL, (y - 128) / 127 * STICK_TRAVEL
         p.setPen(QPen(QColor("#5b6278"), 1.5))
@@ -334,18 +373,21 @@ class PadView(QWidget):
         p.drawEllipse(QPointF(cx + ox, cy + oy), 17, 17)
 
     def _edge(self, name, base=EDGE, width=1.5):
-        """Kontur części: zaznaczona = bursztynowy i gruby, pod kursorem = biały."""
+        """Kontur części: zaznaczona = akcent i gruby, pod kursorem / wybrana z pada = biały."""
         if name == self.selected:
             return QPen(ACCENT, 3.5)
-        return QPen(QColor("#ffffff") if name == self.hover else base, width)
+        if name == self.hover:
+            return QPen(WHITE, 3 if self.hasFocus() else width)
+        return QPen(base, width)
 
-    def _badge(self, p, cx, cy, text, bad):
+    def _badge(self, p, cx, cy, text, kind):
+        """Plakietka zmiany: kind True = wyłączone (czerwona), "fx" = opór spustu (fiolet), inaczej akcent."""
         p.setFont(self._font(11, QFont.Weight.Bold))
         w = QFontMetricsF(p.font()).horizontalAdvance(text)
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(BAD if bad else ACCENT)
+        p.setBrush(TRIG_FX if kind == "fx" else BAD if kind else ACCENT)
         p.drawRoundedRect(QRectF(cx - w / 2 - 7, cy - 9, w + 14, 18), 9, 9)
-        p.setPen(DARK)
+        p.setPen(WHITE if kind is False else DARK)
         self._text(p, text, cx, cy + 4)
 
     @staticmethod

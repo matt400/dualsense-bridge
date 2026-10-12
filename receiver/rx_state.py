@@ -46,6 +46,7 @@ def new_state():
         "ts": 0,                                                         # kiedy (us) przyszła ostatnia zmiana stanu
         "gyro_on": False,                    # gyro aktywne (tryb gałki lub myszy i spełniony warunek "hold")
         "gyro_vel": None,                    # prędkość kursora z gyro [px/s] w trybie myszy, None = wyłączone
+        "lat": None,                         # pomiar opóźnienia ostatniej zmiany (rx_net -> rx_ds4 -> rx_latency)
     }
 
 
@@ -105,6 +106,7 @@ def sender_online(now=None):
 
 
 push = None        # rx_ds4.push: raport do wirtualnego DS4 od razu w wątku zmiany (bez rx_ds4 - tylko budzenie)
+on_remap = None    # rx_feedback: nowy profil slotu -> od razu wyślij opór spustów (bez czekania na pętlę)
 
 
 def notify(i):
@@ -147,6 +149,8 @@ def set_remap(i, prof):
     notify(i)
     if s["gyro_vel"]:
         gyro_wake.set()
+    if on_remap is not None:
+        on_remap()
 
 
 def profile_key(i):

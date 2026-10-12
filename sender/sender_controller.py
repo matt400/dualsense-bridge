@@ -94,6 +94,7 @@ if __name__ == "__main__":
     net.init()
     net.on_feedback = sup.dispatch_feedback
     net.on_command = control.on_command
+    net.on_triggers = sup.dispatch_triggers
     sender_rt.setup(C.LOW_LATENCY, C.CPU_LATENCY_US, C.RT_PRIORITY)
     gc.collect()
     gc.freeze()   # obiekty ze startu poza zasięgiem GC - krótsze pauzy

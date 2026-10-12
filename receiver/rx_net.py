@@ -4,18 +4,22 @@ import time
 import rx_console
 import rx_feedback as F
 import rx_hotkeys as hotkeys
+import rx_latency
 import rx_master as master
 import rx_mouse as mouse
 import rx_state as S
-from proto import (BODY, RTT_NONE, Codec, T_BYE, T_CLICK, T_CMD, T_FB, T_IDENT, T_INFO, T_MOUSE, T_PING, T_PONG, T_VERSION,
-                   T_STATE, T_TOUCH, T_BUILD, T_UPDMSG, clamp)
+from proto import (BODY, LAT_NONE, RTT_NONE, STATE_FIELDS, WIRE, Codec, T_BYE, T_CLICK, T_CMD, T_FB, T_IDENT, T_INFO,
+                   T_MOUSE, T_PING, T_PONG, T_PONG2, T_VERSION, T_STATE, T_STATE2, T_TOUCH, T_TRIG, T_BUILD, T_UPDMSG,
+                   clamp)
 from rx_buttons import MASK_ALL, PS_BIT, profile_size
 
 from rx_config import C
 from rx_winapi import bind_udp, boost_thread
 
-RX_TYPES = {T_STATE, T_TOUCH, T_CLICK, T_MOUSE, T_PING, T_BYE, T_IDENT, T_INFO, T_VERSION}   # typy, które receiver przyjmuje
-ST_STATE, ST_TOUCH, ST_MOUSE, ST_INFO = BODY[T_STATE], BODY[T_TOUCH], BODY[T_MOUSE], BODY[T_INFO]
+RX_TYPES = {T_STATE, T_STATE2, T_TOUCH, T_CLICK, T_MOUSE, T_PING, T_BYE, T_IDENT, T_INFO, T_VERSION}   # typy, które receiver przyjmuje
+ST_TOUCH, ST_MOUSE, ST_INFO = BODY[T_TOUCH], BODY[T_MOUSE], BODY[T_INFO]
+STATES = (T_STATE, T_STATE2)
+MAX_NET_US = 1_000_000          # sieć dłużej niż 1 s = zły zegar (np. zaraz po restarcie), nie pomiar
 
 
 class LinkStats:
@@ -88,6 +92,12 @@ def send_cmd(i, cmd, arg=0):
         send_peer(codec.pack(T_CMD, i, cmd, arg))
 
 
+def send_triggers(i, vals, repeat=1):
+    """Opór spustów (L2 początek, siła, R2 początek, siła) do nadajnika; zmiana idzie kilka razy (zgubiony pakiet)."""
+    for _ in range(repeat):
+        send_peer(codec.pack(T_TRIG, i, *vals))
+
+
 def batt_codes(pct, flags):
     """-> (kod baterii DSU, bajt statusu baterii DS4)."""
     if pct > 100:
@@ -111,6 +121,9 @@ def clear_slot(i, forget_id=False):
     _digital[i] = None
     hotkeys.reset(i)
     master.reset(i)
+    rx_latency.clear(i)                # pomiary opóźnienia poprzedniego pada nie mieszają się z następnym
+    with S.lock:
+        S.states[i]["lat"] = None
     if forget_id:                      # pad fizycznie odszedł - następny w tym slocie przyśle swój ident
         S.sender_info[i] = None
         with S.profile_lock:
@@ -124,7 +137,21 @@ def clear_slot(i, forget_id=False):
         master.mouse_follows_master()  # master odszedł -> mysz wg mouse_pads
 
 
-def handle(t, i, data):
+def _latency(lat, arr):
+    """Pola pomiaru z pakietu state2 + czas odbioru [ns] -> (odbiór, phone, bt, net) albo None (brak pomiaru)."""
+    pc_us, phone, bt = lat
+    if not arr or not pc_us or phone == LAT_NONE:
+        return None
+    net = (arr // 1000 - pc_us) & 0xFFFFFFFF
+    if net >= 0x80000000:          # odebrany "przed" wysłaniem: błąd przesunięcia zegarów (do połowy RTT) - to ~0
+        net -= 1 << 32
+    if not -MAX_NET_US < net < MAX_NET_US:
+        return None
+    return arr, phone, bt, max(0, net)
+
+
+def handle(t, i, data, arr=0):
+    """Pakiet od nadajnika; arr = czas odbioru (perf_counter_ns) - do pomiaru opóźnienia."""
     if t == T_BYE:   # nadajnik: pad rozłączony -> odłącz wirtualny DS4
         was = S.want[i].is_set() or S.alive[i]
         clear_slot(i, forget_id=True)
@@ -141,9 +168,11 @@ def handle(t, i, data):
     if not S.want[i].is_set():
         S.want[i].set()   # wątek slotu utworzy wirtualny DS4
         rx_console.pad_connected(i)       # pad master z już znanym identyfikatorem -> auto-ON trybu konsoli
-    if t == T_STATE:
+    if t in STATES:
         now_us = time.monotonic_ns() // 1000
-        v = ST_STATE.unpack_from(data, 4)
+        v = BODY[t].unpack_from(data, 4)
+        lat = _latency(v[STATE_FIELDS:], arr) if t == T_STATE2 else None
+        v = v[:STATE_FIELDS]
         if v == S.last_v[i]:
             return      # powtórka (heartbeat) - nic się nie zmieniło
         S.last_v[i] = v
@@ -167,6 +196,8 @@ def handle(t, i, data):
             S.recompute(s, S.remap_maps[i])
             s["batt_dsu"], s["batt_ds4"] = bd, b4
             s["ts"] = now_us         # czas PRZYJŚCIA próbki - dla DSU lepszy niż czas budowania pakietu (jitter)
+            if s["lat"] is None:     # pomiar najstarszej zmiany czekającej na raport (rx_ds4 kończy go w ViGEm)
+                s["lat"] = lat
             s["ver"] += 1
         S.notify(i)
         if s["gyro_vel"]:
@@ -271,6 +302,7 @@ def net_loop():
     while not S.stop.is_set():
         try:
             data, addr = in_sock.recvfrom(2048)
+            arr = time.perf_counter_ns()        # czas odbioru (zegar PC jak w pong2) - początek odcinka "pc"
         except TimeoutError:
             data = None
         except OSError as e:
@@ -296,7 +328,7 @@ def net_loop():
         t, i, sq = p
         S.last_pkt = now
         link.packet(sq)
-        if t == T_STATE and i < C.NUM_PADS:
+        if t in STATES and i < C.NUM_PADS:
             link.states[i] += 1
 
         if C.DEBUG:
@@ -315,9 +347,11 @@ def net_loop():
             S.peer = addr
             on_build(data, now)
             continue
-        if t == T_PING:   # ping -> pong (pomiar RTT po stronie nadajnika)
+        if t == T_PING:   # ping -> pong2 (zegar PC dla pomiaru opóźnienia) i pong (RTT; starszy nadajnik zna tylko ten)
             S.peer = addr
-            send_peer(codec.pack(T_PONG, i, BODY[T_PING].unpack_from(data, 4)[0]))
+            t0 = BODY[T_PING].unpack_from(data, 4)[0]
+            send_peer(codec.pack(T_PONG2, i, t0, time.perf_counter_ns() // 1000))
+            send_peer(codec.pack(T_PONG, i, t0))
             continue
         if t not in RX_TYPES:
             continue
@@ -328,10 +362,10 @@ def net_loop():
             continue
         if now < S.ignore_until[i] and t != T_BYE:
             continue
-        if not S.seen.fresh((t, i), sq, now):
+        if not S.seen.fresh((WIRE.get(t, t), i), sq, now):     # state i state2: jeden licznik
             continue
         S.peer = addr
         try:
-            handle(t, i, data)
+            handle(t, i, data, arr)
         except Exception as e:
             print("handle error:", repr(e))

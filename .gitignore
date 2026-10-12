@@ -247,3 +247,5 @@ settings.json
 settings.json.tmp
 slots.json
 slots.json.tmp
+# kopie ustawień z aktualizacji (receiver/rx_backup.py)
+receiver/backups/

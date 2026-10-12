@@ -28,7 +28,7 @@ check(all(abs(B._inv(B._inv(v)) - v) <= 1 for v in range(256)), "podwÃ³jne odwrÃ
 for bad in ({"buttons": [1, 2]}, {"sticks": ["left"]}, {"buttons": "x", "sticks": 5}, [1], "x", None):
     try:
         prof = B.normalize_profile(bad)
-        good = prof == {"buttons": {}, "sticks": {}, "tuning": {}, "gyro": {}}
+        good = prof == {"buttons": {}, "sticks": {}, "tuning": {}, "gyro": {}, "triggers": {}}
     except Exception as e:
         good = False
         print("   ", repr(e))

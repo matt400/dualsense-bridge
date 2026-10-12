@@ -7,6 +7,7 @@ import time
 import vgamepad as vg
 
 import rx_feedback as F
+import rx_latency
 import rx_state as S
 from rx_config import C
 from rx_report import build_report
@@ -33,13 +34,17 @@ class Out:
         self.lock = threading.Lock()
 
     def send(self, idx):
-        """Najświeższy stan slotu do ViGEm (wołać pod self.lock)."""
+        """Najświeższy stan slotu do ViGEm (wołać pod self.lock); kończy pomiar opóźnienia zmiany, którą niesie."""
         with S.lock:
-            build_report(S.states[idx], self.counter, S.mouse_mode[idx], self.ba)
+            s = S.states[idx]
+            build_report(s, self.counter, S.mouse_mode[idx], self.ba)
+            lat, s["lat"] = s["lat"], None
         self.counter += 1
         ctypes.memmove(ctypes.addressof(self.rep), self.view, 63)
         self.pad.update_extended_report(self.rep)
         self.last = time.perf_counter()
+        if lat is not None:
+            rx_latency.add(idx, lat, time.perf_counter_ns())
 
 
 outs = []                 # Out per slot albo None (wirtualny DS4 niepodłączony)

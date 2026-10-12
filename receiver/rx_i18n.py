@@ -400,4 +400,61 @@ EN = {
     # ---------- ikony ----------
     "Ekran": "Screen",
     "Uruchom ponownie": "Restart",
+    "Kopie ustawień": "Settings backups",
+    "Opóźnienie": "Latency",
+    "Nowy profil gry": "New game profile",
+    # ---------- opóźnienie pad -> gra ----------
+    "Opóźnienie pad → gra": "Latency pad → game",
+    "p99 {ms} ms · {n} próbek z 5 s": "p99 {ms} ms · {n} samples from 5 s",
+    "Bluetooth (ponad minimum)": "Bluetooth (above minimum)",
+    "Telefon (jądro → wysłanie)": "Phone (kernel → send)",
+    "Sieć": "Network",
+    "PC (odbiór → wirtualny DS4)": "PC (receive → virtual DS4)",
+    "Brak pomiaru: pad leży albo nadajnik jest w starszej wersji (Aktualizuj).":
+        "No measurement: the pad is idle or the sender is an older version (Update).",
+    "Mediany odcinków. Stała część radia Bluetooth (~1–2 ms) jest niemierzalna.":
+        "Medians of each segment. The fixed part of the Bluetooth radio (~1–2 ms) cannot be measured.",
+    # ---------- opór spustów ----------
+    "OPÓR SPUSTU": "TRIGGER RESISTANCE",
+    "Siła oporu": "Resistance strength",
+    "Opór od (skok spustu)": "Resistance from (trigger travel)",
+    "Stały opór DualSense, np. do wyścigów - najlepiej w profilu gry. Gra przez DS4 go nie ustawi, więc robi to nadajnik.":
+        "Constant DualSense resistance, e.g. for racing - best in a game profile. A game talking to a DS4 can't set it, "
+        "so the sender does.",
+    "Nadajnik w starszej wersji nie ustawia oporu - kliknij Aktualizuj.":
+        "An older sender can't set the resistance - click Update.",
+    "Opór wymaga raportu HID na telefonie (jak wibracja przez HID) - nadajnik go nie ma.":
+        "Resistance needs the HID report on the phone (like rumble via HID) - the sender doesn't have it.",
+    "Opór {b}: od {start}%, siła {force}/8": "Resistance {b}: from {start}%, strength {force}/8",
+    "opór {n}": "resist {n}",
+    "ZAAWANSOWANE: REAKCJA SPUSTU": "ADVANCED: TRIGGER RESPONSE",
+    "ZAAWANSOWANE: REAKCJA GAŁKI": "ADVANCED: STICK RESPONSE",
+    "Usuń wszystkie": "Remove all",
+    "Usunąć wszystkie?": "Remove all?",
+    # ---------- kopie ustawień ----------
+    "Kopie": "Backups",
+    "KOPIE USTAWIEŃ": "SETTINGS BACKUPS",
+    "Przed każdą aktualizacją receiver kopiuje settings.json, console.json i remap.json (zostaje {n} ostatnich). "
+    "Przywrócenie najpierw zapisuje kopię bieżących plików - też da się je cofnąć - a potem uruchamia receiver od nowa.":
+        "Before every update the receiver copies settings.json, console.json and remap.json (the last {n} are kept). "
+        "Restoring first backs up the current files - so it can be undone too - and then restarts the receiver.",
+    "Zrób kopię teraz": "Back up now",
+    "Nie ma jeszcze żadnej kopii.": "No backups yet.",
+    "Przywróć": "Restore",
+    "Przywrócić?": "Restore?",
+    "Zastępuje bieżące ustawienia tymi z kopii i uruchamia receiver od nowa":
+        "Replaces the current settings with the ones from the backup and restarts the receiver",
+    "Nie udało się zrobić kopii: {err}": "Could not create a backup: {err}",
+    "✓ Kopia zapisana.": "✓ Backup saved.",
+    "Nie ma jeszcze plików ustawień do skopiowania.": "There are no settings files to back up yet.",
+    "przed aktualizacją": "before update",
+    "przed przywróceniem kopii": "before restoring a backup",
+    "zrobiona ręcznie": "made manually",
+    "Nie ma takiej kopii": "No such backup",
+    "Kopia jest pusta": "The backup is empty",
+    "Nie udało się przywrócić kopii: {err}": "Could not restore the backup: {err}",
+    "Przywrócono kopię z {when} - receiver uruchomi się od nowa": "Restored the backup from {when} - the receiver will restart",
+    "kopia ustawień zapisana": "settings backed up",
+    "brak ustawień do skopiowania": "no settings to back up",
+    "kopia ustawień nieudana: {err}": "settings backup failed: {err}",
 }

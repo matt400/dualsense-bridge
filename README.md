@@ -17,14 +17,23 @@ DualSense ──Bluetooth──> telefon: sender/ ──UDP 5005──> PC: rece
   jest cofany, przez ~150 ms po wciśnięciu i puszczeniu kursor stoi, a przeciąganie z wciśniętym klikiem zaczyna się
   dopiero po wyraźnym ruchu palca. Czułość i te czasy: Ustawienia → Mysz (działa od razu).
 - **Jedno okno do wszystkiego** (PySide6, ikona w zasobniku):
-  - po lewej karty padów: bateria, ping, utrata pakietów, realne Hz, aktywny profil, wyłączenie pada, korona mastera;
+  - po lewej karty padów: bateria, **prawdziwe opóźnienie pad → gra** (mediana i p99 z 5 s, z paskiem odcinków:
+    Bluetooth / telefon / sieć / PC), aktywny profil, test wibracji, wyłączenie pada, korona mastera; ping, utrata
+    pakietów i Hz w podpowiedzi; niepodłączony pad to sama nazwa;
   - na środku rysunek pada na żywo: kliknij przycisk, spust albo gałkę, żeby ją zremapować lub dostroić;
   - po prawej profil (domyślny / per gra), zakładki **Selected**, **Gyro**, **Changes** i przycisk **Save** (Ctrl+S);
-  - remapowanie przycisków i gałek, strefy martwe, krzywe i anti-deadzone, celowanie żyroskopem (prawa gałka / mysz);
+  - remapowanie przycisków i gałek, celowanie żyroskopem (prawa gałka / mysz); strefy martwe, krzywe i
+    anti-deadzone w zwijanej sekcji „Zaawansowane” (otwiera się sama, gdy coś w niej zmieniono);
+  - **stały opór spustów** (adaptive triggers) L2 / R2 w profilu - np. w profilu gry wyścigowej: siła 1-8 i od
+    którego miejsca skoku działa. Gra przez wirtualnego DS4 tego nie wyśle, więc ustawia to nadajnik raportem HID;
   - profile per gra (`gra.exe`), które włączają się same, gdy gra jest aktywnym oknem;
   - zmiany działają na padzie od razu, zapis do `remap.json` jest osobno;
   - akcje nieodwracalne (wyłączenie pada, usunięcie profilu, reset, restart receivera) wymagają drugiego kliknięcia;
-  - **Restart** w nagłówku okna i w menu zasobnika uruchamia receiver od nowa;
+  - nagłówek z samymi ikonami (pełny ekran, ustawienia, aktualizuj, restart, zakończ - opis w podpowiedzi);
+    **Restart** jest też w menu zasobnika;
+  - **pełny ekran = tryb TV:** większy interfejs (czytelny z kanapy) i sterowanie oknem padem, gdy okno jest
+    aktywne: D-pad - poruszanie się, ✕ - wybór, ○ - wstecz / wyjście z pełnego ekranu, L1 / R1 - poprzedni / następny
+    pad, PS trzymane - zwykłe skróty;
   - przyciski pada pokazane jako ikony (z pełną nazwą w podpowiedzi).
 - **Skróty z PS:**
 
@@ -74,7 +83,7 @@ DualSense ──Bluetooth──> telefon: sender/ ──UDP 5005──> PC: rece
 
   Przycisk z kombinacji (i samo PS) nie trafia do gry. Do akcji nie można użyć przycisków skrótów PS (Share, D-pad)
   ani R3. Gdy master nie jest podłączony: każdy może (domyślnie) albo nikt.
-- **Ustawienia** (ikona w zasobniku → Ustawienia, albo przycisk w oknie), cztery zakładki:
+- **Ustawienia** (ikona w zasobniku → Ustawienia, albo przycisk w oknie), pięć zakładek:
   - **Tryb konsoli:** przycisk pada wybierasz naciśnięciem go na padzie, czasy to pola liczbowe, urządzenia audio to
     listy aktywnych wyjść Windows, „Przetestuj” włącza tryb na 10 s z wartościami z okna. Zmiana trybu konsoli zapisuje
     `console.json` i restartuje receiver (niezapisane zmiany profilu remapowania przepadają);
@@ -82,8 +91,17 @@ DualSense ──Bluetooth──> telefon: sender/ ──UDP 5005──> PC: rece
   - **Master:** pad master, co wolno tylko jemu, przyciski akcji. Mysz i master działają od razu, bez restartu
     (`settings.json`);
   - **Okno:** ekran, na którym pojawia się okno (na środku; gdy ekranu nie ma, okno zostaje na dostępnym), okno albo
-    pełny ekran (też F11 i przycisk w nagłówku), język: polski / English (zmiana po restarcie).
+    pełny ekran (też F11 i przycisk w nagłówku), język: polski / English (zmiana po restarcie);
+  - **Kopie:** kopie `settings.json`, `console.json` i `remap.json` zrobione przy aktualizacji (5 ostatnich, w
+    `receiver/backups/`) albo ręcznie. „Przywróć” (dwa kliknięcia) najpierw zapisuje kopię bieżących plików - więc
+    też da się to cofnąć - a potem uruchamia receiver od nowa.
 - **Wyłączanie pada** z PC albo samo po bezczynności (domyślnie 15 min).
+- **Opóźnienie pad → gra** mierzone dla każdej zmiany stanu pada (przycisk, gałka, ruch), od chwili, gdy jądro
+  telefonu dostało raport z pada, do oddania raportu wirtualnemu DS4. Nadajnik zna zegar PC z odpowiedzi na ping
+  (jak NTP, pomiar o najmniejszym RTT), więc sieć jest mierzona w jedną stronę, nie jako połowa pingu. Odcinki:
+  **Bluetooth** - opóźnienie radia ponad najlepszy przypadek z 2 s (znaczniki czasu pada; stała część ~1-2 ms jest
+  niemierzalna), **telefon** - jądro → wysłanie, **sieć**, **PC** - odbiór → ViGEm. Ze starszym nadajnikiem karta
+  pokazuje sam ping; starszy receiver dostaje od nowego nadajnika zwykłe pakiety.
 - **Wibracja:** jednocześnie przez sterownik (evdev FF) i bezpośrednio raportem HID przez `/dev/hidrawN`
   (nadajnik przez `doas`), z flagami zależnymi od firmware pada, kolor lightbara w tym samym raporcie; ustawienie `rumble` w `sender.toml`. Karta pada
   pokazuje „wibracja: sterownik + HID” albo powód jej braku (brak uprawnień / brak w jądrze / nie znaleziono pada /
@@ -168,7 +186,9 @@ pojawia się pasek z przyciskiem **Aktualizuj**, gdy:
   20 s po starcie i co 30 min, bez pobierania kodu i bez okna logowania; raz też powiadomienie z zasobnika);
 - nadajnik ma inną wersję niż receiver - „Nadajnik ma inną wersję (…) niż receiver (…)”. Wymaga klonów git po obu stronach (`git clone https://github.com/matt400/dualsense-bridge`;
 na telefonie potem `doas ./install-service.sh` z nowego folderu i `doas apk add git`) oraz Git for Windows.
-Ustawienia i profile (`console.json`, `settings.json`, `remap.json`, `sender.toml`, `slots.json`) zostają nietknięte.
+Ustawienia i profile (`console.json`, `settings.json`, `remap.json`, `sender.toml`, `slots.json`) zostają nietknięte,
+a po pobraniu nowej wersji receiver i tak robi ich kopię (Ustawienia → Kopie) - na wypadek, gdyby nowa wersja przy
+starcie coś w nich zmieniła.
 
 Repozytorium jest prywatne, a usługa nadajnika nie ma Twojego klucza SSH (brak agenta, klucz z hasłem) - git pull na
 telefonie kończył się `Could not read from remote repository`. Jednorazowo na telefonie, jako zwykły użytkownik
@@ -287,6 +307,8 @@ Testy obejmują:
 - pad master (uprawnienia, akcje PS + przycisk, przejęcie), auto-ON trybu konsoli, R2 z histerezą,
   stabilizację kliku touchpada, `slots.json`;
 - okno receivera (Qt offscreen, bez ekranu);
+- kopie ustawień, pomiar opóźnienia (state2 / pong2, zegar PC, Bluetooth) i opór spustów w raporcie HID
+  (`test_features.py`, `test_features_tx.py`);
 - regresje z przeglądu bugów (`test_review.py`, `test_review_tx.py`).
 
 Działanie z prawdziwym padem, ViGEm, `DisplaySwitch.exe`, przełączaniem dźwięku (pycaw) i powiadomieniami Windows trzeba

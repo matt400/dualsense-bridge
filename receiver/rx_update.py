@@ -6,6 +6,8 @@ update() -> Result:
      -> komunikat gita, nic nie jest nadpisywane ani scalane
   3. zmienił się receiver/requirements.txt -> pip install -r (nowe biblioteki)
 Ustawienia użytkownika (console.json, settings.json, remap.json, receiver_ui.ini) są w .gitignore - pull ich nie rusza.
+Po pobraniu nowego kodu (przed restartem) powstaje kopia settings.json / console.json / remap.json w receiver/backups/
+(rx_backup, 5 ostatnich, przywracanie w oknie: Ustawienia -> Kopie) - nowa wersja przy starcie może je poprawić.
 Po udanej aktualizacji okno robi restart receivera (nowy kod działa dopiero w nowym procesie).
 
 Uruchomienie bez okna: python receiver\\rx_update.py
@@ -18,6 +20,7 @@ import time
 from dataclasses import dataclass
 
 import proto
+import rx_backup
 from proto import UPD_DONE, UPD_FAILED, UPD_NO_CHANGE, UPD_NO_GIT, UPD_NOT_GIT, UPD_RUNNING
 from rx_i18n import _
 
@@ -166,9 +169,23 @@ def update(root=ROOT, git=None, pip=True):
         return Result(True, False, _("Masz najnowszą wersję"), old, new)
     count = proto.git(root, "rev-list", "--count", f"{old}..{new}", git_exe=git).stdout.strip() or "?"
     text = _("Zaktualizowano ({n} zmian): {old} → {new}").format(n=count, old=old[:7], new=new[:7])
+    text += " · " + _backup(old, new)
     if pip and REQUIREMENTS in files:
         text += " · " + _install_requirements(root)
     return Result(True, True, text, old, new)
+
+
+def _backup(old, new):
+    """Kopia ustawień po pobraniu nowego kodu (zanim go uruchomimy). Błąd kopii nie cofa aktualizacji."""
+    try:
+        b = rx_backup.create("update", old, new)
+    except OSError as e:
+        print(f"Settings backup failed: {e!r}")
+        return _("kopia ustawień nieudana: {err}").format(err=e)
+    if b is None:
+        return _("brak ustawień do skopiowania")
+    print(f"Settings backup: {b.name} ({', '.join(b.files)})")
+    return _("kopia ustawień zapisana")
 
 
 def _run(cmd, root, timeout):

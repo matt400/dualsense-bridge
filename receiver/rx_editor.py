@@ -1,7 +1,7 @@
 """Receiver: model edycji profilu dla okna (bez Qt): wybór profilu, zmiany przycisków / gałek / gyro, zapis.
 
 Zmiany działają na żywo (apply(save=False) wywołuje okno po krótkim debounce), zapis do remap.json jest osobno.
-Profil to {"buttons", "sticks", "tuning", "gyro"} - jak w rx_buttons.normalize_profile.
+Profil to {"buttons", "sticks", "tuning", "gyro", "triggers"} - jak w rx_buttons.normalize_profile.
 """
 from rx_i18n import _
 import copy
@@ -9,7 +9,7 @@ import copy
 import rx_buttons as B
 import rx_profiles as P
 import rx_state as S
-from rx_shape import GYRO_DEF, STICK_DEF, TRIG_DEF
+from rx_shape import GYRO_DEF, STICK_DEF, TRIG_DEF, TRIG_FX_DEF
 
 SHORT = {"cross": "✕", "circle": "○", "triangle": "△", "square": "□", "l1": "L1", "r1": "R1", "share": "SHARE",
          "options": "OPT", "ps": "PS", "l3": "L3", "r3": "R3", "dpad_up": "↑", "dpad_down": "↓", "dpad_left": "←",
@@ -22,7 +22,7 @@ NEW_GAME_HINT = "Wpisz nazwę pliku .exe gry, np. eldenring.exe"
 
 
 def empty():
-    return {"buttons": {}, "sticks": {}, "tuning": {}, "gyro": {}}
+    return {"buttons": {}, "sticks": {}, "tuning": {}, "gyro": {}, "triggers": {}}
 
 
 def profile_name(key):
@@ -109,6 +109,20 @@ class Editor:
     def clear_tuning(self, name):
         self.prof["tuning"].pop(name, None)
 
+    def trigger_fx(self, name):
+        """Opór spustu L2 / R2: {"start": 0-9, "force": 0-8} (siła 0 = bez oporu)."""
+        return {**TRIG_FX_DEF, **self.prof["triggers"].get(name, {})}
+
+    def set_trigger_fx(self, name, **patch):
+        e = {**self.trigger_fx(name), **patch}
+        if e["force"]:
+            self.prof["triggers"][name] = e
+        else:
+            self.prof["triggers"].pop(name, None)
+
+    def clear_trigger_fx(self, name):
+        self.prof["triggers"].pop(name, None)
+
     def gyro(self):
         return {**GYRO_DEF, **self.prof["gyro"]}
 
@@ -160,6 +174,8 @@ class Editor:
             src = _("środek") if e["src"] == "none" else _(STICK_NAME[e["src"]])
             out.append((f"{_(STICK_NAME[name])} ← {src}" + (f" ({inv})" if inv else ""), lambda n=name: self.clear_stick(n)))
         out += [(self._describe_tuning(name), lambda n=name: self.clear_tuning(n)) for name in self.prof["tuning"]]
+        out += [(_("Opór {b}: od {start}%, siła {force}/8").format(b=SHORT[name], start=e["start"] * 10, force=e["force"]),
+                 lambda n=name: self.clear_trigger_fx(n)) for name, e in self.prof["triggers"].items()]
         g = self.gyro()
         if g["mode"] != "off":
             hold = _("zawsze") if g["hold"] == "always" else _("przytrzymaj {b}").format(b=L[g["hold"]])

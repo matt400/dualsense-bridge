@@ -7,8 +7,8 @@ PS + klik touchpada (przełączanie myszy) używa SUROWYCH wejść, więc nie da
 
 Gałki: profil["sticks"] = {wyjście: {"src": "left"|"right"|"none", "inv_x": bool, "inv_y": bool}}, gdzie wyjście to
 "left" / "right" (gałka widziana przez grę), a src - z której fizycznej gałki bierze dane ("none" = środek).
-Profil = {"buttons", "sticks", "tuning", "gyro"} (tuning i gyro: rx_shape.py); stary format (sama mapa przycisków)
-jest wczytywany jak "buttons".
+Profil = {"buttons", "sticks", "tuning", "gyro", "triggers"} (tuning, gyro i opór spustów: rx_shape.py); stary format
+(sama mapa przycisków) jest wczytywany jak "buttons".
 
 Profile gier: klucz "<pad>@<gra.exe>" (np. "aa:bb:cc:dd:ee:ff@eldenring.exe") - używany automatycznie, gdy ta gra
 jest na pierwszym planie. Profil gry istnieje nawet pusty (= "w tej grze bez zmian"), w odróżnieniu od profilu pada.
@@ -19,7 +19,7 @@ import os
 import threading
 
 from proto import PAD_KEYS
-from rx_shape import _byte, _unit, normalize_gyro, normalize_tuning
+from rx_shape import _byte, _unit, normalize_gyro, normalize_triggers, normalize_tuning
 
 BIT = {c: 1 << k for k, c in enumerate(PAD_KEYS)}
 MASK_ALL = (1 << len(PAD_KEYS)) - 1
@@ -140,23 +140,24 @@ def normalize_sticks(sm):
     return out
 
 
-PROFILE_PARTS = ("buttons", "sticks", "tuning", "gyro")
+PROFILE_PARTS = ("buttons", "sticks", "tuning", "gyro", "triggers")
 HOLD_INPUTS = ("always", *INPUTS)      # czym można aktywować gyro
 
 
 def normalize_profile(p):
-    """-> {"buttons", "sticks", "tuning", "gyro"}; akceptuje też stary, płaski format (same przyciski)."""
+    """-> {"buttons", "sticks", "tuning", "gyro", "triggers"}; akceptuje też stary, płaski format (same przyciski)."""
     if not isinstance(p, dict):
         p = {}
     elif not any(k in p for k in PROFILE_PARTS):
         p = {"buttons": p}
     return {"buttons": normalize(p.get("buttons")), "sticks": normalize_sticks(p.get("sticks")),
-            "tuning": normalize_tuning(p.get("tuning")), "gyro": normalize_gyro(p.get("gyro"), HOLD_INPUTS)}
+            "tuning": normalize_tuning(p.get("tuning")), "gyro": normalize_gyro(p.get("gyro"), HOLD_INPUTS),
+            "triggers": normalize_triggers(p.get("triggers"))}
 
 
 def profile_size(p):
     """Liczba zmian w profilu (0 = wszystko domyślne)."""
-    return len(p["buttons"]) + len(p["sticks"]) + len(p["tuning"]) + (1 if p["gyro"] else 0)
+    return len(p["buttons"]) + len(p["sticks"]) + len(p["tuning"]) + (1 if p["gyro"] else 0) + len(p["triggers"])
 
 
 def is_game_key(key):

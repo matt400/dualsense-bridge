@@ -1,4 +1,4 @@
-"""Receiver: okno ustawień (tray -> Ustawienia, albo przycisk w nagłówku okna) - cztery zakładki:
+"""Receiver: okno ustawień (tray -> Ustawienia, albo przycisk w nagłówku okna) - pięć zakładek:
 
   Tryb konsoli  przycisk pada wybierasz naciśnięciem go na padzie (rx_console.arm_capture), urządzenia audio to lista
                 aktywnych wyjść Windows (rx_audio, Odśwież); "Przetestuj" włącza tryb konsoli na kilka sekund
@@ -6,17 +6,21 @@
   Mysz          czułość kursora touchpada i stabilizacja kliknięcia (rx_settings.MouseConfig)
   Master        pad master, funkcje tylko dla niego, akcje "PS + przycisk" (rx_settings.MasterConfig, rx_master)
   Okno          ekran, na którym pojawia się okno (receiver_ui.ini, MainWindow.place_on_screen)
+  Kopie         kopie settings.json / console.json / remap.json z aktualizacji (rx_backup): przywróć (dwa kliknięcia,
+                potem restart receivera) albo zrób kopię teraz
 
 "Zapisz": mysz i master działają od razu (settings.json, bez restartu). Zmiana trybu konsoli zapisuje console.json
 i prosi właściciela okna o restart receivera (sygnał saved) - po restarcie obowiązuje startup_mode jak przy autostarcie.
 """
 from rx_i18n import _
-from PySide6.QtCore import QTimer, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (QCheckBox, QDialog, QGridLayout, QHBoxLayout, QPlainTextEdit, QSpinBox, QTabWidget,
                                QVBoxLayout, QWidget)
 
 import rx_audio
+import rx_backup
 import rx_console
+import rx_update
 import rx_settings
 import rx_state as S
 from rx_buttons import LABELS
@@ -26,13 +30,15 @@ from rx_display import DPI_VALUES
 from rx_i18n import LANGS
 from rx_qt_icons import icon
 from rx_qt_style import set_prop
-from rx_qt_widgets import Combo, SliderRow, button, field, group, icon_label, input_items, label, left, pair
+from rx_qt_widgets import (Combo, ConfirmButton, SliderRow, button, field, group, icon_label, input_items, label, left,
+                           pair)
 from rx_settings import ABSENT, COMBO_BUTTONS, MASTER_ACTIONS, MASTER_FEATURES, MOUSE_LIMITS, MasterConfig, MouseConfig
 
 CAPTURE_TIMEOUT_MS = 15000
 NO_AUDIO = "— nie zmieniaj dźwięku —"
 TV_RESOLUTIONS = ((0, 0), (1920, 1080), (2560, 1440), (3840, 2160))
 STARTUP_LABELS = {"extend": "Rozszerz: oba ekrany aktywne", "internal": "Tylko monitor"}
+RESTORE_RESTART_MS = 1500     # po przywróceniu kopii: tyle widać komunikat, potem restart receivera
 
 
 class ConsoleSettings(QDialog):
@@ -64,6 +70,7 @@ class ConsoleSettings(QDialog):
         self.tabs.addTab(_page(self._mouse_tab()), icon("mouse"), _("Mysz"))
         self.tabs.addTab(_page(self._master_tab()), icon("crown"), _("Master"))
         self.tabs.addTab(_page(self._window_tab()), icon("window"), _("Okno"))
+        self.tabs.addTab(_page(self._backup_tab()), icon("backup"), _("Kopie"))
         lay.addWidget(self.tabs, 1)
 
         self.status = label("", wrap=True)
@@ -169,6 +176,70 @@ class ConsoleSettings(QDialog):
                      label(_("Zmiana języka działa po restarcie receivera."), "dim", wrap=True))
         return [window, lang]
 
+    def _backup_tab(self):
+        self.backup_rows = QVBoxLayout()
+        self.backup_rows.setSpacing(6)
+        now = button(_("Zrób kopię teraz"), small=True)
+        now.setIcon(icon("backup"))
+        now.clicked.connect(self._backup_now)
+        box = group(_("KOPIE USTAWIEŃ"),
+                    label(_("Przed każdą aktualizacją receiver kopiuje settings.json, console.json i remap.json "
+                            "(zostaje {n} ostatnich). Przywrócenie najpierw zapisuje kopię bieżących plików - też da się "
+                            "je cofnąć - a potem uruchamia receiver od nowa.").format(n=rx_backup.KEEP), "dim", wrap=True),
+                    self.backup_rows, left(now))
+        return [box]
+
+    def _load_backups(self):
+        """Lista kopii od najnowszej: data, skąd się wzięła, pliki; "Przywróć" wymaga drugiego kliknięcia."""
+        while self.backup_rows.count():
+            w = self.backup_rows.takeAt(0).widget()
+            if w is not None:
+                w.hide()
+                w.setParent(None)
+                w.deleteLater()
+        backups = rx_backup.list_backups()
+        if not backups:
+            self.backup_rows.addWidget(label(_("Nie ma jeszcze żadnej kopii."), "dim"))
+        for b in backups:
+            self.backup_rows.addWidget(self._backup_row(b))
+
+    def _backup_row(self, b):
+        from PySide6.QtWidgets import QFrame
+        row = QFrame()
+        row.setObjectName("row")
+        hl = QHBoxLayout(row)
+        hl.setContentsMargins(12, 8, 8, 8)
+        hl.setSpacing(10)
+        text = QVBoxLayout()
+        text.setSpacing(2)
+        text.addWidget(label(rx_backup.describe_time(b.time), "val"))
+        text.addWidget(label(_backup_reason(b) + "  ·  " + ", ".join(b.files), "dim", wrap=True))
+        hl.addLayout(text, 1)
+        restore = ConfirmButton(_("Przywróć"), _("Przywrócić?"), small=True)
+        restore.setToolTip(_("Zastępuje bieżące ustawienia tymi z kopii i uruchamia receiver od nowa"))
+        restore.confirmed.connect(lambda name=b.name: self._restore(name))
+        hl.addWidget(restore, 0, Qt.AlignmentFlag.AlignVCenter)
+        return row
+
+    def _backup_now(self):
+        try:
+            b = rx_backup.create("manual", rx_update.version()[0] or "")
+        except OSError as e:
+            self._status(_("Nie udało się zrobić kopii: {err}").format(err=e), "bad")
+            return
+        self._load_backups()
+        self._status(_("✓ Kopia zapisana.") if b else _("Nie ma jeszcze plików ustawień do skopiowania."),
+                     "ok" if b else "warn")
+
+    def _restore(self, name):
+        ok, msg = rx_backup.restore(name, rx_update.version()[0] or "")
+        self._status(("✓ " if ok else "") + msg, "ok" if ok else "bad")
+        self._load_backups()
+        if ok:
+            self._stop_capture()
+            self.save_btn.setEnabled(False)       # Zapisz przed restartem nadpisałby właśnie przywrócone pliki
+            QTimer.singleShot(RESTORE_RESTART_MS, self.saved.emit)   # ustawienia są czytane przy starcie
+
     def _load_screens(self):
         from PySide6.QtGui import QGuiApplication
         from rx_qt import screens
@@ -236,7 +307,9 @@ class ConsoleSettings(QDialog):
         self.activateWindow()
 
     def reload(self):
+        self.save_btn.setEnabled(True)
         self._load_screens()
+        self._load_backups()
         self._load_mouse(rx_settings.cur.mouse)
         self._load_master(rx_settings.cur.master)
         cfg = rx_console.ctl.cfg if rx_console.ctl else ConsoleConfig()
@@ -404,6 +477,14 @@ class ConsoleSettings(QDialog):
         super().hideEvent(e)
         if self._cap_timer.isActive():
             self._stop_capture()
+
+
+def _backup_reason(b):
+    """Skąd kopia: aktualizacja (stara → nowa wersja), przed przywróceniem innej, ręczna."""
+    if b.reason == "update":
+        ver = f"{b.commit} → {b.new}" if b.commit and b.new else b.commit or b.new
+        return _("przed aktualizacją") + (f" ({ver})" if ver else "")
+    return _("przed przywróceniem kopii") if b.reason == "restore" else _("zrobiona ręcznie")
 
 
 def _res_items(resolutions):

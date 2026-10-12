@@ -86,8 +86,9 @@ ok("rx_profiles: klucze, nazwy gier, power, stan na żywo")
 now = time.monotonic(); S.alive[0] = True; S.alive[1] = False
 S.info[0] = (1.2, 540, 500, now); S.link_loss = 0.0; S.pps[0] = 250.0
 assert ST.link_text(0, now) == "ping 1.2 ms  ·  pad 540 Hz  ·  loss 0.0%  ·  250 pkt/s"
-assert ST.link_lines(0, now) == ("ping 1.2 ms  ·  loss 0.0%", "pad 540 Hz  ·  250 pkt/s") and ST.link_level(0, now) == "ok"
-assert ST.link_text(1, now) == "" and ST.link_lines(1, now) == ("", "")
+assert ST.link_text(0, now) == "ping 1.2 ms  ·  pad 540 Hz  ·  loss 0.0%  ·  250 pkt/s" and ST.link_level(0, now) == "ok"
+assert ST.ping_text(0, now) == "ping 1.2 ms" and ST.ping_text(1, now) == "—"
+assert ST.link_text(1, now) == ""
 S.info[0] = (7.0, 540, 500, now); assert ST.link_level(0, now) == "warn"
 S.info[0] = (25.0, 540, 500, now); assert ST.link_level(0, now) == "bad"
 S.info[0] = (1.0, 540, 500, now - 10); assert ST.link_level(0, now) == "ok" and "ping" not in ST.link_text(0, now)

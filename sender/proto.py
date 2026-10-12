@@ -20,6 +20,16 @@ opcjonalnie 8 B HMAC-SHA256 (gdy ustawiony klucz).
                          czas commita (unix), stan aktualizacji UPD_*; starszy receiver ignoruje nieznany typ
  14 updmsg  "120s"       nadajnik -> PC po aktualizacji (idx = 255): powód błędu git pull (UTF-8, ucięty) - okno pokazuje
                          go zamiast "szczegóły w logu na telefonie"; starszy receiver ignoruje nieznany typ
+ 15 trig    "4B"         PC -> nadajnik: stały opór spustów z profilu gry: L2 początek 0-9, L2 siła 0-8, R2 początek,
+                         R2 siła (siła 0 = bez oporu); tylko przez raport HID (hidraw); tylko do nadajnika v6+
+
+Warianty dłuższe (typ w nagłówku ten sam, rozpoznawane po długości - typ ma tylko 4 bity, a starsza strona odrzuca
+nieznaną długość, więc wariant idzie tylko do strony, o której wiadomo, że go zna):
+  state2 (typ 1) "6BbbHBB6iIHH" stan + pomiar opóźnienia: czas wysłania w zegarze PC [µs, młodsze 32 bity], czas na
+                         telefonie od zdarzenia w jądrze do wysłania [µs], opóźnienie Bluetooth ponad minimum z ostatnich
+                         2 s [µs] (LAT_NONE = brak). Nadajnik wysyła go dopiero, gdy dostaje pong2 (receiver go zna)
+  pong2  (typ 7) "QQ"    PC -> nadajnik zaraz przed zwykłym pong: echo pingu, czas PC [µs] - nadajnik liczy przesunięcie
+                         zegarów (jak NTP, z pomiaru o najmniejszym RTT); starszy nadajnik odrzuca długość, bierze pong
 
 Na końcu: wspólne funkcje gita (wersja kodu, aktualizacja git pull) - receiver i nadajnik aktualizują się tak samo.
 """
@@ -37,9 +47,13 @@ VER = 2
 HDR0 = VER << 4
 
 (T_STATE, T_TOUCH, T_CLICK, T_MOUSE, T_PING, T_FB, T_PONG, T_BYE, T_IDENT, T_CMD, T_INFO, T_VERSION,
- T_BUILD, T_UPDMSG) = range(1, 15)
-SENDER_VERSION = 5
-RUMBLE_EVDEV, RUMBLE_HIDRAW = 1, 2
+ T_BUILD, T_UPDMSG, T_TRIG) = range(1, 16)
+T_STATE2, T_PONG2 = 0x101, 0x107               # warianty dłuższe: tylko w programie, w nagłówku typ 1 / 7
+WIRE = {T_STATE2: T_STATE, T_PONG2: T_PONG}
+SENDER_VERSION = 6
+RUMBLE_EVDEV, RUMBLE_HIDRAW, CAP_TRIGGERS = 1, 2, 4     # bity pakietu version (CAP_TRIGGERS: opór spustów działa)
+LAT_NONE = 0xFFFF                                       # pole opóźnienia w state2: brak pomiaru (powtórka, brak danych)
+TRIG_START_MAX, TRIG_FORCE_MAX = 9, 8                   # opór spustu: strefa początku 0-9 (co 10 %), siła 1-8
 # dlaczego nie ma wibracji przez raport HID (pakiet version): ok, rumble=off, brak uprawnień, jądro bez hidraw,
 # nie znaleziono hidraw pada, inny błąd otwarcia
 WHY_OK, WHY_OFF, WHY_ACCESS, WHY_NO_HIDRAW, WHY_NOT_FOUND, WHY_OPEN = range(6)
@@ -64,9 +78,16 @@ BODY = {
     T_VERSION: struct.Struct("!BBB"),           # wersja nadajnika, sposoby wibracji (bity), powód WHY_*
     T_BUILD: struct.Struct("!7sIB"),            # commit nadajnika, czas commita, stan aktualizacji UPD_*
     T_UPDMSG: struct.Struct("!120s"),           # powód błędu aktualizacji nadajnika (UTF-8)
+    T_TRIG: struct.Struct("!4B"),               # opór spustów: L2 początek, L2 siła, R2 początek, R2 siła
+    T_STATE2: struct.Struct("!6BbbHBB6iIHH"),   # stan + czas wysłania (zegar PC), telefon, Bluetooth [µs]
+    T_PONG2: struct.Struct("!QQ"),              # echo pingu, czas PC [µs]
 }
+STATE_FIELDS = 17                               # pola stanu w state / state2 (bez pomiaru opóźnienia)
 BODY_LEN = {t: s.size for t, s in BODY.items()}
-assert BODY_LEN == {1: 36, 2: 12, 3: 1, 4: 5, 5: 8, 6: 5, 7: 8, 8: 0, 9: 17, 10: 2, 11: 6, 12: 3, 13: 12, 14: 120}, BODY_LEN
+assert BODY_LEN == {1: 36, 2: 12, 3: 1, 4: 5, 5: 8, 6: 5, 7: 8, 8: 0, 9: 17, 10: 2, 11: 6, 12: 3, 13: 12, 14: 120,
+                    15: 4, T_STATE2: 44, T_PONG2: 16}, BODY_LEN
+# (typ w nagłówku, długość treści) -> typ w programie
+BY_SIZE = {(WIRE.get(t, t), s.size): t for t, s in BODY.items()}
 
 # kody evdev przycisków DualSense -> bit w masce (kolejność = pozycja bitu w pakiecie stanu)
 PAD_KEYS = (304, 305, 307, 308, 310, 311, 314, 315, 316, 317, 318)
@@ -89,13 +110,13 @@ class Codec:
         with self._lock:
             self._seq = (self._seq + 1) & 0xFFFF
             sq = self._seq
-        msg = HDR.pack(HDR0 | ptype, idx, sq) + BODY[ptype].pack(*vals)
+        msg = HDR.pack(HDR0 | WIRE.get(ptype, ptype), idx, sq) + BODY[ptype].pack(*vals)
         if self.key:
             msg += hmac.digest(self.key, msg, "sha256")[:8]
         return msg
 
     def parse(self, data):
-        """-> (typ, idx, seq) albo None (zły podpis / wersja / typ / długość)."""
+        """-> (typ, idx, seq) albo None (zły podpis / wersja / typ / długość). Wariant dłuższy -> jego typ (T_STATE2...)."""
         n = len(data)
         if self.key:
             if n < 12:
@@ -105,9 +126,8 @@ class Codec:
                 return None
         if n < 4 or data[0] >> 4 != VER:
             return None
-        t = data[0] & 0x0F
-        st = BODY.get(t)
-        if st is None or n - 4 != st.size:
+        t = BY_SIZE.get((data[0] & 0x0F, n - 4))
+        if t is None:
             return None
         return t, data[1], (data[2] << 8) | data[3]
 

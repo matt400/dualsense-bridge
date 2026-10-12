@@ -13,12 +13,13 @@ from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPainterPath, QPen, QP
 
 from rx_buttons import LABELS
 
-FG, DIM, BODY, GOLD = QColor("#e8eaf0"), QColor("#8b91a1"), QColor("#3a3f4d"), QColor("#ffb300")
+FG, DIM, BODY, GOLD = QColor("#eceef4"), QColor("#8d93a5"), QColor("#2c313e"), QColor("#ffb300")
 FACE = {"triangle": "#4cd08a", "circle": "#ff6b6b", "cross": "#5b9bff", "square": "#e58bd2"}
 BADGES = {"l1": "L1", "r1": "R1", "l2": "L2", "r2": "R2", "l3": "L3", "r3": "R3"}
 EXTRA_TIPS = {"crown": "Pad master", "mouse": "Touchpad jako mysz", "touchpad": "Touchpad jako dotyk DS4",
               "tv": "Tryb konsoli", "power": "Wyłącz", "restart": "Uruchom ponownie", "window": "Ekran",
-              "fullscreen": "Pełny ekran", "rumble": "Wibracja", "gear": "Ustawienia", "update": "Aktualizuj"}
+              "fullscreen": "Pełny ekran", "rumble": "Wibracja", "gear": "Ustawienia", "update": "Aktualizuj",
+              "backup": "Kopie ustawień", "stopwatch": "Opóźnienie", "plus": "Nowy profil gry"}
 SIZES = (16, 20, 24, 32, 48)
 
 
@@ -223,6 +224,32 @@ def _power(p):
     p.drawLine(QPointF(12, 3.5), QPointF(12, 11))
 
 
+def _backup(p):
+    """Dwie kartki jedna na drugiej - kopia plików."""
+    p.setPen(_pen(FG, 1.6))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawRoundedRect(QRectF(8.5, 3.5, 11, 14), 2, 2)
+    p.setBrush(QColor("#161922"))
+    p.drawRoundedRect(QRectF(4.5, 7.5, 11, 13), 2, 2)
+    p.drawLine(QPointF(7.5, 12), QPointF(12.5, 12))
+    p.drawLine(QPointF(7.5, 15.5), QPointF(12.5, 15.5))
+
+
+def _stopwatch(p):
+    p.setPen(_pen(FG, 1.6))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawEllipse(QPointF(12, 13.5), 7, 7)
+    p.drawLine(QPointF(10, 3.5), QPointF(14, 3.5))
+    p.drawLine(QPointF(12, 3.5), QPointF(12, 6.5))
+    p.drawLine(QPointF(12, 13.5), QPointF(15, 10.5))
+
+
+def _plus(p):
+    p.setPen(_pen(FG, 2.0))
+    p.drawLine(QPointF(12, 5), QPointF(12, 19))
+    p.drawLine(QPointF(5, 12), QPointF(19, 12))
+
+
 def _draw(p, name):
     if name in FACE:
         _face(p, name)
@@ -233,7 +260,8 @@ def _draw(p, name):
     else:
         {"ps": _ps, "share": _share, "options": _options, "crown": _crown, "mouse": _mouse,
          "tv": _tv, "power": _power, "touchpad": _touchpad, "restart": _restart, "window": _window,
-         "fullscreen": _fullscreen, "rumble": _rumble, "gear": _gear, "update": _update}[name](p)
+         "fullscreen": _fullscreen, "rumble": _rumble, "gear": _gear, "update": _update, "backup": _backup,
+         "stopwatch": _stopwatch, "plus": _plus}[name](p)
 
 
 def pixmap(name, size=24, dim=False):
@@ -261,4 +289,4 @@ def icon(name, dim=False):
 def has_icon(name):
     return name in FACE or name in BADGES or name.startswith("dpad_") or name in (
         "ps", "share", "options", "crown", "mouse", "touchpad", "tv", "power", "restart", "window", "fullscreen", "rumble", "gear",
-        "update")
+        "update", "backup", "stopwatch", "plus")
