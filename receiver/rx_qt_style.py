@@ -14,6 +14,7 @@ QWidget {{ background: transparent; }}
 QToolTip {{ background: {CARD}; color: {FG}; border: 1px solid {BORDER}; padding: 4px 6px; }}
 
 #header {{ background: {CARD}; border-bottom: 1px solid {BORDER}; }}
+#banner {{ background: #2a2410; border-bottom: 1px solid #5c4a12; }}
 #title {{ font-size: 16px; font-weight: 600; }}
 #hint, .dim {{ color: {DIM}; }}
 QLabel[role="dim"] {{ color: {DIM}; font-size: 12px; }}

@@ -125,5 +125,77 @@ async def lost():
 
 asyncio.run(lost())
 
+# jeden raport pada (gałka + ruch, dwa urządzenia evdev naraz) -> jeden pakiet od razu, nie dwa (drugi po limiterze)
+import time as _time
+import sender_streams
+
+
+class ReportDev:
+    """Jak jądro: jeden raport HID pada trafia naraz do urządzeń przycisków / gałek i ruchu (oba gotowe do odczytu
+    w tej samej iteracji pętli)."""
+    path = "/dev/input/event98"
+    report = None
+    def __init__(self, events):
+        self.events = events
+    def absinfo(self, c):
+        raise OSError
+    async def async_read_loop(self):
+        await ReportDev.report
+        for e in self.events:
+            yield e
+        await asyncio.sleep(1)
+
+
+async def same_report():
+    ReportDev.report = asyncio.get_running_loop().create_future()
+    c = sender_ctrl.Ctrl(1, "aa:bb:cc:dd:ee:02", ReportDev([E(ec.EV_ABS, 0, 10), E(ec.EV_SYN, ec.SYN_REPORT, 0)]),
+                         ReportDev([E(ec.EV_ABS, 4, 9000), E(ec.EV_SYN, ec.SYN_REPORT, 0)]), None)
+    sender_config.C.PAD_MIN_DT = sender_config.C.MOTION_MIN_DT = 0.004
+    c.t_state = 0.0
+    sent.clear()
+    tasks = [asyncio.create_task(sender_streams.stream_pad(c)), asyncio.create_task(sender_streams.stream_motion(c))]
+    await asyncio.sleep(0.01)
+    t0 = _time.monotonic()
+    ReportDev.report.set_result(None)                      # raport pada przyszedł
+    while not any(t == T_STATE for t, v in sent) and _time.monotonic() - t0 < 1:
+        await asyncio.sleep(0)
+    first = _time.monotonic() - t0
+    await asyncio.sleep(0.02)
+    states = [v for t, v in sent if t == T_STATE]
+    for t in tasks:
+        t.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
+    c.cancel_timers()
+    check(len(states) == 1 and states[0][0] == 10 and states[0][15] == 9000,
+          f"gałka i ruch z jednego raportu w jednym pakiecie: {[(v[0], v[15]) for v in states]}")
+    check(first < 0.002, f"pakiet od razu (bez czekania na okno limitera): {first * 1000:.2f} ms")
+
+asyncio.run(same_report())
+
+# migracja sender.toml: tylko stare wartości domyślne, własne zostają, komentarze i układ też
+import sender_migrate
+toml = os.path.join(TMP, "sender.toml")
+src = ('host = "192.168.1.4"\n'
+       'pad_min_dt = 0.004   # mój komentarz\n'
+       '# motion_min_dt = 0.004   # zakomentowane - bez zmian\n'
+       'motion_min_dt = 0.002\n'
+       'touch_coalesce_ms = 5\n'
+       'key = "a b"\n')
+open(toml, "w").write(src)
+done = sender_migrate.migrate(toml, log=lambda m: None)
+got = open(toml).read()
+check([d[0] for d in done] == ["pad_min_dt", "touch_coalesce_ms"], f"zmienione tylko stare wartości domyślne: {done}")
+check(got == src.replace("pad_min_dt = 0.004   # mój", "pad_min_dt = 0.001   # mój").replace("touch_coalesce_ms = 5", "touch_coalesce_ms = 2"),
+      f"komentarze, zakomentowane linie i własne wartości (motion_min_dt = 0.002) bez zmian:\n{got}")
+check(open(toml + ".bak").read() == src, "kopia przed zmianą: sender.toml.bak")
+check(sender_migrate.migrate(toml, log=lambda m: None) == [], "drugi raz - nic do zmiany")
+import tomllib
+cfgd = tomllib.loads(got)
+check(cfgd["pad_min_dt"] == 0.001 and cfgd["touch_coalesce_ms"] == 2 and cfgd["key"] == "a b", "plik dalej poprawnym TOML")
+open(toml, "w").write(src)
+sender_config.init(["--config", toml])
+check(sender_config.C.PAD_MIN_DT == 0.001 and sender_config.C.TOUCH_COALESCE_S == 0.002 and sender_config.C.MOTION_MIN_DT == 0.002,
+      "start nadajnika migruje sam (po aktualizacji przyciskiem nic nie trzeba robić)")
+
 print("WSZYSTKO OK" if not fails else f"FAIL: {fails}")
 sys.exit(1 if fails else 0)

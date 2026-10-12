@@ -13,9 +13,9 @@ DEFAULTS = {
     "in_port": 5005,
     "dsu_port": 26760,
     "pads": 2,               # liczba slotów (max 4); wirtualne DS4 powstają tylko dla podłączonych
-    "mouse_pads": [0],       # które kontrolery startują w trybie myszy
-    "pad_hz": 1000,          # max częstotliwość raportów DS4 (zlewanie serii pakietów); sender sam ogranicza do ~250 Hz,
-                             # więc 250 tutaj dublowało limit i przy jitterze sieci dokładało uśpienie; 0 = bez limitu
+    "mouse_pads": [0],       # które kontrolery startują w trybie myszy (gdy jest pad master: mysz ma master)
+    "pad_hz": 1000,          # max częstotliwość raportów DS4 (zlewanie serii pakietów, jak pad_min_dt nadajnika = 1 ms);
+                             # raport idzie od razu z wątku sieci, za wcześnie -> dosyła go wątek slotu; 0 = bez limitu
     "dsu_hz": 1000,          # j.w. dla DSU; 0 = bez limitu
     "dsu_tx_interval": 0.5,  # nie wysyłaj DSU bez zmian częściej niż to
     "dsu_batch": False,      # wiele pakietów DSU w jednym datagramie - nie każdy klient to akceptuje

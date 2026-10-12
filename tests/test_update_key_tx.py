@@ -129,6 +129,37 @@ asyncio.run(update())
 check(not [s for s in sent if s[0] == T_UPDMSG], "bez błędu gita - bez pakietu z powodem")
 check(len(long.encode()[:120].decode("utf-8", "ignore")) == 60, "długi powód ucięty bez psucia UTF-8 (odbiornik: ignore)")
 
+# ---------- powód błędu powtarzany z pakietem build (zgubiony pakiet, ponowne kliknięcie w ciągu 30 s) ----------
+U.status, U.fail_msg = UPD_FAILED, "git@github.com: Permission denied (publickey)."
+sent.clear(); U.send_build()
+check([s[0] for s in sent] == [T_UPDMSG, T_BUILD], f"okresowy build przy błędzie niesie też powód: {[s[0] for s in sent]}")
+U.status, U.fail_msg = 0, ""
+sent.clear(); U.send_build()
+check([s[0] for s in sent] == [T_BUILD], "bez błędu - sam build")
+
+# ---------- czytelny powód: lokalne zmiany, rozjechane gałęzie (bez hint: i postępu pobierania) ----------
+loc = os.path.join(tmp, "loc")
+git(tmp, "clone", "-q", origin, loc)
+git(loc, "remote", "set-url", "origin", origin)
+open(os.path.join(seed, "a.txt"), "w").write("3")
+git(seed, "commit", "-qam", "v3"); git(seed, "push", "-q", "origin", "main")
+open(os.path.join(loc, "a.txt"), "w").write("lokalnie")
+st, msg, *_ = proto.git_pull(loc)
+check(st == UPD_FAILED and msg.startswith("error: Your local changes") and "a.txt" in msg and "From " not in msg,
+      f"lokalne zmiany: powód z nazwą pliku, bez postępu pobierania: {msg!r}")
+git(loc, "checkout", "-q", "a.txt")
+open(os.path.join(loc, "b.txt"), "w").write("x"); git(loc, "add", "."); git(loc, "commit", "-qm", "lokalny commit")
+st, msg, *_ = proto.git_pull(loc)
+check(st == UPD_FAILED and "Not possible to fast-forward" in msg and "hint:" not in msg,
+      f"rozjechane gałęzie: właściwy komunikat zamiast podpowiedzi hint: {msg!r}")
+
+# ---------- skrypt: błąd sieci to nie brak klucza ----------
+with open(os.path.join(fake, "ssh"), "w") as f:
+    f.write("#!/bin/sh\necho 'ssh: Could not resolve hostname github.com: Name or service not known' >&2\nexit 255\n")
+r = setup()
+check(r.returncode == 1 and "Could not resolve hostname" in r.stderr and "settings/keys" not in r.stdout,
+      f"brak sieci: prawdziwy błąd zamiast instrukcji dodania klucza: {r.returncode} {r.stderr!r}")
+
 # ---------- własne GIT_SSH_COMMAND użytkownika ma pierwszeństwo ----------
 os.environ["GIT_SSH_COMMAND"] = "ssh -F /dev/null"
 check(proto.ssh_command(work) is None, "GIT_SSH_COMMAND z otoczenia nie jest nadpisywany")

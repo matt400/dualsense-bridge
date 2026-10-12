@@ -13,6 +13,7 @@ Uruchomienie bez okna: python receiver\\rx_update.py
 import os
 import subprocess
 import sys
+import threading
 import time
 from dataclasses import dataclass
 
@@ -79,6 +80,77 @@ def sender_text(build, msg=""):
     return _(SENDER_TEXT.get(build[2], "nadajnik nie odpowiedział"))
 
 
+# ---------------- sprawdzanie, czy na GitHubie jest nowsza wersja (w tle, bez pobierania kodu) ----------------
+CHECK_FIRST_S = 20.0           # pierwsze sprawdzenie po starcie (najpierw pady i okno)
+CHECK_EVERY_S = 30 * 60.0
+# w tle git nie może o nic pytać: bez okna logowania Git Credential Manager i bez pytania w terminalu
+QUIET_ENV = {"GCM_INTERACTIVE": "never", "GIT_TERMINAL_PROMPT": "0"}
+
+
+@dataclass(frozen=True)
+class Available:
+    behind: int               # tyle commitów GitHub ma ponad wersję receivera (0 = aktualna)
+    subject: str = ""         # tytuł najnowszego z nich
+    commit: str = ""          # jego skrót (7 znaków) - po nim okno poznaje, że to nowa aktualizacja do zgłoszenia
+
+
+available = None               # Available z ostatniego udanego sprawdzenia albo None (nie sprawdzono / błąd)
+# git fetch w tle i git pull z przycisku naraz walczyłyby o te same referencje ("cannot lock ref ...") - pull mógł
+# się nie udać. Aktualizacja czeka na trwające sprawdzenie, sprawdzenie pomija kolejkę, gdy trwa aktualizacja.
+_git_lock = threading.Lock()
+
+
+def check_available(root=ROOT, git=None):
+    """git fetch (bez zmiany plików) i porównanie z gałęzią na GitHubie. -> Available albo None (brak gita / sieci /
+    gałęzi śledzącej - wtedy okno po prostu nic nie pokazuje)."""
+    git = git or find_git()
+    if git is None or not os.path.isdir(os.path.join(root, ".git")):
+        return None
+    if not _git_lock.acquire(blocking=False):
+        return None                            # trwa aktualizacja - sprawdzimy następnym razem
+    try:
+        return _check(root, git)
+    finally:
+        _git_lock.release()
+
+
+def _check(root, git):
+    try:
+        if proto.git(root, "fetch", "--quiet", git_exe=git, timeout=60, env=QUIET_ENV).returncode:
+            return None
+        p = proto.git(root, "rev-list", "--count", "HEAD..@{u}", git_exe=git)
+        if p.returncode:
+            return None
+        behind = int(p.stdout.strip() or 0)
+        if not behind:
+            return Available(0)
+        head = proto.git(root, "log", "-1", "--format=%h%x00%s", "--abbrev=7", "@{u}", git_exe=git).stdout.strip()
+        commit, _sep, subject = head.partition("\0")
+        return Available(behind, subject, commit[:7])
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
+def _checker(stop):
+    global available
+    if stop.wait(CHECK_FIRST_S):
+        return
+    while True:
+        r = check_available()
+        if r is not None:
+            if r != available and r.behind:
+                print(f"Update available: {r.behind} change(s), latest {r.commit} {r.subject}")
+            available = r
+        if stop.wait(CHECK_EVERY_S):
+            return
+
+
+def start_checker(stop):
+    """Wątek w tle: co CHECK_EVERY_S sprawdza GitHuba, wynik w rx_update.available (okno odczytuje go co 400 ms)."""
+    import threading
+    threading.Thread(target=_checker, args=(stop,), name="update check", daemon=True).start()
+
+
 def update(root=ROOT, git=None, pip=True):
     if not os.path.isdir(os.path.join(root, ".git")):
         return Result(False, False, _("Folder nie jest repozytorium git (pobrany jako ZIP?) - sklonuj: "
@@ -86,7 +158,8 @@ def update(root=ROOT, git=None, pip=True):
     git = git or find_git()
     if git is None:
         return Result(False, False, _("Nie znaleziono git - zainstaluj Git for Windows (git-scm.com)"))
-    state, msg, old, new, files = proto.git_pull(root, git)
+    with _git_lock:                            # nie w trakcie sprawdzania GitHuba w tle
+        state, msg, old, new, files = proto.git_pull(root, git)
     if state == UPD_FAILED:
         return Result(False, False, _("git pull nie powiódł się: {msg}").format(msg=msg), old, old)
     if state != UPD_DONE:

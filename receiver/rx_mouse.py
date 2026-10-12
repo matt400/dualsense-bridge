@@ -14,6 +14,7 @@ import time
 from collections import deque
 
 import rx_settings
+import rx_state as S
 import rx_winapi as W
 from rx_config import C
 
@@ -56,6 +57,20 @@ def reset(i):
     hist[i].clear()
     frozen[i] = 0.0
     drag[i] = None
+
+
+def set_mode(i, on):
+    """Touchpad pada i: mysz (on) albo dotyk DS4. Puszcza przycisk i zeruje gest, gra dostaje puszczony klik
+    touchpada. -> True, gdy tryb się zmienił."""
+    if S.mouse_mode[i] == on:
+        return False
+    S.mouse_mode[i] = on
+    reset(i)
+    with S.lock:
+        S.states[i]["tp"] = False
+        S.states[i]["ver"] += 1
+    S.notify(i)
+    return True
 
 
 def mouse_rel(i, dx, dy, flags):

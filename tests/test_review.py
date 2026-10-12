@@ -3,7 +3,7 @@ import json, os, sys, time, types
 sys.path.insert(0, os.path.dirname(__file__))
 from rxenv import *                                              # noqa
 import rx_buttons as B, rx_config, rx_console, rx_master, rx_profiles as P, rx_settings
-from proto import T_BYE, T_IDENT, T_STATE
+from proto import T_BYE, T_IDENT, T_MOUSE, T_STATE
 from rx_settings import MasterConfig, MouseConfig, Settings
 
 fails = []
@@ -199,6 +199,123 @@ S.stop.clear()
 N.in_sock = real_sock
 check(S.sender_update_msg == "Permission denied (publickey) żółw" and S.peer == ("10.0.0.9", 5005),
       f"pakiet z powodem błędu aktualizacji nadajnika: {S.sender_update_msg!r}")
+
+# ---------- Ustawienia otwarte, master zmieniony koroną / PS + R3: Zapisz go nie cofa ----------
+try:
+    from PySide6.QtWidgets import QApplication
+    app = QApplication.instance() or QApplication([])
+    import rx_qt_console
+except Exception as e:
+    print(f"SKIP master w otwartych Ustawieniach ({e!r})")
+else:
+    MA, MB = "aa:aa:aa:aa:aa:31", "bb:bb:bb:bb:bb:32"
+    C.SETTINGS_PATH = os.path.join(TMP, "settings_master.json")
+    feed(T_IDENT, 0, MA.encode()); state(0); feed(T_IDENT, 1, MB.encode()); state(1)
+    rx_master.set_master(0, save=False)
+    d = rx_qt_console.ConsoleSettings(); d.present()
+    rx_master.set_master(1, save=False)                       # korona na karcie pada 2
+    d.save_btn.click()
+    check(rx_settings.cur.master.pad == MB, f"Zapisz nie cofa mastera zmienionego koroną: {rx_settings.cur.master.pad}")
+    d.present(); d.master_pad.set_data(MA); d.master_pad.activated.emit(d.master_pad.currentIndex())
+    d.save_btn.click()
+    check(rx_settings.cur.master.pad == MA, "wybór mastera w oknie (także powrót do pierwotnego) działa")
+    d.close()
+    rx_settings.apply(rx_settings.defaults())
+
+# ---------- tryb konsoli: pusta lista dozwolonych programów = bez blokady ----------
+cc = rx_console.Console(rx_console.ConsoleConfig(allowed_apps=()))
+FG[0] = "explorer.exe"
+check(cc.blocked_by() is None, "pusta lista dozwolonych: pulpit nie blokuje (wcześniej blokowało wszystko)")
+FG[0] = "eldenring.exe"
+check(cc.blocked_by() is None, "pusta lista dozwolonych: bez blokady także w grze")
+cc = rx_console.Console(rx_console.ConsoleConfig())
+check(cc.blocked_by() == "eldenring.exe", "domyślna lista: gra blokuje")
+FG[0] = None
+
+# ---------- touchpad jako mysz idzie za masterem (korona przenosiła tylko uprawnienia) ----------
+rx_settings.apply(rx_settings.defaults())
+MA, MB = "aa:aa:aa:aa:aa:41", "bb:bb:bb:bb:bb:42"
+feed(T_IDENT, 0, MA.encode()); state(0); feed(T_IDENT, 1, MB.encode()); state(1)
+S.mouse_mode[:] = [i in C.MOUSE_PADS for i in range(C.NUM_PADS)]
+check(S.mouse_mode[:2] == [True, False], "bez mastera: mysz wg mouse_pads (slot 1)")
+rx_master.set_master(1, save=False)                       # korona na karcie pada 2
+check(S.mouse_mode[:2] == [False, True], f"master = pad 2 -> jego touchpad to mysz, pad 1 dotyk DS4: {S.mouse_mode[:2]}")
+calls.clear()
+feed(T_MOUSE, 1, 30, 0, 0)
+check(any(c[0] == "m" for c in calls), "ruch na touchpadzie mastera rusza kursorem")
+rx_master.set_master(0, save=False)
+check(S.mouse_mode[:2] == [True, False], "master z powrotem na pad 1 -> mysz wraca")
+rx_master.set_master(None, save=False)
+check(S.mouse_mode[:2] == [True, False], "bez mastera -> mouse_pads")
+rx_master.set_master(1, save=False)
+feed(T_BYE, 1)                                            # master się rozłączył
+check(S.mouse_mode[0] is True, "master niepodłączony -> mysz wg mouse_pads (pad 1 nie zostaje bez myszy)")
+time.sleep(1.1); feed(T_IDENT, 1, MB.encode()); state(1)  # master wraca
+check(S.mouse_mode[:2] == [False, True], "master wrócił -> znów jego touchpad to mysz")
+rx_settings.apply(rx_settings.defaults())
+
+# ---------- raport DS4 od razu w wątku sieci (bez przełączania na wątek slotu), seria zlana bez utraty ----------
+import threading, rx_ds4
+reports = []
+class FastPad:
+    def register_notification(self, cb): pass
+    def unregister_notification(self): pass
+    def update_extended_report(self, rep):
+        reports.append((threading.get_ident(), time.perf_counter(), bytes(rep)[0]))
+rx_ds4.vg.VDS4Gamepad = FastPad
+rx_ds4.init()
+S.ignore_until[0] = 0.0
+feed(T_BYE, 0); S.ignore_until[0] = 0.0
+state(0)
+S.want[0].set()
+t = threading.Thread(target=rx_ds4.slot_thread, args=(0,), daemon=True); t.start()
+end = time.monotonic() + 2
+while rx_ds4.outs[0] is None and time.monotonic() < end:
+    time.sleep(0.01)
+time.sleep(0.05); reports.clear()
+me = threading.get_ident()
+t0 = time.perf_counter()
+state(0, sticks=(10, 128, 128, 128))
+check(reports and reports[0][0] == me and reports[0][2] == 10,
+      f"raport z wątku sieci, zanim obsługa pakietu wróciła: {[(r[0] == me, r[2]) for r in reports]}")
+for x in (20, 30, 40):                                    # seria szybsza niż pad_hz (1 ms)
+    state(0, sticks=(x, 128, 128, 128))
+time.sleep(0.05)
+check(reports[-1][2] == 40, f"seria szybsza niż pad_hz: ostatni stan dosłany przez wątek slotu: {[r[2] for r in reports]}")
+check(len(reports) <= 4, "seria zlana (nie więcej raportów niż zmian)")
+import random as _r
+rng = _r.Random(5); reports.clear(); seq = []
+for k in range(300):                                      # zmiany w nieregularnych odstępach wokół limitu pad_hz
+    v = 1 + k % 250
+    state(0, sticks=(v, 128, 128, 128)); seq.append(v)
+    time.sleep(rng.choice((0, 0, 0.0004, 0.0009, 0.0011, 0.002)))
+time.sleep(0.05)
+vals = [r[2] for r in reports]
+dups = sum(1 for a, b in zip(vals, vals[1:]) if a == b)
+check(dups == 0, f"bez zdublowanych raportów (push + wątek slotu): {dups} duplikatów na {len(vals)}")
+check(vals[-1] == seq[-1], "ostatni stan zawsze dochodzi")
+S.want[0].clear(); S.wake[0].set(); t.join(2)
+check(rx_ds4.outs[0] is None and not S.plugged[0], "odłączenie: push nie używa już odłączonego pada")
+state(0, sticks=(50, 128, 128, 128))                      # po odłączeniu tylko budzi wątek slotu, bez wyjątku
+S.push = None
+
+# ---------- git: sprawdzanie w tle i aktualizacja nie biegną naraz ----------
+import rx_update
+held = threading.Event(); release = threading.Event()
+def hold():
+    with rx_update._git_lock:
+        held.set(); release.wait(2)
+th = threading.Thread(target=hold); th.start(); held.wait(2)
+real_isdir = rx_update.os.path.isdir
+rx_update.os.path.isdir = lambda p: True
+t0 = time.monotonic(); r = rx_update.check_available(TMP, git="git")
+check(r is None and time.monotonic() - t0 < 0.1, "trwa aktualizacja -> sprawdzenie w tle pominięte od razu")
+rx_update.proto.git_pull, real_pull = (lambda root, git: (rx_update.UPD_NO_CHANGE, "", "a", "a", [])), rx_update.proto.git_pull
+threading.Timer(0.3, release.set).start()
+t0 = time.monotonic(); rx_update.update(TMP, git="git", pip=False)
+check(time.monotonic() - t0 >= 0.25, "aktualizacja czeka na koniec trwającego sprawdzenia")
+rx_update.proto.git_pull, rx_update.os.path.isdir = real_pull, real_isdir
+th.join(2)
 
 print("WSZYSTKO OK" if not fails else f"FAIL: {fails}")
 sys.exit(1 if fails else 0)

@@ -215,18 +215,30 @@ def is_auth_error(msg):
     return any(k in m for k in _AUTH)
 
 
+def _noise(line):
+    """Linie bez powodu błędu: ogólne zakończenie błędu połączenia, podpowiedzi gita (hint:), postęp pobierania
+    ("From ...", "   a1b2..c3d4  main -> origin/main", " * [new branch] ...")."""
+    low = line.lower()
+    return low.startswith((*_GENERIC, "hint:", "from ")) or (" -> " in line and line[:1] in " *+-=!t")
+
+
 def git_error(text):
-    """Powód błędu gita w jednej linii: bez ogólnego "Could not read from remote repository..." na końcu."""
-    lines = [x.strip() for x in (text or "").splitlines() if x.strip()]
-    useful = [x for x in lines if not x.lower().startswith(_GENERIC)] or lines
-    return " / ".join(useful[:3])
+    """Powód błędu gita w jednej linii: od pierwszej linii "fatal:" / "error:" (z plikami, których dotyczy), bez
+    podpowiedzi, postępu pobierania i ogólnego "Could not read from remote repository..."."""
+    raw = [x.rstrip() for x in (text or "").splitlines() if x.strip()]
+    useful = [x for x in raw if not _noise(x)] or raw
+    start = next((k for k, x in enumerate(useful) if x.lstrip().lower().startswith(("fatal:", "error:"))), 0)
+    return " / ".join(x.strip() for x in useful[start:start + 3])
 
 
-def git(root, *args, git_exe=None, timeout=15):
-    """-> CompletedProcess (tekst). Bez okna konsoli na Windows."""
+def git(root, *args, git_exe=None, timeout=15, env=None):
+    """-> CompletedProcess (tekst). Bez okna konsoli na Windows. env: dodatkowe zmienne środowiska dla gita."""
+    kw = _owner(root)
+    if env:
+        kw["env"] = {**kw["env"], **env}
     return subprocess.run([git_exe or find_git() or "git", "-c", "safe.directory=*", *args], cwd=root,
                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout,
-                          creationflags=_NO_WINDOW, **_owner(root))
+                          creationflags=_NO_WINDOW, **kw)
 
 
 def git_version(root, git_exe=None):
