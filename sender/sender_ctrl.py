@@ -135,6 +135,9 @@ class Ctrl:
         key = (*self.pad, *self.hat, self.mask, self.batt, self.flags, *self.motion)
         self.pending = False
         if not force and key == self.last_key:
+            # zmiana bez skutku (szum gałki w strefie martwej, ta sama wartość): jej czas nie może zostać jako "najstarsza
+            # niewysłana zmiana" - następne prawdziwe naciśnięcie dostałoby opóźnienie liczone od tego szumu (do ~100 ms)
+            self.t_event = None
             return
         fresh = key != self.last_key
         self.last_key = key

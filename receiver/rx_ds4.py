@@ -123,6 +123,8 @@ def slot_thread(idx):
             except Exception as e:
                 print(f"Rumble/lightbar notification unavailable for pad {idx}: {e!r}")
             o = Out(pad)
+            with S.lock:       # zmiana sprzed podłączenia czekała na tworzenie DS4 (wait_turn, ViGEm: do 2 s) - to nie
+                S.states[idx]["lat"] = S.states[idx]["blat"] = None     # opóźnienie, tylko skok max i średniej po połączeniu
             S.plugged[idx] = True
             last_err = None
             print(f"Controller {idx}: virtual DS4 plugged in")

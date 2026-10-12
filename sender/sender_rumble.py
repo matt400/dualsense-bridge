@@ -478,6 +478,7 @@ class Rumble:
                 setattr(self, name, None)
         if self.cur != (0, 0):
             self._send(0, 0)
+            self.cur = (0, 0)       # set_triggers niżej wysyła raport z bieżącą mocą silników - nie może jej włączyć od nowa
         if self.trig is not None and any(t[0] != TRIG_OFF for t in self.trig):
             self.set_triggers(TRIG2_OFF)         # nadajnik się zamyka - spust nie może zostać twardy
         self._arm_rv(False)

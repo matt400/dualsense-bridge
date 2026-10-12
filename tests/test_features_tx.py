@@ -56,6 +56,8 @@ async def rumble():
     r.close()
     tail = open(path, "rb").read()[size:]
     assert tail and tail[-78:][3:][R.RIGHT_TRIGGER_AT] == R.TRIG_OFF, "zamknięcie nadajnika zdejmuje opór"
+    assert all(rep[3:][2:4] == b"\0\0" for rep in (tail[k:k + 78] for k in range(0, len(tail), 78))), \
+        "raporty przy zamknięciu bez wibracji - zdjęcie oporu nie może włączyć silników od nowa (pad trzyma moc)"
     ev = R.Rumble(1, Dev(), "off")
     assert not ev.bits & CAP_TRIGGERS and ev.set_triggers((1, 1, 1, 1)) is False
 asyncio.run(rumble())
@@ -110,6 +112,36 @@ assert out[-1][0] == T_STATE2 and out[-1][2][-2:] == (LAT_NONE, LAT_NONE), "powt
 c.mark_event(types.SimpleNamespace())                    # zdarzenie bez czasu (testy) - bez pomiaru
 assert c.t_event is None
 ok("Ctrl.send_state: state2 z czasem w zegarze PC, telefon i Bluetooth tylko dla świeżej zmiany")
+
+
+def ev_ago(us):
+    t = time.time_ns() // 1000 - us
+    return types.SimpleNamespace(sec=t // 1_000_000, usec=t % 1_000_000)
+
+
+c.set_abs(0, c.pad[0] + 1 if c.pad[0] < 255 else 254)    # zmiana gałki ...
+c.send_state()
+c.set_abs(0, 128)
+c.send_state()
+c.set_abs(0, 129)                                        # ... szum w strefie martwej: wartość 128 bez zmian
+c.mark_event(ev_ago(40_000))
+n = len(out)
+c.send_state()
+assert len(out) == n and c.t_event is None, "zmiana bez skutku nie zostawia swojego czasu dla następnej"
+c.mask = 1                                               # prawdziwe naciśnięcie
+c.mark_event(ev_ago(300))
+c.send_state()
+assert out[-1][0] == T_STATE2 and 300 <= out[-1][2][-2] < 5_000, f"opóźnienie naciśnięcia, nie szumu: {out[-1][2][-2]}"
+ok("Ctrl.send_state: szum gałki w strefie martwej nie zawyża pomiaru następnego naciśnięcia")
+
+pc = net.PcClock()
+base = time.perf_counter_ns()
+pc.pong(base, 5_000_000, base + 100_000)                 # RTT 0.1 ms, stary zegar PC
+pc.t_sync -= pc.SYNC_MAX_AGE_S + 1                       # przerwa (PC wyłączony / restart)
+pc.pong(base, 9_000_000, base + 2_000_000)               # nowy zegar, gorszy RTT
+assert len(pc.samples) == 1 and pc.offset_us == 9_000_000 - (base + base + 2_000_000) // 2000, \
+    "po przerwie pomiary sprzed niej nie wygrywają mniejszym RTT"
+ok("PcClock: pomiary sprzed przerwy w pongach są odrzucane")
 
 # ---------- odbiór: trig i pong2 z sieci ----------
 cod = Codec()
