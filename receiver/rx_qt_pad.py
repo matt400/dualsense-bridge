@@ -6,18 +6,27 @@ odświeżenie 30 razy na sekundę kosztuje niewiele, a trafianie w części jest
 import re
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import (QColor, QFont, QFontMetricsF, QLinearGradient, QPainter, QPainterPath, QPen,
-                           QRadialGradient, QTransform)
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QFontMetricsF,
+    QLinearGradient,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QRadialGradient,
+    QTransform,
+)
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
 import rx_buttons as B
 from rx_editor import L3_OF, SHORT
 
-VIEW_X, VIEW_Y, VIEW_W, VIEW_H = 44, 24, 712, 484     # kadr rysunku (współrzędne SVG 800x520 bez pustych marginesów)
+VIEW_X, VIEW_Y, VIEW_W, VIEW_H = 44, 24, 712, 484  # kadr rysunku (współrzędne SVG 800x520 bez pustych marginesów)
 ACCENT, BAD, DARK = QColor("#ffb300"), QColor("#ff6b6b"), QColor("#14161c")
 SHAPE, EDGE, ARROW = QColor("#3a3f4d"), QColor("#565d70"), QColor("#8e96ab")
 LABEL = QColor("#c9cddb")
-STICK_TRAVEL = 14      # o tyle (jednostek rysunku) przesuwa się gałka przy pełnym wychyleniu
+STICK_TRAVEL = 14  # o tyle (jednostek rysunku) przesuwa się gałka przy pełnym wychyleniu
 
 _TOKENS = re.compile(r"[A-Za-z]|-?\d+(?:\.\d+)?")
 _ARGS = {"M": 2, "L": 2, "H": 1, "V": 1, "C": 6, "Q": 4}
@@ -34,7 +43,7 @@ def svg_path(d):
             cmd = None
             continue
         n = _ARGS[cmd]
-        a = [float(v) for v in toks[i:i + n]]
+        a = [float(v) for v in toks[i : i + n]]
         i += n
         if cmd == "M":
             path.moveTo(*a)
@@ -87,7 +96,7 @@ class Part:
 
     def __init__(self, name, path, tip, arrow=None, sym=None, label=None, rot=None):
         self.name, self.path, self.tip = name, path, tip
-        self.arrow, self.sym, self.label, self.rot = arrow, sym, label, rot     # label = (tekst, x, y)
+        self.arrow, self.sym, self.label, self.rot = arrow, sym, label, rot  # label = (tekst, x, y)
 
 
 def _build_parts():
@@ -358,4 +367,3 @@ class PadView(QWidget):
     def _text(p, text, cx, y):
         """Napis wyśrodkowany poziomo w cx, linia bazowa na y (jak text-anchor: middle w SVG)."""
         p.drawText(QPointF(cx - QFontMetricsF(p.font()).horizontalAdvance(text) / 2, y), text)
-
