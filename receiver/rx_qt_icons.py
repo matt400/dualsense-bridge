@@ -23,7 +23,7 @@ EXTRA_TIPS = {"crown": "Pad master", "mouse": "Touchpad jako mysz", "touchpad": 
               "press": "Przycisk → gra", "reset": "Wyzeruj", "log": "Dziennik zdarzeń", "copy": "Kopiuj",
               "trash": "Wyczyść", "phone": "Nadajnik", "lightbar": "Lightbar", "wake": "Wake-on-LAN",
               "target": "Dryf gałek", "gyro": "Kalibracja żyroskopu", "shield": "Blokada wyjścia do gry",
-              "pulse": "Ruch pada"}
+              "pulse": "Ruch pada", "bluetooth": "Bluetooth nadajnika"}
 SIZES = (16, 20, 24, 32, 48)
 
 
@@ -385,6 +385,16 @@ def _pulse(p):
     p.drawPath(path)
 
 
+def _bluetooth(p):
+    """Runa Bluetooth: pionowa kreska i dwa "dzioby" w prawo."""
+    path = QPainterPath(QPointF(7, 8))
+    for x, y in ((17, 16.5), (12, 21), (12, 3), (17, 7.5), (7, 16)):
+        path.lineTo(x, y)
+    p.setPen(_pen("#5b9bff", 1.9))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawPath(path)
+
+
 def _draw(p, name):
     if name in FACE:
         _face(p, name)
@@ -398,7 +408,7 @@ def _draw(p, name):
          "fullscreen": _fullscreen, "rumble": _rumble, "gear": _gear, "update": _update, "backup": _backup,
          "stopwatch": _stopwatch, "plus": _plus, "press": _press, "reset": _reset, "log": _log, "copy": _copy,
          "trash": _trash, "phone": _phone, "lightbar": _lightbar, "wake": _wake, "target": _target, "gyro": _gyro,
-         "shield": _shield, "pulse": _pulse}[name](p)
+         "shield": _shield, "pulse": _pulse, "bluetooth": _bluetooth}[name](p)
 
 
 def pixmap(name, size=24, dim=False):
@@ -427,4 +437,4 @@ def has_icon(name):
     return name in FACE or name in BADGES or name.startswith("dpad_") or name in (
         "ps", "share", "options", "crown", "mouse", "touchpad", "tv", "power", "restart", "window", "fullscreen", "rumble", "gear",
         "update", "backup", "stopwatch", "plus", "press", "reset", "log", "copy", "trash", "phone", "lightbar", "wake",
-        "target", "gyro", "shield", "pulse")
+        "target", "gyro", "shield", "pulse", "bluetooth")

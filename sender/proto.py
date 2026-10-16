@@ -60,7 +60,7 @@ do receivera, od którego przyszedł scfg; receiver wysyła btcmd dopiero po bts
   btstate (typ 12) "BBBBBHBB6s" nadajnik -> PC (idx 255): stan adaptera BTS_*, flagi BTF_*, sekundy skanu do końca,
                                połączone urządzenia, urządzenia na liście, runda listy, ostatnia operacja BT_*, jej wynik
                                BTR_*, jej MAC; zaraz po nim (w aktywnym trybie) urządzenia rundy
-  btdev   (typ 9)  "HBB6sbB24s" nadajnik -> PC (idx 255): runda, numer, ile w rundzie, MAC, RSSI [dBm] (BT_RSSI_NONE =
+  btdev   (typ 9)  "HBB6sbB32s" nadajnik -> PC (idx 255): runda, numer, ile w rundzie, MAC, RSSI [dBm] (BT_RSSI_NONE =
                                brak - poza skanem), flagi BTD_*, nazwa (UTF-8, ucięta); receiver podmienia listę dopiero,
                                gdy ma całą rundę (zgubiony pakiet = lista z poprzedniej rundy, nie dziurawa)
 
@@ -154,13 +154,13 @@ BODY = {
     T_TRIG2: struct.Struct("!12B"),             # efekty L2, R2 (tryb, a, b, c) + wibracja z gry (flagi, %, Hz, 0)
     T_BTCMD: struct.Struct("!BB6s"),            # operacja BT_*, argument, MAC
     T_BTSTATE: struct.Struct("!BBBBBHBB6s"),    # BTS_*, BTF_*, skan [s], połączone, na liście, runda, op, BTR_*, MAC
-    T_BTDEV: struct.Struct("!HBB6sbB24s"),      # runda, numer, ile, MAC, RSSI, BTD_*, nazwa
+    T_BTDEV: struct.Struct("!HBB6sbB32s"),      # runda, numer, ile, MAC, RSSI, BTD_*, nazwa
 }
 STATE_FIELDS = 17                               # pola stanu w state / state2 (bez pomiaru opóźnienia)
 BODY_LEN = {t: s.size for t, s in BODY.items()}
 assert BODY_LEN == {0: 62, 1: 36, 2: 12, 3: 1, 4: 5, 5: 8, 6: 5, 7: 8, 8: 0, 9: 17, 10: 2, 11: 6, 12: 3, 13: 12, 14: 120,
                     15: 4, T_STATE2: 44, T_PONG2: 16, T_SCFG: 14, T_CALRES: 30, T_BUILD2: 22, T_TRIG2: 12,
-                    T_BTCMD: 8, T_BTSTATE: 15, T_BTDEV: 36}, BODY_LEN
+                    T_BTCMD: 8, T_BTSTATE: 15, T_BTDEV: 44}, BODY_LEN
 # (typ w nagłówku, długość treści) -> typ w programie
 BY_SIZE = {(WIRE.get(t, t), s.size): t for t, s in BODY.items()}
 assert len(BY_SIZE) == len(BODY), "dwa typy z tą samą długością w jednym typie nagłówka"
@@ -206,9 +206,14 @@ def cstr(b):
     return b.rstrip(b"\0").decode("utf-8", "replace")
 
 
-def utf8_field(text, size):
-    """str -> bajty UTF-8 najwyżej `size`, ucięte na granicy znaku (cstr() nie pokaże pół litery)."""
-    return (text or "").encode("utf-8")[:size].decode("utf-8", "ignore").encode("utf-8")
+def utf8_field(text, size, more=""):
+    """str -> bajty UTF-8 najwyżej `size`, ucięte na granicy znaku (cstr() nie pokaże pół litery); ucięty tekst
+    kończy się `more` (np. "…"), żeby druga strona wiedziała, że to nie cała nazwa."""
+    raw = (text or "").encode("utf-8")
+    if len(raw) <= size:
+        return raw
+    tail = more.encode("utf-8")
+    return raw[:size - len(tail)].decode("utf-8", "ignore").encode("utf-8") + tail
 
 
 class Codec:

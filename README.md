@@ -48,6 +48,13 @@ DualSense ──Bluetooth──> telefon: sender/ ──UDP 5005──> PC: rece
     aktywne: D-pad - poruszanie się, ✕ - wybór, ○ - wstecz / wyjście z pełnego ekranu, L1 / R1 - poprzedni / następny
     pad, PS trzymane - zwykłe skróty;
   - przyciski pada pokazane jako ikony (z pełną nazwą w podpowiedzi);
+  - **Bluetooth telefonu z okna** (telefon za telewizorem nie potrzebuje ekranu): ikona Bluetooth w nagłówku z kropką
+    stanu (zielona - działa, niebieska - skanuje, żółta - wyłączony, czerwona - błąd, szara - brak danych) otwiera
+    wysuwany z prawej panel: **skanowanie** (z odliczaniem, samo kończy się po 30 s - skan zabiera radio połączonym
+    padom), lista urządzeń (pady na górze, siła sygnału w trakcie skanu, stan) i przyciski **Sparuj** (parowanie,
+    zaufanie i połączenie), **Połącz**, **Rozłącz**, **Zapomnij**, a przy wyłączonym adapterze **Włącz Bluetooth**.
+    W trybie TV: D-pad do ikony, ✕ otwiera, D-pad chodzi tylko po panelu, ✕ klika, ○ zamyka. Tryb parowania
+    DualSense: Create + PS, aż lightbar szybko miga. Wymaga nadajnika v10 (systemd: `busctl`, BlueZ: `bluetoothctl`);
   - **widok Test** (trzeci przełącznik pod padem: Wynik / Fizycznie / Test) dla wybranego pada:
     - na rysunku na żywo przyciski, wartości spustów (0-255), gałki, palce i klik touchpada (także w trybie myszy);
     - po prawej wykresy gyro [°/s] i akcelerometru [g] (3 osie, ostatnie 5 s, skala sama się dopasowuje) i
@@ -64,7 +71,12 @@ DualSense ──Bluetooth──> telefon: sender/ ──UDP 5005──> PC: rece
       włączony): przyciski, gałki, ruch i dotyk nie idą do gry, mysz touchpada, gyro-mysz, skróty PS i tryb
       konsoli nie reagują. Blokada działa tylko przy aktywnym oknie receivera: znika po przejściu do gry (inne okno
       na pierwszym planie), wyjściu z widoku Test, minimalizacji / schowaniu okna i zamknięciu receivera;
-    - w trybie TV testowany pad nie steruje oknem; przytrzymanie ○ przez 1 s wychodzi z testu.
+    - w trybie TV testowany pad nie steruje oknem; przytrzymanie ○ przez 1 s wychodzi z testu;
+    - przy otwartym widoku Test **żaden pad nie uruchamia skrótów** (PS + przycisk, akcje i przejęcie mastera, tryb
+      konsoli, PS + klik touchpada) - testowanie przycisków niczego nie przełączy;
+    - **wyjście awaryjne z pada: PS + △ trzymane 3 s** na padzie master (bez mastera w ustawieniach - na dowolnym)
+      kończy test bez myszy, także przy schowanym oknie i gdy testowany jest sam master: blokada znika od razu, a
+      trzymane w tej chwili przyciski gra dostaje jako puszczone, dopóki ich nie puścisz.
 - **Skróty z PS:**
 
   | Skrót | Działanie |
@@ -178,7 +190,7 @@ DualSense ──Bluetooth──> telefon: sender/ ──UDP 5005──> PC: rece
 |---|---|---|
 | System | Windows 10 / 11 | Linux z jądrem ze sterownikiem `hid-playstation` |
 | Python | 3.11+ | 3.11+ |
-| Inne | sterownik ViGEmBus, `vgamepad`, `PySide6-Essentials`, `pycaw`, `winotify` | `evdev`, `bluez` (`bluetoothctl`) |
+| Inne | sterownik ViGEmBus, `vgamepad`, `PySide6-Essentials`, `pycaw`, `winotify` | `evdev`, `bluez` (`bluetoothctl`), `busctl` (systemd) |
 
 ## Instalacja
 
@@ -338,6 +350,9 @@ korekcja dryfu gałek w `receiver/padcal.json` (obok `remap.json`, w kopiach ust
 | Pad nie wibruje | karta pada: „stary nadajnik” = skopiuj nowe pliki `sender/` na telefon, „brak uprawnień” = nadajnik nie działa jako root (`doas` albo usługa z `install-service.sh`), „brak w jądrze” = jądro telefonu bez `CONFIG_PLAYSTATION_FF` i `CONFIG_HIDRAW`, „nie znaleziono pada” = brak `/dev/hidraw` tego pada; na telefonie: `doas python3 sender_rumble.py --test` (wibruje każdym sposobem po kolei, bez sieci) i ustaw w `sender.toml` `rumble` na ten, który działa; log nadajnika `rumble via ...` i `rumble N/N from PC` (czy polecenie z PC dochodzi); przycisk „Wibracja” na karcie pada |
 | Wake-on-LAN nie budzi komputera | czerwony błysk = nadajnik nie zna MAC (Ustawienia → Wake-on-LAN: wpisz go albo uruchom raz komputer z działającym nadajnikiem); biały błysk, a PC śpi = WoL wyłączony w BIOS / sterowniku karty, karta Wi-Fi albo „Szybkie uruchamianie” Windows (wyłącz je przy WoL z pełnego wyłączenia); log nadajnika `Wake-on-LAN ... -> ...` |
 | Tryb konsoli nie reaguje | log receivera: `Console: double ... on controller N` = wykryte; `only the master pad can do that` = funkcja zastrzeżona dla mastera (Ustawienia → Master) |
+| Panel Bluetooth: szara kropka / „brak danych” | nadajnik offline albo starszy niż v10 - Aktualizuj |
+| Panel Bluetooth: czerwona kropka | opis w podpowiedzi: „brak uprawnień” = nadajnik nie działa jako root, „usługa bluetooth nie działa” = `doas systemctl enable --now bluetooth`, „brak busctl” = system bez systemd, „zablokowany (rfkill)” = `doas rfkill unblock bluetooth` |
+| Sparuj: „parowanie odrzucone” / „brak odpowiedzi urządzenia” | pad nie jest w trybie parowania (Create + PS, aż lightbar szybko miga) - włącz go i uruchom skanowanie jeszcze raz; pad sparowany wcześniej z konsolą: Zapomnij, potem Sparuj |
 | Gra w co-op widzi pady dziwnie (Steam) | Steam → biblioteka → gra → Właściwości → Kontroler: spróbuj „Wyłącz Steam Input” (gra czyta dwa DS4 sama) albo odwrotnie; kolejność graczy w Big Picture → Ustawienia → Kontroler |
 
 ## Struktura
@@ -378,7 +393,11 @@ Testy obejmują:
   packet, `wol.json` (`test_wol_tx.py`);
 - widok Test: pomiar dryfu i propozycja strefy martwej, korekcja dryfu we wszystkich profilach pada, blokada wyjścia
   do gry (DS4, DSU, mysz, skróty), kalibracja żyroskopu z okna i jej zapis na telefonie, gałki bez strefy martwej
-  nadajnika na czas pomiaru (`test_padtest.py`, `test_padtest_gui.py`, `test_calib_tx.py`).
+  nadajnika na czas pomiaru, wyłączone skróty i wyjście PS + △ (`test_padtest.py`, `test_padtest_gui.py`,
+  `test_calib_tx.py`);
+- Bluetooth telefonu z okna: protokół, BlueZ przez podstawiony `busctl`, skan na prawdziwym procesie z limitem,
+  błędy adaptera / uprawnień / programów, lista rundami, całość przez UDP (`test_bt.py`) i panel w oknie z obsługą
+  padem (`test_bt_gui.py`).
 
 Działanie z prawdziwym padem, ViGEm, `DisplaySwitch.exe`, przełączaniem dźwięku (pycaw) i powiadomieniami Windows trzeba
 sprawdzić ręcznie.

@@ -7,8 +7,10 @@ pad, fizyczne przyciski (przed remapowaniem). PS trzymane = skróty PS, nawigacj
   D-pad ← / →        suwak: wartość, lista: poprzednia / następna pozycja, zakładki: zakładka, rysunek pada: część;
                      gdzie indziej jak ↑ / ↓
   ✕                  kliknij (przycisk, pole wyboru), rozwiń listę, wybierz część pada
-  ○                  wstecz: zwiń listę, zamknij Ustawienia, wyjdź z pełnego ekranu
+  ○                  wstecz: zwiń listę, zamknij panel Bluetooth, zamknij Ustawienia, wyjdź z pełnego ekranu
   L1 / R1            poprzedni / następny pad (karta po lewej)
+Otwarty panel Bluetooth (ikona w nagłówku: D-pad do niej, ✕) zatrzymuje fokus w sobie - D-pad chodzi tylko po
+jego przyciskach (skan, wiersze urządzeń: Sparuj / Połącz / Rozłącz, Zapomnij), ○ go zamyka.
 W widoku Test testowany pad nie steruje oknem (jego przyciski są testowane); przytrzymane ○ wychodzi z testu.
 Przytrzymany kierunek powtarza krok (po REPEAT_DELAY_S co REPEAT_EVERY_S).
 """
@@ -31,13 +33,14 @@ def _key(widget, key):
         QApplication.sendEvent(widget, QKeyEvent(kind, key, Qt.KeyboardModifier.NoModifier))
 
 
-def _focusable(w, root):
+def _focusable(w, root, scope=None):
     return (w.window() is root and w.isVisible() and w.isEnabled()
-            and bool(w.focusPolicy() & Qt.FocusPolicy.TabFocus))
+            and bool(w.focusPolicy() & Qt.FocusPolicy.TabFocus) and (scope is None or scope.isAncestorOf(w)))
 
 
-def move_focus(root, forward):
-    """Następny / poprzedni element w łańcuchu fokusu okna `root` (jak Tab), przewijając panel, żeby był widoczny."""
+def move_focus(root, forward, scope=None):
+    """Następny / poprzedni element w łańcuchu fokusu okna `root` (jak Tab), przewijając panel, żeby był widoczny.
+    scope: tylko elementy wewnątrz tego widżetu (otwarty panel Bluetooth)."""
     start = QApplication.focusWidget()
     if start is None or start.window() is not root:
         start = root
@@ -46,7 +49,7 @@ def move_focus(root, forward):
         w = w.nextInFocusChain() if forward else w.previousInFocusChain()
         if w is start:
             return None
-        if _focusable(w, root):
+        if _focusable(w, root, scope):
             w.setFocus(Qt.FocusReason.TabFocusReason)
             sa, p = None, w.parentWidget()
             while p is not None and sa is None:
@@ -114,16 +117,24 @@ class PadNav:
             return
         fw = QApplication.focusWidget()
         fw = fw if fw is not None and fw.window() is root else None
+        scope = self.scope(root)
+        if scope is not None and fw is not None and not scope.isAncestorOf(fw):
+            fw = None                                           # fokus poza panelem - ✕ nie klika pod nim
         if name in DIRS:
-            self._direction(root, fw, name)
+            self._direction(root, fw, name, scope)
         elif name == "cross":
             self._activate(fw)
         elif name == "circle":
-            self._back(root)
-        elif name in ("l1", "r1") and root is self.win:
+            self._back(root, scope)
+        elif name in ("l1", "r1") and root is self.win and scope is None:
             self._pad(-1 if name == "l1" else 1)
 
-    def _direction(self, root, fw, name):
+    def scope(self, root):
+        """Otwarty panel nad oknem (Bluetooth), w którym zostaje fokus, albo None."""
+        drawer = getattr(self.win, "bt_drawer", None)
+        return drawer.focus_scope() if drawer is not None and root is self.win else None
+
+    def _direction(self, root, fw, name, scope=None):
         side = name in ("dpad_left", "dpad_right")
         from rx_qt_pad import PadView
         if side and isinstance(fw, (QAbstractSlider, QTabBar, PadView)):
@@ -138,7 +149,7 @@ class PadNav:
         if isinstance(fw, QAbstractItemView) and not side:
             _key(fw, ARROW[name])
             return
-        move_focus(root, name in ("dpad_down", "dpad_right"))
+        move_focus(root, name in ("dpad_down", "dpad_right"), scope)
 
     @staticmethod
     def _activate(fw):
@@ -150,8 +161,10 @@ class PadNav:
         elif isinstance(fw, PadView):
             _key(fw, Qt.Key.Key_Return)
 
-    def _back(self, root):
-        if root is not self.win:
+    def _back(self, root, scope=None):
+        if scope is not None:
+            self.win.bt_drawer.close_drawer()                   # panel Bluetooth
+        elif root is not self.win:
             root.close()                                        # Ustawienia
         else:
             self.win.set_fullscreen(False)

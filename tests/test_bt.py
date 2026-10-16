@@ -26,7 +26,7 @@ assert cod.parse(cod.pack(T_CMD, 0, 1, 0))[0] == T_CMD and cod.parse(cod.pack(T_
 assert cod.parse(cod.pack(T_IDENT, 0, PAD.encode()))[0] == T_IDENT, "stare typy o tych samych nagłówkach bez zmian"
 k = Codec(b"klucz")
 assert k.parse(k.pack(T_BTSTATE, 255, BTS_OFF, 0, 0, 0, 0, 1, 0, 0, bytes(6)))[0] == T_BTSTATE, "z HMAC też"
-f = proto.utf8_field("Pad Łukasza – żółty ąęść", 24)
+f = proto.utf8_field("Pad Łukasza – żółty ąęść", 24)                      # 26 znaków, 33 bajty
 assert len(f) <= 24 and f.decode("utf-8").startswith("Pad Łukasza"), "ucięte na granicy znaku UTF-8"
 ok("protokół: btcmd / btstate / btdev jako dłuższe warianty cmd / version / ident, HMAC, nazwa ucięta na znaku")
 
@@ -320,7 +320,13 @@ rx(T_BTDEV, 6, 1, 2, mac_bytes(PHONE), -80, 0, b"Telefon")                      
 assert len(RB.devices) == 2 and RB.devices[0].rssi == -60, "zgubiony pakiet rundy - zostaje poprzednia lista"
 rx(T_BTSTATE, BTS_OK, 0, 0, 1, 0, 7, 0, 0, bytes(6))                                     # bez BTF_LIST: lista zostaje
 assert len(RB.devices) == 2
-rx(T_BTSTATE, BTS_OK, SB.BTF_LIST, 0, 0, 0, 8, 0, 0, bytes(6))
+long = proto.utf8_field("DualSense Wireless Controller (Łukasz)", SB.NAME_MAX, "…")
+assert len(long) <= SB.NAME_MAX and proto.utf8_field("krótka", SB.NAME_MAX, "…") == "krótka".encode()
+rx(T_BTSTATE, BTS_OK, SB.BTF_LIST, 0, 0, 1, 8, 0, 0, bytes(6))
+rx(T_BTDEV, 8, 0, 1, mac_bytes(PAD), -60, BTD_PAD, long)
+assert SB.NAME_MAX == 32 and RB.devices[0].name.startswith("DualSense Wireless Controller") and \
+    RB.devices[0].name.endswith("…"), RB.devices[0].name
+rx(T_BTSTATE, BTS_OK, SB.BTF_LIST, 0, 0, 0, 9, 0, 0, bytes(6))
 assert RB.devices == (), "pusta runda czyści listę"
 rx(T_BTSTATE, BTS_OK, BTF_SCANNING, 21, 1, 0, 8, 0, 0, bytes(6))
 assert RB.indicator()[0] == "scan" and "21" in RB.indicator()[1] and RB.status.scanning
@@ -329,7 +335,8 @@ assert RB.indicator()[0] == "warn"
 rx(T_BTSTATE, BTS_DENIED, 0, 0, 0, 0, 8, 0, 0, bytes(6))
 assert RB.indicator()[0] == "bad" and "root" in RB.indicator()[1]
 assert RB.indicator(time.monotonic() + RB.STALE_S + 1)[0] == "", "stary stan = nieznany"
-ok("receiver: lista podmieniana całą rundą (zgubiony pakiet = poprzednia), RSSI / bez RSSI, kropka stanu")
+ok("receiver: lista podmieniana całą rundą (zgubiony pakiet = poprzednia), RSSI / bez RSSI, ucięta nazwa z …, "
+   "kropka stanu")
 
 rx_sent.clear()
 assert RB.pair(PAD)

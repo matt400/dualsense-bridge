@@ -36,6 +36,7 @@ from proto import CMD_UPDATE, UPD_RUNNING
 from rx_config import C
 from rx_editor import Editor
 from rx_icon import ICON_LOW, ICON_OK, icon_png, render_icon
+from rx_qt_bt import BtDrawer, indicator_button
 from rx_qt_console import ConsoleSettings
 from rx_qt_icons import icon, pixmap
 from rx_qt_log import LogPanel
@@ -413,6 +414,8 @@ class MainWindow(QMainWindow):
         self.split.setStretchFactor(0, 1)
         self.log_panel.setMinimumHeight(px(120))
         outer.addWidget(self.split, 1)
+        self.bt_drawer = BtDrawer(root)          # wysuwany nad oknem z prawej (ikona Bluetooth w nagłówku)
+        self.bt_drawer.opened.connect(self._bt_opened)
         # minimalny rozmiar wynika z układu (kolumny + najmniejszy rysunek pada) - jawne minimum mniejsze niż on
         # pozwalało ścisnąć okno tak, że prawy panel zachodził na rysunek
 
@@ -431,6 +434,7 @@ class MainWindow(QMainWindow):
                                     _("Wersja nieznana - folder nie jest klonem git"))
         self.sender = label("")
         self.sender.setObjectName("pill")
+        self.bt_btn, self._bt_refresh = indicator_button(self.toggle_bt)   # Bluetooth nadajnika: kropka stanu + panel
         self.log_btn = icon_button("log", _("Dziennik zdarzeń") + " - " + _("Połączenia padów, master, tryb konsoli, błędy, aktualizacje"))
         self.log_btn.setCheckable(True)
         self.log_btn.toggled.connect(self.show_log)
@@ -455,9 +459,9 @@ class MainWindow(QMainWindow):
         lay.addStretch(1)
         lay.addWidget(self.sender)
         lay.addSpacing(px(10))
-        for b in (self.log_btn, self.fs_btn, settings_btn, self.update_btn, restart_btn, quit_btn):
+        for b in (self.bt_btn, self.log_btn, self.fs_btn, settings_btn, self.update_btn, restart_btn, quit_btn):
             lay.addWidget(b)
-        self._iconic = [self.log_btn, self.fs_btn, settings_btn, self.update_btn, restart_btn, quit_btn]
+        self._iconic = [self.bt_btn, self.log_btn, self.fs_btn, settings_btn, self.update_btn, restart_btn, quit_btn]
         return bar
 
     def _banner(self):
@@ -644,6 +648,7 @@ class MainWindow(QMainWindow):
             c.crown.setIconSize(QSize(px(18), px(18)))
             c._key = None
         self.test_panel.rescale()
+        self.bt_drawer.rescale()
         self._apply_view()
         self.slow_tick()
 
@@ -709,6 +714,14 @@ class MainWindow(QMainWindow):
         self.live_timer.stop()                 # ukryte okno nie odrysowuje pada
         self.test_panel.cancel()               # pomiar dryfu nie trwa w tle
         self.sync_block()                      # schowane okno (zasobnik) - gra znowu dostaje pada
+
+    def toggle_bt(self):
+        self.bt_drawer.toggle()
+
+    def _bt_opened(self, on):
+        """Zamknięty panel Bluetooth: fokus wraca na jego ikonę (tryb TV - pad dalej wie, gdzie jest)."""
+        if not on and self.fullscreen():
+            self.bt_btn.setFocus(Qt.FocusReason.TabFocusReason)
 
     def show_log(self, on):
         """Panel dziennika na dole okna (ikona w nagłówku)."""
@@ -1030,6 +1043,7 @@ class MainWindow(QMainWindow):
             self.online = (online, build)
             self._sender_label(online, build)
         self._refresh_banner()
+        self._bt_refresh(now)
         low_any, tips = False, []
         for c in self.cards:
             i = c.slot

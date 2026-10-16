@@ -688,7 +688,6 @@ EN = {
     "połączone: {n}": "connected: {n}",
     "skanowanie {s} s": "scanning {s} s",
     "włączony": "on",
-    "wyłączony": "off",
     "zablokowany (rfkill)": "blocked (rfkill)",
     "brak adaptera": "no adapter",
     "usługa bluetooth nie działa": "bluetooth service not running",
@@ -715,4 +714,31 @@ EN = {
     "brak uprawnień": "no permission",
     "Bluetooth telefonu wyłączony": "the phone's Bluetooth is off",
     "trwa inna operacja - spróbuj za chwilę": "another operation is running - try again in a moment",
+    "BLUETOOTH NADAJNIKA": "SENDER BLUETOOTH",
+    "Bluetooth nadajnika": "Sender Bluetooth",
+    "Brak urządzeń - uruchom skanowanie i włącz tryb parowania na padzie.":
+        "No devices - start scanning and put the pad in pairing mode.",
+    "Kliknij: skanowanie, parowanie i łączenie padów z telefonem": "Click: scan, pair and connect pads with the phone",
+    "Lista niedostępna - Bluetooth nadajnika nie działa albo nadajnik jest offline.":
+        "List unavailable - the sender's Bluetooth isn't working or the sender is offline.",
+    "Połącz": "Connect",
+    "Rozłącz": "Disconnect",
+    "Sparuj": "Pair",
+    "Skanuj ({s} s)": "Scan ({s} s)",
+    "Zatrzymaj skanowanie ({s} s)": "Stop scanning ({s} s)",
+    "Sygnał widać w trakcie skanowania": "Signal strength is shown while scanning",
+    "Tryb parowania DualSense: przytrzymaj Create + PS, aż lightbar zacznie szybko migać. Skan zabiera radio "
+    "połączonym padom - kończy się sam po {s} s.":
+        "DualSense pairing mode: hold Create + PS until the light bar blinks fast. Scanning takes radio time from "
+        "connected pads - it stops by itself after {s} s.",
+    "Usuwa parowanie z telefonu (np. pad sparowany potem z konsolą trzeba sparować od nowa)":
+        "Removes the pairing from the phone (e.g. a pad later paired with a console must be paired again)",
+    "Włącz Bluetooth": "Turn Bluetooth on",
+    "Zamknij": "Close",
+    "Zamknij panel (Esc, ○ na padzie)": "Close the panel (Esc, ○ on the pad)",
+    "Zapomnij": "Forget",
+    "Zapomnieć?": "Forget?",
+    "nowy": "new",
+    "połączony": "connected",
+    "sparowany": "paired",
 }

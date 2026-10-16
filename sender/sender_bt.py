@@ -355,7 +355,7 @@ class Bluetooth:
         self.emit(T_BTSTATE, 255, self.state, flags, left, conn, len(devs), self.gen, op, res, mac or bytes(6))
         for k, d in enumerate(devs):
             rssi = BT_RSSI_NONE if d.rssi is None else clamp(d.rssi, BT_RSSI_NONE + 1, 127)
-            self.emit(T_BTDEV, 255, self.gen, k, len(devs), mac_bytes(d.mac), rssi, d.flags, utf8_field(d.name, NAME_MAX))
+            self.emit(T_BTDEV, 255, self.gen, k, len(devs), mac_bytes(d.mac), rssi, d.flags, utf8_field(d.name, NAME_MAX, "…"))
 
     async def loop(self) -> None:
         """Stan do receivera: co IDLE_S sam stan, przy otwartym panelu / skanie / operacji co TICK_S z listą.

@@ -19,6 +19,7 @@ from proto import (BODY, BT_CONNECT, BT_DISCONNECT, BT_LIST, BT_PAIR, BT_POWER, 
                    BTS_OK, T_BTCMD, T_BTDEV, T_BTSTATE, cstr, mac_bytes, mac_text)
 from rx_i18n import _
 
+OPS = frozenset({BT_PAIR, BT_CONNECT, BT_DISCONNECT, BT_REMOVE, BT_POWER})   # operacje na urządzeniu / adapterze
 BTF_LIST = 4                 # flaga btstate: zaraz za nim runda listy (sender_bt.BTF_LIST)
 STALE_S = 12.0               # stan starszy niż tyle (bez panelu nadajnik wysyła go co 5 s) = nieznany
 KEEPALIVE_S = 2.0            # otwarty panel ponawia BT_LIST co tyle (nadajnik wysyła listę przez BT_ACTIVE_S)
@@ -211,7 +212,7 @@ def send(op: int, arg: int = 0, mac: str = "") -> bool:
     if not supported() or rx_net.codec is None:
         return False
     raw = mac_bytes(mac) or bytes(6)
-    if op != BT_LIST:
+    if op in OPS:                      # operacja w toku od razu (skan i keepalive nie blokują przycisków)
         pending = (op, mac_text(raw), time.monotonic())
         _logged = None                 # ta sama operacja drugi raz też trafi do dziennika
     for _n in range(3):
