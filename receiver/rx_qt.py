@@ -793,6 +793,7 @@ class MainWindow(QMainWindow):
         self.note(_("Pobieranie aktualizacji…"), "")
         self._upd_sender = S.sender_online() and S.sender_build is not None   # nowy nadajnik odpowie wynikiem
         self._upd_t0 = time.monotonic()
+        self._upd_commit = S.sender_build[0] if S.sender_build else ""   # nowy commit po restarcie = zaktualizowany
         S.sender_update_msg = ""                 # powód z poprzedniej próby nie może opisać tej
         if S.sender_build is not None:
             S.sender_build = (*S.sender_build[:2], UPD_RUNNING, time.monotonic())
@@ -816,14 +817,14 @@ class MainWindow(QMainWindow):
 
     def _update_poll(self):
         r = self._upd_result
-        waiting = (self._upd_sender and S.sender_build is not None and S.sender_build[2] == UPD_RUNNING
+        waiting = (self._upd_sender and rx_update.sender_state(S.sender_build, self._upd_commit) == UPD_RUNNING
                    and time.monotonic() - self._upd_t0 < UPDATE_WAIT_S)
         if waiting:
             QTimer.singleShot(250, self._update_poll)
             return
         parts = [r.text]
         if S.sender_online() or S.sender_build is not None:
-            parts.append(rx_update.sender_text(S.sender_build, S.sender_update_msg))
+            parts.append(rx_update.sender_text(S.sender_build, S.sender_update_msg, self._upd_commit))
         else:
             parts.append(_("nadajnik niepołączony - zaktualizuje się następnym razem"))
         text = " · ".join(parts)

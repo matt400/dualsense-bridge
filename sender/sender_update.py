@@ -13,7 +13,7 @@ import time
 import proto
 import sender_net as net
 import sender_state as state
-from proto import T_BUILD, T_BUILD2, T_UPDMSG, UPD_DONE, UPD_NONE, UPD_RUNNING
+from proto import T_BUILD, T_BUILD2, T_UPDMSG, UPD_DONE, UPD_NONE, UPD_RUNNING, utf8_field
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REQUIREMENTS = "sender/requirements.txt"
@@ -40,7 +40,7 @@ def send_build():
     """Pakiet build; przy błędzie aktualizacji najpierw powód (updmsg) - okno pokaże go także po zgubionym pakiecie
     i po ponownym kliknięciu Aktualizuj w ciągu REPEAT_GUARD_S (wtedy nadajnik nie próbuje drugi raz)."""
     if status == proto.UPD_FAILED and fail_msg:
-        net.emit(T_UPDMSG, 255, fail_msg.encode("utf-8")[:T_UPDMSG_MAX])
+        net.emit(T_UPDMSG, 255, utf8_field(fail_msg, T_UPDMSG_MAX, "…"))   # git po polsku: bez pół litery
     commit = version[0].encode("ascii", "replace")[:7]
     if net.new_receiver():            # nowy receiver: razem z adresami Wake-on-LAN (okno pokazuje wykryty MAC)
         import sender_wol

@@ -21,6 +21,9 @@ def _(text):
 
 
 EN = {
+    "Odrzucono pakiety nadajnika: inny klucz HMAC (key) w nadajniku i w receiverze - ustaw ten sam albo usuń go z obu":
+        "Sender packets rejected: the HMAC key differs between the sender and the receiver - set the same key on both "
+        "or remove it from both",
     # ---------- okno główne ----------
     "Wynik": "Result",
     "Dostępna aktualizacja: {n}": "Update available: {n}",

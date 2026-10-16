@@ -75,6 +75,7 @@ import shutil
 import struct
 import subprocess
 import threading
+import time
 
 VER = 2
 HDR0 = VER << 4
@@ -216,13 +217,25 @@ def utf8_field(text, size, more=""):
     return raw[:size - len(tail)].decode("utf-8", "ignore").encode("utf-8") + tail
 
 
+KEY_MISMATCH_S = 5.0          # tyle po pakiecie z innym ustawieniem klucza HMAC odrzucamy też długości niejednoznaczne
+
+
 class Codec:
-    """Pakowanie / parsowanie pakietów z opcjonalnym HMAC. pack() jest bezpieczne wątkowo."""
+    """Pakowanie / parsowanie pakietów z opcjonalnym HMAC. pack() jest bezpieczne wątkowo.
+
+    Druga strona z innym ustawieniem klucza (klucz tylko po jednej stronie albo różne klucze) -> pakiety odrzucone
+    i mismatch_t = czas ostatniego takiego pakietu (okno pokazuje ostrzeżenie). Bez klucza nie wystarczy sama
+    długość: stan + 8 B HMAC ma tyle co state2 (trig + HMAC = trig2, pong + HMAC = pong2), więc receiver bez klucza
+    brał stan nadajnika z kluczem za state2 z bajtami HMAC jako pomiarem opóźnienia - pady "pół działały" (bez
+    identyfikatora, profilu, wibracji) zamiast jasnego błędu. Nadajnik z kluczem wysyła też pakiety, których długość
+    z HMAC nie pasuje do żadnego typu bez niego (ping, ident, info - kilka razy na sekundę); po takim pakiecie przez
+    KEY_MISMATCH_S odrzucamy również te niejednoznaczne."""
 
     def __init__(self, key=b""):
         self.key = key
         self._seq = random.getrandbits(16)
         self._lock = threading.Lock()
+        self.mismatch_t = float("-inf")
 
     def pack(self, ptype, idx, *vals):
         with self._lock:
@@ -236,15 +249,22 @@ class Codec:
     def parse(self, data):
         """-> (typ, idx, seq) albo None (zły podpis / wersja / typ / długość). Wariant dłuższy -> jego typ (T_STATE2...)."""
         n = len(data)
-        if self.key:
-            if n < 12:
-                return None
-            n -= 8
-            if not hmac.compare_digest(hmac.digest(self.key, memoryview(data)[:n], "sha256")[:8], data[n:]):
-                return None
         if n < 4 or data[0] >> 4 != VER:
             return None
-        t = BY_SIZE.get((data[0] & 0x0F, n - 4))
+        wire = data[0] & 0x0F
+        if self.key:
+            if n < 12 or not hmac.compare_digest(hmac.digest(self.key, memoryview(data)[:n - 8], "sha256")[:8], data[n - 8:]):
+                if (wire, n - 4) in BY_SIZE or (wire, n - 12) in BY_SIZE:
+                    self.mismatch_t = time.monotonic()  # nasz pakiet, zły podpis: brak klucza albo inny klucz
+                return None
+            n -= 8
+        elif n >= 12 and (wire, n - 12) in BY_SIZE:     # długość pasuje do pakietu z HMAC
+            if (wire, n - 4) not in BY_SIZE:            # ... i do żadnego bez niego: druga strona ma klucz
+                self.mismatch_t = time.monotonic()
+                return None
+            if time.monotonic() - self.mismatch_t < KEY_MISMATCH_S:
+                return None                             # niejednoznaczna (stan + HMAC = state2) przy stronie z kluczem
+        t = BY_SIZE.get((wire, n - 4))
         if t is None:
             return None
         return t, data[1], (data[2] << 8) | data[3]

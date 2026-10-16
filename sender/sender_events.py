@@ -10,7 +10,7 @@ import collections
 import random
 import time
 
-from proto import BODY, EV_ERROR, EV_INFO, EV_WARN, T_EVENT
+from proto import BODY, EV_ERROR, EV_INFO, EV_WARN, T_EVENT, utf8_field
 
 KEEP = 32
 SENDS = 2
@@ -25,7 +25,7 @@ def add(level, code, idx=255, arg=""):
     if not enabled:
         return
     _next = (_next + 1) & 0xFFFF
-    _queue.append([_next, time.monotonic(), level, code, idx, arg.encode("utf-8", "replace")[:ARG_MAX], SENDS])
+    _queue.append([_next, time.monotonic(), level, code, idx, utf8_field(arg, ARG_MAX, "…"), SENDS])   # cięcie na granicy znaku
 
 
 def info(code, idx=255, arg=""):

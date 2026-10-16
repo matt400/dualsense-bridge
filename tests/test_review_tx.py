@@ -58,7 +58,10 @@ async def main():
     except OSError as e:
         raised = e
     check(raised is None, f"błąd evdev i zapasowego HID nie wychodzi z set(): {raised!r}")
-    check(r.methods == [], f"oba zepsute sposoby wyłączone: {r.methods}")
+    check(r.methods == ["hidraw"], f"pojedynczy EIO nie wyłącza raportu HID: {r.methods}")
+    for k in range(R.FAIL_MAX):
+        r.set(50 + k + 1, 60)                       # zmiana = zapis (bez niej set() nic nie wysyła)
+    check(r.methods == [] and r.fd is None, f"stały EIO: oba zepsute sposoby wyłączone, deskryptor zamknięty: {r.methods}")
     r.close()
 
 asyncio.run(main())

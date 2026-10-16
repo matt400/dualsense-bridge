@@ -108,7 +108,11 @@ def rx_thread():
                     dsu.sendto(dsu_pkt(0x100001, shared(slot) + b"\x00"), addr)
             elif event == 0x100002:    # subskrypcja danych
                 with dsu_lock:
+                    new = addr not in dsu_clients
                     dsu_clients[addr] = time.monotonic()
+                    S.dsu_active = True
+                if new:
+                    S.dsu_wake.set()       # nowy klient od razu dostaje stan
         except OSError:
             pass
 
@@ -124,7 +128,7 @@ def tx_thread():
     last = 0.0
     boost_thread()
     while not S.stop.is_set():
-        S.dsu_wake.wait(0.1)
+        S.dsu_wake.wait(0.1 if S.dsu_active else 0.5)
         d = last + interval - time.perf_counter()
         if d > 0:
             time.sleep(d)
@@ -136,6 +140,7 @@ def tx_thread():
                 for a in [a for a, t in dsu_clients.items() if t_now - t > 5]:
                     del dsu_clients[a]
             clients = list(dsu_clients)
+            S.dsu_active = bool(clients)
         if not clients:
             continue
         mono = time.monotonic()

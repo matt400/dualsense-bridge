@@ -152,6 +152,17 @@ def triggers_tick(i, now, send_trig):
         send_trig(i, vals, 1)
 
 
+def release_triggers(send_trig):
+    """Zamykanie receivera (wątek feedbacku już stoi): pady, którym ustawiliśmy efekty spustów, dostają "bez efektów".
+    Nadajnik trzyma efekt do następnej zmiany, więc bez tego opór / klik na spuście zostawał po wyjściu z receivera
+    (także przed restartem i aktualizacją) aż do rozłączenia pada. Nadajnik ma też własnego strażnika (sender_rumble),
+    który zwalnia spusty, gdy odświeżenia z PC ustaną (uśpienie / awaria PC)."""
+    for i, last in enumerate(trig_sent):
+        if last is not None and any(last[0]):
+            send_trig(i, TRIG2_OFF if len(last[0]) == len(TRIG2_OFF) else (0, 0, 0, 0), TRIG_REPEAT)
+            trig_sent[i] = None
+
+
 def _loop(send, send_trig=None):
     """Wysyła feedback przy zmianie, co 0.5 s w trakcie wibracji (odświeża jej timeout u nadajnika)
     i co 5 s w spoczynku (zgubiony pakiet nie zostawi złego koloru lightbara)."""

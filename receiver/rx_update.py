@@ -22,7 +22,7 @@ from dataclasses import dataclass
 import proto
 import rx_backup
 import rx_events as ev
-from proto import UPD_DONE, UPD_FAILED, UPD_NO_CHANGE, UPD_NO_GIT, UPD_NOT_GIT, UPD_RUNNING
+from proto import UPD_DONE, UPD_FAILED, UPD_NO_CHANGE, UPD_NO_GIT, UPD_NONE, UPD_NOT_GIT, UPD_RUNNING
 from rx_i18n import _
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -71,17 +71,30 @@ def describe(commit, ts):
     return f"{commit} · {time.strftime('%d.%m.%Y', time.localtime(ts))}" if ts else commit
 
 
-def sender_text(build, msg=""):
-    """Wynik aktualizacji nadajnika z pakietu build (None = nadajnik sprzed tej funkcji); msg = powód błędu (updmsg)."""
+def sender_state(build, old_commit=""):
+    """Stan aktualizacji nadajnika z pakietu build. Nadajnik po pobraniu kodu restartuje się (os.execv) i nowy proces
+    zgłasza UPD_NONE - gdy receiver aktualizował się dłużej (np. pip install), okno widziało już tylko ten stan i pisało
+    "nadajnik nie odpowiedział". Inny commit niż przed aktualizacją (old_commit) = zaktualizowany."""
+    if build is None:
+        return None
+    if old_commit and build[0] and build[0] != old_commit and build[2] in (UPD_NONE, UPD_RUNNING):
+        return UPD_DONE
+    return build[2]
+
+
+def sender_text(build, msg="", old_commit=""):
+    """Wynik aktualizacji nadajnika z pakietu build (None = nadajnik sprzed tej funkcji); msg = powód błędu (updmsg);
+    old_commit = commit nadajnika przed aktualizacją (patrz sender_state)."""
     if build is None:
         return _("nadajnik w starej wersji - zaktualizuj go raz ręcznie (git pull na telefonie)")
-    if build[2] == UPD_FAILED and msg:
+    state = sender_state(build, old_commit)
+    if state == UPD_FAILED and msg:
         text = _("nadajnik: git pull nie powiódł się: {msg}").format(msg=msg)
         if proto.is_auth_error(msg):
             text += " · " + _("usługa na telefonie nie ma dostępu do prywatnego repozytorium - na telefonie raz: "
                               "sender/setup-update-key.sh (klucz tylko do odczytu, instrukcja w skrypcie)")
         return text
-    return _(SENDER_TEXT.get(build[2], "nadajnik nie odpowiedział"))
+    return _(SENDER_TEXT.get(state, "nadajnik nie odpowiedział"))
 
 
 # ---------------- sprawdzanie, czy na GitHubie jest nowsza wersja (w tle, bez pobierania kodu) ----------------

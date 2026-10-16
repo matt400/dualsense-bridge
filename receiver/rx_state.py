@@ -24,6 +24,7 @@ sender_wol = None  # (MAC komputera, broadcast) - tego użyje Wake-on-LAN nadajn
 last_pkt = 0.0     # kiedy przyszedł ostatni poprawny pakiet - do wskaźnika online
 store = None       # RemapStore
 dsu_wake = threading.Event()
+dsu_active = False              # serwer DSU ma subskrybentów - bez nich zmiany stanu go nie budzą (rx_dsu)
 gyro_wake = threading.Event()   # budzi wątek myszy-żyroskopu (rx_gyro)
 game = None                     # program na pierwszym planie (małe litery, np. "eldenring.exe") albo None
 link_loss = None                # utrata pakietów od nadajnika w ostatniej sekundzie [%] (None = brak danych)
@@ -123,7 +124,8 @@ def notify(i):
         push(i)
     else:
         wake[i].set()
-    dsu_wake.set()
+    if dsu_active:              # bez klientów DSU: bez ~1000 pustych wybudzeń/s wątku DSU (walczył o GIL z wątkiem sieci)
+        dsu_wake.set()
 
 
 def recompute(s, prof):
