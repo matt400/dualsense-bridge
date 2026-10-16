@@ -228,7 +228,7 @@ assert F._target(0, 10.1) == ((0, 0, *idle), False, False), "domyślnie bez gry 
 R.apply(R.Settings(lightbar=R.LightbarConfig(15, {"aa:bb:cc:dd:ee:ff": R.PadLight("battery", "", True)})))
 val, ours, blink = F._target(0, 10.1)
 assert ours and not blink and val[2:] == LB.battery_rgb(50, 15), val
-F.fb[0].update(set=True, small=1, large=2, r=9, g=9, b=9)
+F.fb[0].update(set=True, rgb=True, small=1, large=2, r=9, g=9, b=9)
 assert F._target(0, 10.1)[0] == (1, 2, 9, 9, 9), "gra ma pierwszeństwo przed kolorem baterii"
 S.batt_info[0] = (10, 0)
 assert F._target(0, 10.1)[0] == (1, 2, 255, 0, 0) and F._target(0, 10.1)[2], "niska bateria miga nad kolorem gry"

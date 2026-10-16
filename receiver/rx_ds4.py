@@ -4,7 +4,12 @@ import gc
 import threading
 import time
 
-import vgamepad as vg
+try:
+    import vgamepad as vg
+except Exception as e:      # brak / uszkodzony ViGEmBus: vgamepad łączy się z nim już przy imporcie - bez tego receiver
+    vg, VG_ERROR = None, e  # padał przy starcie (z autostartu po cichu); tak działa okno, DSU i mysz, a błąd jest w dzienniku
+else:
+    VG_ERROR = None
 
 import rx_events as ev
 import rx_feedback as F
@@ -15,10 +20,19 @@ from rx_i18n import _
 from rx_report import build_report
 from rx_winapi import boost_thread
 
-try:
-    from vgamepad.win.vigem_commons import DS4_REPORT_EX
-except ImportError:
-    DS4_REPORT_EX = vg.DS4_REPORT_EX
+DS4_REPORT_EX = getattr(vg, "DS4_REPORT_EX", ctypes.c_ubyte * 63)
+_vcli = DS4_LIGHTBAR_COLOR = None   # bez nich (testy na Linuksie, inna wersja vgamepad) - pad.register_notification
+if vg is not None:
+    try:
+        from vgamepad.win.vigem_commons import DS4_REPORT_EX
+    except ImportError:
+        pass
+    try:
+        from vgamepad.win import vigem_client as _vcli
+        from vgamepad.win.vigem_commons import DS4_LIGHTBAR_COLOR
+    except ImportError:
+        _vcli = DS4_LIGHTBAR_COLOR = None
+VIGEM_ERROR_NONE = 0x20000000
 
 PLUG_ORDER_WAIT = 2.0   # max tyle slot czeka, aż wcześniejsze sloty podłączą swoje DS4 (kolejność graczy w grze)
 
@@ -64,6 +78,9 @@ def init():
     outs[:] = [None] * C.NUM_PADS
     interval = 1.0 / C.PAD_HZ if C.PAD_HZ else 0.0
     S.push = push
+    if VG_ERROR is not None:
+        print(f"WARNING: vgamepad / ViGEmBus unavailable ({VG_ERROR!r}) - no virtual DS4 pads (install ViGEmBus); "
+              "window, DSU and touchpad mouse still work")
     if ctypes.sizeof(DS4_REPORT_EX) < 63:
         print("WARNING: DS4_REPORT_EX smaller than 63 bytes - report may not work")
 
@@ -86,6 +103,29 @@ def push(idx):
         S.wake[idx].set()                    # błąd ViGEm obsłuży (i zaloguje) wątek slotu
     finally:
         o.lock.release()
+
+
+def notification_type(lightbar_type):
+    """Typ callbacku ViGEm dla DS4 jak w ViGEmClient.h: (klient, cel, duży silnik, mały silnik, DS4_LIGHTBAR_COLOR
+    przez wartość, dane). vgamepad deklaruje kolor jako bajt - ctypes podawał wtedy liczbę zamiast koloru."""
+    factory = getattr(ctypes, "WINFUNCTYPE", ctypes.CFUNCTYPE)      # CALLBACK = __stdcall (na x64 to samo co cdecl)
+    return factory(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ubyte, ctypes.c_ubyte, lightbar_type, ctypes.c_void_p)
+
+
+def register_feedback(pad, cb, vcli=None, lightbar_type=None):
+    """Wibracja i kolor lightbara z gry -> cb. Bezpośrednio przez ViGEmClient z prawdziwym typem koloru; bez dostępu
+    do niego - przez vgamepad (wibracja działa, kolor gry nieznany). Referencja do callbacku zostaje w pad.cmp_func
+    (zebrany przez GC = awaria procesu przy pierwszej wibracji)."""
+    vcli = vcli or _vcli
+    lightbar_type = lightbar_type or DS4_LIGHTBAR_COLOR
+    if vcli is None or lightbar_type is None or not hasattr(pad, "_devicep"):
+        pad.register_notification(cb)
+        return
+    fn = notification_type(lightbar_type)(cb)
+    pad.cmp_func = fn
+    err = vcli.vigem_target_ds4_register_notification(pad._busp, pad._devicep, fn, None)
+    if err != VIGEM_ERROR_NONE:
+        raise OSError(f"vigem_target_ds4_register_notification = {err:#x}")
 
 
 def wait_turn(idx, timeout=PLUG_ORDER_WAIT):
@@ -116,10 +156,12 @@ def slot_thread(idx):
         if idx and not wait_turn(idx):
             print(f"Controller {idx}: earlier slot not ready - plugging in anyway (player order may differ)")
         try:
+            if vg is None:
+                raise RuntimeError(f"vgamepad / ViGEmBus: {VG_ERROR!r}")
             pad = vg.VDS4Gamepad()
             F.reset(idx)
             try:
-                pad.register_notification(F.cbs[idx])
+                register_feedback(pad, F.cbs[idx])
             except Exception as e:
                 print(f"Rumble/lightbar notification unavailable for pad {idx}: {e!r}")
             o = Out(pad)
