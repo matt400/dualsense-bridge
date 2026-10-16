@@ -149,3 +149,75 @@ P.set_drift(0, {"left": 0.08})
 assert S.profile_changes(0) == 0 and S.remap_maps[0]["tuning"]["left"]["dz"] == 0.08
 P.set_drift(0, {"left": 0})
 ok("karta pada: korekcja dryfu nie liczy się jako zmiana profilu")
+
+# ---------- widok Test: skróty padów stoją, PS + △ mastera przez 3 s wychodzi ----------
+import rx_master, rx_settings, rx_testmode as TM
+from rx_settings import MasterConfig, MouseConfig, Settings
+B_ = "bb:bb:bb:bb:bb:02"
+PS, TRI, RIGHT = BIT[316], BIT[307], (1, 0)
+settings = lambda **m: rx_settings.apply(Settings(MouseConfig(), MasterConfig(**m)))
+def held(i, mask):                                   # przytrzymanie: zmiana przycisków, potem tylko upływ czasu
+    state(i, mask=mask)
+    return time.monotonic()
+def out(i):
+    with S.lock:
+        return S.output(i)["mask"]
+escapes = []
+TM.on_escape = lambda: escapes.append(1)
+feed(T_IDENT, 0, A.encode()); feed(T_IDENT, 1, B_.encode()); state(0); state(1)
+settings(pad=A)                                      # slot 0 = master, slot 1 = testowany pad
+store.save(f"{A}@game.exe", {"buttons": {"cross": "circle"}})
+TM.set_active(True); P.block(1, True)
+state(0, mask=PS); state(0, mask=PS, hat=RIGHT); state(0, mask=PS); state(0); time.sleep(0.1)
+assert S.override[0] is None, "widok Test: PS + → mastera nie zmienia profilu"
+S.mouse_mode[0] = False
+state(0, mask=PS); feed(T_CLICK, 0, 1); feed(T_CLICK, 0, 0); state(0)
+assert not S.mouse_mode[0], "widok Test: PS + klik touchpada nie przełącza myszy"
+t0 = held(1, PS | TRI)
+assert not TM.tick(t0 + TM.ESCAPE_S + 1) and TM.active and S.states[1]["blocked"], "PS + △ nie-mastera nic nie robi"
+state(1)
+t0 = held(0, PS | TRI)
+assert TM.held_s(0, t0 + 1) >= 1 and not TM.tick(t0 + TM.ESCAPE_S - 0.1) and TM.active, "przed 3 s - dalej test"
+state(0, mask=PS)                                    # puszczony △ - licznik od zera
+t0 = held(0, PS | TRI)
+assert TM.held_s(0, t0) < 0.5 and not TM.tick(t0 + TM.ESCAPE_S - 0.5), "nowe przytrzymanie liczone od nowa"
+assert TM.tick(t0 + TM.ESCAPE_S) and not TM.active and TM.escaped and escapes == [1], "3 s bez ruchu pada - wyjście"
+assert not S.states[1]["blocked"], "blokada testowanego pada zdjęta"
+assert out(0) == 0, "neutralny raport: PS + △ trzymane przy wyjściu nie trafiają do gry"
+state(0, mask=PS | TRI, sticks=(130, 128, 128, 128))
+assert out(0) == 0, "dalej trzymane - dalej połknięte"
+state(0, mask=PS); state(0); state(0, mask=TRI)
+assert out(0) == TRI, "po puszczeniu △ znowu idzie do gry"
+state(0); time.sleep(0.15)
+assert out(0) == 0 and not [c for c in calls if c[0] == "k"], "puszczone PS z wyjścia nie daje impulsu PS ani Game Bar"
+state(0, mask=PS); state(0, mask=PS, hat=RIGHT); state(0, mask=PS); state(0); time.sleep(0.1)
+assert S.override[0] == f"{A}@game.exe", "po teście skróty znowu działają"
+S.override[0] = None; S.reload_profile(0)
+ok("Test: skróty żadnego pada nie działają; PS + △ mastera 3 s (licznik od zera po puszczeniu, bez ruchu pada) "
+   "wychodzi, zdejmuje blokadę i połyka trzymane wejścia; PS + △ innego pada nic nie robi")
+
+# testowany pad jest masterem: wyjście z niego, przez wątek sieci (zmiana stanu po 3 s)
+escapes.clear(); TM.rearm(); TM.set_active(True); P.block(0, True)
+state(0, mask=PS | TRI)
+TM._since[0] -= TM.ESCAPE_S                          # przytrzymanie zaczęte 3 s temu
+state(0, mask=PS | TRI, lt=200)                      # dowolna zmiana na padzie kończy pomiar w wątku sieci
+assert escapes == [1] and not S.states[0]["blocked"] and not TM.active
+assert out(0) == 0, "przyciski trzymane na testowanym padzie połknięte (gałki i spusty analogowo na żywo)"
+state(0)
+ok("Test: master testowany sam siebie - wyjście z zablokowanego pada, wejścia neutralne do puszczenia")
+
+# bez mastera w ustawieniach - każdy pad; set_active czyści licznik; ponowne wejście w test
+settings(pad="")
+escapes.clear(); TM.rearm(); TM.set_active(True)
+t0 = held(1, PS | TRI)
+TM.set_active(False); TM.set_active(True)
+assert not TM.tick(t0 + 10) and TM.active, "zamknięcie widoku przerywa przytrzymanie"
+state(1); t0 = held(1, PS | TRI)
+assert TM.tick(t0 + TM.ESCAPE_S) and escapes == [1], "bez mastera wychodzi dowolny pad"
+state(1)
+settings(pad="cc:cc:cc:cc:cc:03", when_absent="nobody")
+TM.rearm(); TM.set_active(True); t0 = held(0, PS | TRI)
+assert not TM.tick(t0 + 10), "master ustawiony, ale nieobecny + nobody - nikt"
+TM.set_active(False); state(0); settings(pad="")
+store.delete(f"{A}@game.exe")
+ok("Test: bez mastera każdy pad może wyjść, nieobecny master wg when_absent, zamknięcie widoku zeruje licznik")

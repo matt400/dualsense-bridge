@@ -675,4 +675,9 @@ EN = {
     "Offset teraz [°/s]: {v}": "Current offset [°/s]: {v}",
     "{pad}: żyroskop skalibrowany": "{pad}: gyro calibrated",
     "{pad}: kalibracja żyroskopu przerwana - pad się ruszał": "{pad}: gyro calibration aborted - the pad was moving",
+    # ---------- widok Test: wyjście z pada ----------
+    "{pad}: wyjście z widoku Test (PS + △)": "{pad}: left the Test view (PS + △)",
+    "Wyjście z widoku Test z pada (PS + △)": "Left the Test view from the pad (PS + △)",
+    "Skróty padów nie działają; PS + △ trzymane {s} s (pad master) kończy test.":
+        "Pad shortcuts are off; holding PS + △ for {s} s (master pad) ends the test.",
 }
