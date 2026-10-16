@@ -92,10 +92,13 @@ class PadNav:
     def tick(self, now):
         root = self.target()
         pressed = self._pressed() if root is not None else frozenset()
+        prev, self.prev = self.prev, pressed
         if "ps" in pressed:            # PS + przycisk to skróty (profil, czułość...) - nie nawigacja
-            pressed = frozenset()
-        new = pressed - self.prev
-        self.prev = pressed
+            self.held.clear()
+            return
+        # prev zawiera też przyciski trzymane razem z PS: puszczenie PS przed D-padem / ✕ nie jest nowym naciśnięciem
+        # (wcześniej prev był pusty przy PS, więc PS + → zmieniało profil i od razu przesuwało fokus w oknie)
+        new = pressed - prev
         for d in list(self.held):
             if d not in pressed:
                 del self.held[d]

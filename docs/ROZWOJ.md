@@ -32,7 +32,9 @@ Testy obejmują:
   (`test_features.py`, `test_features_tx.py`);
 - efekty spustów: klik, drgania, wibracja z gry, trig2 / trig wg wersji nadajnika, dziedziczenie w profilu gry,
   tylko master (`test_trigfx.py`, `test_trigfx_tx.py`);
-- regresje z przeglądu bugów (`test_review.py`, `test_review_tx.py`);
+- regresje z przeglądu bugów (`test_review.py`, `test_review_tx.py`, `test_hunt*.py`) - m.in. start / stop skanu
+  Bluetooth naraz, palec leżący na touchpadzie przy połączeniu, klik touchpada puszczony w widoku Test, skróty z PS
+  w trybie TV;
 - przycisk → gra, dziennik zdarzeń (też zdarzenia nadajnika end-to-end), lightbar od baterii, ustawienia dla nadajnika
   (`test_extras.py`, `test_extras_gui.py`) oraz Wake-on-LAN po stronie nadajnika - kombinacja, ARP, broadcast, magic
   packet, `wol.json` (`test_wol_tx.py`);

@@ -20,6 +20,7 @@ import os
 import signal
 import socket
 import sys
+import time
 import traceback
 
 import sender_config
@@ -37,17 +38,25 @@ from proto import E_ERROR, E_START
 from sender_config import C
 
 
+STABLE_S = 60.0       # pętla działała tyle bez błędu -> kolejny błąd liczony od nowa (pełny ślad, krótka przerwa)
+
+
 async def forever(name, fn):
     """Długo działająca pętla, której nieoczekiwany wyjątek nie zatrzyma całego nadajnika:
-    błąd jest wypisywany (pierwszy z pełnym śladem), a pętla startuje ponownie po chwili."""
+    błąd jest wypisywany (pierwszy z pełnym śladem), a pętla startuje ponownie po chwili. Licznik błędów zeruje się
+    po STABLE_S spokojnej pracy - inaczej rzadkie błędy (np. raz na godzinę) po kilkunastu razach dawały 5 s przerwy
+    przy każdym restarcie pętli."""
     errors = 0
     while True:
+        t0 = time.monotonic()
         try:
             await fn()
             return
         except asyncio.CancelledError:
             raise
         except Exception as e:
+            if time.monotonic() - t0 >= STABLE_S:
+                errors = 0
             errors += 1
             if errors == 1:
                 print(f"{name} error - restarting:\n{traceback.format_exc()}")

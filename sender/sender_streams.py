@@ -276,11 +276,16 @@ async def stream_touch(c):
     # x / y = pozycja zapamiętana w slocie jądra (None = nieznana). Jądro pomija zdarzenie osi, gdy wartość w slocie
     # się nie zmieniła - także dla NOWEGO palca. Pozycja przeżywa więc podniesienie palca, a nowy palec przyłożony
     # w tym samym x albo y (np. przy krawędzi: 0 / max) bierze ją stąd; wyzerowana gubiła taki dotyk i tap.
-    fingers = [{"on": False, "id": 0, "x": x, "y": y} for _tid, x, y in _kernel_slots(c.touch_dev, 2)]
+    # Palec, który już leży (pad połączony z dłonią na touchpadzie, touchpad dołączony później), też jest "on":
+    # jądro nie wyśle mu ABS_MT_TRACKING_ID, dopóki go nie podniesie - bez tego jego ruch nie dawał ani kursora,
+    # ani dotyku DS4. Taki kontakt nie kończy się tapem (jak po SYN_DROPPED).
+    fingers = [{"on": tid >= 0, "id": tid & 0x7F if tid >= 0 else 0, "x": x, "y": y}
+               for tid, x, y in _kernel_slots(c.touch_dev, 2)]
     prev = [None, None]            # poprzednia pozycja palca (x, y); None = świeży palec, brak delty
     sess = None
     last_tp = IDLE_TP
-    dropping = resynced = False
+    dropping = False
+    resynced = any(f["on"] for f in fingers)
     async for e in c.touch_dev.async_read_loop():
         et = e.type
         if dropping:

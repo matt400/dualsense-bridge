@@ -280,6 +280,12 @@ def handle(t, i, data, arr=0):
         S.states[i]["rtp"] = down          # widok Test: klik widać także w trybie myszy i przy blokadzie
         if S.states[i]["blocked"]:
             S.swallow[i] = False
+            if not S.mouse_mode[i]:
+                # stan na żywo także pod blokadą (gra i tak dostaje neutralny raport): klik trzymany przed testem
+                # i puszczony w trakcie zostawał w stanie "wciśnięty" - po teście gra widziała wciśnięty touchpad,
+                # dopóki nie kliknęło się go jeszcze raz (powtórki z nadajnika odrzuca porównanie z tp_down)
+                with S.lock:
+                    S.states[i]["tp"] = bool(down)
             return
         shortcuts = testmode.shortcuts_on()           # widok Test: klik zostaje klikiem, bez skrótów
         if down and shortcuts:
