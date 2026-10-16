@@ -1,13 +1,13 @@
 # DualSense bridge
 
-Granie padem PS5 (DualSense) na kanapie przed telewizorem, gdy komputer z grami stoi daleko, np. w innym pokoju.
+DualSense bridge przesyła dane z pada PS5 (DualSense) do komputera z Windows przez sieć lokalną. Na PC pad działa
+jak zwykły pad PS4: przyciski, gałki, żyroskop, touchpad, a w drugą stronę wibracje i lightbar.
 
-Bluetooth ma zasięg kilku metrów i przez ściany się rwie, więc pad nie łączy się z PC bezpośrednio. Łączy się
-z małym **nadajnikiem** z Linuksem przy telewizorze: Raspberry Pi, starym telefonem z postmarketOS (np. OnePlus 6)
-albo dowolnym komputerkiem z Bluetooth. Nadajnik przesyła stan pada siecią lokalną do PC. Na PC gry widzą zwykły pad
-PS4 (DS4), a obraz idzie na telewizor.
+Pad łączy się przez Bluetooth z **nadajnikiem**, czyli małym urządzeniem z Linuksem w pobliżu, np. Raspberry Pi albo
+starym telefonem z postmarketOS (OnePlus 6). Nadajnik od razu wysyła do PC każdą zmianę stanu pada.
+Dzięki temu PC może stać w innym pokoju, a grasz z kanapy przed telewizorem.
 
-Do tego jedno okno na PC do sterowania wszystkim, także samym padem z kanapy:
+Na PC jest okno do sterowania wszystkim, także samym padem:
 - przełączenie obrazu i dźwięku na TV jednym skrótem (tryb konsoli),
 - remapowanie przycisków, gałek i żyroskopu, z profilami per pad i per gra,
 - touchpad jako mysz,
