@@ -7,10 +7,11 @@ pad, fizyczne przyciski (przed remapowaniem). PS trzymane = skróty PS, nawigacj
   D-pad ← / →        suwak: wartość, lista: poprzednia / następna pozycja, zakładki: zakładka, rysunek pada: część;
                      gdzie indziej jak ↑ / ↓
   ✕                  kliknij (przycisk, pole wyboru), rozwiń listę, wybierz część pada
-  ○                  wstecz: zwiń listę, zamknij panel Bluetooth, zamknij Ustawienia, wyjdź z pełnego ekranu
+  ○                  wstecz: zwiń listę, zamknij panel (Bluetooth, skróty), zamknij Ustawienia, wyjdź z pełnego ekranu
   L1 / R1            poprzedni / następny pad (karta po lewej)
 Otwarty panel Bluetooth (ikona w nagłówku: D-pad do niej, ✕) zatrzymuje fokus w sobie - D-pad chodzi tylko po
-jego przyciskach (skan, wiersze urządzeń: Sparuj / Połącz / Rozłącz, Zapomnij), ○ go zamyka.
+jego przyciskach (skan, wiersze urządzeń: Sparuj / Połącz / Rozłącz, Zapomnij), ○ go zamyka. W panelu skrótów
+D-pad ↑ / ↓ przewija listę.
 W widoku Test testowany pad nie steruje oknem (jego przyciski są testowane); przytrzymane ○ wychodzi z testu.
 Przytrzymany kierunek powtarza krok (po REPEAT_DELAY_S co REPEAT_EVERY_S).
 """
@@ -130,9 +131,10 @@ class PadNav:
             self._pad(-1 if name == "l1" else 1)
 
     def scope(self, root):
-        """Otwarty panel nad oknem (Bluetooth), w którym zostaje fokus, albo None."""
-        drawer = getattr(self.win, "bt_drawer", None)
-        return drawer.focus_scope() if drawer is not None and root is self.win else None
+        """Otwarty panel nad oknem (Bluetooth, skróty), w którym zostaje fokus, albo None."""
+        if root is not self.win:
+            return None
+        return next((s for d in getattr(self.win, "drawers", ()) if (s := d.focus_scope()) is not None), None)
 
     def _direction(self, root, fw, name, scope=None):
         side = name in ("dpad_left", "dpad_right")
@@ -149,6 +151,11 @@ class PadNav:
         if isinstance(fw, QAbstractItemView) and not side:
             _key(fw, ARROW[name])
             return
+        if isinstance(fw, QScrollArea) and not side:        # lista skrótów: przewijanie, na brzegu - dalej fokus
+            bar = fw.verticalScrollBar()
+            if bar.value() != (bar.minimum() if name == "dpad_up" else bar.maximum()):
+                bar.setValue(bar.value() + (bar.singleStep() * 4 if name == "dpad_down" else -bar.singleStep() * 4))
+                return
         move_focus(root, name in ("dpad_down", "dpad_right"), scope)
 
     @staticmethod
@@ -163,7 +170,7 @@ class PadNav:
 
     def _back(self, root, scope=None):
         if scope is not None:
-            self.win.bt_drawer.close_drawer()                   # panel Bluetooth
+            scope.close_drawer()                                # panel Bluetooth / skrótów
         elif root is not self.win:
             root.close()                                        # Ustawienia
         else:

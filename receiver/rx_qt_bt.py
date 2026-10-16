@@ -1,8 +1,8 @@
 """Receiver: Bluetooth nadajnika w oknie - kropka stanu w nagłówku i wysuwany z prawej panel (skan, lista urządzeń,
 Sparuj / Połącz / Rozłącz / Zapomnij). Telefon za telewizorem nie potrzebuje ekranu ani myszy.
 
-Panel leży nad oknem (nie zmienia układu): przyciemnione tło, klik w nie albo Esc zamyka. Tryb TV: D-pad chodzi tylko
-po elementach panelu (rx_qt_tv.PadNav pyta focus_scope()), ✕ klika, ○ zamyka i fokus wraca na ikonę Bluetooth.
+Panel (rx_qt_drawer.SideDrawer) leży nad oknem: przyciemnione tło, klik w nie albo Esc zamyka. Tryb TV: D-pad chodzi
+tylko po elementach panelu, ✕ klika, ○ zamyka i fokus wraca na ikonę Bluetooth.
 Wiersze urządzeń są trwałe (klucz = MAC) i aktualizowane w miejscu - fokus z pada nie skacze przy odświeżaniu co
 REFRESH_MS. Kolejność listy ustala nadajnik (połączone, sparowane, pady, nazwa - bez RSSI, które by ją przestawiało).
 """
@@ -11,20 +11,19 @@ from collections.abc import Callable
 from functools import cache
 from itertools import pairwise
 
-from PySide6.QtCore import QEasingCurve, QEvent, QObject, QPoint, QPropertyAnimation, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QIcon, QKeySequence, QPainter, QPixmap, QShortcut
+from PySide6.QtCore import QRectF, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
 
 import rx_bt as BT
 from proto import BT_LIST, BT_SCAN_MAX_S, BTR_NONE, BTR_OK, BTR_RUNNING, BTS_OFF, BTS_OK
 from rx_i18n import _
+from rx_qt_drawer import SideDrawer
 from rx_qt_icons import pixmap
 from rx_qt_style import ACCENT, BAD, LINE, MUTED, OK, WARN, px, set_prop
 from rx_qt_widgets import ConfirmButton, button, icon_button, icon_label, label
 
 REFRESH_MS = 250
-ANIM_MS = 170
-WIDTH = 380
 DOT = {"ok": OK, "scan": ACCENT, "warn": WARN, "bad": BAD, "": MUTED}
 ACTION = {"pair": "Sparuj", "connect": "Połącz", "disconnect": "Rozłącz"}
 
@@ -158,51 +157,19 @@ class DeviceRow(QFrame):
         return [self.btn, self.forget]
 
 
-class BtDrawer(QFrame):
+class BtDrawer(SideDrawer):
     """Wysuwany z prawej panel Bluetooth nadajnika nad oknem `host` (centralny widżet okna)."""
 
-    opened = Signal(bool)
-
     def __init__(self, host: QWidget):
-        super().__init__(host)
-        self.host = host
-        self.setObjectName("drawer")
-        self._open = False
-        self.rows: dict[str, DeviceRow] = {}
-        self.scrim = QWidget(host)                 # przyciemnione tło - klik zamyka
-        self.scrim.setObjectName("scrim")
-        self.scrim.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.scrim.hide()
-        self.scrim.installEventFilter(self)
-        host.installEventFilter(self)              # zmiana rozmiaru okna -> panel przy prawej krawędzi
-        self.anim = QPropertyAnimation(self, b"pos", self)
-        self.anim.setDuration(ANIM_MS)
-        self.anim.setEasingCurve(QEasingCurve.Type.OutCubic)
-        self.anim.finished.connect(self._anim_done)
+        super().__init__(host, "bluetooth", _("BLUETOOTH NADAJNIKA"))
         self.timer = QTimer(self)
         self.timer.setInterval(REFRESH_MS)
         self.timer.timeout.connect(self.refresh)
         self._keepalive = 0
-        self._build()
-        QShortcut(QKeySequence(Qt.Key.Key_Escape), self, activated=self.close_drawer,
-                  context=Qt.ShortcutContext.WidgetWithChildrenShortcut)
-        self.hide()
 
     # ---------- budowa ----------
-    def _build(self) -> None:
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(px(18), px(16), px(18), px(16))
-        lay.setSpacing(px(10))
-        head = QHBoxLayout()
-        head.setSpacing(px(8))
-        head.addWidget(icon_label("bluetooth", px(22)))
-        head.addWidget(label(_("BLUETOOTH NADAJNIKA"), "h2"), 1)
-        self.close_btn = button(_("Zamknij"), small=True)
-        self.close_btn.setToolTip(_("Zamknij panel (Esc, ○ na padzie)"))
-        self.close_btn.clicked.connect(self.close_drawer)
-        head.addWidget(self.close_btn)
-        lay.addLayout(head)
-
+    def _build(self, lay: QVBoxLayout) -> None:
+        self.rows: dict[str, DeviceRow] = {}
         self.status = label("", wrap=True)
         lay.addWidget(self.status)
         self.power_btn = button(_("Włącz Bluetooth"), primary=True)
@@ -232,72 +199,17 @@ class BtDrawer(QFrame):
         self.result = label("", wrap=True)
         lay.addWidget(self.result)
 
-    def rescale(self) -> None:
-        self.setFixedWidth(min(px(WIDTH), max(px(280), self.host.width() - px(40))))
-        self.place()
-
     # ---------- otwieranie ----------
-    def is_open(self) -> bool:
-        return self._open
-
-    def toggle(self) -> None:
-        self.close_drawer() if self._open else self.open_drawer()
-
-    def open_drawer(self) -> None:
-        if self._open:
-            return
-        self._open = True
-        self.rescale()
-        self.scrim.setGeometry(self.host.rect())
-        self.scrim.show()
-        self.scrim.raise_()
-        self.show()
-        self.raise_()
+    def _on_open(self) -> None:
         self._keepalive = 0
         self.refresh()
         self.timer.start()
-        self._slide(True)
-        first = self.scan_btn if self.scan_btn.isEnabled() else self.close_btn
-        first.setFocus(Qt.FocusReason.TabFocusReason)
-        self.opened.emit(True)
 
-    def close_drawer(self) -> None:
-        if not self._open:
-            return
-        self._open = False
+    def _on_close(self) -> None:
         self.timer.stop()
-        self.scrim.hide()
-        self._slide(False)
-        self.opened.emit(False)
 
-    def _slide(self, show: bool) -> None:
-        y = self.host.rect().top()
-        inside = QPoint(self.host.width() - self.width(), y)
-        outside = QPoint(self.host.width(), y)
-        self.anim.stop()
-        self.anim.setStartValue(self.pos() if self.isVisible() and not show else outside)
-        self.anim.setEndValue(inside if show else outside)
-        self.anim.start()
-
-    def _anim_done(self) -> None:
-        if not self._open:
-            self.hide()
-
-    def place(self) -> None:
-        """Panel przy prawej krawędzi, na całą wysokość okna (pod nagłówkiem też - jest nad wszystkim)."""
-        h = self.host.rect()
-        self.resize(self.width(), h.height())
-        if self._open and self.anim.state() != QPropertyAnimation.State.Running:
-            self.move(h.width() - self.width(), h.top())
-        self.scrim.setGeometry(h)
-
-    def eventFilter(self, obj: QObject, e: QEvent) -> bool:
-        if obj is self.host and e.type() == QEvent.Type.Resize:
-            self.rescale()
-        elif obj is self.scrim and e.type() == QEvent.Type.MouseButtonPress:
-            self.close_drawer()
-            return True
-        return super().eventFilter(obj, e)
+    def first_focus(self) -> QWidget:
+        return self.scan_btn if self.scan_btn.isEnabled() else self.close_btn
 
     # ---------- akcje ----------
     def power_on(self) -> None:
@@ -379,11 +291,6 @@ class BtDrawer(QFrame):
                 chain += w.focusables()
         for a, b in pairwise(chain):
             QWidget.setTabOrder(a, b)
-
-    def focus_scope(self) -> QWidget | None:
-        """Dla nawigacji padem: otwarty panel zatrzymuje fokus w sobie."""
-        return self if self._open else None
-
 
 def indicator_button(on_click: Callable[[], None]) -> tuple[QPushButton, Callable[[float], None]]:
     """Przycisk z ikoną Bluetooth i kropką stanu do nagłówka okna. -> (przycisk, funkcja odświeżenia(now))."""
