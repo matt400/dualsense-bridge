@@ -8,13 +8,13 @@
   dopiero po wyraźnym ruchu palca. Czułość i te czasy: Ustawienia → Mysz (działa od razu).
 - **Jedno okno do wszystkiego** (PySide6, ikona w zasobniku):
   - po lewej karty padów: bateria, **prawdziwe opóźnienie pad → gra** (średnia, p95 i max z 5 s, z paskiem odcinków:
-    Bluetooth / telefon / sieć / PC), pod nim **przycisk → gra** (to samo tylko dla naciśnięć - ostatnie 100, z resetem),
+    Bluetooth / nadajnik / sieć / PC), pod nim **przycisk → gra** (to samo tylko dla naciśnięć - ostatnie 100, z resetem),
     aktywny profil, test wibracji, wyłączenie pada, korona mastera; ping, utrata pakietów i Hz w podpowiedzi;
     niepodłączony pad to sama nazwa;
   - **dziennik zdarzeń** na dole okna (ikona listy w nagłówku): połączenia i rozłączenia padów, nadajnik online /
     offline, zmiana mastera, tryb konsoli, błędy, aktualizacje, niska bateria; filtr poziomu (wszystko / ostrzeżenia i
-    błędy / tylko błędy), limit linii, kopiowanie, czyszczenie (dwa kliknięcia). Ikona telefonu włącza **zdarzenia z
-    nadajnika** (domyślnie wyłączone): połączenie pada z telefonem, wysłany Wake-on-LAN, utrata kontaktu z receiverem,
+    błędy / tylko błędy), limit linii, kopiowanie, czyszczenie (dwa kliknięcia). Ikona nadajnika włącza **zdarzenia z
+    nadajnika** (domyślnie wyłączone): połączenie pada z nadajnikiem, wysłany Wake-on-LAN, utrata kontaktu z receiverem,
     błędy - nadajnik trzyma je, póki receiver nie odpowiada, więc np. Wake-on-LAN pojawia się po starcie komputera
     z prawdziwą godziną. Dziennik jest tylko w pamięci (restart go czyści), wysokość panelu da się przeciągnąć;
   - na środku rysunek pada na żywo: kliknij przycisk, spust albo gałkę, żeby ją zremapować lub dostroić;
@@ -41,7 +41,7 @@
   - **Skróty pada** (ikona pada w nagłówku): wysuwany z prawej panel ze wszystkimi skrótami pada, zbudowany z
     bieżących ustawień (przycisk trybu konsoli, akcje mastera, długie PS); korona = tylko pad master. W trybie TV:
     D-pad do ikony, ✕ otwiera, D-pad przewija, ○ zamyka;
-  - **Bluetooth telefonu z okna** (telefon za telewizorem nie potrzebuje ekranu): ikona Bluetooth w nagłówku z kropką
+  - **Bluetooth nadajnika z okna** (nadajnik za telewizorem nie potrzebuje ekranu): ikona Bluetooth w nagłówku z kropką
     stanu (zielona - działa, niebieska - skanuje, żółta - wyłączony, czerwona - błąd, szara - brak danych) otwiera
     wysuwany z prawej panel: **skanowanie** (z odliczaniem, samo kończy się po 30 s - skan zabiera radio połączonym
     padom), lista urządzeń (pady na górze, siła sygnału w trakcie skanu, stan) i przyciski **Sparuj** (parowanie,
@@ -57,7 +57,7 @@
       (×1,25, w górę do 1 %, min. 3 %); „Zastosuj” zapisuje ją od razu jako **korekcję dryfu pada**
       (`receiver/padcal.json`, per MAC). Działa we wszystkich profilach tego pada, także w profilach gier, jako
       minimum strefy martwej (większa z profilu zostaje) i idzie za gałką fizyczną przy zamianie gałek;
-    - **kalibracja żyroskopu:** pad leży nieruchomo 3 s, nadajnik liczy offset i zapisuje go na telefonie per pad
+    - **kalibracja żyroskopu:** pad leży nieruchomo 3 s, nadajnik liczy offset i zapisuje go na nadajniku per pad
       (`sender/gyro_cal.json`); skalibrowany pad nie kalibruje się już przy starcie nadajnika (nie trzeba go wtedy
       odkładać), autobias dalej dostraja offset w pamięci. Wymaga nadajnika v9;
     - na czas testu gra dostaje neutralny stan testowanego pada (przełącznik „Blokuj wyjście do gry”, domyślnie
@@ -142,28 +142,28 @@
   - **próg niskiej baterii** jest wspólny z ostrzeżeniem na karcie pada i powiadomieniem (`low_batt` z toml to tylko
     wartość startowa).
 - **Wake-on-LAN z pada** (Ustawienia → Wake-on-LAN): gdy komputer nie odpowiada (wyłączony / uśpiony), **PS + Options
-  przytrzymane ~1 s** (przycisk i czas do wyboru) - telefon wysyła magic packet. Przy działającym komputerze ta sama
+  przytrzymane ~1 s** (przycisk i czas do wyboru) - nadajnik wysyła magic packet. Przy działającym komputerze ta sama
   kombinacja idzie do receivera jak zwykle (np. pauza mastera), więc nic nie koliduje; samo długie PS się nie nadaje
   (tak włącza się pada). Pad potwierdza białym błyskiem i wibracją, błąd (np. nieznany MAC) - czerwonym.
-  - MAC komputera: wpisany w oknie albo **automatycznie** - nadajnik odczytuje go z tablicy ARP telefonu, póki komputer
+  - MAC komputera: wpisany w oknie albo **automatycznie** - nadajnik odczytuje go z tablicy ARP nadajnika, póki komputer
     działa, i zapamiętuje; adres broadcast: wpisany albo broadcast sieci do PC + `255.255.255.255`; pakiet idzie też
     prosto na IP komputera. Okno pokazuje, czego nadajnik użyje.
-  - Ustawienia trafiają do nadajnika (co 5 s i przy zmianie) i są zapisywane na telefonie w `sender/wol.json` - przy
+  - Ustawienia trafiają do nadajnika (co 5 s i przy zmianie) i są zapisywane na nadajniku w `sender/wol.json` - przy
     wyłączonym komputerze nie ma ich skąd wziąć.
   - Komputer musi mieć włączony Wake-on-LAN w BIOS / UEFI i we właściwościach karty sieciowej (Zarządzanie energią:
     „Zezwalaj temu urządzeniu na wznawianie”, „Tylko magic packet”); najlepiej po kablu - przez Wi-Fi zwykle nie działa.
 - **Wyłączanie pada** z PC albo samo po bezczynności (domyślnie 15 min).
 - **Opóźnienie pad → gra** (średnia, p95, max; pasek = średnie odcinków) mierzone dla każdej zmiany stanu pada
-  (przycisk, gałka, ruch), od chwili, gdy jądro telefonu dostało raport z pada, do oddania raportu wirtualnemu DS4. Nadajnik zna zegar PC z odpowiedzi na ping
+  (przycisk, gałka, ruch), od chwili, gdy jądro nadajnika dostało raport z pada, do oddania raportu wirtualnemu DS4. Nadajnik zna zegar PC z odpowiedzi na ping
   (jak NTP, pomiar o najmniejszym RTT), więc sieć jest mierzona w jedną stronę, nie jako połowa pingu. Odcinki:
   **Bluetooth** - opóźnienie radia ponad najlepszy przypadek z 2 s (znaczniki czasu pada; stała część ~1-2 ms jest
-  niemierzalna), **telefon** - jądro → wysłanie, **sieć**, **PC** - odbiór → ViGEm. Ze starszym nadajnikiem karta
+  niemierzalna), **nadajnik** - jądro → wysłanie, **sieć**, **PC** - odbiór → ViGEm. Ze starszym nadajnikiem karta
   pokazuje sam ping; starszy receiver dostaje od nowego nadajnika zwykłe pakiety.
   **Przycisk → gra** to ten sam pomiar tylko dla zmian przycisków, D-pada i spustów (przejście przez próg wciśnięcia,
   bez gałek i żyroskopu): ostatnie 100 naciśnięć / puszczeń bez limitu czasu (naciśnięcia są rzadkie - 5 s dałoby
   kilka próbek), kasowane przy zmianie pada w slocie albo ikoną ↻ na karcie.
 - **Wibracja:** jednocześnie przez sterownik (evdev FF) i bezpośrednio raportem HID przez `/dev/hidrawN`
-  (nadajnik przez `doas`), z flagami zależnymi od firmware pada, kolor lightbara w tym samym raporcie; ustawienie `rumble` w `sender.toml`. Karta pada
+  (nadajnik jako root), z flagami zależnymi od firmware pada, kolor lightbara w tym samym raporcie; ustawienie `rumble` w `sender.toml`. Karta pada
   pokazuje „wibracja: sterownik + HID” albo powód jej braku (brak uprawnień / brak w jądrze / nie znaleziono pada /
   stary nadajnik). Przycisk wibracji na karcie pada sprawdza, czy wibracja dochodzi do pada.
 - **Stała kolejność graczy:** nadajnik pamięta, który pad (MAC) był w którym slocie (`slots.json`), a receiver podłącza
@@ -174,5 +174,6 @@
   - gałki, ruch i dotyk bez opóźnienia do 1000 Hz (szybsze serie raportów zlewane, ostatni stan zawsze dochodzi),
   - na PC raport wirtualnego DS4 idzie od razu z wątku, który odebrał pakiet (bez przekazywania do innego wątku),
   - priorytety wątków i procesów, timer 1 ms na Windows,
-  - telefon (z `doas`): procesor bez głębokiego uśpienia (PM QoS), nadajnik na najszybszych rdzeniach i z planistą
-    czasu rzeczywistego - wybudzenie z uśpienia klastra (Snapdragon 845 do ~6.5 ms) nie opóźnia już pada ani pingu.
+  - nadajnik (jako root): procesor bez głębokiego uśpienia (PM QoS), proces na najszybszych rdzeniach i z planistą
+    czasu rzeczywistego - wybudzenie procesora z uśpienia (na telefonach ze Snapdragonem 845 do ~6.5 ms) nie
+    opóźnia pada ani pingu.
