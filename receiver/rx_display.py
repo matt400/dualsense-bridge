@@ -1,8 +1,10 @@
 """Receiver: rozdzielczość i skalowanie ekranu TV po włączeniu trybu konsoli (Windows, ctypes).
 
 apply_tv(w, h, scale) czeka, aż po DisplaySwitch /external zostanie jeden aktywny ekran (TV), potem:
-  rozdzielczość  ChangeDisplaySettingsExW - tryb w×h z najwyższym odświeżaniem, zapis w rejestrze (Windows pamięta
-                 go dla układu "tylko TV", więc układ extend / monitor zostaje nietknięty)
+  rozdzielczość  SetDisplayConfig (CCD) - tak samo jak okno Ustawienia -> Ekran: tryb źródła w×h, odświeżanie
+                 najwyższe z trybów w×h, zapis w bazie układów Windows (pamięta go dla "tylko TV", układ extend /
+                 monitor zostaje nietknięty). Dawne ChangeDisplaySettingsExW zostawiało w Ustawieniach pustą listę
+                 rozdzielczości (tryb GDI spoza listy CCD) - zostaje tylko jako zapas, gdy CCD odmówi.
   skalowanie     DisplayConfigSetDeviceInfo z nieudokumentowanym typem -4 (DPI_SCALE_SET) - tak samo robi okno
                  Ustawienia -> Ekran. Skala jest podawana względem zalecanej dla ekranu, więc najpierw odczyt (-3).
 Ustawienie już obowiązujące nie jest zmieniane (bez mrugnięcia obrazu). Brak ekranu / nieobsługiwany tryb -> wyjątek
@@ -15,20 +17,47 @@ DPI_VALUES = (100, 125, 150, 175, 200, 225, 250, 300, 350, 400, 450, 500)   # ko
 QDC_ONLY_ACTIVE_PATHS = 2
 DEVICE_INFO_GET_SOURCE_NAME, DPI_GET, DPI_SET = 1, -3, -4
 ENUM_CURRENT_SETTINGS = 0xFFFFFFFF
-DM_BITSPERPEL, DM_PELSWIDTH, DM_PELSHEIGHT, DM_DISPLAYFREQUENCY = 0x40000, 0x80000, 0x100000, 0x400000
+DM_BITSPERPEL, DM_PELSWIDTH, DM_PELSHEIGHT, DM_DISPLAYFLAGS, DM_DISPLAYFREQUENCY = 0x40000, 0x80000, 0x100000, 0x200000, 0x400000
+DM_INTERLACED = 0x2
 CDS_UPDATEREGISTRY = 0x1
 ERROR_INSUFFICIENT_BUFFER = 122
 DISP_CHANGE_SUCCESSFUL, DISP_CHANGE_RESTART = 0, 1
 SETTLE_S = 6.0          # tyle czekamy, aż Windows przełączy układ ekranów na "tylko TV"
-SDC_APPLY = 0x80
+SDC_USE_SUPPLIED_DISPLAY_CONFIG, SDC_VALIDATE, SDC_APPLY, SDC_SAVE_TO_DATABASE, SDC_ALLOW_CHANGES = 0x20, 0x40, 0x80, 0x200, 0x400
+MODE_IDX_INVALID = 0xFFFFFFFF
+MODE_SOURCE = 1
+SCALING_PREFERRED = 128
+NTSC_HZ = frozenset({23, 29, 47, 59, 71, 119, 143, 239})    # GDI podaje 59 dla 59,94 Hz itd.
 TOPOLOGY = {"internal": 0x1, "clone": 0x2, "extend": 0x4, "tv": 0x8}     # SDC_TOPOLOGY_* (jak DisplaySwitch)
 
 
 # ---------------- czysta logika (testowalna bez Windows) ----------------
 def pick_mode(modes, w, h):
-    """modes = [(szer, wys, bpp, Hz)] -> najlepszy tryb w×h (32 bpp, najwyższe Hz) albo None."""
-    ok = [m for m in modes if m[0] == w and m[1] == h and m[2] >= 32]
+    """modes = [(szer, wys, bpp, Hz[, flagi])] -> najlepszy tryb w×h (32 bpp, bez przeplotu, najwyższe Hz) albo None."""
+    ok = [m for m in modes if m[0] == w and m[1] == h and m[2] >= 32 and not (m[4:5] and m[4] & DM_INTERLACED)]
     return max(ok, key=lambda m: m[3]) if ok else None
+
+
+def refresh_rational(hz):
+    """Hz z GDI (liczba całkowita) -> (licznik, mianownik) dla CCD; 0 = niech Windows wybierze."""
+    if not hz:
+        return 0, 0
+    return ((hz + 1) * 1000, 1001) if hz in NTSC_HZ else (hz, 1)
+
+
+def compact_modes(paths, modes):
+    """Tylko tryby, do których odwołują się ścieżki (porzucony tryb celu wypada), indeksy przepisane -> lista."""
+    out, remap = [], {}
+    for p in paths:
+        for info in (p.sourceInfo, p.targetInfo):
+            i = info.modeInfoIdx
+            if i == MODE_IDX_INVALID:
+                continue
+            if i not in remap:
+                remap[i] = len(out)
+                out.append(modes[i])
+            info.modeInfoIdx = remap[i]
+    return out
 
 
 def scale_relative(percent, min_rel, cur_rel, max_rel):
@@ -64,9 +93,17 @@ class PATH_INFO(ctypes.Structure):
     _fields_ = [("sourceInfo", PATH_SOURCE), ("targetInfo", PATH_TARGET), ("flags", ctypes.c_uint32)]
 
 
-class MODE_INFO(ctypes.Structure):       # zawartość (unia trybu) nie jest potrzebna - tylko rozmiar 64 B
-    _fields_ = [("infoType", ctypes.c_uint32), ("id", ctypes.c_uint32), ("adapterId", LUID),
-                ("union", ctypes.c_byte * 48)]
+class SOURCE_MODE(ctypes.Structure):
+    _fields_ = [("width", ctypes.c_uint32), ("height", ctypes.c_uint32), ("pixelFormat", ctypes.c_uint32),
+                ("x", ctypes.c_int32), ("y", ctypes.c_int32)]
+
+
+class MODE_UNION(ctypes.Union):         # tryb celu / obraz pulpitu nie są zmieniane - wystarczy rozmiar (48 B, wyrównanie 8)
+    _fields_ = [("sourceMode", SOURCE_MODE), ("raw", ctypes.c_uint64 * 6)]
+
+
+class MODE_INFO(ctypes.Structure):
+    _fields_ = [("infoType", ctypes.c_uint32), ("id", ctypes.c_uint32), ("adapterId", LUID), ("u", MODE_UNION)]
 
 
 class HEADER(ctypes.Structure):
@@ -104,7 +141,8 @@ def _user32():
 
 
 def _query(u):
-    """Aktywne ścieżki ekranów; układ może się zmieniać w trakcie (przełączanie TV) - wtedy ponów."""
+    """Aktywne ścieżki ekranów -> (ścieżki, tryby) jako tablice ctypes; układ może się zmieniać w trakcie
+    (przełączanie TV) - wtedy ponów."""
     for _ in range(5):
         n_paths, n_modes = ctypes.c_uint32(), ctypes.c_uint32()
         if u.GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, ctypes.byref(n_paths), ctypes.byref(n_modes)):
@@ -112,7 +150,7 @@ def _query(u):
         paths, modes = (PATH_INFO * n_paths.value)(), (MODE_INFO * n_modes.value)()
         r = u.QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, ctypes.byref(n_paths), paths, ctypes.byref(n_modes), modes, None)
         if r == 0:
-            return paths[:n_paths.value]
+            return (PATH_INFO * n_paths.value)(*paths[:n_paths.value]), (MODE_INFO * n_modes.value)(*modes[:n_modes.value])
         if r != ERROR_INSUFFICIENT_BUFFER:
             raise OSError(f"QueryDisplayConfig failed ({r})")
         time.sleep(0.1)
@@ -123,7 +161,7 @@ def active_sources():
     """[(adapterId, sourceId, nazwa GDI np. \\\\.\\DISPLAY2)] aktywnych ekranów."""
     u = _user32()
     out, seen = [], set()
-    for p in _query(u):
+    for p in _query(u)[0]:
         src = p.sourceInfo
         key = (src.adapterId.LowPart, src.adapterId.HighPart, src.id)
         if key in seen:
@@ -146,27 +184,77 @@ def set_topology(mode):
         raise OSError(f"SetDisplayConfig({mode}) = {r}")
 
 
-def set_resolution(device, w, h):
-    """-> opis zmiany; nic nie robi, gdy ekran już ma w×h."""
-    u = _user32()
+def _current(u, device):
     cur = DEVMODEW(dmSize=ctypes.sizeof(DEVMODEW))
-    current = u.EnumDisplaySettingsW(device, ctypes.c_uint32(ENUM_CURRENT_SETTINGS), ctypes.byref(cur))
-    if current and (cur.dmPelsWidth, cur.dmPelsHeight) == (w, h):
-        return f"{w}x{h} already set"
-    modes, k = [], 0
-    dm = DEVMODEW(dmSize=ctypes.sizeof(DEVMODEW))
-    while u.EnumDisplaySettingsW(device, ctypes.c_uint32(k), ctypes.byref(dm)):
-        modes.append((dm.dmPelsWidth, dm.dmPelsHeight, dm.dmBitsPerPel, dm.dmDisplayFrequency))
+    if u.EnumDisplaySettingsW(device, ctypes.c_uint32(ENUM_CURRENT_SETTINGS), ctypes.byref(cur)):
+        return cur.dmPelsWidth, cur.dmPelsHeight, cur.dmDisplayFrequency
+    return None
+
+
+def _modes(u, device):
+    """[(szer, wys, bpp, Hz, flagi, DEVMODEW)] - wszystkie tryby ekranu z GDI."""
+    out, k = [], 0
+    while True:
+        dm = DEVMODEW(dmSize=ctypes.sizeof(DEVMODEW))
+        if not u.EnumDisplaySettingsW(device, ctypes.c_uint32(k), ctypes.byref(dm)):
+            return out
+        out.append((dm.dmPelsWidth, dm.dmPelsHeight, dm.dmBitsPerPel, dm.dmDisplayFrequency, dm.dmDisplayFlags, dm))
         k += 1
-    best = pick_mode(modes, w, h)
+
+
+def _ccd_resolution(u, w, h, rate, keep_target):
+    """Tryb źródła w×h przez SetDisplayConfig. keep_target=False: Windows dobiera sygnał do TV (w×h przy `rate`),
+    True: zostaje obecny sygnał, karta skaluje obraz. -> kod błędu Windows (0 = OK)."""
+    paths, modes = _query(u)
+    for p in paths:
+        if p.sourceInfo.modeInfoIdx == MODE_IDX_INVALID or modes[p.sourceInfo.modeInfoIdx].infoType != MODE_SOURCE:
+            return 87                    # ERROR_INVALID_PARAMETER - nieoczekiwany układ, niech zadziała zapas
+        src = modes[p.sourceInfo.modeInfoIdx].u.sourceMode
+        src.width, src.height = w, h
+        if not keep_target:
+            t = p.targetInfo
+            t.modeInfoIdx = MODE_IDX_INVALID
+            (t.refreshNum, t.refreshDen), t.scanLineOrdering, t.scaling = rate, 0, SCALING_PREFERRED
+    used = compact_modes(paths, modes)
+    arr = (MODE_INFO * len(used))(*used)
+    flags = SDC_USE_SUPPLIED_DISPLAY_CONFIG | SDC_SAVE_TO_DATABASE | SDC_ALLOW_CHANGES
+    return (u.SetDisplayConfig(len(paths), paths, len(used), arr, flags | SDC_VALIDATE)
+            or u.SetDisplayConfig(len(paths), paths, len(used), arr, flags | SDC_APPLY))
+
+
+def _gdi_resolution(u, device, best):
+    """Zapas: dokładnie ten DEVMODE, który zwrócił sterownik (z flagami i trybem wyjścia), bez gołych pól."""
+    *_, dm = best
+    dm.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT | DM_BITSPERPEL | DM_DISPLAYFREQUENCY | DM_DISPLAYFLAGS
+    return u.ChangeDisplaySettingsExW(device, ctypes.byref(dm), None, CDS_UPDATEREGISTRY, None)
+
+
+def set_resolution(device, w, h):
+    """-> opis zmiany; nic nie robi, gdy ekran już ma w×h. Kolejno: CCD z sygnałem w×h, CCD ze skalowaniem
+    obecnego sygnału, GDI. Po każdej próbie odczyt - liczy się to, co faktycznie jest na ekranie."""
+    u = _user32()
+    if (cur := _current(u, device)) and cur[:2] == (w, h):
+        return f"{w}x{h} already set"
+    best = pick_mode(_modes(u, device), w, h)
     if best is None:
         raise ValueError(f"{device}: no {w}x{h} mode (TV / cable may not support it)")
-    new = DEVMODEW(dmSize=ctypes.sizeof(DEVMODEW), dmPelsWidth=w, dmPelsHeight=h, dmBitsPerPel=best[2],
-                   dmDisplayFrequency=best[3], dmFields=DM_PELSWIDTH | DM_PELSHEIGHT | DM_BITSPERPEL | DM_DISPLAYFREQUENCY)
-    r = u.ChangeDisplaySettingsExW(device, ctypes.byref(new), None, CDS_UPDATEREGISTRY, None)
-    if r not in (DISP_CHANGE_SUCCESSFUL, DISP_CHANGE_RESTART):
-        raise OSError(f"ChangeDisplaySettingsExW({device}, {w}x{h}@{best[3]}) = {r}")
-    return f"{w}x{h} @ {best[3]} Hz"
+    attempts = (("CCD", lambda: _ccd_resolution(u, w, h, refresh_rational(best[3]), False)),
+                ("CCD any Hz", lambda: _ccd_resolution(u, w, h, (0, 0), False)),
+                ("CCD scaled", lambda: _ccd_resolution(u, w, h, (0, 0), True)),
+                ("GDI", lambda: _gdi_resolution(u, device, best)))
+    errors = []
+    for name, attempt in attempts:
+        try:
+            r = attempt()
+        except OSError as e:
+            r = repr(e)
+        if r == DISP_CHANGE_SUCCESSFUL or (name == "GDI" and r == DISP_CHANGE_RESTART):
+            time.sleep(0.3)
+            if (cur := _current(u, device)) and cur[:2] == (w, h):
+                return f"{w}x{h} @ {cur[2]} Hz ({name})"
+            r = f"set, but display reports {cur[:2] if cur else '?'}"
+        errors.append(f"{name}: {r}")
+    raise OSError(f"{device}: cannot set {w}x{h} - " + "; ".join(errors))
 
 
 def set_scale(adapter, source_id, percent):

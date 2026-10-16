@@ -62,6 +62,16 @@ def _startup_events(rx_winapi):
     threading.Thread(target=migrate, name="autostart", daemon=True).start()
 
 
+def _gamebar():
+    """PS wirtualnego DS4 / Win+G bez zainstalowanego Game Bar -> okno "wybierz aplikację ms-gamebar" (rx_gamebar)."""
+    import rx_gamebar
+    try:
+        for change in rx_gamebar.suppress():
+            print(f"Game Bar: {change}")
+    except Exception as e:
+        print(f"Game Bar: cannot update registry ({e!r})")
+
+
 def main():
     rx_config.init()
     sys.setswitchinterval(0.001)   # domyślne 5 ms = tyle może czekać wątek sieciowy, gdy inny trzyma GIL
@@ -97,6 +107,7 @@ def main():
     rx_net.init()
     rx_dsu.start()
     rx_console.init()   # ekran i dźwięk wg startup_mode (extend: oba ekrany aktywne, nigdy bez obrazu)
+    _gamebar()
     _startup_events(rx_winapi)
 
     gc.collect()
