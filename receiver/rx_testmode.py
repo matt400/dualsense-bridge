@@ -73,11 +73,14 @@ def rearm() -> None:
 
 def sync(i: int) -> None:
     """Wątek sieci, przed skrótami: po zmianie stanu testu sloty skrótów pada zaczynają od czystego stanu
-    (bez trwających kombinacji, timerów przytrzymania i PS czekającego na impuls)."""
+    (bez trwających kombinacji, timerów przytrzymania i PS czekającego na impuls) - liczonego od wejść trzymanych
+    przed tą zmianą (S.states[i]["raw"] jest jeszcze poprzednim stanem), więc nowe naciśnięcie działa od razu."""
     if _seen[_slot(i)] != _gen:
         _seen[i] = _gen
-        hotkeys.reset(i)
-        master.reset(i)
+        hotkeys.reset(i, keep=True)
+        master.reset(i, keep=True)
+        import rx_console                 # rx_console importuje rx_master - import tutaj
+        rx_console.resync(i)
 
 
 def shortcuts_on() -> bool:
@@ -146,8 +149,8 @@ def escape(i: int) -> None:
 def _release(s: int) -> None:
     """Slot wraca do gry z neutralnym raportem: trzymane teraz wejścia są zużyte (gra dostaje je jako puszczone do
     puszczenia), dopiero potem zdjęta blokada - żaden raport do wirtualnego DS4 nie niesie PS + △."""
-    hotkeys.reset(s)
-    master.reset(s)
+    hotkeys.reset(s, keep=True)
+    master.reset(s, keep=True)
     with S.lock:
         st = S.states[s]
         master.slots[s].sup = frozenset(pressed_inputs(*st["raw"])) - set(TRIGGERS)   # spusty: analogowo na żywo

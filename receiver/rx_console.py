@@ -316,6 +316,17 @@ class Console:
             return
         self._apply(True, why=_("połączono pad master (pad {n})").format(n=i + 1))
 
+    def resync(self, i):
+        """Granica widoku Test (wątek sieci, przed on_state): w teście on_state nie jest wołane, więc stan przycisku
+        trybu był sprzed testu - R2 trzymany przy wejściu i puszczony w teście "trzymał się" i pierwsze kliknięcie po
+        teście ginęło. Stan od bieżących wejść pada, seria kliknięć od nowa."""
+        mask, hx, hy, lt, rt = S.states[i]["raw"]
+        if self._trigger:
+            self._down[i] = (lt if self.cfg.toggle_button == "l2" else rt) >= TRIG_HI
+        else:
+            self._down[i] = self._detect(mask, hx, hy, lt, rt)
+        self._last_click[i] = 0.0
+
     def combo(self, i):
         """Przycisk trybu użyty razem z innym wejściem (także klikiem touchpada, który nie jest w masce): to naciśnięcie
         nie liczy się jako kliknięcie i przerywa serię - dwa skróty z PS pod rząd nie przełączają ekranu."""
@@ -457,6 +468,12 @@ def on_state(i, mask, hx, hy, lt, rt):
 def pad_connected(i):
     if ctl is not None:
         ctl.pad_connected(i)
+
+
+def resync(i):
+    """Granica widoku Test - patrz Console.resync."""
+    if ctl is not None:
+        ctl.resync(i)
 
 
 def is_on():

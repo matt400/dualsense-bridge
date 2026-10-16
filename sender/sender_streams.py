@@ -200,6 +200,10 @@ async def stream_motion(c):
                 cal = calib.GyroCal(now, c.cal_request, user=True)
                 c.cal_request = 0
                 calib.report(c, CAL_RUNNING)
+                # okno autobiasu od nowa: próbki sprzed kalibracji (pad jeszcze w ręce) w pierwszym oknie po niej
+                # przesuwały świeżo zmierzony bias o połowę w stronę ich średniej - kamera "płynęła" zaraz po kalibracji
+                win_t0, win_n, win_sum = now, 0, [0, 0, 0]
+                win_min, win_max = [1 << 60] * 3, [-(1 << 60)] * 3
             if cal is not None and (r := cal.feed(now, v[3:6])) is not None:
                 (calib.finish if cal.user else calib.startup_done)(c, r)
                 cal = None

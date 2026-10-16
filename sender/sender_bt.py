@@ -188,20 +188,24 @@ class Bluetooth:
 
     async def _op(self, op: int, arg: int, mac: bytes) -> None:
         what = " ".join(filter(None, (OP_NAMES[op], mac_text(mac), "on" if op == BT_POWER and arg else "")))
+        res = BTR_FAILED
         try:
+            try:
+                await self.refresh()
+                await OPS[op](self, arg, mac_text(mac))
+                res = BTR_OK
+            except BtError as e:
+                res = e.result
+                print(f"Bluetooth {what} failed: {e}")
+            except Exception as e:                   # operacja nie może zatrzymać nadajnika
+                print(f"Bluetooth {what} error: {e!r}")
+            else:
+                print(f"Bluetooth {what}: OK")
             await self.refresh()
-            await OPS[op](self, arg, mac_text(mac))
-            res = BTR_OK
-        except BtError as e:
-            res = e.result
-            print(f"Bluetooth {what} failed: {e}")
-        except Exception as e:                       # operacja nie może zatrzymać nadajnika
-            res = BTR_FAILED
-            print(f"Bluetooth {what} error: {e!r}")
-        else:
-            print(f"Bluetooth {what}: OK")
-        await self.refresh()
-        self.running, self.last = False, (op, res, mac)
+        finally:
+            # zawsze: wyjątek po operacji (np. w odświeżeniu) zostawiał running = True - każda następna operacja
+            # z okna dostawała "trwa inna operacja" aż do restartu nadajnika
+            self.running, self.last = False, (op, res, mac)
         self.send(full=True)
         self.poke()
 
@@ -211,6 +215,8 @@ class Bluetooth:
             rc, out, err = await self.run((BUSCTL, "--json=short", f"--timeout={timeout:g}", *args), timeout + 2)
         except FileNotFoundError:
             raise BtError("busctl not found (systemd)", BTR_FAILED) from None
+        except OSError as e:                         # brak prawa wykonania, fork bez pamięci (EAGAIN / ENOMEM)
+            raise BtError(f"cannot run busctl: {e}", BTR_DENIED if isinstance(e, PermissionError) else BTR_FAILED) from None
         if rc:
             msg = (err or out).strip() or f"exit {rc}"
             raise BtError(msg, classify(msg, RESULTS, BTR_FAILED))
@@ -230,6 +236,10 @@ class Bluetooth:
         except FileNotFoundError:
             self.state, self.adapter, self.devices = BTS_NO_TOOL, "", []
             return
+        except OSError as e:                         # inny błąd uruchomienia busctl - stan w oknie, nie wyjątek w pętli
+            self.state = BTS_DENIED if isinstance(e, PermissionError) else BTS_ERROR
+            print(f"Bluetooth: cannot run busctl: {e}")
+            return
         if rc:
             self.state = classify(err or out, STATES, BTS_ERROR)
             return
@@ -239,12 +249,17 @@ class Bluetooth:
             print(f"Bluetooth: unexpected busctl output: {e!r}")
             self.state = BTS_ERROR
 
+    def no_adapter(self) -> BtError:
+        """Brak adaptera; przy braku uprawnień (nadajnik nie jako root) okno pokazuje "brak uprawnień", a nie
+        ogólne "nie udało się"."""
+        return BtError(f"no adapter (state {self.state})", BTR_DENIED if self.state == BTS_DENIED else BTR_FAILED)
+
     def need(self, mac: str, *, known: bool = True) -> str:
         """Ścieżka D-Bus urządzenia; known: musi być na liście BlueZ (wykryte skanem albo sparowane)."""
         if self.state in (BTS_OFF, BTS_BLOCKED):
             raise BtError("adapter powered off", BTR_OFF)
         if not self.adapter:
-            raise BtError(f"no adapter (state {self.state})", BTR_FAILED)
+            raise self.no_adapter()
         if known and mac not in {d.mac for d in self.devices}:
             raise BtError("unknown device - scan first", BTR_NOT_FOUND)
         return dev_path(self.adapter, mac)
@@ -253,7 +268,7 @@ class Bluetooth:
         if self.state == BTS_BLOCKED and on:
             raise BtError("adapter blocked (rfkill)", BTR_OFF)
         if not self.adapter:
-            raise BtError(f"no adapter (state {self.state})", BTR_FAILED)
+            raise self.no_adapter()
         await self.set_prop(self.adapter, ADAPTER, "Powered", on)
         self.state = BTS_OK if on else BTS_OFF
 
@@ -302,12 +317,15 @@ class Bluetooth:
         try:
             await self.ensure_on()
             if not self.adapter:
-                raise BtError(f"no adapter (state {self.state})", BTR_FAILED)
+                raise self.no_adapter()
             self.scan = await asyncio.create_subprocess_exec(BLUETOOTHCTL, "--timeout", str(secs), "scan", "on",
                                                              stdin=DEVNULL, stdout=DEVNULL, stderr=DEVNULL)
         except FileNotFoundError:
             self.last = (BT_SCAN_START, BTR_FAILED, b"")
             print("Bluetooth scan failed: bluetoothctl not found (install bluez)")
+        except OSError as e:                         # bez tego wyjątek kończył zadanie skanu bez wyniku dla okna
+            self.last = (BT_SCAN_START, BTR_DENIED if isinstance(e, PermissionError) else BTR_FAILED, b"")
+            print(f"Bluetooth scan failed: cannot run bluetoothctl: {e}")
         except BtError as e:
             self.last = (BT_SCAN_START, e.result, b"")
             print(f"Bluetooth scan failed: {e}")
