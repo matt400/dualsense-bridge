@@ -35,7 +35,9 @@ Testy obejmują:
 - regresje z przeglądu bugów (`test_review.py`, `test_review_tx.py`, `test_hunt*.py`) - m.in. start / stop skanu
   Bluetooth naraz, palec leżący na touchpadzie przy połączeniu, klik touchpada puszczony w widoku Test, skróty z PS
   w trybie TV, rejestracja wibracji z gry w ViGEm (sygnatura callbacku z vgamepad, kolor lightbara jako struktura),
-  receiver bez ViGEmBus, obiekty COM audio zwalniane przed CoUninitialize;
+  receiver bez ViGEmBus, obiekty COM audio zwalniane przed CoUninitialize; skróty, akcje mastera i przycisk trybu
+  konsoli na granicy widoku Test liczone od trzymanych wejść, Bluetooth nadajnika bez busctl / uprawnień, autobias
+  po kalibracji z okna (`test_hunt9.py`, `test_hunt9_tx.py`);
 - przycisk → gra, dziennik zdarzeń (też zdarzenia nadajnika end-to-end), lightbar od baterii, ustawienia dla nadajnika
   (`test_extras.py`, `test_extras_gui.py`) oraz Wake-on-LAN po stronie nadajnika - kombinacja, ARP, broadcast, magic
   packet, `wol.json` (`test_wol_tx.py`);

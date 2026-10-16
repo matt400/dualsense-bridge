@@ -57,10 +57,17 @@ def init(n):
     slots[:] = [Slot() for _ in range(n)]
 
 
-def reset(i):
+def reset(i, keep=False):
+    """Koniec kombinacji i timerów slotu. keep: pad dalej połączony (granica widoku Test, blokada) - wejścia trzymane
+    w tej chwili są "poprzednim stanem" (nie odpalą akcji), a nowe naciśnięcie po granicy działa od razu (jak w
+    rx_hotkeys.reset); bez keep - jak po połączeniu pada (pierwszy stan to stan początkowy)."""
     if slots[i].timer is not None:
         slots[i].timer.cancel()
-    slots[i] = Slot()
+    h = slots[i] = Slot()
+    if keep and S.states is not None:
+        h.fresh = False
+        h.prev = frozenset(pressed_inputs(*S.states[i]["raw"]))
+        h.mod = MOD in h.prev
 
 
 # ---------------- kto jest masterem ----------------

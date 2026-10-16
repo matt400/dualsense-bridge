@@ -47,11 +47,25 @@ def init(n):
     slots[:] = [Slot() for _ in range(n)]
 
 
-def reset(i):
-    """Rozłączenie / reset slotu: koniec wszystkich trwających skrótów."""
+def reset(i, keep=False):
+    """Rozłączenie / reset slotu: koniec wszystkich trwających skrótów.
+
+    keep: pad dalej połączony (granica widoku Test, blokada wyjścia) - stan od wejść trzymanych w tej chwili
+    (S.states[i]["raw"]), a nie jak po połączeniu pada. PS trzymany przez granicę nie trafi do gry ani nie odpali
+    Game Bar, ale z nowym przyciskiem jest skrótem; świeże PS po granicy to zwykłe PS dla gry. Wcześniej reset
+    "jak po połączeniu" brał pierwsze PS po wyjściu z testu za trzymane od włączenia pada (gra go nie dostawała),
+    a PS trzymane przez granicę + Share dawało Share w grze zamiast zrzutu ekranu."""
     if slots[i].timer is not None:
         slots[i].timer.cancel()
-    slots[i] = Slot()
+    h = slots[i] = Slot()
+    if keep and S.states is not None:
+        mask, hx, hy = S.states[i]["raw"][:3]
+        h.fresh = False
+        h.prev_mask, h.prev_hat = mask, (hx, hy)
+        if mask & PS_BIT:              # trzymane PS + Share / D-pad = trwający skrót - do gry dopiero po puszczeniu
+            h.down = h.used = True
+            h.sup_share = bool(mask & SHARE_BIT)
+            h.sup_dpad = (hx, hy) != (0, 0)
 
 
 def forward(i, mask, hx, hy):

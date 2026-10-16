@@ -84,8 +84,8 @@ def block(slot, on):
     Skróty i master zaczynają od czystego stanu - przytrzymany PS sprzed blokady nie odpali kombinacji po niej."""
     if not S.set_blocked(slot, on):
         return False
-    hotkeys.reset(slot)
-    master.reset(slot)
+    hotkeys.reset(slot, keep=True)          # od wejść trzymanych teraz - nowe PS po teście trafia do gry
+    master.reset(slot, keep=True)
     if on:
         mouse.reset(slot)               # trzymany klik touchpada (tryb myszy) zostałby wciśnięty
     print(f"Controller {slot}: output to games {'blocked (test view)' if on else 'restored'}")
