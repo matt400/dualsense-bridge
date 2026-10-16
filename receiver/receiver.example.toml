@@ -6,8 +6,7 @@
 # dsu_port = 26760
 # pads = 2   # liczba slotów (max 4); wirtualne DS4 powstają tylko dla podłączonych
 # mouse_pads = [0]   # które kontrolery startują w trybie myszy (gdy jest pad master: mysz ma master)
-# pad_hz = 1000   # max częstotliwość raportów DS4 (zlewanie serii pakietów); sender sam ogranicza do ~250 Hz,
-#   więc 250 tutaj dublowało limit i przy jitterze sieci dokładało uśpienie; 0 = bez limitu
+# pad_hz = 1000   # max częstotliwość raportów DS4 (zlewanie serii pakietów, jak pad_min_dt nadajnika = 1 ms); 0 = bez limitu
 # dsu_hz = 1000   # j.w. dla DSU; 0 = bez limitu
 # dsu_tx_interval = 0.5   # nie wysyłaj DSU bez zmian częściej niż to
 # dsu_batch = false   # wiele pakietów DSU w jednym datagramie - nie każdy klient to akceptuje
@@ -15,7 +14,7 @@
 # gyro_res = 1024.0
 # acc_sign = [1, 1, 1]
 # gyro_sign = [1, 1, 1]
-# mouse_sens = 0.5   # za szybko -> 0.35, za wolno -> 0.8, odwrócone -> ujemna
+# mouse_sens = 0.5   # wartość startowa 0.05-5 (za szybko -> 0.35, za wolno -> 0.8); potem Ustawienia -> Mysz (settings.json)
 # scroll_sens = 0.6   # przewijanie dwoma palcami (jednostki kółka na jednostkę touchpada); 120 = 1 działka
 # scroll_natural = false   # True = treść podąża za palcami (jak w telefonie)
 # stale_s = 0.5   # cisza dłuższa niż tyle -> reset stanu (anty "zablokowane przyciski")

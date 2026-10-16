@@ -30,7 +30,11 @@ def list_outputs():
     from pycaw.utils import AudioUtilities
     with _com():
         devices = AudioUtilities.GetAllDevices(EDataFlow.eRender.value, DEVICE_STATE.ACTIVE.value)
-        return [(d.id, d.FriendlyName) for d in devices if d.FriendlyName]
+        out = [(d.id, d.FriendlyName) for d in devices if d.FriendlyName]
+        # obiekty COM zwolnione PRZED CoUninitialize: lista żyła do końca funkcji, czyli po wyjściu z _com() - Release
+        # na odinicjowanym COM (wątek trybu konsoli, wątek bez innych użytkowników COM) mógł wywrócić cały receiver
+        del devices
+    return out
 
 
 def find(name, devices):

@@ -45,13 +45,17 @@ cbs = []
 
 
 def make_cb(i):
-    def cb(client, target, large_motor, small_motor, lightbar, user_data):
+    """Callback ViGEm (wątek ViGEm) dla slotu i. Nazwy parametrów jak w vgamepad.dummy_callback - vgamepad porównuje
+    sygnaturę z nazwami i inną odrzuca (TypeError = brak wibracji z gier). led_number to kolor lightbara
+    DS4_LIGHTBAR_COLOR (rejestracja przez rx_ds4.register_feedback) albo liczba bez znaczenia (rejestracja przez
+    vgamepad, który deklaruje ten argument jako bajt) - wtedy kolor gry jest nieznany i lightbar zostaje własny."""
+    def cb(client, target, large_motor, small_motor, led_number, user_data):
         try:
             f = fb[i]
             f["large"], f["small"] = int(large_motor), int(small_motor)
-            f["r"] = int(getattr(lightbar, "Red", 0))
-            f["g"] = int(getattr(lightbar, "Green", 0))
-            f["b"] = int(getattr(lightbar, "Blue", 0))
+            if hasattr(led_number, "Red"):
+                f["r"], f["g"], f["b"] = int(led_number.Red), int(led_number.Green), int(led_number.Blue)
+                f["rgb"] = True
             f["set"] = True
         except Exception:
             pass
@@ -61,7 +65,7 @@ def make_cb(i):
 
 def init():
     n = C.NUM_PADS
-    fb[:] = [{"small": 0, "large": 0, "r": 0, "g": 0, "b": 0, "set": False} for _ in range(n)]
+    fb[:] = [{"small": 0, "large": 0, "r": 0, "g": 0, "b": 0, "set": False, "rgb": False} for _ in range(n)]
     fb_sent[:] = [None] * n
     trig_sent[:] = [None] * n
     pulses[:] = [None] * n
@@ -75,7 +79,7 @@ rx_settings.on_change(lambda _old, _new: fb_event.set())    # nowy kolor / tryb 
 def reset(i):
     """Nowy / odłączony wirtualny DS4 w slocie: gra jeszcze nic nie ustawiła (bez init() - nic do czyszczenia)."""
     if i < len(fb):
-        fb[i].update(set=False, small=0, large=0)
+        fb[i].update(set=False, small=0, large=0, rgb=False)
         fb_sent[i] = None
 
 
@@ -99,11 +103,13 @@ def _target(i, now):
     f = fb[i]
     cfg = rx_settings.cur.lightbar
     light = cfg.get(S.profile_key(i))
-    if f["set"]:                                  # gra ma pierwszeństwo
-        base, ours = tuple(clamp(f[k], 0, 255) for k in ("small", "large", "r", "g", "b")), True
+    motors = tuple(clamp(f[k], 0, 255) for k in ("small", "large")) if f["set"] else (0, 0)
+    if f["set"] and f["rgb"]:           # gra ma pierwszeństwo (kolor tylko, gdy go znamy)
+        rgb, ours = tuple(clamp(f[k], 0, 255) for k in ("r", "g", "b")), True
     else:
         rgb, ours = L.own_color(light, S.batt_info[i][0], cfg.low_pct, C.IDLE_RGB)
-        base = (0, 0, *rgb)
+        ours = ours or f["set"]
+    base = (*motors, *rgb)
     blink = L.blinking(light, is_low(i, cfg.low_pct))
     if blink:
         base = (*base[:2], *L.blink_rgb(base[2:], now))

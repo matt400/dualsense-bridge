@@ -23,7 +23,7 @@ DEFAULTS = {
     "gyro_res": 1024.0,
     "acc_sign": [1, 1, 1],
     "gyro_sign": [1, 1, 1],
-    "mouse_sens": 0.5,       # za szybko -> 0.35, za wolno -> 0.8, odwrócone -> ujemna
+    "mouse_sens": 0.5,       # wartość startowa 0.05-5 (za szybko -> 0.35, za wolno -> 0.8); potem Ustawienia -> Mysz
     "scroll_sens": 0.6,      # przewijanie dwoma palcami (jednostki kółka na jednostkę touchpada); 120 = 1 działka
     "scroll_natural": False, # True = treść podąża za palcami (jak w telefonie)
     "stale_s": 0.5,          # cisza dłuższa niż tyle -> reset stanu (anty "zablokowane przyciski")
