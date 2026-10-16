@@ -2,6 +2,7 @@
 import socket
 import time
 
+import rx_bt
 import rx_console
 import rx_events as ev
 import rx_feedback as F
@@ -13,9 +14,9 @@ import rx_settings
 import rx_state as S
 import rx_testmode as testmode
 from proto import (BODY, CAL_MOVED, CAL_OK, LAT_NONE, PAD_KEYS, RTT_NONE, SCFG_EVENTS, SCFG_WOL, STATE_FIELDS, WIRE, Codec,
-                   T_BYE, T_CALRES, T_CLICK, T_CMD, T_EVENT, T_FB, T_IDENT, T_INFO, T_MOUSE, T_PING, T_PONG, T_PONG2, T_SCFG,
-                   T_VERSION, T_STATE, T_STATE2, T_TOUCH, T_TRIG, T_TRIG2, TRIG2_OFF, T_BUILD, T_BUILD2, T_UPDMSG, clamp, cstr,
-                   mac_bytes, mac_text)
+                   T_BTDEV, T_BTSTATE, T_BUILD, T_BUILD2, T_BYE, T_CALRES, T_CLICK, T_CMD, T_EVENT, T_FB, T_IDENT, T_INFO,
+                   T_MOUSE, T_PING, T_PONG, T_PONG2, T_SCFG, T_STATE, T_STATE2, T_TOUCH, T_TRIG, T_TRIG2, T_UPDMSG,
+                   T_VERSION, TRIG2_OFF, clamp, cstr, mac_bytes, mac_text)
 from rx_buttons import BUTTON_CODES, MASK_ALL, PS_BIT, TRIG_ON
 
 from rx_config import C
@@ -457,6 +458,11 @@ def net_loop():
         if t in (T_BUILD, T_BUILD2):  # wersja kodu nadajnika i stan jego aktualizacji (cały nadajnik, idx 255)
             S.peer = addr
             on_build(data, now, t)
+            continue
+        if t in (T_BTSTATE, T_BTDEV):  # Bluetooth nadajnika (idx 255): stan adaptera, lista urządzeń
+            S.peer = addr
+            if S.seen.fresh((WIRE[t], 255), sq, now):
+                rx_bt.on_packet(t, data, now)
             continue
         if t == T_EVENT:  # zdarzenie nadajnika do dziennika (idx = slot pada albo 255)
             on_event(i, data)

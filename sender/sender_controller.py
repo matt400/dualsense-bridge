@@ -6,7 +6,8 @@
 
 Pliki: proto.py (wspólny), sender_config.py, sender_state.py, sender_net.py,
        sender_ctrl.py, sender_streams.py, sender_supervisor.py, sender_control.py, sender_rumble.py (wibracja),
-       sender_wol.py (Wake-on-LAN: PS + przycisk przy milczącym receiverze), sender_events.py (zdarzenia do okna PC).
+       sender_wol.py (Wake-on-LAN: PS + przycisk przy milczącym receiverze), sender_events.py (zdarzenia do okna PC),
+       sender_bt.py (Bluetooth telefonu z okna receivera: skan, parowanie, łączenie - busctl / bluetoothctl).
 Konfiguracja: --config plik.toml|json (klucze jak w DEFAULTS), flagi CLI nadpisują plik.
 --stats pokazuje też realną częstotliwość raportów pada i ruchu (Hz, przerwy p99/max).
 Wyłączanie pada: przyciskiem "Off" w oknie receivera albo samo po idle_off_min minutach bez użycia
@@ -22,6 +23,7 @@ import sys
 import traceback
 
 import sender_config
+import sender_bt
 import sender_control as control
 import sender_events as events
 import sender_net as net
@@ -65,7 +67,7 @@ async def main():
     try:
         await asyncio.gather(*(forever(name, fn) for name, fn in (
             ("socket", net.sock_keeper), ("heartbeat", streams.heartbeat), ("supervisor", sup.supervisor),
-            ("pinger", net.pinger), ("info", control.info_loop))))
+            ("pinger", net.pinger), ("info", control.info_loop), ("bluetooth", sender_bt.bt.loop))))
     finally:
         # najpierw pady: ich sprzątanie wysyła neutralny stan i "bye" - gniazdo musi jeszcze działać
         for t in list(state.bg_tasks):
@@ -101,6 +103,7 @@ if __name__ == "__main__":
     net.on_command = control.on_command
     net.on_triggers = sup.dispatch_triggers
     net.on_scfg = wol.apply_scfg
+    net.on_bt = sender_bt.bt.on_command        # Bluetooth telefonu z okna receivera (skan, parowanie, łączenie)
     wol.load()                         # Wake-on-LAN i zdarzenia: ustawienia z okna receivera zapisane przy ostatnim scfg
     sender_rt.setup(C.LOW_LATENCY, C.CPU_LATENCY_US, C.RT_PRIORITY)
     gc.collect()

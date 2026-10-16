@@ -52,6 +52,17 @@ nieznaną długość, więc wariant idzie tylko do strony, o której wiadomo, ż
                          Wibracja z gry (RFX_ON): L2 drga wg dużego silnika, R2 wg małego; na czas wibracji zastępuje
                          efekt spustu, po RFX_HOLD_S ciszy spust wraca do efektu. Tylko do nadajnika z CAP_TRIG_FX
                          (v8+); starszy dostaje zwykły trig (sam opór)
+Bluetooth telefonu sterowany z okna (v10+; telefon bez ekranu). Nadajnik ogłasza obsługę sam - pakietem btstate (idx 255)
+do receivera, od którego przyszedł scfg; receiver wysyła btcmd dopiero po btstate (starszy nadajnik odrzuciłby długość):
+  btcmd   (typ 10) "BB6s"      PC -> nadajnik (idx 255): operacja BT_*, argument (BT_SCAN_START: sekundy, najwyżej
+                               BT_SCAN_MAX_S; BT_POWER: 1 / 0), MAC urządzenia (zera = bez). BT_LIST = "panel otwarty":
+                               przez BT_ACTIVE_S nadajnik co sekundę wysyła stan i listę urządzeń, potem tylko stan co 5 s
+  btstate (typ 12) "BBBBBHBB6s" nadajnik -> PC (idx 255): stan adaptera BTS_*, flagi BTF_*, sekundy skanu do końca,
+                               połączone urządzenia, urządzenia na liście, runda listy, ostatnia operacja BT_*, jej wynik
+                               BTR_*, jej MAC; zaraz po nim (w aktywnym trybie) urządzenia rundy
+  btdev   (typ 9)  "HBB6sbB24s" nadajnik -> PC (idx 255): runda, numer, ile w rundzie, MAC, RSSI [dBm] (BT_RSSI_NONE =
+                               brak - poza skanem), flagi BTD_*, nazwa (UTF-8, ucięta); receiver podmienia listę dopiero,
+                               gdy ma całą rundę (zgubiony pakiet = lista z poprzedniej rundy, nie dziurawa)
 
 Na końcu: wspólne funkcje gita (wersja kodu, aktualizacja git pull) - receiver i nadajnik aktualizują się tak samo.
 """
@@ -71,8 +82,10 @@ HDR0 = VER << 4
 (T_EVENT, T_STATE, T_TOUCH, T_CLICK, T_MOUSE, T_PING, T_FB, T_PONG, T_BYE, T_IDENT, T_CMD, T_INFO, T_VERSION,
  T_BUILD, T_UPDMSG, T_TRIG) = range(16)
 T_STATE2, T_PONG2, T_SCFG, T_CALRES, T_BUILD2, T_TRIG2 = 0x101, 0x107, 0x10A, 0x10B, 0x10D, 0x10F   # warianty dłuższe
-WIRE = {T_STATE2: T_STATE, T_PONG2: T_PONG, T_SCFG: T_CMD, T_CALRES: T_INFO, T_BUILD2: T_BUILD, T_TRIG2: T_TRIG}
-SENDER_VERSION = 9
+T_BTDEV, T_BTSTATE, T_BTCMD = 0x109, 0x10C, 0x20A                                                 # Bluetooth (v10+)
+WIRE = {T_STATE2: T_STATE, T_PONG2: T_PONG, T_SCFG: T_CMD, T_CALRES: T_INFO, T_BUILD2: T_BUILD, T_TRIG2: T_TRIG,
+        T_BTDEV: T_IDENT, T_BTSTATE: T_VERSION, T_BTCMD: T_CMD}
+SENDER_VERSION = 10
 RUMBLE_EVDEV, RUMBLE_HIDRAW, CAP_TRIGGERS = 1, 2, 4     # bity pakietu version (CAP_TRIGGERS: opór spustów działa)
 CAP_TRIG_FX = 8                                         # bit pakietu version: nadajnik zna trig2 (klik, wibracja, z gry)
 CAP_CALIB = 16                                          # bit pakietu version: CMD_GYRO_CAL i CMD_RAW_STICKS (v9+)
@@ -101,6 +114,19 @@ EV_INFO, EV_WARN, EV_ERROR = range(3)                   # poziom zdarzenia (paki
 # kody zdarzeń nadajnika (pakiet event) - tekst w oknie receivera (rx_events.SENDER_TEXT), argument w {arg}
 (E_START, E_PAD_ON, E_PAD_OFF, E_POWER_OFF, E_WOL, E_WOL_FAIL, E_NO_RECEIVER, E_NET_DOWN, E_ERROR) = range(1, 10)
 WOL_PORTS = (9, 7)                                      # magic packet: discard i echo (karty sieciowe słuchają każdego)
+# Bluetooth telefonu z okna (btcmd / btstate / btdev): operacje, stan adaptera, flagi, wynik operacji, flagi urządzenia
+BT_LIST, BT_SCAN_START, BT_SCAN_STOP, BT_PAIR, BT_CONNECT, BT_DISCONNECT, BT_REMOVE, BT_POWER = range(8)
+# działa, wyłączony, zablokowany (rfkill), brak adaptera, brak bluetoothd, brak uprawnień, brak busctl, inny błąd
+BTS_OK, BTS_OFF, BTS_BLOCKED, BTS_NO_ADAPTER, BTS_NO_SERVICE, BTS_DENIED, BTS_NO_TOOL, BTS_ERROR = range(8)
+BTF_SCANNING, BTF_BUSY = 1, 2                           # flagi btstate: trwa skan, trwa operacja
+# brak, trwa, udało się, nieudane, przekroczony czas, nieznane urządzenie, odrzucone parowanie, brak uprawnień,
+# adapter wyłączony / zablokowany, adapter zajęty (inna operacja)
+BTR_NONE, BTR_RUNNING, BTR_OK, BTR_FAILED, BTR_TIMEOUT, BTR_NOT_FOUND, BTR_AUTH, BTR_DENIED, BTR_OFF, BTR_BUSY = range(10)
+BTD_PAIRED, BTD_CONNECTED, BTD_TRUSTED, BTD_PAD = 1, 2, 4, 8   # flagi btdev (BTD_PAD = pad do gier)
+BT_SCAN_MAX_S = 30            # skan zabiera radio połączonym padom (skoki opóźnienia) - zawsze z limitem
+BT_ACTIVE_S = 6.0             # tyle po ostatnim btcmd nadajnik wysyła listę urządzeń co sekundę
+BT_RSSI_NONE = -128
+BT_DEV_MAX = 32               # najwięcej urządzeń w rundzie
 
 HDR = struct.Struct("!BBH")
 BODY = {
@@ -126,13 +152,18 @@ BODY = {
     T_CALRES: struct.Struct("!BB3i3iI"),        # stan CAL_*, flagi CALF_*, zapisany bias xyz, bieżący bias xyz, czas zapisu
     T_BUILD2: struct.Struct("!7sIB6s4s"),       # build + MAC PC i broadcast, których użyje Wake-on-LAN
     T_TRIG2: struct.Struct("!12B"),             # efekty L2, R2 (tryb, a, b, c) + wibracja z gry (flagi, %, Hz, 0)
+    T_BTCMD: struct.Struct("!BB6s"),            # operacja BT_*, argument, MAC
+    T_BTSTATE: struct.Struct("!BBBBBHBB6s"),    # BTS_*, BTF_*, skan [s], połączone, na liście, runda, op, BTR_*, MAC
+    T_BTDEV: struct.Struct("!HBB6sbB24s"),      # runda, numer, ile, MAC, RSSI, BTD_*, nazwa
 }
 STATE_FIELDS = 17                               # pola stanu w state / state2 (bez pomiaru opóźnienia)
 BODY_LEN = {t: s.size for t, s in BODY.items()}
 assert BODY_LEN == {0: 62, 1: 36, 2: 12, 3: 1, 4: 5, 5: 8, 6: 5, 7: 8, 8: 0, 9: 17, 10: 2, 11: 6, 12: 3, 13: 12, 14: 120,
-                    15: 4, T_STATE2: 44, T_PONG2: 16, T_SCFG: 14, T_CALRES: 30, T_BUILD2: 22, T_TRIG2: 12}, BODY_LEN
+                    15: 4, T_STATE2: 44, T_PONG2: 16, T_SCFG: 14, T_CALRES: 30, T_BUILD2: 22, T_TRIG2: 12,
+                    T_BTCMD: 8, T_BTSTATE: 15, T_BTDEV: 36}, BODY_LEN
 # (typ w nagłówku, długość treści) -> typ w programie
 BY_SIZE = {(WIRE.get(t, t), s.size): t for t, s in BODY.items()}
+assert len(BY_SIZE) == len(BODY), "dwa typy z tą samą długością w jednym typie nagłówka"
 
 # kody evdev przycisków DualSense -> bit w masce (kolejność = pozycja bitu w pakiecie stanu)
 PAD_KEYS = (304, 305, 307, 308, 310, 311, 314, 315, 316, 317, 318)
@@ -173,6 +204,11 @@ def magic_packet(mac):
 def cstr(b):
     """Pole tekstowe pakietu (dopełnione zerami) -> str."""
     return b.rstrip(b"\0").decode("utf-8", "replace")
+
+
+def utf8_field(text, size):
+    """str -> bajty UTF-8 najwyżej `size`, ucięte na granicy znaku (cstr() nie pokaże pół litery)."""
+    return (text or "").encode("utf-8")[:size].decode("utf-8", "ignore").encode("utf-8")
 
 
 class Codec:
