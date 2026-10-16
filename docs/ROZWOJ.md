@@ -43,7 +43,7 @@ Testy obejmują:
   packet, `wol.json` (`test_wol_tx.py`);
 - widok Test: pomiar dryfu i propozycja strefy martwej, korekcja dryfu we wszystkich profilach pada, blokada wyjścia
   do gry (DS4, DSU, mysz, skróty), kalibracja żyroskopu z okna i jej zapis na nadajniku, gałki bez strefy martwej
-  nadajnika na czas pomiaru, wyłączone skróty i wyjście PS + △ (`test_padtest.py`, `test_padtest_gui.py`,
+  nadajnika na czas pomiaru, wyłączone skróty i wyjście Options + Create (`test_padtest.py`, `test_padtest_gui.py`,
   `test_calib_tx.py`);
 - Bluetooth nadajnika z okna: protokół, BlueZ przez podstawiony `busctl`, skan na prawdziwym procesie z limitem,
   błędy adaptera / uprawnień / programów, lista rundami, całość przez UDP (`test_bt.py`) i panel w oknie z obsługą

@@ -45,7 +45,8 @@ keys = {k for _t, k in f}
 assert ("options", "×2") in keys and "500 ms" in f["Tryb konsoli", ("options", "×2")].text, "przycisk trybu konsoli z ustawień"
 assert ("ps", "+", "options") in keys and ("ps", "+", "square", "1,2 s") in keys, "akcje mastera (groźne z czasem)"
 assert not any("r3" in k for k in keys), "przejęcie mastera wyłączone - nie pokazane"
-assert not any("share" in k for k in keys), "PS + Share = none - nie pokazane"
+assert ("ps", "+", "share") not in keys, "PS + Share = none - nie pokazane"
+assert ("options", "+", "share") in keys, "wyjście z widoku Test: Options + Create"
 assert any(sc.text == "Steam Big Picture" for sc in f.values()), "akcja długiego PS"
 assert SC.master_only("console") and SC.master_only("actions") and not SC.master_only("profile")
 C.PS_MODIFIER = False
