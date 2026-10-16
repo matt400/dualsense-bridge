@@ -87,15 +87,23 @@ def init(store_):
     gyro_cal = [None] * n                            # ostatni pakiet calres: (stan, flagi, zapisany, bieżący, czas, odebrano)
 
 
+STABLE_S = 60.0                            # wątek działał tyle bez błędu -> kolejny błąd liczony od nowa
+
+
 def run_forever(name, fn, *args):
     """Pętla wątku w tle, której nieoczekiwany wyjątek nie wyłączy na stałe: błąd jest wypisywany
-    (pierwszy z pełnym śladem), a pętla startuje ponownie po chwili. Kończy się, gdy fn wróci przy S.stop."""
+    (pierwszy z pełnym śladem), a pętla startuje ponownie po chwili. Kończy się, gdy fn wróci przy S.stop.
+    Licznik błędów zeruje się po STABLE_S spokojnej pracy - rzadkie błędy nie narastają do 5 s przerwy (wątek sieci:
+    5 s bez padów)."""
     errors = 0
     while not stop.is_set():
+        t0 = time.monotonic()
         try:
             fn(*args)
             return
         except Exception as e:
+            if time.monotonic() - t0 >= STABLE_S:
+                errors = 0
             errors += 1
             if errors == 1:
                 print(f"{name} thread error - restarting:\n{traceback.format_exc()}")

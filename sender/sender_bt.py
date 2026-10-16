@@ -147,6 +147,10 @@ class Bluetooth:
         self.busy: asyncio.Task | None = None       # zadanie operacji (testy czekają na nie)
         self.running = False                         # operacja trwa (do jej końca, przed wysłaniem wyniku)
         self.scan: asyncio.subprocess.Process | None = None
+        # start / stop skanu po kolei: start to kilka wywołań (refresh, zasilanie, uruchomienie bluetoothctl) - drugi
+        # start albo stop w trakcie widział jeszcze self.scan = None, więc pierwszy proces zostawał osierocony (skan
+        # zabierał radio padom do BT_SCAN_MAX_S i "Zatrzymaj" w oknie go nie zatrzymywał)
+        self.scan_lock = asyncio.Lock()
         self.scan_end = 0.0
         self.active_until = 0.0
         self.gen = 0
@@ -289,7 +293,11 @@ class Bluetooth:
 
     async def start_scan(self, secs: int) -> None:
         """Skan przez secs s (proces bluetoothctl kończy sesję wyszukiwania sam); trwający - nowy limit."""
-        await self.stop_scan()
+        async with self.scan_lock:
+            await self._start_scan(secs)
+
+    async def _start_scan(self, secs: int) -> None:
+        await self._stop_scan()
         await self.refresh()
         try:
             await self.ensure_on()
@@ -318,6 +326,11 @@ class Bluetooth:
             self.poke()
 
     async def stop_scan(self) -> None:
+        """Zatrzymanie skanu - także takiego, który właśnie się uruchamia (czeka na koniec startu)."""
+        async with self.scan_lock:
+            await self._stop_scan()
+
+    async def _stop_scan(self) -> None:
         proc, self.scan = self.scan, None
         if proc is None or proc.returncode is not None:
             return
