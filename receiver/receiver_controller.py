@@ -31,14 +31,35 @@ Pad master (rx_master): wybrane funkcje tylko dla jednego pada; PS + przycisk = 
 wyłącz PC; PS + R3 przytrzymane 3 s = ten pad zostaje masterem; połączenie mastera włącza tryb konsoli.
 Ustawienia: okno -> Ustawienia -> Master (settings.json).
 Konfiguracja: --config plik.toml|json (klucze jak w DEFAULTS), flagi CLI nadpisują plik.
-Autostart z Windows: --autostart on|off (wpis w HKCU\\...\\Run, uruchamia pythonw bez konsoli).
+Autostart z Windows: --autostart on|off (zadanie Harmonogramu przy logowaniu, bez opóźnienia; pythonw bez konsoli).
 """
 import gc
+import os
 import sys
 import time
 
 import rx_config
 from rx_config import C
+
+
+def _startup_events(rx_winapi):
+    """Dziennik: ile po starcie Windows wystartował receiver (opóźniony autostart = późny tryb konsoli) i w tle
+    przeniesienie starego autostartu z wpisu Run do Harmonogramu zadań (start zaraz po zalogowaniu)."""
+    import threading
+
+    import rx_events as ev
+    from rx_i18n import _
+    if (up := rx_winapi.uptime_s()) is not None:
+        print(f"Receiver started {up:.0f}s after Windows start")
+        ev.info(_("Receiver uruchomiony {s} s po starcie Windows").format(s=round(up)))
+    if os.name != "nt":
+        return
+
+    def migrate():
+        import rx_autostart
+        if rx_autostart.migrate():
+            ev.info(_("Autostart przeniesiony do Harmonogramu zadań - receiver startuje zaraz po zalogowaniu"))
+    threading.Thread(target=migrate, name="autostart", daemon=True).start()
 
 
 def main():
@@ -76,6 +97,7 @@ def main():
     rx_net.init()
     rx_dsu.start()
     rx_console.init()   # ekran i dźwięk wg startup_mode (extend: oba ekrany aktywne, nigdy bez obrazu)
+    _startup_events(rx_winapi)
 
     gc.collect()
     gc.freeze()        # obiekty ze startu nie są już skanowane przez GC - krótsze, rzadsze pauzy w wątkach czasu rzeczywistego

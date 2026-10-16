@@ -375,10 +375,14 @@ feed(T_BYE, 1); time.sleep(1.1); feed(T_IDENT, 1, MAC.encode())
 for _ in range(15):
     state(1); time.sleep(0.1)                               # pad żyje, gra dalej na pierwszym planie
 check(not c.on and c._pending == 1, "auto-ON w trakcie gry czeka")
+import rx_events
+check(any("ittakestwo.exe" in e.text and "czeka" in e.text for e in rx_events.since(0)),
+      "czekanie auto-ON widać w dzienniku (z nazwą programu)")
 rxenv.FG[0] = "explorer.exe"
 for _ in range(15):
     state(1); time.sleep(0.1)
 check(c.on, "gra zamknięta (pulpit na pierwszym planie) -> auto-ON")
+check(any("czekania" in e.text for e in rx_events.since(0)), "w dzienniku: włączony po czekaniu (ile sekund)")
 c.close(restart=True)
 c = new_console(toggle_button="r2", allowed_apps=("explorer.exe",)); rxenv.FG[0] = "steam.exe"
 for v in (255, 0, 255, 0):

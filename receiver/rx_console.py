@@ -252,6 +252,7 @@ class Console:
         restored = os.environ.pop(RESTART_ENV, None)
         self._restore_on = restored == "1"  # restart z włączonym trybem -> zostaje włączony
         self._pending = None                # auto-ON czekające, aż gra zejdzie z pierwszego planu (slot mastera)
+        self._pending_since = 0.0
         self._skip_auto = restored == "0"   # restart z wyłączonym -> ponowne połączenie mastera nie włącza
 
     # ---------- wątek sieci ----------
@@ -309,7 +310,9 @@ class Console:
             return
         if (exe := self.blocked_by()) is not None:
             print(f"Console: master connected, {exe} in the foreground - console mode waits until it is not")
-            self._pending = i
+            ev.warn(_("Tryb konsoli czeka - na pierwszym planie {exe} (dodaj go do listy programów w Ustawieniach, "
+                      "jeśli to nie gra)").format(exe=exe))
+            self._pending, self._pending_since = i, time.monotonic()
             return
         self._apply(True, why=_("połączono pad master (pad {n})").format(n=i + 1))
 
@@ -360,7 +363,8 @@ class Console:
                 self._pending = None                 # już włączony / master odszedł - nie czekaj dalej
             elif self.blocked_by() is None:
                 self._pending = None
-                self._apply(True, why=_("połączono pad master (pad {n})").format(n=i + 1))
+                self._apply(True, why=_("połączono pad master (pad {n}), po {s} s czekania").format(
+                    n=i + 1, s=round(now - self._pending_since)))
                 return
         if self._revert and now >= self._revert[0]:
             self._apply(False, self._revert[1], _("koniec testu"))
