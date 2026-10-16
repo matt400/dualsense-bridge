@@ -12,12 +12,12 @@ Najczęściej zmieniane:
 
 | Ustawienie | Gdzie | Domyślnie | Co robi |
 |---|---|---|---|
-| `host` | sender | 192.168.1.4 | IP komputera z receiverem |
+| `host` | sender | 192.168.1.4 (przykład - ustaw swój) | IP komputera z receiverem |
 | `pad_min_dt` | sender | 0.001 | min. odstęp pakietów stanu (1 ms = 1000 Hz) |
 | `idle_off_min` | sender | 15 | wyłącz pada po tylu minutach bez użycia, 0 = nigdy |
-| `low_latency` | sender | true | procesor telefonu bez głębokiego uśpienia + najszybsze rdzenie (wymaga `doas`) |
+| `low_latency` | sender | true | procesor nadajnika bez głębokiego uśpienia + najszybsze rdzenie (wymaga roota) |
 | `cpu_latency_us` | sender | 50 | `low_latency`: maks. czas wybudzenia procesora w µs |
-| `rt_priority` | sender | 10 | SCHED_FIFO z tym priorytetem, `0` = zwykły planista (wymaga `doas`) |
+| `rt_priority` | sender | 10 | SCHED_FIFO z tym priorytetem, `0` = zwykły planista (wymaga roota) |
 | `rumble` | sender | auto | wibracja: `auto` (sterownik i raport HID naraz), `evdev`, `hidraw`, `off` |
 | `key` | oba | "" | wspólny klucz HMAC (opcjonalne uwierzytelnianie pakietów) |
 | `mouse_sens`, `scroll_sens` | receiver | 0.5, 0.6 | czułość myszy i przewijania touchpadem |
@@ -54,7 +54,7 @@ korekcja dryfu gałek w `receiver/padcal.json` (obok `remap.json`, w kopiach ust
 
 Aktualizacja: przycisk **Aktualizuj** w oknie (albo w menu ikony w zasobniku) aktualizuje **obie strony**:
 - receiver: `git pull` w folderze `dualsense-bridge`, przy zmianie `requirements.txt` także `pip install`;
-- nadajnik: dostaje polecenie, robi `git pull` na telefonie (jako właściciel folderu, także z usługi root)
+- nadajnik: dostaje polecenie, robi `git pull` na nadajniku (jako właściciel folderu, także z usługi root)
   i sam uruchamia się od nowa;
 - okno czeka na wynik nadajnika (do 60 s), pokazuje oba wyniki i restartuje receiver.
 
@@ -62,15 +62,15 @@ Wersja (commit i data) jest w nagłówku okna obok nazwy, a wersja nadajnika prz
 pojawia się pasek z przyciskiem **Aktualizuj**, gdy:
 - na GitHubie jest nowsza wersja - „Dostępna aktualizacja: 3 zmiany - tytuł najnowszej” (okno sprawdza to w tle
   20 s po starcie i co 30 min, bez pobierania kodu i bez okna logowania; raz też powiadomienie z zasobnika);
-- nadajnik ma inną wersję niż receiver - „Nadajnik ma inną wersję (…) niż receiver (…)”. Wymaga klonów git po obu stronach (`git clone https://github.com/matt400/dualsense-bridge`;
-na telefonie potem `doas ./install-service.sh` z nowego folderu i `doas apk add git`) oraz Git for Windows.
+- nadajnik ma inną wersję niż receiver - „Nadajnik ma inną wersję (…) niż receiver (…)”. Wymaga klonów git po obu stronach (`git clone https://github.com/matt400/dualsense-bridge`, na nadajniku potem
+`install-service.sh` z tego folderu) oraz Git for Windows.
 Ustawienia i profile (`console.json`, `settings.json`, `remap.json`, `sender.toml`, `slots.json`) zostają nietknięte,
 a po pobraniu nowej wersji receiver i tak robi ich kopię (Ustawienia → Kopie) - na wypadek, gdyby nowa wersja przy
 starcie coś w nich zmieniła.
 
-Repozytorium jest prywatne, a usługa nadajnika nie ma Twojego klucza SSH (brak agenta, klucz z hasłem) - git pull na
-telefonie kończył się `Could not read from remote repository`. Jednorazowo na telefonie, jako zwykły użytkownik
-(bez `doas`):
+Klon z adresu https publicznego repozytorium aktualizuje się bez logowania. Klucz jest potrzebny tylko dla prywatnego
+forka albo klonu przez SSH: usługa nadajnika działa jako root i nie ma Twojego klucza SSH, więc `git pull` kończy się
+`Could not read from remote repository`. Wtedy jednorazowo na nadajniku, jako zwykły użytkownik (bez `sudo` / `doas`):
 
 ```
 cd dualsense-bridge/sender

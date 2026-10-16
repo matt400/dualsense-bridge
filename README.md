@@ -4,44 +4,34 @@ DualSense bridge przesyła dane z pada PS5 (DualSense) do komputera z Windows pr
 jak zwykły pad PS4: przyciski, gałki, żyroskop, touchpad, a w drugą stronę wibracje i lightbar.
 
 Pad łączy się przez Bluetooth z **nadajnikiem**, czyli małym urządzeniem z Linuksem w pobliżu, np. Raspberry Pi albo
-starym telefonem z postmarketOS (OnePlus 6). Nadajnik od razu wysyła do PC każdą zmianę stanu pada.
-Dzięki temu PC może stać w innym pokoju, a grasz z kanapy przed telewizorem.
+starym telefonem z postmarketOS. Nadajnik od razu wysyła do PC każdą zmianę stanu pada. Dzięki temu PC może stać
+w innym pokoju, a grasz z kanapy przed telewizorem.
 
 Na PC jest okno do sterowania wszystkim, także samym padem:
 - przełączenie obrazu i dźwięku na TV jednym skrótem (tryb konsoli),
 - remapowanie przycisków, gałek i żyroskopu, z profilami per pad i per gra,
 - touchpad jako mysz,
 - parowanie padów z nadajnikiem bez podchodzenia do niego,
-- pad master z uprawnieniami, np. gdy grają dzieci.
+- pad master, któremu wolno więcej (np. gdy grają dzieci).
 
 ```
-DualSense ──Bluetooth──> nadajnik (sender/) ──sieć, UDP 5005──> PC (receiver/) ──> wirtualny DS4 ──> gry
+DualSense ──Bluetooth──> nadajnik (sender/) ──sieć, UDP 5005──> PC (receiver/) ──> wirtualny pad DS4 ──> gry
                                                                        └──> serwer DSU (gyro dla emulatorów)
 ```
 
-## Jak to działa
+## Czego potrzebujesz
 
-- **Nadajnik** (`sender/`, Linux przy TV) czyta pady przez `evdev` i wysyła ich stan od razu po każdej zmianie
-  (do 1000 Hz). Przyciski idą z powtórkami na wypadek zgubionego pakietu. Działa jako usługa systemd (root).
-- **Receiver** (`receiver/`, Windows) tworzy wirtualnego DS4 (ViGEm) dla każdego podłączonego pada i serwer DSU dla
-  emulatorów. Odsyła do pada wibracje, kolor lightbara i efekty spustów.
-- **Okno receivera** (PySide6, ikona w zasobniku) pokazuje stan padów, baterię i opóźnienie pad → gra. Na pełnym
-  ekranie obsługuje się je padem.
-- **Tryb konsoli:** dwa naciśnięcia R2 przełączają obraz i dźwięk między monitorem a TV. Włącza się sam po połączeniu
-  pada master.
-- **Skróty pada:** pełna lista jest w oknie (ikona pada w nagłówku) i zawsze zgadza się z bieżącymi ustawieniami.
-
-## Wymagania
-
-| | Receiver (PC) | Nadajnik (Raspberry Pi, telefon, inny Linux) |
+| | PC | Nadajnik |
 |---|---|---|
-| System | Windows 10 / 11 | Linux ze sterownikiem `hid-playstation` |
-| Python | 3.11+ | 3.11+ |
-| Inne | ViGEmBus, Git for Windows | `evdev`, `bluez`, systemd (`busctl`), `git` |
+| Sprzęt | komputer z Windows 10 / 11 | Raspberry Pi, stary telefon z postmarketOS albo inny komputer z Linuksem i Bluetooth |
+| Oprogramowanie | [Python 3.11+](https://www.python.org/downloads/), [Git for Windows](https://git-scm.com/download/win) | Python 3.11+, `git`, BlueZ, systemd, jądro ze sterownikiem `hid-playstation` |
+| Sieć | ta sama sieć lokalna co nadajnik | najlepiej kabel (Ethernet); Wi-Fi działa, ale daje skoki opóźnienia |
 
 ## Instalacja
 
-### PC (Windows)
+### 1. PC (Windows)
+
+W PowerShellu albo wierszu poleceń:
 
 ```
 git clone https://github.com/matt400/dualsense-bridge
@@ -51,37 +41,62 @@ python receiver_controller.py --autostart on
 python receiver_controller.py
 ```
 
-- Przy instalacji `vgamepad` zainstaluj sterownik ViGEmBus.
-- W zaporze Windows zezwól Pythonowi na sieć prywatną (UDP 5005).
-- `--autostart on` dodaje zadanie Harmonogramu zadań, które uruchamia receiver zaraz po zalogowaniu.
+- Instalator `vgamepad` zaproponuje sterownik **ViGEmBus** (wirtualne pady). Zainstaluj go.
+- Przy pierwszym starcie zapora Windows zapyta o dostęp do sieci. Zezwól w **sieciach prywatnych** (UDP 5005).
+- `--autostart on` uruchamia receiver zaraz po zalogowaniu do Windows (`--autostart off` wyłącza).
+- Receiver działa w zasobniku. Kliknij jego ikonę, żeby otworzyć okno.
+- Zapisz adres IP komputera (`ipconfig` → „Adres IPv4”, np. `192.168.1.10`). Będzie potrzebny nadajnikowi.
 
-### Nadajnik (przykład: postmarketOS / Alpine)
+### 2. Nadajnik (Linux)
+
+Raspberry Pi OS / Debian / Ubuntu:
 
 ```
-doas apk add python3 py3-evdev bluez git
+sudo apt install python3 python3-evdev bluez git
 git clone https://github.com/matt400/dualsense-bridge
 cd dualsense-bridge/sender
-cp sender.example.toml sender.toml      # host = IP komputera
-doas ./install-service.sh
-./setup-update-key.sh                   # klucz do aktualizacji z okna (repo prywatne)
+cp sender.example.toml sender.toml
+nano sender.toml                        # odkomentuj i ustaw: host = "IP komputera"
+sudo ./install-service.sh
 ```
 
-Raspberry Pi OS / Debian: `sudo apt install python3-evdev bluez git` zamiast `apk add`, `sudo` zamiast `doas`.
-Log nadajnika: `journalctl -u dualsense-sender -f`.
+postmarketOS / Alpine: `doas apk add python3 py3-evdev bluez git`, a w pozostałych poleceniach `doas` zamiast `sudo`.
 
-### Pad
+Nadajnik działa jako usługa systemd i startuje sam po włączeniu urządzenia. Log: `journalctl -u dualsense-sender -f`.
+Usunięcie usługi: `sudo ./install-service.sh --remove`.
 
-Pada parujesz z okna receivera: ikona Bluetooth → **Skanuj** → **Sparuj**. Na padzie przytrzymaj Create + PS, aż
-lightbar zacznie szybko migać.
+### 3. Pad
+
+1. W oknie na PC kliknij ikonę **Bluetooth** w nagłówku, potem **Skanuj**.
+2. Na padzie przytrzymaj **Create + PS**, aż lightbar zacznie szybko migać.
+3. Przy padzie na liście kliknij **Sparuj**.
+
+Potem wystarczy włączyć pada przyciskiem PS, a połączy się sam. Pojawi się w oknie i w grach jako pad PS4.
+
+## Pierwsze kroki
+
+- **Skróty pada:** ikona pada w nagłówku okna pokazuje wszystkie skróty (np. PS + Share = zrzut ekranu).
+- **Tryb konsoli** (obraz i dźwięk na TV): w Ustawieniach → Tryb konsoli wybierz urządzenia audio TV i PC. Potem
+  dwa naciśnięcia R2 na padzie przełączają ekrany.
+- **Remapowanie:** kliknij przycisk albo gałkę na rysunku pada w oknie. **Zapisz** zapisuje profil.
+- **Pełny ekran** (F11 albo ikona) to tryb TV: większe okno sterowane padem.
 
 ## Aktualizacja
 
-Przycisk **Aktualizuj** w oknie robi `git pull` na PC i na nadajniku, po czym uruchamia obie strony od nowa.
+Przycisk **Aktualizuj** w oknie pobiera nową wersję na PC i na nadajniku (`git pull`) i uruchamia obie strony od nowa.
 Ustawienia i profile zostają, a receiver robi ich kopię (Ustawienia → Kopie).
+
+## Problemy
+
+Najczęstsze:
+- **Pad nie pojawia się w grach:** brakuje sterownika ViGEmBus. Zainstaluj go i uruchom receiver ponownie.
+- **„Nadajnik offline” w oknie:** zły `host` w `sender.toml`, zapora Windows (UDP 5005) albo nadajnik w innej sieci.
+- **Skoki opóźnienia:** nadajnik na Wi-Fi. Podłącz go kablem.
+
+Pełna lista: [docs/PROBLEMY.md](docs/PROBLEMY.md).
 
 ## Więcej
 
 - [docs/FUNKCJE.md](docs/FUNKCJE.md) – wszystkie funkcje okna, trybu konsoli, pada master, Wake-on-LAN i widoku Test
-- [docs/KONFIGURACJA.md](docs/KONFIGURACJA.md) – pliki `*.toml` i `console.json` oraz szczegóły aktualizacji
-- [docs/PROBLEMY.md](docs/PROBLEMY.md) – objaw → co sprawdzić
-- [docs/ROZWOJ.md](docs/ROZWOJ.md) – struktura kodu i testy (`./tests/run_tests.sh`)
+- [docs/KONFIGURACJA.md](docs/KONFIGURACJA.md) – pliki ustawień (`sender.toml`, `receiver.toml`, `console.json`) i aktualizacja
+- [docs/ROZWOJ.md](docs/ROZWOJ.md) – struktura kodu i testy
