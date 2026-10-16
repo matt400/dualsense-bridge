@@ -102,7 +102,7 @@ def main():
     gc.collect()
     gc.freeze()        # obiekty ze startu nie są już skanowane przez GC - krótsze, rzadsze pauzy w wątkach czasu rzeczywistego
     slot_threads = [S.start_thread(f"slot{i}", rx_ds4.slot_thread, i) for i in range(C.NUM_PADS)]
-    S.start_thread("feedback", rx_feedback.feedback_thread, rx_net.send_feedback, rx_net.send_triggers)
+    fb_thread = S.start_thread("feedback", rx_feedback.feedback_thread, rx_net.send_feedback, rx_net.send_triggers)
     S.start_thread("gyro mouse", rx_gyro.mouse_thread)
     if C.GAME_PROFILES:
         S.start_thread("game watch", rx_games.watch_thread)
@@ -139,6 +139,9 @@ def main():
         print("\nStopped.")
     finally:
         S.stop.set()
+        rx_feedback.fb_event.set()          # wątek feedbacku kończy się zaraz - potem efekty spustów nie wrócą
+        fb_thread.join(1.0)
+        rx_feedback.release_triggers(rx_net.send_triggers)   # pad nie może zostać z twardym spustem po wyjściu
         for i in range(C.NUM_PADS):
             S.want[i].clear()
             rx_net.clear_slot(i)

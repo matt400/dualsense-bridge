@@ -30,6 +30,7 @@ STATES = (T_STATE, T_STATE2)
 MAX_PROBE = 20_000              # pomiar dryfu: bezpiecznik długości listy próbek
 MAX_NET_US = 1_000_000          # sieć dłużej niż 1 s = zły zegar (np. zaraz po restarcie), nie pomiar
 SCFG_S = 5.0                    # co tyle ustawienia Wake-on-LAN / zdarzeń do nadajnika (po jego restarcie też je ma)
+KEY_WARN_S = 60.0               # ostrzeżenie o innym kluczu HMAC w nadajniku najwyżej co tyle
 
 
 class LinkStats:
@@ -69,6 +70,7 @@ in_sock = None
 _warned_idx = set()
 _digital = [None] * 4    # ostatni stan przycisków (maska, d-pad, spusty wciśnięte) per slot - zmiana = obsługa skrótów
 _pressed = [None] * 4    # (maska, d-pad, L2 >= TRIG_ON, R2 >= TRIG_ON) per slot - zmiana = próbka "przycisk -> gra"
+_key_warned = [float("-inf")]   # kiedy ostatnio ostrzegliśmy o innym kluczu HMAC
 
 
 def init():
@@ -382,6 +384,16 @@ def check_stale(now):
             clear_slot(i, forget_id=True)
 
 
+def check_key(now):
+    """Pakiety nadajnika odrzucone przez inne ustawienie klucza HMAC (proto.Codec.mismatch_t) -> ostrzeżenie w dzienniku,
+    najwyżej co KEY_WARN_S. Bez tego pady po prostu nie działały, a jedyną wskazówką był log nadajnika."""
+    if now - codec.mismatch_t < 1.0 and now - _key_warned[0] >= KEY_WARN_S:
+        _key_warned[0] = now
+        print("Rejecting sender packets: HMAC key differs between sender and receiver (--key / key in config)")
+        ev.warn(_("Odrzucono pakiety nadajnika: inny klucz HMAC (key) w nadajniku i w receiverze - ustaw ten sam "
+                  "albo usuń go z obu"))
+
+
 class SenderWatch:
     """Nadajnik online / offline -> dziennik; pierwszy kontakt i co SCFG_S -> ustawienia dla nadajnika (scfg)."""
 
@@ -428,6 +440,7 @@ def net_loop():
             link.tick(now)
             watch.tick(now)
             testmode.tick(now)          # PS + △ trzymane bez żadnej zmiany na padzie też kończy test
+            check_key(now)
         if not data:
             continue
         if C.ALLOWED_IP and addr[0] != C.ALLOWED_IP:

@@ -47,7 +47,17 @@ LIGHTBAR_AT = 44                          # lightbar_red / green / blue we wspó
 REPEAT_S = 0.02                           # zmiana wibracji / koloru wysyłana drugi raz po tylu sekundach
 OUT_TAG = 0x10
 CRC_SEED = b"\xa2"
+# błąd zapisu: tyle kolejnych błędów, zanim sposób wibracji zostanie wyłączony. Pojedynczy EIO / ETIMEDOUT przy
+# zatkanym Bluetooth to nie awaria - wcześniej wyłączał raport HID (wibracja, kolor, spusty) do rozłączenia pada.
+# Pad, którego już nie ma (ENODEV...), i błąd, który się nie zmieni (brak obsługi w jądrze, zły raport, uprawnienia),
+# wyłączają od razu.
+FAIL_MAX = 5
+FATAL_ERRNO = frozenset({errno.ENODEV, errno.ENOENT, errno.ENXIO, errno.EBADF, errno.ENOSYS, errno.EOPNOTSUPP,
+                         errno.EINVAL, errno.EACCES, errno.EPERM})
 WATCHDOG_S = 1.5
+# efekty spustów z PC: receiver odświeża je co 2 s (rx_feedback.TRIG_REFRESH_S); po tylu sekundach bez odświeżenia
+# (receiver zamknięty bez sprzątania, uśpiony / wyłączony PC) spusty wracają do zwykłych - pad trzyma efekt bez końca
+TRIG_WATCHDOG_S = 7.0
 EFFECT_MS = 1000
 _HID_DIR = re.compile(r"^([0-9A-Fa-f]{4}):[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}\.[0-9A-Fa-f]{4}$")
 BUS_BLUETOOTH = 0x0005
@@ -250,6 +260,7 @@ class Rumble:
         self.v2, self.fw = None, None
         self.why = WHY_OFF if mode in ("off", "evdev") else WHY_OK   # powód braku raportu HID (pakiet do receivera)
         self.logged = 0               # ile pierwszych poleceń wibracji zapisać w logu (diagnostyka)
+        self.fails = {}               # sposób -> liczba kolejnych błędów zapisu (FAIL_MAX)
         self.cur = (0, 0)
         self.rgb = None               # kolor lightbara wysyłany razem z wibracją (tylko raport HID)
         self.trig = None              # efekty spustów (L2, R2) wysłane do pada albo None = nigdy nie ruszane
@@ -257,6 +268,7 @@ class Rumble:
         self._rv = [None, None]       # wibracja z gry na L2 / R2: efekt albo None
         self._rv_off = [None, None]   # od kiedy silnik tego spustu stoi (po RFX_HOLD_S spust wraca do efektu)
         self._rv_timer = None
+        self._trig_watch = None       # strażnik efektów spustów (TRIG_WATCHDOG_S bez odświeżenia z PC -> wyłączone)
         self.t_set = 0.0
         self._watch = None
         self._repeat = None
@@ -304,6 +316,7 @@ class Rumble:
             return False
         if given is None:
             ensure_node(path)
+        self._close_fd()
         try:
             self.fd = os.open(path, os.O_RDWR | os.O_NONBLOCK)   # RDWR: także odczyt wersji oprogramowania
         except OSError as e:
@@ -348,6 +361,7 @@ class Rumble:
         self.fx = vals
         if not vals[8] & RFX_ON:
             self._rv, self._rv_off = [None, None], [None, None]
+        self._arm_trig_watch(any(vals))
         if "hidraw" not in self.methods:
             return False
         trig = self._want_triggers(*self.cur)
@@ -357,10 +371,27 @@ class Rumble:
         except (BlockingIOError, InterruptedError):
             return False                    # pełna kolejka - następne odświeżenie z PC dośle efekt
         except OSError as e:
-            print(f"Controller {self.idx}: trigger effect via hidraw failed ({e!r})")
+            self._failed("hidraw", e)
             return False
+        self.fails["hidraw"] = 0
         self.trig = trig
         return True
+
+    def _arm_trig_watch(self, on):
+        if self._trig_watch is not None:
+            self._trig_watch.cancel()
+            self._trig_watch = None
+        if on:
+            try:
+                self._trig_watch = asyncio.get_running_loop().call_later(TRIG_WATCHDOG_S, self._trig_expired)
+            except RuntimeError:
+                pass
+
+    def _trig_expired(self):
+        self._trig_watch = None
+        if self.fx is not None and any(self.fx):
+            print(f"Controller {self.idx}: no trigger refresh from PC for {TRIG_WATCHDOG_S:g}s - triggers released")
+            self.set_triggers(TRIG2_OFF)
 
     def _want_triggers(self, small, large, now=None):
         """Efekty, które pad powinien mieć teraz: z ustawień, a przy wibracji z gry (i RFX_HOLD_S po niej) - drganie
@@ -428,11 +459,34 @@ class Rumble:
             except (BlockingIOError, InterruptedError):
                 pass        # chwilowo pełna kolejka raportów - to nie awaria; powtórka / odświeżenie dośle stan
             except OSError as e:
-                print(f"Controller {self.idx}: rumble via {m} failed ({e!r}) - not using it any more")
-                self.methods.remove(m)
-                if m == "evdev" and "hidraw" not in self.methods and self._open_hidraw():
+                if self._failed(m, e) and m == "evdev" and "hidraw" not in self.methods and self._open_hidraw():
                     self.methods.append("hidraw")
                     self._send(small, large, only="hidraw")    # z tą samą obsługą błędów (wyjątek nie wyjdzie do pętli)
+            else:
+                self.fails[m] = 0
+
+    def _failed(self, m, e):
+        """Błąd zapisu sposobem m. -> True, gdy sposób został wyłączony (FAIL_MAX kolejnych albo pada już nie ma)."""
+        n = self.fails[m] = self.fails.get(m, 0) + 1
+        if n < FAIL_MAX and e.errno not in FATAL_ERRNO:
+            if n == 1:
+                print(f"Controller {self.idx}: rumble via {m} failed ({e!r}) - retrying")
+            return False
+        print(f"Controller {self.idx}: rumble via {m} failed ({e!r}) - not using it any more")
+        if m in self.methods:
+            self.methods.remove(m)
+        self.fails[m] = 0
+        if m == "hidraw":
+            self._close_fd()                          # bez tego deskryptor wyciekał (ponowne otwarcie nadpisywało fd)
+        return True
+
+    def _close_fd(self):
+        if self.fd is not None:
+            try:
+                os.close(self.fd)
+            except OSError:
+                pass
+            self.fd = None
 
     def _send_hidraw(self, small, large):
         """Wibracja (i kolor); efekty spustów tylko, gdy mają się zmienić (wibracja z gry na spustach)."""
@@ -471,7 +525,7 @@ class Rumble:
             self.set(0, 0)                           # receiver przestał odświeżać - zatrzymaj silniki
 
     def close(self):
-        for name in ("_watch", "_repeat", "_rv_timer"):
+        for name in ("_watch", "_repeat", "_rv_timer", "_trig_watch"):
             t = getattr(self, name)
             if t is not None:
                 t.cancel()
@@ -487,12 +541,7 @@ class Rumble:
                 self.dev.erase_effect(self.ff_id)
             except OSError:
                 pass
-        if self.fd is not None:
-            try:
-                os.close(self.fd)
-            except OSError:
-                pass
-            self.fd = None
+        self._close_fd()
         self.methods, self.cur = [], (0, 0)
 
 
