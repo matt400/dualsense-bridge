@@ -23,7 +23,7 @@ EXTRA_TIPS = {"crown": "Pad master", "mouse": "Touchpad jako mysz", "touchpad": 
               "press": "Przycisk → gra", "reset": "Wyzeruj", "log": "Dziennik zdarzeń", "copy": "Kopiuj",
               "trash": "Wyczyść", "phone": "Nadajnik", "lightbar": "Lightbar", "wake": "Wake-on-LAN",
               "target": "Dryf gałek", "gyro": "Kalibracja żyroskopu", "shield": "Blokada wyjścia do gry",
-              "pulse": "Ruch pada", "bluetooth": "Bluetooth nadajnika"}
+              "pulse": "Ruch pada", "bluetooth": "Bluetooth nadajnika", "keys": "Skróty pada"}
 SIZES = (16, 20, 24, 32, 48)
 
 
@@ -395,6 +395,27 @@ def _bluetooth(p):
     p.drawPath(path)
 
 
+def _keys(p):
+    """Pad w zarysie z przyciskami - lista skrótów pada."""
+    p.setPen(_pen(FG, 1.6))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    path = QPainterPath(QPointF(7, 7))
+    path.lineTo(17, 7)
+    path.cubicTo(20.5, 7, 22, 15, 21, 18)
+    path.cubicTo(20, 20.5, 17.5, 19, 16, 16)
+    path.lineTo(8, 16)
+    path.cubicTo(6.5, 19, 4, 20.5, 3, 18)
+    path.cubicTo(2, 15, 3.5, 7, 7, 7)
+    p.drawPath(path)
+    p.setPen(_pen(DIM, 1.4))
+    p.drawLine(QPointF(6, 11.5), QPointF(9, 11.5))
+    p.drawLine(QPointF(7.5, 10), QPointF(7.5, 13))
+    p.setPen(Qt.PenStyle.NoPen)
+    for (x, y), c in zip(((16.5, 9.8), (18.3, 11.6), (16.5, 13.4), (14.7, 11.6)), FACE.values(), strict=True):
+        p.setBrush(QColor(c))
+        p.drawEllipse(QPointF(x, y), 1.1, 1.1)
+
+
 def _draw(p, name):
     if name in FACE:
         _face(p, name)
@@ -408,7 +429,7 @@ def _draw(p, name):
          "fullscreen": _fullscreen, "rumble": _rumble, "gear": _gear, "update": _update, "backup": _backup,
          "stopwatch": _stopwatch, "plus": _plus, "press": _press, "reset": _reset, "log": _log, "copy": _copy,
          "trash": _trash, "phone": _phone, "lightbar": _lightbar, "wake": _wake, "target": _target, "gyro": _gyro,
-         "shield": _shield, "pulse": _pulse, "bluetooth": _bluetooth}[name](p)
+         "shield": _shield, "pulse": _pulse, "bluetooth": _bluetooth, "keys": _keys}[name](p)
 
 
 def pixmap(name, size=24, dim=False):
@@ -437,4 +458,4 @@ def has_icon(name):
     return name in FACE or name in BADGES or name.startswith("dpad_") or name in (
         "ps", "share", "options", "crown", "mouse", "touchpad", "tv", "power", "restart", "window", "fullscreen", "rumble", "gear",
         "update", "backup", "stopwatch", "plus", "press", "reset", "log", "copy", "trash", "phone", "lightbar", "wake",
-        "target", "gyro", "shield", "pulse", "bluetooth")
+        "target", "gyro", "shield", "pulse", "bluetooth", "keys")

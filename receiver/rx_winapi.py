@@ -73,6 +73,15 @@ def end_timer():
         pass
 
 
+def uptime_s():
+    """Sekundy od startu Windows (GetTickCount64) albo None."""
+    try:
+        k32.GetTickCount64.restype = ctypes.c_uint64
+        return k32.GetTickCount64() / 1000
+    except (AttributeError, OSError, TypeError):
+        return None
+
+
 def ensure_single_instance():
     """Druga kopia receivera (np. autostart + ręczne uruchomienie) kończy się czytelnym komunikatem."""
     global _mutex

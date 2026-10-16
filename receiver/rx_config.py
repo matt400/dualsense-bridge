@@ -1,4 +1,4 @@
-"""Receiver: konfiguracja (DEFAULTS + CLI), autostart z Windows, logi do pliku.
+"""Receiver: konfiguracja (DEFAULTS + CLI), włączanie autostartu z Windows (rx_autostart), logi do pliku.
 
 Wartości przeliczone trafiają do obiektu C; init() wywołaj raz na starcie.
 """
@@ -55,61 +55,48 @@ CHOICES = {"ps_hold_action": ("gamebar", "bigpicture", "none"), "ps_share_action
 C = SimpleNamespace()
 
 
-def set_autostart(on):
-    """Autostart w HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run."""
+def autostart_command(argv=None):
+    """(program, argumenty) do autostartu: pythonw zamiast python (bez konsoli), skrypt i argumenty bez --autostart,
+    ścieżka --config bezwzględna."""
     import subprocess
-    import winreg
 
-    name = "DualSenseBridge"
+    exe = sys.executable
+    pyw = os.path.join(os.path.dirname(exe), "pythonw.exe")
+    if os.path.exists(pyw):
+        exe = pyw
+    argv = list(sys.argv[1:] if argv is None else argv)
+    extra = []
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a == "--autostart":
+            i += 2
+            continue
+        if a.startswith("--autostart="):
+            i += 1
+            continue
+        if a.startswith("--config="):
+            extra.append("--config=" + os.path.abspath(a.split("=", 1)[1]))
+            i += 1
+            continue
+        if a == "--config" and i + 1 < len(argv):
+            extra += [a, os.path.abspath(argv[i + 1])]
+            i += 2
+            continue
+        extra.append(a)
+        i += 1
+    return exe, subprocess.list2cmdline([os.path.abspath(sys.argv[0]), *extra])
 
-    key = winreg.CreateKeyEx(
-        winreg.HKEY_CURRENT_USER,
-        r"Software\Microsoft\Windows\CurrentVersion\Run",
-        0,
-        winreg.KEY_SET_VALUE,
-    )
-    try:
-        if on:
-            exe = sys.executable
-            pyw = os.path.join(os.path.dirname(exe), "pythonw.exe")
-            if os.path.exists(pyw):
-                exe = pyw
 
-            script = os.path.abspath(sys.argv[0])
-            argv = sys.argv[1:]
-            extra = []
-            i = 0
-            while i < len(argv):
-                a = argv[i]
-                if a == "--autostart":
-                    i += 2
-                    continue
-                if a.startswith("--autostart="):
-                    i += 1
-                    continue
-                if a.startswith("--config="):
-                    extra.append("--config=" + os.path.abspath(a.split("=", 1)[1]))
-                    i += 1
-                    continue
-                if a == "--config" and i + 1 < len(argv):
-                    extra += [a, os.path.abspath(argv[i + 1])]
-                    i += 2
-                    continue
-                extra.append(a)
-                i += 1
+def set_autostart(on):
+    """Autostart z Windows: zadanie Harmonogramu przy logowaniu (bez opóźnienia - rx_autostart)."""
+    import rx_autostart
+    if on:
+        exe, args = autostart_command()
+        print(rx_autostart.enable(exe, args))
+    else:
+        print(rx_autostart.disable())
 
-            cmd = subprocess.list2cmdline([exe, script, *extra])
-            winreg.SetValueEx(key, name, 0, winreg.REG_SZ, cmd)
-            print("Autostart enabled:")
-            print(cmd)
-        else:
-            try:
-                winreg.DeleteValue(key, name)
-                print("Autostart disabled.")
-            except FileNotFoundError:
-                print("Autostart was not enabled.")
-    finally:
-        winreg.CloseKey(key)
 
 def init(argv=None):
     ap = argparse.ArgumentParser(description="DualSense UDP receiver -> ViGEm DS4 + DSU")
