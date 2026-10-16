@@ -62,6 +62,7 @@ def main():
     import rx_net
     import rx_settings
     import rx_state as S
+    import rx_testmode
 
     S.init(rx_buttons.RemapStore(C.REMAP_PATH))
     rx_settings.apply(rx_settings.load(C.SETTINGS_PATH, rx_settings.defaults(C.MOUSE_SENS, C.LOW_BATT)))
@@ -70,6 +71,7 @@ def main():
     rx_mouse.init(C.NUM_PADS)
     rx_hotkeys.init(C.NUM_PADS)
     rx_master.init(C.NUM_PADS)
+    rx_testmode.init(C.NUM_PADS)
     rx_ds4.init()
     rx_net.init()
     rx_dsu.start()

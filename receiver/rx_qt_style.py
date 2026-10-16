@@ -55,6 +55,8 @@ QFrame#card[low="true"] {{ border: 1px solid {BAD}; }}
 QFrame#card[off="true"] {{ background: transparent; border: 1px dashed {BORDER}; }}
 QFrame#row {{ background: {TRACK}; border-radius: {p(8)}; }}
 QFrame#panel {{ background: {CARD}; border: 1px solid {BORDER}; border-radius: {p(14)}; }}
+QFrame#drawer {{ background: {CARD}; border-left: 1px solid {LINE}; }}
+QWidget#scrim {{ background: rgba(0, 0, 0, 120); }}
 QFrame#group {{ background: {CARD}; border: 1px solid {BORDER}; border-radius: {p(12)}; }}
 QFrame#hsep {{ background: {BORDER}; min-width: 1px; max-width: 1px; }}
 QFrame#vsep {{ background: {BORDER}; min-height: 1px; max-height: 1px; }}

@@ -23,7 +23,7 @@ FG = [None]
 import rx_buttons, rx_state as S, rx_mouse as M, rx_net as N, rx_hotkeys as H, rx_feedback as F
 store = rx_buttons.RemapStore(C.REMAP_PATH)
 S.init(store); M.init(C.NUM_PADS); H.init(C.NUM_PADS); F.init()
-import rx_master; rx_master.init(C.NUM_PADS); C.SETTINGS_PATH = os.path.join(TMP, "settings.json")
+import rx_master; rx_master.init(C.NUM_PADS); import rx_testmode; rx_testmode.init(C.NUM_PADS); C.SETTINGS_PATH = os.path.join(TMP, "settings.json")
 from proto import Codec, PAD_KEYS
 N.codec = Codec()
 ORIG_SEND_PEER = N.send_peer

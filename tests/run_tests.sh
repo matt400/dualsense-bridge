@@ -15,9 +15,10 @@ cmp -s $RX/proto.py $TX/proto.py || { echo "FAIL  proto.py różni się między 
 for t in test_tx test_drop test_tx2 test_bugs_tx test_shutdown test_resilience_tx test_slots_tx test_rumble_tx test_trigfx_tx test_rt_tx test_review_tx test_update_key_tx test_features_tx test_wol_tx test_calib_tx h_rate; do run $t python3 $T/$t.py $TX; done
 for t in test_i18n test_rx2 test_editor test_bugs test_resilience test_startup test_console test_master test_restart test_review test_features test_trigfx test_extras test_padtest; do run $t python3 $T/$t.py $RX; done
 run test_e2e python3 $T/test_e2e.py $RX $TX
+run test_bt python3 $T/test_bt.py $RX $TX
 run test_service_tx python3 $T/test_service_tx.py $TX
 run test_update python3 $T/test_update.py $RX
 run test_update_tx python3 $T/test_update_tx.py $TX
-python3 -c "import PySide6.QtWidgets, PySide6.QtTest" 2>/dev/null && { run test_gui python3 $T/test_gui.py $RX; run test_console_gui python3 $T/test_console_gui.py $RX; run test_settings_gui python3 $T/test_settings_gui.py $RX; run test_extras_gui python3 $T/test_extras_gui.py $RX; run test_padtest_gui python3 $T/test_padtest_gui.py $RX; } || echo "SKIP  test_gui (brak PySide6)"
+python3 -c "import PySide6.QtWidgets, PySide6.QtTest" 2>/dev/null && { run test_gui python3 $T/test_gui.py $RX; run test_console_gui python3 $T/test_console_gui.py $RX; run test_settings_gui python3 $T/test_settings_gui.py $RX; run test_extras_gui python3 $T/test_extras_gui.py $RX; run test_padtest_gui python3 $T/test_padtest_gui.py $RX; run test_bt_gui python3 $T/test_bt_gui.py $RX; } || echo "SKIP  test_gui (brak PySide6)"
 rm -f "$BTLOG"
 [ $fail -eq 0 ] && echo "WSZYSTKO OK" || { echo "SĄ BŁĘDY"; exit 1; }

@@ -30,11 +30,13 @@ import rx_state as S
 import rx_net
 import rx_update
 import rx_status as ST
+import rx_testmode
 import rx_winapi as W
 from proto import CMD_UPDATE, UPD_RUNNING
 from rx_config import C
 from rx_editor import Editor
 from rx_icon import ICON_LOW, ICON_OK, icon_png, render_icon
+from rx_qt_bt import BtDrawer, indicator_button
 from rx_qt_console import ConsoleSettings
 from rx_qt_icons import icon, pixmap
 from rx_qt_log import LogPanel
@@ -321,6 +323,7 @@ class PadCard(QFrame):
 
 class MainWindow(QMainWindow):
     update_done = Signal(object)          # rx_update.Result z wątku aktualizacji
+    test_escaped = Signal()               # PS + △ z pada zakończyło widok Test (wątek sieci, rx_testmode)
 
     def __init__(self, settings):
         super().__init__()
@@ -360,6 +363,8 @@ class MainWindow(QMainWindow):
         self.nav = PadNav(self)                # sterowanie oknem padem w trybie TV
         self.tray = self._make_tray()
         self.update_done.connect(self._update_finished)
+        self.test_escaped.connect(self._test_escaped)
+        rx_testmode.on_escape = self.test_escaped.emit
         QShortcut(QKeySequence.StandardKey.Save, self, activated=self.save)
         QShortcut(QKeySequence(Qt.Key.Key_F11), self, activated=self.toggle_fullscreen)
         self.select_pad(self.ed.slot)
@@ -409,6 +414,8 @@ class MainWindow(QMainWindow):
         self.split.setStretchFactor(0, 1)
         self.log_panel.setMinimumHeight(px(120))
         outer.addWidget(self.split, 1)
+        self.bt_drawer = BtDrawer(root)          # wysuwany nad oknem z prawej (ikona Bluetooth w nagłówku)
+        self.bt_drawer.opened.connect(self._bt_opened)
         # minimalny rozmiar wynika z układu (kolumny + najmniejszy rysunek pada) - jawne minimum mniejsze niż on
         # pozwalało ścisnąć okno tak, że prawy panel zachodził na rysunek
 
@@ -427,6 +434,7 @@ class MainWindow(QMainWindow):
                                     _("Wersja nieznana - folder nie jest klonem git"))
         self.sender = label("")
         self.sender.setObjectName("pill")
+        self.bt_btn, self._bt_refresh = indicator_button(self.toggle_bt)   # Bluetooth nadajnika: kropka stanu + panel
         self.log_btn = icon_button("log", _("Dziennik zdarzeń") + " - " + _("Połączenia padów, master, tryb konsoli, błędy, aktualizacje"))
         self.log_btn.setCheckable(True)
         self.log_btn.toggled.connect(self.show_log)
@@ -451,9 +459,9 @@ class MainWindow(QMainWindow):
         lay.addStretch(1)
         lay.addWidget(self.sender)
         lay.addSpacing(px(10))
-        for b in (self.log_btn, self.fs_btn, settings_btn, self.update_btn, restart_btn, quit_btn):
+        for b in (self.bt_btn, self.log_btn, self.fs_btn, settings_btn, self.update_btn, restart_btn, quit_btn):
             lay.addWidget(b)
-        self._iconic = [self.log_btn, self.fs_btn, settings_btn, self.update_btn, restart_btn, quit_btn]
+        self._iconic = [self.bt_btn, self.log_btn, self.fs_btn, settings_btn, self.update_btn, restart_btn, quit_btn]
         return bar
 
     def _banner(self):
@@ -640,6 +648,7 @@ class MainWindow(QMainWindow):
             c.crown.setIconSize(QSize(px(18), px(18)))
             c._key = None
         self.test_panel.rescale()
+        self.bt_drawer.rescale()
         self._apply_view()
         self.slow_tick()
 
@@ -705,6 +714,14 @@ class MainWindow(QMainWindow):
         self.live_timer.stop()                 # ukryte okno nie odrysowuje pada
         self.test_panel.cancel()               # pomiar dryfu nie trwa w tle
         self.sync_block()                      # schowane okno (zasobnik) - gra znowu dostaje pada
+
+    def toggle_bt(self):
+        self.bt_drawer.toggle()
+
+    def _bt_opened(self, on):
+        """Zamknięty panel Bluetooth: fokus wraca na jego ikonę (tryb TV - pad dalej wie, gdzie jest)."""
+        if not on and self.fullscreen():
+            self.bt_btn.setFocus(Qt.FocusReason.TabFocusReason)
 
     def show_log(self, on):
         """Panel dziennika na dole okna (ikona w nagłówku)."""
@@ -816,6 +833,7 @@ class MainWindow(QMainWindow):
     def quit(self):
         self.flush()
         self.test_panel.cancel()
+        rx_testmode.set_active(False)          # skróty padów wracają
         for i in range(C.NUM_PADS):            # zamknięcie z widoku Test: wyjście do gry wraca przed sprzątaniem
             P.block(i, False)
         self.save_settings()
@@ -839,6 +857,8 @@ class MainWindow(QMainWindow):
         was_test, self.view = self.view == "test", view
         if view != "test":
             self.edit_view = view
+        elif not was_test:
+            rx_testmode.rearm()                # wejście w Test po wyjściu z pada (PS + △) - znowu działa
         self.seg.set(view)
         self.exit_hold = None
         self._apply_view()
@@ -856,6 +876,8 @@ class MainWindow(QMainWindow):
             hint = _("Naciskaj przyciski, ruszaj gałkami, dotykaj touchpada - wszystko widać na żywo.")
             if self.fullscreen():
                 hint += " " + _("Przytrzymaj ○, aby wyjść z testu.")
+            hint += " " + _("Skróty padów nie działają; PS + △ trzymane {s} s (pad master) kończy test.").format(
+                s=f"{rx_testmode.ESCAPE_S:g}")
         else:
             hint = _("Kliknij część pada, aby ją zremapować.")
             self.pad.set_selected(self.part)
@@ -864,10 +886,18 @@ class MainWindow(QMainWindow):
     def sync_block(self):
         """Blokada wyjścia do gry: tylko testowany pad, tylko w widoku Test, przy włączonej opcji i aktywnym oknie -
         przejście do gry (inne okno na pierwszym planie), minimalizacja albo schowanie od razu oddają jej pada."""
-        on = (self.view == "test" and self.test_panel.block.isChecked() and self.isVisible() and not self.isMinimized()
-              and self.isActiveWindow())
+        test = (self.view == "test" and not rx_testmode.escaped and self.isVisible() and not self.isMinimized()
+                and self.isActiveWindow())
+        rx_testmode.set_active(test)           # skróty wszystkich padów stoją, PS + △ mastera wychodzi
+        on = test and self.test_panel.block.isChecked()
         for i in range(C.NUM_PADS):
             P.block(i, on and i == self.ed.slot)
+
+    def _test_escaped(self):
+        """PS + △ z pada (rx_testmode): blokada już zdjęta w wątku sieci - okno wraca do poprzedniego widoku."""
+        if self.view == "test":
+            self.set_view(self.edit_view)
+            self.note(_("Wyjście z widoku Test z pada (PS + △)"), "ok")
 
     def on_block_toggled(self, _on):
         self.save_settings()
@@ -1013,6 +1043,7 @@ class MainWindow(QMainWindow):
             self.online = (online, build)
             self._sender_label(online, build)
         self._refresh_banner()
+        self._bt_refresh(now)
         low_any, tips = False, []
         for c in self.cards:
             i = c.slot

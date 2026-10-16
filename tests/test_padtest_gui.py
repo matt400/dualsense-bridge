@@ -1,6 +1,6 @@
 """Okno: widok Test (trzeci przełącznik pod padem) - panel testu zamiast edycji, blokada wyjścia do gry tylko dla
 testowanego pada, dotyk i spusty na rysunku, wykresy ruchu, pomiar dryfu z "Zastosuj", kalibracja żyroskopu,
-wyjście z testu w trybie TV przytrzymanym ○. Zrzut: tests/test_view.png."""
+wyjście z testu w trybie TV przytrzymanym ○ i z pada (PS + △, bez myszy). Zrzut: tests/test_view.png."""
 import sys, os, time
 sys.path.insert(0, os.path.dirname(__file__))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -156,7 +156,30 @@ state(0)
 win.set_fullscreen(False); pump(100)
 ok("tryb TV: testowany pad nie steruje oknem, przytrzymane ○ wraca do poprzedniego widoku")
 
+# ---------- PS + △ z pada: wyjście z testu bez myszy, także przy nieaktywnym oknie ----------
+import rx_testmode as TM
+from rx_buttons import PS_BIT
+win.seg.buttons["test"].click(); activate(win)
+assert win.view == "test" and TM.active and S.states[0]["blocked"], "otwarty Test wyłącza skróty padów"
+assert "PS + △" in win.pad_hint.text()
+state(0, mask=PS_BIT | BIT[307])
+assert TM.tick(time.monotonic() + TM.ESCAPE_S); pump()
+assert win.view == "in" and not TM.active and not S.states[0]["blocked"], "wyjście z pada: widok i blokada"
+assert "PS + △" in win.status.text()
+win.sync_block()
+assert not S.states[0]["blocked"] and not TM.active, "aktywacja okna przed obsługą sygnału nie blokuje znowu"
+state(0)
+win.seg.buttons["test"].click(); activate(win)
+assert TM.active and S.states[0]["blocked"], "ponowne wejście w Test działa jak wcześniej"
+other = QWidget(); other.show(); activate(other)
+assert not TM.active, "okno w tle (gra) - skróty padów działają"
+other.close(); activate(win)
+assert TM.active
+win.set_view("in"); pump()
+assert not TM.active
+ok("PS + △ z pada: widok wraca, blokada zdjęta, Test działa ponownie; skróty stoją tylko przy aktywnym oknie testu")
+
 win.quit()
-assert not any(s["blocked"] for s in S.states)
+assert not any(s["blocked"] for s in S.states) and not TM.active
 rx_padcal.reload()
 ok("zamknięcie okna zdejmuje blokadę")
