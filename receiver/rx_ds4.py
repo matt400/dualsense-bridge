@@ -168,3 +168,6 @@ def slot_thread(idx):
                 del pad            # destruktor odłącza urządzenie od ViGEm
                 gc.collect()
                 print(f"Controller {idx}: virtual DS4 unplugged")
+            # wibracja i kolor z gry należały do odłączonego DS4: bez tego pad, który połączy się w tym slocie, wibrował
+            # starą wibracją gry (odświeżaną co 0.5 s), zanim powstanie nowy DS4 - a przy błędzie ViGEm bez końca
+            F.reset(idx)

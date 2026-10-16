@@ -22,7 +22,7 @@ import rx_hotkeys as hotkeys
 import rx_master as master
 import rx_settings
 import rx_state as S
-from rx_buttons import BIT, BUTTON_CODES, PS_BIT, pressed_inputs
+from rx_buttons import BIT, BUTTON_CODES, PS_BIT, TRIGGERS, pressed_inputs
 from rx_i18n import _
 
 ESCAPE_S = 3.0
@@ -150,7 +150,7 @@ def _release(s: int) -> None:
     master.reset(s)
     with S.lock:
         st = S.states[s]
-        master.slots[s].sup = frozenset(pressed_inputs(*st["raw"]))
+        master.slots[s].sup = frozenset(pressed_inputs(*st["raw"])) - set(TRIGGERS)   # spusty: analogowo na żywo
         st["fwd"] = hotkeys.forward(s, *st["raw"][:3])
     _seen[s] = _gen
     if not S.set_blocked(s, False):     # nie był zablokowany (master obok testowanego pada) - sam przelicz wyjście

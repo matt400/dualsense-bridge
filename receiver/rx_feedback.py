@@ -73,9 +73,10 @@ rx_settings.on_change(lambda _old, _new: fb_event.set())    # nowy kolor / tryb 
 
 
 def reset(i):
-    """Nowy wirtualny DS4 w slocie: gra jeszcze nic nie ustawiła."""
-    fb[i].update(set=False, small=0, large=0)
-    fb_sent[i] = None
+    """Nowy / odłączony wirtualny DS4 w slocie: gra jeszcze nic nie ustawiła (bez init() - nic do czyszczenia)."""
+    if i < len(fb):
+        fb[i].update(set=False, small=0, large=0)
+        fb_sent[i] = None
 
 
 def pulse(i, kind, force=False):

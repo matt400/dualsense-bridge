@@ -101,6 +101,7 @@ async def stream_pad(c):
                 c.send_state()
                 for d in BURST_DELAYS:
                     loop.call_later(d, c.send_state, True)
+                wol.on_mask(c)            # kombinacja puszczona w zgubionych zdarzeniach nie może odpalić Wake-on-LAN
             continue
         if et == ec.EV_ABS:
             code = e.code
@@ -272,7 +273,10 @@ async def stream_touch(c):
         maxx, maxy = 1919, 1079
     loop = asyncio.get_running_loop()
     slot = 0
-    fingers = [{"on": False, "id": 0, "x": None, "y": None} for _ in range(2)]
+    # x / y = pozycja zapamiętana w slocie jądra (None = nieznana). Jądro pomija zdarzenie osi, gdy wartość w slocie
+    # się nie zmieniła - także dla NOWEGO palca. Pozycja przeżywa więc podniesienie palca, a nowy palec przyłożony
+    # w tym samym x albo y (np. przy krawędzi: 0 / max) bierze ją stąd; wyzerowana gubiła taki dotyk i tap.
+    fingers = [{"on": False, "id": 0, "x": x, "y": y} for _tid, x, y in _kernel_slots(c.touch_dev, 2)]
     prev = [None, None]            # poprzednia pozycja palca (x, y); None = świeży palec, brak delty
     sess = None
     last_tp = IDLE_TP
@@ -298,11 +302,11 @@ async def stream_touch(c):
             elif slot in (0, 1):
                 f = fingers[slot]
                 if e.code == ec.ABS_MT_TRACKING_ID:
-                    prev[slot] = None
+                    prev[slot] = None              # nowy / podniesiony palec: bez delty, pozycja zostaje (jak w jądrze)
                     if e.value >= 0:
-                        f.update(on=True, id=e.value & 0x7F, x=None, y=None)
+                        f.update(on=True, id=e.value & 0x7F)
                     else:
-                        f.update(on=False, x=None, y=None)
+                        f["on"] = False
                 elif e.code == ec.ABS_MT_POSITION_X:
                     f["x"] = e.value
                 elif e.code == ec.ABS_MT_POSITION_Y:
@@ -385,17 +389,21 @@ async def stream_touch(c):
                 sess = None
 
 
+def _kernel_slots(dev, n):
+    """Stan slotów MT z jądra [(tracking_id, x, y)]; bez ioctl (inna platforma, testy) - palce podniesione, pozycja
+    nieznana (None)."""
+    try:
+        return read_mt(dev, n)
+    except (OSError, AttributeError, TypeError, ValueError):
+        return [(-1, None, None)] * n
+
+
 def _resync_touch(c, fingers, prev):
     """Odtwarza palce i przycisk touchpada ze stanu jądra; bez ioctl (inna platforma) - podnosi wszystkie palce."""
-    try:
-        st = read_mt(c.touch_dev, len(fingers))
-    except (OSError, AttributeError, TypeError, ValueError):
-        st = [(-1, 0, 0)] * len(fingers)
-    for k, (tid, x, y) in enumerate(st):
+    for k, (tid, x, y) in enumerate(_kernel_slots(c.touch_dev, len(fingers))):
+        fingers[k].update(on=tid >= 0, x=x, y=y)       # pozycja także podniesionego palca (patrz stream_touch)
         if tid >= 0:
-            fingers[k].update(on=True, id=tid & 0x7F, x=x, y=y)
-        else:
-            fingers[k].update(on=False, x=None, y=None)
+            fingers[k]["id"] = tid & 0x7F
         prev[k] = None                # brak delty w pierwszej ramce - kursor nie skoczy
     try:
         tp = ec.BTN_LEFT in c.touch_dev.active_keys()
