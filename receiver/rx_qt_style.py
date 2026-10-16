@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QApplication
 BG, CARD, CARD_HI, BORDER, TRACK, LINE = "#0e1016", "#161922", "#1b1f2a", "#252a36", "#1f2430", "#323849"
 FG, DIM, MUTED = "#eceef4", "#8d93a5", "#5a6072"
 OK, WARN, BAD, CHARGE, ACCENT, ACCENT_HI = "#3ecf8e", "#ffb547", "#ff6b6b", "#5bc0ff", "#4c8dff", "#6ea2ff"
+ARMED = "#d93a3f"      # tło przycisku "na pewno?" - ciemniejsza czerwień, biały napis jest czytelny
 LEVEL = {"ok": OK, "warn": WARN, "bad": BAD, "charge": CHARGE}     # poziom z rx_status -> kolor
 # odcinki opóźnienia (karta pada, rx_latency): Bluetooth, telefon, sieć, PC
 SEGMENT = {"bt": "#a78bfa", "phone": "#34d3c9", "net": ACCENT, "pc": OK}
@@ -70,12 +71,14 @@ QPushButton:disabled {{ color: {MUTED}; border-color: {BORDER}; }}
 QPushButton[primary="true"] {{ background: {ACCENT}; color: #ffffff; border-color: {ACCENT}; font-weight: 600; }}
 QPushButton[primary="true"]:hover {{ background: {ACCENT_HI}; }}
 QPushButton[primary="true"]:disabled {{ background: {TRACK}; color: {MUTED}; border-color: {BORDER}; }}
-QPushButton[armed="true"] {{ background: {BAD}; color: {BG}; border-color: {BAD}; font-weight: 600; }}
+QPushButton[armed="true"], QPushButton[primary="true"][armed="true"] {{
+    background: {ARMED}; color: #ffffff; border-color: {ARMED}; font-weight: 600; }}
+QPushButton[armed="true"]:hover {{ background: {BAD}; border-color: {BAD}; }}
 QPushButton[small="true"] {{ padding: {p(3)} {p(10)}; font-size: {p(12)}; }}
 QPushButton[iconic="true"] {{ background: transparent; border: 1px solid transparent; border-radius: {p(8)}; padding: {p(5)}; }}
 QPushButton[iconic="true"]:hover:!disabled {{ background: {TRACK}; border-color: {LINE}; }}
 QPushButton[iconic="true"]:focus {{ border-color: {ACCENT_HI}; }}
-QPushButton[iconic="true"][armed="true"] {{ background: {BAD}; border-color: {BAD}; padding: {p(5)} {p(10)}; }}
+QPushButton[iconic="true"][armed="true"] {{ background: {ARMED}; color: #ffffff; border-color: {ARMED}; padding: {p(5)} {p(10)}; }}
 QPushButton[iconic="true"][mini="true"] {{ padding: {p(2)}; border-radius: {p(6)}; }}
 QPushButton[iconic="true"]:checked {{ background: {TRACK}; border-color: {ACCENT}; }}
 QFrame#logpanel {{ background: {CARD}; border-top: 1px solid {BORDER}; }}

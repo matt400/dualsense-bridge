@@ -81,6 +81,8 @@
   | długie PS | Xbox Game Bar albo Steam Big Picture |
 
   PS trzymane już w chwili połączenia pada (włączanie pada przytrzymaniem PS) nie otwiera Game Bar i nie idzie do gry.
+  Receiver wyłącza otwieranie Game Bar przyciskiem pada (Windows brał PS za przycisk Xbox), a gdy Game Bar nie jest
+  zainstalowany, linki `ms-gamebar` dostają cichy program - nie wyskakuje okno „Wybierz aplikację”.
 
 - **Tryb konsoli:** podwójne kliknięcie wybranego przycisku pada (domyślnie **R2**) przełącza ekran i dźwięk między
   monitorem a telewizorem. R2 liczy się tylko przy głębokim naciśnięciu (z histerezą - drżenie spustu nie daje
