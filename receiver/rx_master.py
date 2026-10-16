@@ -196,7 +196,7 @@ def filter_inputs(i, mask, hx, hy):
     for b in h.sup:
         if b in BUTTON_CODES:
             mask &= ~BIT[BUTTON_CODES[b]]
-        else:
+        elif b in DIRS:                     # spusty (l2 / r2) nie są w masce ani w D-padzie - idą analogowo
             dx, dy = DIRS[b]
             if dx and hx == dx:
                 hx = 0
