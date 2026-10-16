@@ -324,7 +324,7 @@ class PadCard(QFrame):
 
 class MainWindow(QMainWindow):
     update_done = Signal(object)          # rx_update.Result z wątku aktualizacji
-    test_escaped = Signal()               # PS + △ z pada zakończyło widok Test (wątek sieci, rx_testmode)
+    test_escaped = Signal()               # Options + Create z pada zakończyło widok Test (wątek sieci, rx_testmode)
 
     def __init__(self, settings):
         super().__init__()
@@ -874,7 +874,7 @@ class MainWindow(QMainWindow):
         if view != "test":
             self.edit_view = view
         elif not was_test:
-            rx_testmode.rearm()                # wejście w Test po wyjściu z pada (PS + △) - znowu działa
+            rx_testmode.rearm()                # wejście w Test po wyjściu z pada (Options + Create) - znowu działa
         self.seg.set(view)
         self.exit_hold = None
         self._apply_view()
@@ -892,8 +892,7 @@ class MainWindow(QMainWindow):
             hint = _("Naciskaj przyciski, ruszaj gałkami, dotykaj touchpada - wszystko widać na żywo.")
             if self.fullscreen():
                 hint += " " + _("Przytrzymaj ○, aby wyjść z testu.")
-            hint += " " + _("Skróty padów nie działają; PS + △ trzymane {s} s (pad master) kończy test.").format(
-                s=f"{rx_testmode.ESCAPE_S:g}")
+            hint += " " + _("Skróty padów nie działają; Options + Create (pad master) kończy test.")
         else:
             hint = _("Kliknij część pada, aby ją zremapować.")
             self.pad.set_selected(self.part)
@@ -904,16 +903,16 @@ class MainWindow(QMainWindow):
         przejście do gry (inne okno na pierwszym planie), minimalizacja albo schowanie od razu oddają jej pada."""
         test = (self.view == "test" and not rx_testmode.escaped and self.isVisible() and not self.isMinimized()
                 and self.isActiveWindow())
-        rx_testmode.set_active(test)           # skróty wszystkich padów stoją, PS + △ mastera wychodzi
+        rx_testmode.set_active(test)           # skróty wszystkich padów stoją, Options + Create mastera wychodzi
         on = test and self.test_panel.block.isChecked()
         for i in range(C.NUM_PADS):
             P.block(i, on and i == self.ed.slot)
 
     def _test_escaped(self):
-        """PS + △ z pada (rx_testmode): blokada już zdjęta w wątku sieci - okno wraca do poprzedniego widoku."""
+        """Options + Create z pada (rx_testmode): blokada już zdjęta w wątku sieci - okno wraca do poprzedniego widoku."""
         if self.view == "test":
             self.set_view(self.edit_view)
-            self.note(_("Wyjście z widoku Test z pada (PS + △)"), "ok")
+            self.note(_("Wyjście z widoku Test z pada (Options + Create)"), "ok")
 
     def on_block_toggled(self, _on):
         self.save_settings()

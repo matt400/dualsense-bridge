@@ -14,27 +14,27 @@ def check(cond, name):
 TRI = BIT[BUTTON_CODES["triangle"]]
 PS = BIT[BUTTON_CODES["ps"]]
 
-# ---- 1. wyjście z widoku Test (PS + △ 3 s) z wciśniętym spustem ----
+# ---- 1. wyjście z widoku Test (Options + Create) z wciśniętym spustem ----
 # było: KeyError('r2') w rx_master.filter_inputs -> wyjście przerwane w połowie: widok zamknięty, a slot dalej
 # zablokowany (gra dostawała neutralny stan do ponownego otwarcia widoku Test)
 state(0)
 TM.set_active(True); P.block(0, True)
-state(0, mask=PS | TRI, rt=200)
 try:
-    TM.tick(TM._since[0] + TM.ESCAPE_S)
+    state(0, mask=TM.ESCAPE_MASK, rt=200)
     err = None
 except Exception as e:
     err = e
 check(err is None, f"wyjście z widoku Test z wciśniętym R2 bez wyjątku: {err!r}")
 check(not TM.active and not S.states[0]["blocked"], "po wyjściu z pada slot nie jest zablokowany (gra dostaje wejścia)")
-state(0, mask=PS | TRI, rt=210, sticks=(20, 128, 128, 128))
+state(0, mask=TM.ESCAPE_MASK, rt=210, sticks=(20, 128, 128, 128))
 s = S.states[0]
 check(s["rt"] == 210 and s["lx"] == 20, "spust i gałka idą do gry na żywo po wyjściu")
-check(not s["mask"] & (PS | TRI), "PS + △ z kombinacji nie trafia do gry do puszczenia")
-state(0, mask=TRI)                                   # PS puszczone, △ dalej trzymany - nadal zużyty
-check(not S.states[0]["mask"] & TRI, "△ zużyty do puszczenia")
-state(0); state(0, mask=TRI)
-check(S.states[0]["mask"] & TRI, "nowe naciśnięcie △ po puszczeniu trafia do gry")
+OPT = BIT[BUTTON_CODES["options"]]
+check(not s["mask"] & TM.ESCAPE_MASK, "Options + Create z kombinacji nie trafia do gry do puszczenia")
+state(0, mask=OPT)                                   # Create puszczony, Options dalej trzymany - nadal zużyty
+check(not S.states[0]["mask"] & OPT, "Options zużyty do puszczenia")
+state(0); state(0, mask=OPT)
+check(S.states[0]["mask"] & OPT, "nowe naciśnięcie Options po puszczeniu trafia do gry")
 rx_master.slots[0].sup = frozenset({"l2", "dpad_up"})  # filtr odporny na spusty w zestawie zużytych wejść
 check(rx_master.filter_inputs(0, TRI, 0, -1) == (TRI, 0, 0), "filter_inputs: spust w sup nie rzuca wyjątku")
 rx_master.reset(0)

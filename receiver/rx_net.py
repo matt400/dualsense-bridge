@@ -233,7 +233,7 @@ def handle(t, i, data, arr=0):
         if dig != _digital[i]:              # skróty / master / tryb konsoli tylko przy zmianie przycisków,
             _digital[i] = dig               # a nie przy każdej próbce gyro i gałek (250 Hz)
             testmode.sync(i)                # widok Test otwarty / zamknięty - skróty slotu od czystego stanu
-            if testmode.on_state(i, mask, time.monotonic()):   # PS + △ mastera: wyjście z testu (także z
+            if testmode.on_state(i, (mask, hx, hy, lt, rt)):   # Options + Create mastera: wyjście z testu (także z
                 blocked = False                                 # testowanego pada) - wejścia już połknięte
             elif not blocked and testmode.shortcuts_on():      # widok Test: skróty żadnego pada nie działają
                 hotkeys.on_state(i, mask, hx, hy)          # najpierw skróty PS (nowe naciśnięcie PS), potem master,
@@ -445,7 +445,6 @@ def net_loop():
             check_stale(now)
             link.tick(now)
             watch.tick(now)
-            testmode.tick(now)          # PS + △ trzymane bez żadnej zmiany na padzie też kończy test
             check_key(now)
         if not data:
             continue

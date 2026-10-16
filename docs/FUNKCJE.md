@@ -67,9 +67,10 @@
     - w trybie TV testowany pad nie steruje oknem; przytrzymanie ○ przez 1 s wychodzi z testu;
     - przy otwartym widoku Test **żaden pad nie uruchamia skrótów** (PS + przycisk, akcje i przejęcie mastera, tryb
       konsoli, PS + klik touchpada) - testowanie przycisków niczego nie przełączy;
-    - **wyjście awaryjne z pada: PS + △ trzymane 3 s** na padzie master (bez mastera w ustawieniach - na dowolnym)
-      kończy test bez myszy, także przy schowanym oknie i gdy testowany jest sam master: blokada znika od razu, a
-      trzymane w tej chwili przyciski gra dostaje jako puszczone, dopóki ich nie puścisz.
+    - **wyjście awaryjne z pada: Options + Create** (naciśnięte razem) na padzie master (bez mastera w ustawieniach -
+      na dowolnym) kończy test bez myszy, także przy schowanym oknie i gdy testowany jest sam master: blokada znika od razu, a
+      trzymane w tej chwili przyciski gra dostaje jako puszczone, dopóki ich nie puścisz. Bez PS - długie PS + △
+      wyłączało pada.
 - **Skróty z PS:**
 
   | Skrót | Działanie |

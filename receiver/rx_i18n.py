@@ -679,10 +679,10 @@ EN = {
     "{pad}: żyroskop skalibrowany": "{pad}: gyro calibrated",
     "{pad}: kalibracja żyroskopu przerwana - pad się ruszał": "{pad}: gyro calibration aborted - the pad was moving",
     # ---------- widok Test: wyjście z pada ----------
-    "{pad}: wyjście z widoku Test (PS + △)": "{pad}: left the Test view (PS + △)",
-    "Wyjście z widoku Test z pada (PS + △)": "Left the Test view from the pad (PS + △)",
-    "Skróty padów nie działają; PS + △ trzymane {s} s (pad master) kończy test.":
-        "Pad shortcuts are off; holding PS + △ for {s} s (master pad) ends the test.",
+    "{pad}: wyjście z widoku Test (Options + Create)": "{pad}: left the Test view (Options + Create)",
+    "Wyjście z widoku Test z pada (Options + Create)": "Left the Test view from the pad (Options + Create)",
+    "Skróty padów nie działają; Options + Create (pad master) kończy test.":
+        "Pad shortcuts are off; Options + Create (master pad) ends the test.",
     # ---------- Bluetooth nadajnika (rx_bt, panel w oknie) ----------
     "Bluetooth nadajnika: brak danych (nadajnik offline albo starsza wersja - Aktualizuj)":
         "Sender Bluetooth: no data (sender offline or an older version - Update)",

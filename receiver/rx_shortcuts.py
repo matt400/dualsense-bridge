@@ -109,7 +109,7 @@ def _tv():
 def _test():
     from rx_qt import EXIT_HOLD_S       # tylko stała - rx_qt jest już załadowany, gdy panel istnieje
     return Group(_("Widok Test"), (
-        Shortcut(("ps", "+", "triangle", _s(rx_testmode.ESCAPE_S)),
+        Shortcut((rx_testmode.ESCAPE_KEYS[0], "+", rx_testmode.ESCAPE_KEYS[1]),
                  _("Wyjście awaryjne z testu (pad master; działa też przy schowanym oknie)")),
         Shortcut(("circle", _s(EXIT_HOLD_S)), _("Wyjście z testu w trybie TV (testowany pad)")),
     ), _("W widoku Test pozostałe skróty nie działają."))
