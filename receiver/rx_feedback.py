@@ -23,6 +23,9 @@ FX_SENDER = 8          # od tej wersji nadajnik zna trig2 (z bitem CAP_TRIG_FX w
 
 TRIG_REFRESH_S = 2.0   # efekty spustów odświeżane co tyle (pad po ponownym połączeniu / zgubiony pakiet)
 TRIG_REPEAT = 3        # zmiana efektów wysyłana tyle razy (UDP)
+GAME_RUMBLE_STALE_S = 3.0   # wibracja z gry bez nowego raportu silników dłużej niż tyle -> 0. Gry w trakcie wibracji
+                            # wysyłają raporty co klatkę; ostatni "silniki 0" (wejście do menu, koniec jazdy) bywa
+                            # zgubiony (HIDMaestro nadpisuje stare pakiety) i pad wibrował bez końca
 
 # potwierdzenia na padzie: (czas s, mała wibracja, duża wibracja, kolor lightbara | None = bez zmiany koloru)
 PULSES = {
@@ -57,6 +60,7 @@ def make_cb(i):
         try:
             f = fb[i]
             f["large"], f["small"] = int(large_motor), int(small_motor)
+            f["t"] = time.monotonic()
             if hasattr(led_number, "Red"):
                 f["r"], f["g"], f["b"] = int(led_number.Red), int(led_number.Green), int(led_number.Blue)
                 f["note"] = f["note"] or not f["rgb"]
@@ -77,6 +81,7 @@ def game(i, large=None, small=None, rgb=None):
         return
     if large is not None:
         f["large"], f["small"] = int(large), int(small or 0)
+        f["t"] = time.monotonic()
     if rgb is not None:
         f["r"], f["g"], f["b"] = (int(c) for c in rgb)
         f["note"] = f["note"] or not f["rgb"]
@@ -85,9 +90,21 @@ def game(i, large=None, small=None, rgb=None):
     fb_event.set()
 
 
+def stop_game_rumble(why):
+    """Program na pierwszym planie się zmienił (wyjście z gry, alt-tab): wibracja z gry -> 0. Gra, która kończy się
+    w trakcie wibracji (np. Forza Horizon przy wyjściu), nie wysyła już "silniki 0", a receiver odświeżał ostatnią
+    wartość co 0.5 s - pad wibrował bez końca. Gra, która wróci na pierwszy plan, sama wyśle nową wibrację."""
+    for i, f in enumerate(fb):
+        if f["large"] or f["small"]:
+            f["large"] = f["small"] = 0
+            print(f"Controller {i}: game rumble stopped ({why})")
+            fb_event.set()
+
+
 def init():
     n = C.NUM_PADS
-    fb[:] = [{"small": 0, "large": 0, "r": 0, "g": 0, "b": 0, "set": False, "rgb": False, "note": False}
+    fb[:] = [{"small": 0, "large": 0, "r": 0, "g": 0, "b": 0, "set": False, "rgb": False, "note": False,
+              "t": 0.0}
              for _ in range(n)]
     fb_sent[:] = [None] * n
     trig_sent[:] = [None] * n
@@ -213,7 +230,7 @@ def _loop(send, send_trig=None):
     blink = False
     while not S.stop.is_set():
         now = time.monotonic()
-        waits = [0.5] + [e - now for e in (p[0] for p in pulses if p is not None)]
+        waits = [0.5] + [e - now for e in (p[0] for p in pulses if p is not None)]   # 0.5 s: też wygasanie
         if blink:
             waits.append(L.next_edge(now) + 0.002)
         fb_event.wait(max(0.0, min(waits)))
@@ -228,6 +245,10 @@ def _loop(send, send_trig=None):
                 triggers_tick(i, now, send_trig)
             if fb[i]["note"]:
                 _note_game_color(i)
+            f = fb[i]
+            if (f["large"] or f["small"]) and now - f["t"] > GAME_RUMBLE_STALE_S:
+                f["large"] = f["small"] = 0
+                print(f"Controller {i}: no rumble report from the game for {GAME_RUMBLE_STALE_S:g}s - rumble stopped")
             val, ours, b = _target(i, now)
             blink = blink or b
             if not ours:

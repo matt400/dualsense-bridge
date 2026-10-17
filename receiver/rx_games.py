@@ -1,4 +1,5 @@
-"""Receiver: program na pierwszym planie -> automatyczny wybór profilu remapowania (profil "<pad>@<gra.exe>")."""
+"""Receiver: program na pierwszym planie -> automatyczny wybór profilu remapowania (profil "<pad>@<gra.exe>")
+i koniec wibracji z gry przy zmianie programu (wyjście z gry / alt-tab - rx_feedback.stop_game_rumble)."""
 import rx_feedback as F
 import rx_state as S
 import rx_winapi as W
@@ -30,6 +31,8 @@ def poll_once():
         return
     if not exe:
         return
+    if exe != S.game and S.game is not None:
+        F.stop_game_rumble(f"{S.game} -> {exe}")
     if is_game(exe) and recent[:1] != [exe]:
         recent[:] = [exe, *[e for e in recent if e != exe][:RECENT_MAX - 1]]
     for i in S.set_game(exe):
