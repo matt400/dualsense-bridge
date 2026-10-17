@@ -82,19 +82,44 @@ def uptime_s():
         return None
 
 
+MUTEX_NAME = "Local\\DualSenseBridgeReceiver"
+ERROR_ACCESS_DENIED, ERROR_ALREADY_EXISTS = 5, 183
+SYNCHRONIZE = 0x00100000
+
+
 def ensure_single_instance():
-    """Druga kopia receivera (np. autostart + ręczne uruchomienie) kończy się czytelnym komunikatem."""
+    """Druga kopia receivera (np. autostart + ręczne uruchomienie) kończy się czytelnym komunikatem.
+    ERROR_ACCESS_DENIED też znaczy "już działa": blokadę ma receiver uruchomiony jako administrator, a proces bez
+    uprawnień nie dostaje do niej pełnego dostępu (CreateMutex zwraca wtedy NULL zamiast ERROR_ALREADY_EXISTS) -
+    druga kopia startowała i padała dopiero na zajętym porcie UDP z mylącym komunikatem."""
     global _mutex
     try:
         k = ctypes.WinDLL("kernel32", use_last_error=True)
         k.CreateMutexW.argtypes = [ctypes.c_void_p, wt.BOOL, wt.LPCWSTR]
         k.CreateMutexW.restype = wt.HANDLE
-        _mutex = k.CreateMutexW(None, False, "Local\\DualSenseBridgeReceiver")
-        if ctypes.get_last_error() == 183:   # ERROR_ALREADY_EXISTS
+        _mutex = k.CreateMutexW(None, False, MUTEX_NAME)
+        err = ctypes.get_last_error()
+        if err == ERROR_ALREADY_EXISTS or (not _mutex and err == ERROR_ACCESS_DENIED):
             print("Another receiver instance is already running - exiting.")
             sys.exit(1)
     except (AttributeError, OSError) as e:
         print(f"Single-instance check failed ({e!r}); continuing without lock.")
+
+
+def instance_running():
+    """Czy działa już receiver (blokada jednej instancji istnieje) - bez jej tworzenia. Przed podniesieniem uprawnień:
+    druga kopia nie może pokazywać okna UAC tylko po to, żeby zaraz wyjść."""
+    try:
+        k = ctypes.WinDLL("kernel32", use_last_error=True)
+        k.OpenMutexW.argtypes = [wt.DWORD, wt.BOOL, wt.LPCWSTR]
+        k.OpenMutexW.restype = wt.HANDLE
+        h = k.OpenMutexW(SYNCHRONIZE, False, MUTEX_NAME)
+        if h:
+            k32.CloseHandle(h)
+            return True
+        return ctypes.get_last_error() == ERROR_ACCESS_DENIED     # blokada administratora: istnieje, brak dostępu
+    except (AttributeError, OSError):
+        return False
 
 
 def release_single_instance():

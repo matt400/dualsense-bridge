@@ -89,35 +89,53 @@ ELEVATE_GUARD_S = 60       # zadanie administratora uruchomione przed chwilą, a
 
 
 def _guard_path():
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), ".elevate_try")
+    """Znacznik próby przez zadanie - w folderze tymczasowym użytkownika: folder receivera bywa tylko do odczytu
+    (np. Program Files), a bez znacznika zadanie, które nie daje uprawnień, uruchamiało receiver w kółko."""
+    import tempfile
+    return os.path.join(tempfile.gettempdir(), "dualsense-bridge-elevate_try")
 
 
 def _recent_try():
     """Ten start to skutek naszego schtasks /run sprzed chwili (zadanie nie dało uprawnień, np. konto bez admina)."""
     try:
-        return time.time() - os.path.getmtime(_guard_path()) < ELEVATE_GUARD_S
+        return 0 <= time.time() - os.path.getmtime(_guard_path()) < ELEVATE_GUARD_S
     except OSError:
         return False
+
+
+def _clear_guard():
+    """Proces ma uprawnienia: próba się udała - następny ręczny start (nawet zaraz) znów idzie przez zadanie, bez UAC."""
+    try:
+        os.remove(_guard_path())
+    except OSError:
+        pass
 
 
 def elevate():
     """Windows bez uprawnień administratora: receiver od nowa jako administrator i wyjście. Najpierw przez zadanie
     DualSenseBridgeAdmin (bez okna UAC; tworzy je receiver działający jako administrator), bez niego - okno UAC.
     Odmowa w UAC / --no-elevate -> dalej bez uprawnień (wirtualne pady przez ViGEmBus). Przed rx_config.init:
-    --autostart on idzie zawsze przez UAC (zadanie uruchomiłoby receiver bez tej flagi)."""
+    --autostart on idzie zawsze przez UAC (zadanie uruchomiłoby receiver bez tej flagi). Receiver już działa ->
+    bez podnoszenia (druga kopia i tak zaraz wyjdzie - wcześniej najpierw pokazywała okno UAC)."""
     if os.name != "nt" or NO_ELEVATE in sys.argv[1:]:
         return
     import rx_winapi
     if rx_winapi.is_admin():
+        _clear_guard()
         return
-    if not any(a.startswith("--autostart") for a in sys.argv[1:]) and not _recent_try():
+    autostart = any(a.startswith("--autostart") for a in sys.argv[1:])
+    if not autostart and rx_winapi.instance_running():
+        return
+    if not autostart and not _recent_try():
         import rx_autostart
         try:
             with open(_guard_path(), "w") as f:
                 f.write(str(os.getpid()))
         except OSError:
             pass
-        if rx_autostart.run_admin_task():
+        # zadanie startuje receiver z argumentami zapisanymi w nim - inne argumenty tego startu (--config, --pads...)
+        # przepadłyby po cichu, więc wtedy okno UAC z tymi argumentami
+        if rx_autostart.run_admin_task(rx_config.autostart_command()[1]):
             print("Started as administrator through the DualSenseBridgeAdmin task (no UAC)")
             sys.exit(0)
     cmd = [sys.executable, os.path.abspath(sys.argv[0]), *sys.argv[1:]]

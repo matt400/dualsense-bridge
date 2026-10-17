@@ -2,7 +2,9 @@
 
 Wydanie to zip ~160 MB (SDK + aplikacje testowe), a receiverowi wystarczy HIDMaestro.Core.dll (sterownik jest w niej)
 i dwie DLL projekcji Windows SDK. Zip czytany jest przez HTTP Range: katalog zip z końca pliku, potem tylko te wpisy -
-pobiera się ~56 MB zamiast 160. CRC32 każdego wpisu sprawdza zipfile, a cała wersja trafia do folderu atomowo (tmp + rename).
+pobiera się ~56 MB zamiast 160, każdy wpis jednym zapytaniem (prefetch). Wcześniej każde 64 KiB było osobnym zapytaniem
+HTTPS (~900 połączeń z TLS), a podpisany link GitHuba do magazynu wygasa po ~5 min - wolne łącze nie zdążało.
+CRC32 każdego wpisu sprawdza zipfile, a cała wersja trafia do folderu atomowo (tmp + rename).
 
   receiver/hidmaestro/v1.12.0/HIDMaestro.Core.dll   wersja w swoim folderze: nowsza nie nadpisuje DLL załadowanej
                                                     w działającym procesie (CLR trzyma plik) - działa po restarcie
@@ -32,6 +34,8 @@ CHECK_S = 24 * 3600
 START_DELAY_S = 20                   # po starcie receivera: najpierw pady i okno, potem sieć
 TIMEOUT_S = 30
 CHUNK = 1 << 16
+PREFETCH_MAX = 128 << 20             # wpis zipa do tylu bajtów pobierany jednym zapytaniem (w pamięci); większy - kawałkami
+LOCAL_SLACK = 1 << 12                # nagłówek lokalny wpisu bywa dłuższy niż w katalogu zipa (pole extra)
 UA = {"User-Agent": "dualsense-bridge", "Accept": "application/vnd.github+json"}
 _TAG = re.compile(r"^v?(\d+(?:\.\d+)*)$")
 
@@ -125,7 +129,8 @@ def latest_release():
 
 class HttpRange(io.RawIOBase):
     """Plik zdalny do odczytu z przesuwaniem (HTTP Range) - zipfile czyta katalog z końca i pojedyncze wpisy.
-    Adres po przekierowaniu GitHuba (podpisany link do magazynu) ustalany raz, rozmiar z Content-Range."""
+    Adres po przekierowaniu GitHuba (podpisany link do magazynu) ustalany raz, rozmiar z Content-Range.
+    prefetch(start, end) pobiera zakres jednym zapytaniem; odczyty z niego idą z pamięci."""
 
     def __init__(self, url, opener=None):
         super().__init__()
@@ -137,6 +142,26 @@ class HttpRange(io.RawIOBase):
             self.size = int(r.headers["Content-Range"].rsplit("/", 1)[1])
         self.pos = 0
         self.fetched = 0                     # ile bajtów faktycznie pobrano (log, testy)
+        self.requests = 1                    # ile zapytań HTTP (log, testy)
+        self._buf, self._buf_at = memoryview(b""), 0
+
+    def _fetch(self, start, n):
+        with self._get(self.url, {"Range": f"bytes={start}-{start + n - 1}"}) as r:
+            if r.status != 206:              # 200 = cały plik od początku: bajty nie z tego miejsca
+                raise OSError(f"server ignored Range (HTTP {r.status})")
+            data = r.read(n)
+        self.requests += 1
+        self.fetched += len(data)
+        return data
+
+    def prefetch(self, start, end):
+        """Bajty [start, end) jednym zapytaniem; za duży zakres (PREFETCH_MAX) zostaje do czytania kawałkami."""
+        start, end = max(0, start), min(self.size, end)
+        held = self._buf_at <= start and end <= self._buf_at + len(self._buf)
+        if end <= start or end - start > PREFETCH_MAX or held:
+            return
+        self._buf, self._buf_at = memoryview(b""), 0           # poprzedni wpis już niepotrzebny (pamięć)
+        self._buf, self._buf_at = memoryview(self._fetch(start, end - start)), start
 
     def readable(self):
         return True
@@ -155,11 +180,12 @@ class HttpRange(io.RawIOBase):
         n = min(len(b), self.size - self.pos)
         if n <= 0:
             return 0
-        with self._get(self.url, {"Range": f"bytes={self.pos}-{self.pos + n - 1}"}) as r:
-            data = r.read(n)
+        off = self.pos - self._buf_at
+        data = self._buf[off:off + n] if 0 <= off < len(self._buf) else self._fetch(self.pos, n)
+        if not data:
+            raise OSError("connection closed before the end of the requested range")
         b[:len(data)] = data
         self.pos += len(data)
-        self.fetched += len(data)
         return len(data)
 
 
@@ -180,11 +206,19 @@ def pick(infos):
     return [by_name[n] for n in (DLL, *DEPS) if n in by_name]
 
 
-def extract(zf, dest):
-    """Z otwartego zipa: DLL i jej zależności -> dest (płasko). -> lista nazw."""
+def entry_span(info):
+    """Zakres bajtów wpisu w zipie: nagłówek lokalny i dane (z zapasem na dłuższe pole extra) -> (start, koniec)."""
+    start = info.header_offset
+    return start, start + 30 + len(info.orig_filename.encode("utf-8")) + len(info.extra) + info.compress_size + LOCAL_SLACK
+
+
+def extract(zf, dest, prefetch=None):
+    """Z otwartego zipa: DLL i jej zależności -> dest (płasko). prefetch(start, koniec): pobierz wpis naraz. -> nazwy."""
     os.makedirs(dest, exist_ok=True)
     names = []
     for i in pick(zf.infolist()):
+        if prefetch is not None:
+            prefetch(*entry_span(i))
         name = posixpath.basename(_name(i))
         with zf.open(i) as src, open(os.path.join(dest, name), "wb") as out:
             shutil.copyfileobj(src, out, CHUNK)          # CRC32 sprawdzany przy odczycie (BadZipFile przy błędzie)
@@ -203,13 +237,14 @@ def install(tag, url, opener=None):
     raw = HttpRange(url, opener)
     try:
         with zipfile.ZipFile(io.BufferedReader(raw, CHUNK)) as zf:
-            names = extract(zf, tmp)
+            names = extract(zf, tmp, raw.prefetch)
         shutil.rmtree(final, ignore_errors=True)
         os.replace(tmp, final)
     except Exception:
         shutil.rmtree(tmp, ignore_errors=True)
         raise
-    print(f"HIDMaestro {tag} downloaded ({raw.fetched / 1e6:.1f} MB of {raw.size / 1e6:.0f} MB zip): {', '.join(names)}")
+    print(f"HIDMaestro {tag} downloaded ({raw.fetched / 1e6:.1f} MB of {raw.size / 1e6:.0f} MB zip, "
+          f"{raw.requests} requests): {', '.join(names)}")
     return final, raw.fetched
 
 
@@ -243,7 +278,8 @@ def check(force=False):
 
 def _check(force):
     refresh_status()
-    if not force and time.time() - status.checked < CHECK_S and status.version:
+    # 0 <=: zegar cofnięty (sprawdzenie "w przyszłości") nie może wstrzymać sprawdzania aż do tamtej daty
+    if not force and 0 <= time.time() - status.checked < CHECK_S and status.version:
         return
     _set(busy=True, error="")
     tag, url = latest_release()
