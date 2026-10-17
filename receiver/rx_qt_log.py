@@ -7,14 +7,14 @@ Ustawienia panelu w settings.json (log). Ukryty panel nic nie dopisuje - po poka
 import html
 from dataclasses import replace
 
-from PySide6.QtWidgets import QApplication, QFrame, QHBoxLayout, QPlainTextEdit, QSpinBox, QVBoxLayout
+from PySide6.QtWidgets import QApplication, QFrame, QHBoxLayout, QPlainTextEdit, QVBoxLayout
 
 import rx_events as ev
 import rx_settings
 from rx_config import C
 from rx_i18n import _
 from rx_qt_style import BAD, FG, WARN, px
-from rx_qt_widgets import Combo, ConfirmButton, icon_button, icon_label, label
+from rx_qt_widgets import Combo, ConfirmButton, icon_button, icon_label, label, spinbox
 from rx_settings import LOG_LEVELS, LOG_LINES
 
 COLOR = {"info": FG, "warn": WARN, "error": BAD}
@@ -36,10 +36,7 @@ class LogPanel(QFrame):
         self.sender_btn = icon_button("phone", "", 18)
         self.sender_btn.setCheckable(True)
         self.sender_btn.toggled.connect(lambda on: self._save(sender=on))
-        self.limit = QSpinBox()
-        self.limit.setRange(*LOG_LINES)
-        self.limit.setSingleStep(100)
-        self.limit.setSuffix(_(" linii"))
+        self.limit = spinbox(*LOG_LINES, step=100, suffix=_(" linii"))
         self.limit.setToolTip(_("Limit linii w panelu (starsze znikają)"))
         self.limit.editingFinished.connect(lambda: self._save(max_lines=self.limit.value()))
         copy = icon_button("copy", _("Kopiuj widoczne wpisy do schowka"), 18)

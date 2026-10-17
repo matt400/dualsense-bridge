@@ -418,6 +418,9 @@ EN = {
         "No measurement: the pad is idle or the sender is an older version (Update).",
     "Średnie odcinków. Stała część radia Bluetooth (~1–2 ms) jest niemierzalna.":
         "Segment averages. The fixed part of the Bluetooth radio (~1–2 ms) cannot be measured.",
+    "zwykle ≤ {p95} · max {max}": "usually ≤ {p95} · max {max}",
+    "zwykle = 95 na 100 pomiarów było tak szybkich albo szybszych, max = najwolniejszy pomiar":
+        "usually = 95 of 100 measurements were this fast or faster, max = the slowest measurement",
     "Przycisk → gra": "Button → game",
     "średnia · {stats} ms · {n} z ostatnich {keep} naciśnięć": "average · {stats} ms · {n} of the last {keep} presses",
     "Tylko przyciski, D-pad i spusty (wciśnięcie / puszczenie) - bez gałek i żyroskopu.":

@@ -23,7 +23,7 @@ from rx_i18n import _
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (QCheckBox, QColorDialog, QDialog, QGridLayout, QHBoxLayout, QLineEdit, QPlainTextEdit,
-                               QSpinBox, QTabWidget, QVBoxLayout, QWidget)
+                               QTabWidget, QVBoxLayout, QWidget)
 
 import rx_audio
 import rx_backup
@@ -43,7 +43,7 @@ from rx_i18n import LANGS
 from rx_qt_icons import icon
 from rx_qt_style import set_prop
 from rx_qt_widgets import (Combo, ConfirmButton, SliderRow, button, field, group, icon_button, icon_label, input_items, label,
-                           left, pair)
+                           left, pair, spinbox)
 from rx_settings import (ABSENT, COMBO_BUTTONS, DEFAULT_PAD, LIGHT_MODES, LOW_PCT, MASTER_ACTIONS, MASTER_FEATURES, MOUSE_LIMITS,
                          VPAD_BACKENDS, WOL_BUTTONS, WOL_HOLD_MS, LightbarConfig, MasterConfig, MouseConfig, PadLight, VpadConfig,
                          WolConfig)
@@ -121,8 +121,8 @@ class ConsoleSettings(QDialog):
         pick.addWidget(self.pick_icon)
         pick.addWidget(self.pick_name, 1)
         pick.addWidget(self.pick)
-        self.dbl = _spin(100, 2000, 50, " ms")
-        self.timeout = _spin(5, 3600, 5, " s")
+        self.dbl = spinbox(100, 2000, 50, " ms")
+        self.timeout = spinbox(5, 3600, 5, " s")
         self.auto_on = QCheckBox(_("Włącz po połączeniu pada master"))
         self.auto_on.setIcon(icon("crown"))
         switching = group(_("PRZEŁĄCZANIE"),
@@ -426,7 +426,7 @@ class ConsoleSettings(QDialog):
 
     def _light_tab(self):
         self._lights, self._color, self._light_key, self._loading = {}, "", DEFAULT_PAD, False
-        self.low_pct = _spin(*LOW_PCT, 1, " %")
+        self.low_pct = spinbox(*LOW_PCT, 1, " %")
         low = group(_("NISKA BATERIA"),
                     field(_("Próg niskiej baterii"), self.low_pct),
                     label(_("Ten sam próg ma ostrzeżenie na karcie pada i powiadomienie z zasobnika. Ładujący się pad "
@@ -460,7 +460,7 @@ class ConsoleSettings(QDialog):
         self.wol_on = QCheckBox(_("Budzenie komputera z pada"))
         self.wol_on.setIcon(icon("wake"))
         self.wol_btn = Combo(input_items(WOL_BUTTONS, text=True))
-        self.wol_hold = _spin(*WOL_HOLD_MS, 100, " ms")
+        self.wol_hold = spinbox(*WOL_HOLD_MS, 100, " ms")
         combo = QHBoxLayout()
         combo.setSpacing(8)
         combo.addWidget(icon_label("ps"))
@@ -821,14 +821,6 @@ def _hidpi(name, size):
     pm = pixmap(name, size * 2)
     pm.setDevicePixelRatio(2)
     return pm
-
-
-def _spin(lo, hi, step, suffix):
-    box = QSpinBox()
-    box.setRange(lo, hi)
-    box.setSingleStep(step)
-    box.setSuffix(suffix)
-    return box
 
 
 def row_of(*widgets):
