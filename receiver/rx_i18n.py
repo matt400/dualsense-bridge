@@ -613,10 +613,18 @@ EN = {
     "Ten sam próg ma ostrzeżenie na karcie pada i powiadomienie z zasobnika. Ładujący się pad nie miga.":
         "The pad card warning and the tray notification use the same threshold. A charging pad doesn't blink.",
     "KOLOR LIGHTBARA": "LIGHTBAR COLOUR",
-    "Gra ma pierwszeństwo: ten kolor świeci, dopóki gra sama nie ustawi lightbara. Miganie przy niskiej baterii działa "
-    "zawsze, a potwierdzenia (np. złoty błysk mastera) są na wierzchu.":
-        "The game comes first: this colour shows until the game sets the lightbar itself. Low battery blinking always "
-        "works, and confirmations (e.g. the master's gold flash) are on top.",
+    "Ten kolor świeci, dopóki gra albo program na PC (np. Steam) nie ustawi własnego - chyba że wyłączysz „Gra może "
+    "zmienić kolor”. Miganie przy niskiej baterii działa zawsze, a potwierdzenia (np. złoty błysk mastera) są na wierzchu.":
+        "This colour shows until a game or a program on the PC (e.g. Steam) sets its own - unless you turn off \"A game "
+        "can change the colour\". Low battery blinking always works, and confirmations (e.g. the master's gold flash) "
+        "are on top.",
+    "Gra może zmienić kolor (wyłączone = zawsze ten kolor)": "A game can change the colour (off = always this colour)",
+    "{pad}: program na PC (gra, Steam) ustawił kolor lightbara {hex} - ma pierwszeństwo przed kolorem z ustawień "
+    "(Ustawienia → Lightbar → „Gra może zmienić kolor”)":
+        "{pad}: a program on the PC (game, Steam) set the lightbar colour {hex} - it takes priority over the colour from "
+        "settings (Settings → Lightbar → \"A game can change the colour\")",
+    "{pad}: program na PC ustawił kolor lightbara {hex} - pominięty (zawsze kolor z ustawień)":
+        "{pad}: a program on the PC set the lightbar colour {hex} - ignored (always the colour from settings)",
     "Pad": "Pad",
     "Domyślne - pady bez własnego ustawienia": "Default - pads without their own setting",
     "Własne ustawienie dla tego pada (inaczej domyślne)": "Own setting for this pad (otherwise the default)",

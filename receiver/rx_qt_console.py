@@ -448,12 +448,15 @@ class ConsoleSettings(QDialog):
         colors.addWidget(reset_color)
         self.light_blink = QCheckBox(_("Miganie na czerwono przy niskiej baterii (także w grze)"))
         self.light_blink.toggled.connect(self._light_edited)
+        self.light_game = QCheckBox(_("Gra może zmienić kolor (wyłączone = zawsze ten kolor)"))
+        self.light_game.toggled.connect(self._light_edited)
         pad = group(_("KOLOR LIGHTBARA"),
-                    label(_("Gra ma pierwszeństwo: ten kolor świeci, dopóki gra sama nie ustawi lightbara. Miganie przy niskiej "
-                            "baterii działa zawsze, a potwierdzenia (np. złoty błysk mastera) są na wierzchu."), "dim", wrap=True),
+                    label(_("Ten kolor świeci, dopóki gra albo program na PC (np. Steam) nie ustawi własnego - chyba że wyłączysz "
+                            "„Gra może zmienić kolor”. Miganie przy niskiej baterii działa zawsze, a potwierdzenia (np. złoty "
+                            "błysk mastera) są na wierzchu."), "dim", wrap=True),
                     field(_("Pad"), self.light_pad), self.light_own,
                     pair(field(_("Tryb"), self.light_mode), field(_("Kolor"), _wrap(colors))),
-                    self.light_blink)
+                    self.light_game, self.light_blink)
         return [low, pad]
 
     def _wol_tab(self):
@@ -508,13 +511,14 @@ class ConsoleSettings(QDialog):
         self.light_own.setChecked(key == DEFAULT_PAD or key in self._lights)
         self.light_mode.set_data(light.mode)
         self.light_blink.setChecked(light.blink)
+        self.light_game.setChecked(light.game)
         self._set_color(light.color, store=False)
         self._loading = False
         self._light_enable()
 
     def _light_enable(self):
         own = self.light_own.isChecked()
-        for w in (self.light_mode, self.light_color, self.light_blink):
+        for w in (self.light_mode, self.light_color, self.light_blink, self.light_game):
             w.setEnabled(own)
         self.light_color.setEnabled(own and self.light_mode.currentData() == "solid")
 
@@ -542,7 +546,7 @@ class ConsoleSettings(QDialog):
             self._lights.pop(key, None)
         else:
             self._lights[key] = PadLight(mode=self.light_mode.currentData(), color=self._color,
-                                         blink=self.light_blink.isChecked())
+                                         blink=self.light_blink.isChecked(), game=self.light_game.isChecked())
         self._light_enable()
 
     # ---------- Wake-on-LAN ----------
