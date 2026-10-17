@@ -125,7 +125,7 @@ class ConsoleSettings(QDialog):
         pick.addWidget(self.pick)
         self.dbl = spinbox(100, 2000, 50, " ms")
         self.timeout = spinbox(5, 3600, 5, " s")
-        self.auto_on = QCheckBox(_("Włącz po połączeniu pada master"))
+        self.auto_on = QCheckBox(_("Włącz po połączeniu pada master (bez mastera: pierwszego pada)"))
         self.auto_on.setIcon(icon("crown"))
         switching = group(_("PRZEŁĄCZANIE"),
                           label(_("Podwójne kliknięcie wybranego przycisku pada przełącza ekran i dźwięk między monitorem "

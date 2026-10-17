@@ -38,6 +38,12 @@ def turned(c, on=True):
     po nim - sprawdzanie rejestru zaraz po zmianie c.on łapało przełączenie w połowie."""
     return wait_for(lambda: c.on == on) and idle(c)
 
+import rx_settings as _R
+from dataclasses import replace as _replace
+# testy kliknięć: master ustawiony na nieobecny pad - bez mastera pierwszy połączony pad włącza tryb (auto_pad)
+_R.apply(_replace(_R.cur, master=_replace(_R.cur.master, pad="00:00:00:00:00:ff")))
+
+
 def new_console(**kw):
     """Console z wątkiem roboczym; startup (extend) już przetworzony i wyczyszczony z rejestru.
     Testy kliknięć używają PS (trudniejszy przypadek: PS jest też modyfikatorem skrótów)."""
@@ -362,6 +368,16 @@ feed(T_IDENT, 0, b"cc:cc:cc:00:00:09"); time.sleep(0.2)
 c = new_console(toggle_button="r2"); feed(T_BYE, 0); time.sleep(1.1); feed(T_IDENT, 0, b"cc:cc:cc:00:00:09"); time.sleep(0.3)
 check(not c.on, "zwykły pad (nie master) nie włącza trybu")
 c.close(restart=True)
+rx_settings.apply(replace(rx_settings.cur, master=replace(rx_settings.cur.master, pad="")))
+c = new_console(toggle_button="r2"); feed(T_BYE, 0); feed(T_BYE, 1); time.sleep(1.1); calls.clear()
+feed(T_IDENT, 0, b"cc:cc:cc:00:00:09")
+check(turned(c), "bez mastera: pierwszy połączony pad włącza tryb (po starcie PC tryb zostawał wyłączony)")
+c._jobs.put(c._toggle); check(turned(c, False), "ręcznie OFF")
+feed(T_IDENT, 1, MAC.encode()); time.sleep(0.3)
+check(not c.on, "bez mastera: drugi pad dochodzący później nie włącza trybu wyłączonego ręcznie")
+c.close(restart=True)
+feed(T_BYE, 0); feed(T_BYE, 1); time.sleep(1.1)
+rx_settings.apply(replace(rx_settings.cur, master=replace(rx_settings.cur.master, pad=MAC)))
 os.environ[rx_console.RESTART_ENV] = "0"
 c = new_console(toggle_button="r2"); feed(T_BYE, 1); time.sleep(1.1); feed(T_IDENT, 1, MAC.encode()); time.sleep(0.3)
 check(not c.on and rx_console.RESTART_ENV not in os.environ, "restart z wyłączonym trybem: powrót mastera go nie włącza")
