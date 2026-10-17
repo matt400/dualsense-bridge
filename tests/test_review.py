@@ -154,6 +154,8 @@ connected.clear()
 rx_console.pad_connected = lambda i: connected.append(i)
 S.ignore_until[1] = 0.0
 S.want[0].clear()                                   # slot 0 nie czeka w kolejce (wait_turn)
+from dataclasses import replace as _replace
+rx_settings.apply(_replace(rx_settings.cur, vpad=rx_settings.VpadConfig(fixed_slots=False)))   # bez zastępczego slotu 0
 t = threading.Thread(target=rx_ds4.slot_thread, args=(1,), daemon=True)
 t.start()
 end = time.monotonic() + 2.4
@@ -256,6 +258,7 @@ rx_settings.apply(rx_settings.defaults())
 
 # ---------- raport DS4 od razu w wątku sieci (bez przełączania na wątek slotu), seria zlana bez utraty ----------
 import threading, rx_ds4
+rx_settings.apply(_replace(rx_settings.cur, vpad=rx_settings.VpadConfig(fixed_slots=False)))   # mechanika jednego slotu
 reports = []
 class FastPad:
     def register_notification(self, cb): pass

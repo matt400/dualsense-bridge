@@ -57,8 +57,14 @@ def _startup_events(rx_winapi):
 
     def migrate():
         import rx_autostart
+        import rx_settings
         if rx_autostart.migrate():
             ev.info(_("Autostart przeniesiony do Harmonogramu zadań - receiver startuje zaraz po zalogowaniu"))
+        # HIDMaestro tworzy pady tylko jako administrator: receiver uruchomiony raz jako administrator podnosi
+        # uprawnienia zadania autostartu - od następnego logowania startuje tak sam, bez okna UAC
+        if rx_settings.cur.vpad.backend != "vigem" and rx_winapi.is_admin() \
+                and rx_autostart.elevate(*rx_config.autostart_command()):
+            ev.info(_("Autostart ustawiony na uprawnienia administratora (HIDMaestro)"))
     threading.Thread(target=migrate, name="autostart", daemon=True).start()
 
 
@@ -118,7 +124,7 @@ def main():
     if C.GAME_PROFILES:
         S.start_thread("game watch", rx_games.watch_thread)
 
-    print(f"Virtual DS4 pads are created on demand (slots 0..{C.NUM_PADS - 1}).")
+    print(f"Virtual pads are created on demand (slots 0..{C.NUM_PADS - 1}).")
     print(f"Listening for events on UDP {C.IN_PORT}"
           + (f" (only from {C.ALLOWED_IP})" if C.ALLOWED_IP else " (any source - consider --allow IP)")
           + (", HMAC on" if C.KEY else ", NO authentication - consider --key")
@@ -168,7 +174,7 @@ def main():
         rx_winapi.end_timer()
         if S.restart:               # porty, ViGEm i blokada instancji są już zwolnione - nowy proces startuje jak z autostartu
             try:
-                rx_winapi.relaunch({rx_console.RESTART_ENV: "1" if console_on else "0"})
+                rx_winapi.relaunch({rx_console.RESTART_ENV: "1" if console_on else "0"}, admin=S.restart == "admin")
             except OSError as e:
                 print(f"Restart failed: {e!r} - start the receiver manually")
         if C.log_handle is not None:

@@ -7,6 +7,7 @@
             (ten sam próg ma ostrzeżenie na karcie pada) - rx_feedback, rx_lightbar
   wol       Wake-on-LAN z pada (PS + przycisk przy milczącym receiverze) - wysyłane do nadajnika (pakiet scfg)
   log       dziennik zdarzeń w oknie: poziom, limit linii, zdarzenia z nadajnika
+  vpad      wirtualne pady: backend (HIDMaestro DualSense / ViGEmBus DS4), stała kolejność graczy (rx_ds4, rx_hm)
 
 Brak pliku / błędna wartość -> domyślna (komunikat w logu, plik poprawiany przy zapisie). Zmiana z okna działa od
 razu: apply() podmienia obiekt `cur` (jedno przypisanie - wątki sieci czytają zawsze spójną całość).
@@ -246,6 +247,30 @@ class LogConfig:
 LogConfig.V = {"level": _choice(LOG_LEVELS), "max_lines": _num(*LOG_LINES), "sender": _bool}
 
 
+# ---------------- wirtualne pady ----------------
+VPAD_BACKENDS = {"auto": "Automatycznie: HIDMaestro, gdy jest, inaczej ViGEmBus",
+                 "hidmaestro": "HIDMaestro - DualSense (zapas: ViGEmBus)",
+                 "vigem": "ViGEmBus - DualShock 4"}
+
+
+def _path(v):
+    if not isinstance(v, str):
+        raise ValueError("expected a path")
+    return v.strip()
+
+
+@dataclass(frozen=True, slots=True)
+class VpadConfig:
+    backend: str = "auto"         # auto | hidmaestro | vigem
+    fixed_slots: bool = True      # pad zastępczy w pustych niższych slotach: pad 2 nigdy nie zostaje graczem 1
+    hm_dll: str = ""              # ścieżka do HIDMaestro.Core.dll (albo folderu); "" = hidmaestro\ obok receivera
+
+    V = None
+
+
+VpadConfig.V = {"backend": _choice(VPAD_BACKENDS), "fixed_slots": _bool, "hm_dll": _path}
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     mouse: MouseConfig = field(default_factory=MouseConfig)
@@ -254,6 +279,7 @@ class Settings:
     lightbar: LightbarConfig = field(default_factory=LightbarConfig)
     wol: WolConfig = field(default_factory=WolConfig)
     log: LogConfig = field(default_factory=LogConfig)
+    vpad: VpadConfig = field(default_factory=VpadConfig)
 
 
 def _section(cls, raw, base, name):
@@ -301,7 +327,8 @@ def load(path, base=None):
 def save(s, path):
     """Zapis atomowy (plik tymczasowy + zamiana)."""
     data = {"version": 1, "mouse": asdict(s.mouse), "master": {**asdict(s.master), "only_master": list(s.master.only_master)},
-            "ui": asdict(s.ui), "lightbar": asdict(s.lightbar), "wol": asdict(s.wol), "log": asdict(s.log)}
+            "ui": asdict(s.ui), "lightbar": asdict(s.lightbar), "wol": asdict(s.wol), "log": asdict(s.log),
+            "vpad": asdict(s.vpad)}
     write_json(path, data, indent=2, ensure_ascii=False)
 
 

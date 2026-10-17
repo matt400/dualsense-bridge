@@ -83,7 +83,7 @@ def stats_text(summary):
 def latency_parts(summary):
     """[(klucz odcinka, opis, ms)] w kolejności drogi sygnału; Bluetooth tylko, gdy nadajnik go mierzy."""
     rows = [("bt", _("Bluetooth (ponad minimum)"), summary.bt), ("phone", _("Telefon (jądro → wysłanie)"), summary.phone),
-            ("net", _("Sieć"), summary.net), ("pc", _("PC (odbiór → wirtualny DS4)"), summary.pc)]
+            ("net", _("Sieć"), summary.net), ("pc", _("PC (odbiór → wirtualny pad)"), summary.pc)]
     return [r for r in rows if r[2] is not None]
 
 

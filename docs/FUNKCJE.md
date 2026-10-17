@@ -1,6 +1,10 @@
 # Funkcje
 
-- **Wirtualny DS4** (ViGEm) z przyciskami, gałkami, spustami, touchpadem, żyroskopem, wibracjami i kolorem lightbara.
+- **Wirtualny DualSense** (HIDMaestro) albo **DS4** (ViGEmBus) z przyciskami, gałkami, spustami, touchpadem,
+  żyroskopem, wibracjami i kolorem lightbara z gry. Ustawienia → Pady: `auto` (HIDMaestro, gdy jest DLL i receiver
+  działa jako administrator, inaczej ViGEmBus), `hidmaestro` (to samo, ale brak HIDMaestro to ostrzeżenie w dzienniku)
+  albo `vigem`. Zmiana działa od razu (pady powstają od nowa). Błąd HIDMaestro przy tworzeniu pada = ten pad przez
+  ViGEmBus i ostrzeżenie w dzienniku. Karta pada (ikona touchpada) pokazuje, jakim padem jest slot.
 - **Serwer DSU (Cemuhook)** z ruchem i dotykiem dla emulatorów (Cemu, Yuzu/Ryujinx, Dolphin).
 - **Touchpad jako mysz:** kursor, tap = lewy przycisk, przewijanie dwoma palcami, tap dwoma palcami = prawy przycisk.
   Przełączanie: PS + klik touchpada. Fizyczny klik nie przesuwa kursora: ruch z ostatnich ~80 ms przed kliknięciem
@@ -160,7 +164,7 @@
   (przycisk, gałka, ruch), od chwili, gdy jądro nadajnika dostało raport z pada, do oddania raportu wirtualnemu DS4. Nadajnik zna zegar PC z odpowiedzi na ping
   (jak NTP, pomiar o najmniejszym RTT), więc sieć jest mierzona w jedną stronę, nie jako połowa pingu. Odcinki:
   **Bluetooth** - opóźnienie radia ponad najlepszy przypadek z 2 s (znaczniki czasu pada; stała część ~1-2 ms jest
-  niemierzalna), **nadajnik** - jądro → wysłanie, **sieć**, **PC** - odbiór → ViGEm. Ze starszym nadajnikiem karta
+  niemierzalna), **nadajnik** - jądro → wysłanie, **sieć**, **PC** - odbiór → wirtualny pad. Ze starszym nadajnikiem karta
   pokazuje sam ping; starszy receiver dostaje od nowego nadajnika zwykłe pakiety.
   **Przycisk → gra** to ten sam pomiar tylko dla zmian przycisków, D-pada i spustów (przejście przez próg wciśnięcia,
   bez gałek i żyroskopu): ostatnie 100 naciśnięć / puszczeń bez limitu czasu (naciśnięcia są rzadkie - 5 s dałoby
@@ -170,12 +174,15 @@
   pokazuje „wibracja: sterownik + HID” albo powód jej braku (brak uprawnień / brak w jądrze / nie znaleziono pada /
   stary nadajnik). Przycisk wibracji na karcie pada sprawdza, czy wibracja dochodzi do pada.
 - **Stała kolejność graczy:** nadajnik pamięta, który pad (MAC) był w którym slocie (`slots.json`), a receiver podłącza
-  wirtualne DS4 w kolejności slotów, więc pad 1 zostaje graczem 1 w Steam / grze niezależnie od tego, który włączysz
-  pierwszy.
+  wirtualne pady w kolejności slotów. Gdy pad 2 połączy się sam, slot 1 dostaje najpierw **pad zastępczy** (neutralny
+  stan), więc gry i Steam (także bez Steam Input) zawsze widzą pad 2 jako gracza 2. Pad 1 dołącza potem do
+  zastępczego bez ponownego podłączania, a zastępczy znika razem z ostatnim padem z wyższego slotu. Wyłączenie:
+  Ustawienia → Pady → „Stała kolejność graczy”. HIDMaestro tworzy też pady ze stałą tożsamością slotu (te same
+  ścieżki urządzeń po każdym podłączeniu).
 - **Niskie opóźnienia:**
   - przyciski wysyłane natychmiast, z powtórkami na wypadek zgubionego pakietu,
   - gałki, ruch i dotyk bez opóźnienia do 1000 Hz (szybsze serie raportów zlewane, ostatni stan zawsze dochodzi),
-  - na PC raport wirtualnego DS4 idzie od razu z wątku, który odebrał pakiet (bez przekazywania do innego wątku),
+  - na PC raport wirtualnego pada idzie od razu z wątku, który odebrał pakiet (bez przekazywania do innego wątku),
   - priorytety wątków i procesów, timer 1 ms na Windows,
   - nadajnik (jako root): procesor bez głębokiego uśpienia (PM QoS), proces na najszybszych rdzeniach i z planistą
     czasu rzeczywistego - wybudzenie procesora z uśpienia (na telefonach ze Snapdragonem 845 do ~6.5 ms) nie

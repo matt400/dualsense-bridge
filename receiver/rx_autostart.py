@@ -8,6 +8,8 @@ przełączał ekranu w tryb konsoli. Zadanie „przy logowaniu” startuje bez t
   enable(exe, args)  zadanie DualSenseBridge (schtasks /xml) i usunięcie starego wpisu Run; błąd -> zostaje wpis Run
   disable()          usuwa zadanie i wpis Run
   migrate()          przy starcie receivera: jest stary wpis Run -> zamiana na zadanie (raz, w tle)
+  elevate()          zadanie z najwyższymi uprawnieniami (HIDMaestro tworzy pady tylko jako administrator) - zmienić je
+                     może tylko proces administratora, więc robi to receiver uruchomiony jako administrator
 """
 import os
 import subprocess
@@ -24,8 +26,12 @@ def user_id():
     return f"{dom}\\{user}" if dom else user
 
 
-def task_xml(exe, args, workdir, user):
-    """Definicja zadania: przy logowaniu tego użytkownika, bez opóźnienia i bez limitu czasu, zwykły priorytet."""
+LEAST, HIGHEST = "<RunLevel>LeastPrivilege</RunLevel>", "<RunLevel>HighestAvailable</RunLevel>"
+
+
+def task_xml(exe, args, workdir, user, elevated=False):
+    """Definicja zadania: przy logowaniu tego użytkownika, bez opóźnienia i bez limitu czasu, zwykły priorytet.
+    elevated: najwyższe uprawnienia (administrator bez okna UAC przy logowaniu)."""
     e = escape
     return f"""<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
@@ -35,7 +41,7 @@ def task_xml(exe, args, workdir, user):
   </Triggers>
   <Principals>
     <Principal id="Author"><UserId>{e(user)}</UserId><LogonType>InteractiveToken</LogonType>
-      <RunLevel>LeastPrivilege</RunLevel></Principal>
+      {HIGHEST if elevated else LEAST}</Principal>
   </Principals>
   <Settings>
     <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
@@ -94,10 +100,14 @@ def split_command(cmd):
     return exe, args.strip()
 
 
-def create_task(exe, args):
-    """-> (ok, opis błędu). XML w UTF-16 (tak go czyta schtasks); plik tymczasowy usuwany zawsze."""
+def create_task(exe, args, elevated=False):
+    """-> (ok, opis błędu)."""
     script = split_command(args)[0] if args else exe
-    xml = task_xml(exe, args, os.path.dirname(os.path.abspath(script)), user_id())
+    return _create_xml(task_xml(exe, args, os.path.dirname(os.path.abspath(script)), user_id(), elevated))
+
+
+def _create_xml(xml):
+    """Zadanie z definicji XML -> (ok, opis błędu). XML w UTF-16 (tak go czyta schtasks); plik tymczasowy usuwany zawsze."""
     fd, path = tempfile.mkstemp(suffix=".xml")
     try:
         with os.fdopen(fd, "w", encoding="utf-16") as f:
@@ -113,8 +123,8 @@ def create_task(exe, args):
             pass
 
 
-def enable(exe, args):
-    ok, err = create_task(exe, args)
+def enable(exe, args, elevated=False):
+    ok, err = create_task(exe, args, elevated)
     cmd = subprocess.list2cmdline([exe]) + " " + args
     if ok:
         _set_run(None)
@@ -145,4 +155,21 @@ def migrate():
         return True
     except Exception as e:          # migracja nie może zatrzymać receivera
         print(f"Autostart: migration failed: {e!r}")
+        return False
+
+
+def elevate(exe, args):
+    """Istniejące zadanie autostartu bez podniesionych uprawnień -> to samo zadanie (exe, args jak przy --autostart on)
+    z najwyższymi. -> True, gdy zmieniono. Brak zadania / już podniesione / błąd -> False (receiver działa dalej).
+    Definicja powstaje od nowa - XML z schtasks /query przychodzi w stronie kodowej konsoli (polskie znaki w ścieżce)."""
+    try:
+        r = _schtasks("/query", "/tn", NAME, "/xml")
+        if r.returncode != 0 or LEAST not in r.stdout:
+            return False
+        ok, err = create_task(exe, args, elevated=True)
+        if not ok:
+            print(f"Autostart: cannot raise to highest privileges ({err})")
+        return ok
+    except Exception as e:
+        print(f"Autostart: elevation failed: {e!r}")
         return False

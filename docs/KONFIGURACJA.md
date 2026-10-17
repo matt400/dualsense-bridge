@@ -44,8 +44,10 @@ Tryb konsoli ma własny plik `receiver/console.json` (obok skryptu). Brak pliku 
 | `tv_width`, `tv_height` | 2560, 1440 | rozdzielczość TV po włączeniu trybu (najwyższe odświeżanie dla niej; 0 = bez zmiany) |
 | `tv_scale` | 200 | skalowanie TV w %: 100, 125, 150, 175, 200, 225, 250, 300... (0 = bez zmiany) |
 
-Mysz touchpada, pad master, lightbar, Wake-on-LAN i ustawienia dziennika są w `receiver/settings.json` (okno →
-Ustawienia, działa od razu). Nadajnik zapisuje ustawienia Wake-on-LAN z okna w `sender/wol.json`.
+Mysz touchpada, pad master, lightbar, Wake-on-LAN, ustawienia dziennika i wirtualne pady są w `receiver/settings.json`
+(okno → Ustawienia, działa od razu). Wirtualne pady (`vpad`): `backend` = `auto` | `hidmaestro` | `vigem`,
+`fixed_slots` = stała kolejność graczy (pad zastępczy w pustym niższym slocie), `hm_dll` = ścieżka do
+`HIDMaestro.Core.dll` albo jej folderu (puste = `receiver/hidmaestro/`). Nadajnik zapisuje ustawienia Wake-on-LAN z okna w `sender/wol.json`.
 Nadajnik zapisuje stały przydział pad → slot w `sender/slots.json` (`slots_file = ""` wyłącza).
 Kalibracja żyroskopu z okna (widok Test) jest w `sender/gyro_cal.json` (`gyro_cal_file = ""` - bez zapisu),
 korekcja dryfu gałek w `receiver/padcal.json` (obok `remap.json`, w kopiach ustawień przy aktualizacji).
