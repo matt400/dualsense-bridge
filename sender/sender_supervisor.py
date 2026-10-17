@@ -14,7 +14,7 @@ from proto import E_ERROR, E_PAD_OFF, E_PAD_ON, LAT_NONE, T_BYE, write_json
 from sender_config import C, IDLE_TP, SETTLE_S
 from sender_ctrl import Ctrl
 from sender_rumble import Rumble
-from sender_net import emit
+from sender_net import emit_repeat
 
 _MAC = re.compile(r"^[0-9a-f]{2}(:[0-9a-f]{2}){5}$", re.IGNORECASE)
 _not_pads = {}       # ścieżka -> identyfikator węzła (inode, ctime) urządzenia, które nie jest padem
@@ -254,14 +254,86 @@ async def run_ctrl(c):
             except Exception:
                 pass
         c.send_neutral()
-        for _ in range(3):
-            emit(T_BYE, c.idx)
+        emit_repeat(T_BYE, c.idx)
         state.active.pop(c.key, None)
         print(f"Controller {c.idx}: disconnected (waiting for reconnect)")
         events.info(E_PAD_OFF, c.idx)
 
 
+class DevWatch:
+    """inotify na /dev/input: nowy węzeł eventN (pad włączony / połączony) budzi supervisora od razu - bez tego pad
+    czekał na kolejny skan do rescan_s (średnio +1 s przy łączeniu). Bez inotify (inna platforma, brak katalogu) -
+    zwykłe skanowanie co rescan_s."""
+
+    IN_ATTRIB, IN_CREATE = 0x004, 0x100
+    IN_NONBLOCK, IN_CLOEXEC = 0o4000, 0o2000000
+    DEBOUNCE_S = 0.05             # węzły pada, ruchu i touchpada powstają razem - jeden skan na całą grupę
+
+    def __init__(self):
+        self.fd = None
+        self.event = asyncio.Event()
+
+    def start(self, path=b"/dev/input"):
+        try:
+            import ctypes
+            libc = ctypes.CDLL(None, use_errno=True)
+            fd = libc.inotify_init1(self.IN_NONBLOCK | self.IN_CLOEXEC)
+            if fd < 0:
+                return False
+            if libc.inotify_add_watch(fd, path, self.IN_CREATE | self.IN_ATTRIB) < 0:
+                os.close(fd)
+                return False
+            asyncio.get_running_loop().add_reader(fd, self._readable)
+        except (OSError, AttributeError, NotImplementedError):
+            return False
+        self.fd = fd
+        return True
+
+    def _readable(self):
+        try:
+            while os.read(self.fd, 4096):
+                pass
+        except OSError:
+            pass
+        self.event.set()
+
+    async def wait(self, timeout):
+        """Do zmiany w /dev/input albo timeout s."""
+        try:
+            await asyncio.wait_for(self.event.wait(), timeout)
+        except TimeoutError:
+            return
+        await asyncio.sleep(self.DEBOUNCE_S)
+        self.event.clear()
+
+    def close(self):
+        if self.fd is not None:
+            try:
+                asyncio.get_running_loop().remove_reader(self.fd)
+            except RuntimeError:
+                pass
+            os.close(self.fd)
+            self.fd = None
+
+
+def next_scan_s(now):
+    """Za ile następny skan: rescan_s albo wcześniej, gdy niekompletny pad czeka na resztę urządzeń (SETTLE_S)."""
+    wait = C.RESCAN_S
+    if _first_seen:
+        wait = min(wait, max(0.05, SETTLE_S - (now - min(_first_seen.values())) + 0.02))
+    return wait
+
+
 async def supervisor():
+    watch = DevWatch()
+    watch.start()
+    try:
+        await _supervise(watch)
+    finally:
+        watch.close()
+
+
+async def _supervise(watch):
     first = True
     while True:
         if len(state.active) < C.MAX_PADS or any(incomplete(c) for c in state.active.values()):
@@ -300,4 +372,4 @@ async def supervisor():
             if first and not state.active:
                 print("No DualSense found yet - connect controller (bluetoothctl), waiting...")
             first = False
-        await asyncio.sleep(C.RESCAN_S)
+        await watch.wait(next_scan_s(time.monotonic()))

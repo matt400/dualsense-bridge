@@ -53,6 +53,10 @@ Testy obejmują:
   błędy adaptera / uprawnień / programów, lista rundami, całość przez UDP (`test_bt.py`) i panel w oknie z obsługą
   padem (`test_bt_gui.py`);
 - panel skrótów pada (`test_keys_gui.py`) i autostart przez Harmonogram zadań z migracją wpisu Run (`test_autostart.py`);
+- wydajność i niezawodność: SCHED_FIFO na musl przez syscall (`test_rt_tx.py`), wykrywanie pada przez inotify
+  na `/dev/input` i powtórki bye / poleceń / spustów jako ten sam pakiet rozłożony w czasie (`test_devwatch_tx.py`,
+  `test_rx2.py`, `test_e2e.py`), odczyt tylko potrzebnych bajtów raportu wyjściowego HIDMaestro (`test_vpad.py`),
+  limit czasu odbioru w jądrze (SO_RCVTIMEO) zamiast select() przed każdym pakietem (`test_rx2.py`);
 - wirtualne pady: backend HIDMaestro / ViGEmBus i ich zmiana w trakcie, pad zastępczy dla stałej kolejności graczy,
   raport DualSense, feedback z raportu wyjściowego DualSense (`test_vpad.py`, zakładka Pady w `test_settings_gui.py`),
   pobieranie HIDMaestro przez HTTP Range, wersje, błędy zipa / sieci i uruchamianie jako administrator (`test_hm_update.py`).

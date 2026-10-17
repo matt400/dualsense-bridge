@@ -47,4 +47,18 @@ assert R.realtime(10) is None and R.pin_fast_cpus(root) is None
 R.hold_cpu_latency = lambda us: None
 R.setup(True, 50, 10)                                    # bez uprawnień: tylko logi, bez wyjątku
 ok("SCHED_FIFO z RESET_ON_FORK; bez doas wszystko pomija bez błędu")
+# ---------- musl (postmarketOS): funkcja libc zwraca ENOSYS -> syscall wprost ----------
+import errno
+R._sched_syscall(os.SCHED_OTHER, 0)                      # prawdziwy syscall: numer pasuje do tej architektury
+def nosys(*a):
+    raise OSError(errno.ENOSYS, "Function not implemented")
+R.os.sched_setscheduler, sys_calls = nosys, []
+R._sched_syscall, real_sys = (lambda pol, prio: sys_calls.append((pol, prio))), R._sched_syscall
+assert R.realtime(10) == "SCHED_FIFO 10" and sys_calls == [(os.SCHED_FIFO | os.SCHED_RESET_ON_FORK, 10)], sys_calls
+def sys_denied(pol, prio):
+    raise OSError(errno.EPERM, "Operation not permitted")
+R._sched_syscall = sys_denied
+assert R.realtime(10) is None, "musl bez uprawnień: log, bez wyjątku"
+R._sched_syscall = real_sys
+ok("musl: ENOSYS z libc -> sched_setscheduler przez syscall (SCHED_FIFO działa na postmarketOS)")
 print("RT OK")

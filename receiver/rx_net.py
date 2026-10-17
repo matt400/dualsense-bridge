@@ -1,5 +1,6 @@
 """Receiver: odbiór pakietów z nadajnika, obsługa zdarzeń, wykrywanie ciszy."""
 import socket
+import threading
 import time
 
 import rx_bt
@@ -21,7 +22,7 @@ from rx_buttons import BUTTON_CODES, MASK_ALL, PS_BIT, TRIG_ON
 
 from rx_config import C
 from rx_i18n import _
-from rx_winapi import bind_udp, boost_thread
+from rx_winapi import bind_udp, boost_thread, recv_timeout
 
 RX_TYPES = {T_STATE, T_STATE2, T_TOUCH, T_CLICK, T_MOUSE, T_PING, T_BYE, T_IDENT, T_INFO, T_VERSION,   # typy, które
             T_CALRES}                                                                                  # receiver przyjmuje
@@ -30,6 +31,7 @@ STATES = (T_STATE, T_STATE2)
 MAX_PROBE = 20_000              # pomiar dryfu: bezpiecznik długości listy próbek
 MAX_NET_US = 1_000_000          # sieć dłużej niż 1 s = zły zegar (np. zaraz po restarcie), nie pomiar
 SCFG_S = 5.0                    # co tyle ustawienia Wake-on-LAN / zdarzeń do nadajnika (po jego restarcie też je ma)
+WSAETIMEDOUT = 10060
 KEY_WARN_S = 60.0               # ostrzeżenie o innym kluczu HMAC w nadajniku najwyżej co tyle
 
 
@@ -77,11 +79,12 @@ def init():
     global codec, in_sock
     codec = Codec(C.KEY)
     in_sock = bind_udp(C.IN_PORT, "pad events", 1 << 20)
-    in_sock.settimeout(0.1)   # pozwala wykrywać ciszę ze strony nadajnika
+    recv_timeout(in_sock, 0.1)   # pozwala wykrywać ciszę ze strony nadajnika (limit w jądrze - bez select() na pakiet)
 
 
 def close():
     """Zamyka gniazdo odbiorcze (po zatrzymaniu pętli sieci) - port wolny dla nowego procesu po restarcie."""
+    flush_repeats()
     if in_sock is not None:
         in_sock.close()
 
@@ -95,22 +98,56 @@ def send_peer(pkt):
             pass
 
 
+REPEAT_DELAYS = (0.01, 0.03, 0.06)   # powtórki pakietów, które nie mogą zginąć (polecenia, spusty, scfg) [s]
+_repeats = set()                      # zaplanowane powtórki (threading.Timer)
+_repeats_lock = threading.Lock()
+
+
+def _repeat_fire(pkt, timer):
+    with _repeats_lock:
+        if timer not in _repeats:
+            return                    # już wysłana przez flush_repeats
+        _repeats.discard(timer)
+    send_peer(pkt)
+
+
+def send_repeat(pkt, n):
+    """Ten sam pakiet (ten sam numer - nadajnik obsłuży go raz) teraz i n-1 razy później, po REPEAT_DELAYS.
+    Kopie wysłane naraz ginęły razem przy jednej serii strat, a każda miała własny numer, więc nadajnik wykonywał
+    polecenie kilka razy (chroniły go tylko jego blokady powtórzeń)."""
+    send_peer(pkt)
+    for d in REPEAT_DELAYS[:max(0, n - 1)]:
+        timer = threading.Timer(d, _repeat_fire)
+        timer.args, timer.daemon = (pkt, timer), True
+        with _repeats_lock:
+            _repeats.add(timer)
+        timer.start()
+
+
+def flush_repeats():
+    """Zaplanowane powtórki od razu (zamykanie receivera - gniazdo zaraz zniknie; testy)."""
+    with _repeats_lock:
+        pending = list(_repeats)
+        _repeats.clear()
+    for timer in pending:
+        timer.cancel()
+        send_peer(timer.args[0])
+
+
 def send_feedback(i, vals):
     send_peer(codec.pack(T_FB, i, *vals))
 
 
 def send_cmd(i, cmd, arg=0):
     """Polecenie do nadajnika (3x - UDP może zgubić pakiet; nadajnik ignoruje powtórki)."""
-    for _n in range(3):
-        send_peer(codec.pack(T_CMD, i, cmd, arg))
+    send_repeat(codec.pack(T_CMD, i, cmd, arg), 3)
 
 
 def send_triggers(i, vals, repeat=1):
     """Efekty spustów do nadajnika: 12 wartości = trig2, 4 = stary trig (sam opór); zmiana idzie kilka razy
     (zgubiony pakiet)."""
     t = T_TRIG2 if len(vals) == len(TRIG2_OFF) else T_TRIG
-    for _n in range(repeat):
-        send_peer(codec.pack(t, i, *vals))
+    send_repeat(codec.pack(t, i, *vals), repeat)
 
 
 def scfg_values(s=None):
@@ -125,8 +162,7 @@ def scfg_values(s=None):
 def send_scfg(repeat=1):
     if codec is None or S.peer is None:      # start (ustawienia wczytane przed gniazdem) / nadajnik jeszcze nieznany
         return
-    for _n in range(repeat):
-        send_peer(codec.pack(T_SCFG, 255, *scfg_values()))
+    send_repeat(codec.pack(T_SCFG, 255, *scfg_values()), repeat)
 
 
 def _settings_changed(old, new):
@@ -431,13 +467,16 @@ def net_loop():
         try:
             data, addr = in_sock.recvfrom(2048)
             arr = time.perf_counter_ns()        # czas odbioru (zegar PC jak w pong2) - początek odcinka "pc"
-        except TimeoutError:
+        except (TimeoutError, BlockingIOError):   # limit czasu odbioru (SO_RCVTIMEO): Windows / Linux
             data = None
         except OSError as e:
-            # obcy, za duży datagram (WSAEMSGSIZE) albo ICMP nie mogą zatrzymywać odbioru na 10 ms
-            if getattr(e, "winerror", None) not in (10040, 10054):
-                time.sleep(0.01)
-            continue
+            if getattr(e, "winerror", None) == WSAETIMEDOUT:
+                data = None                     # limit czasu odbioru (gdyby nie przyszedł jako TimeoutError)
+            else:
+                # obcy, za duży datagram (WSAEMSGSIZE) albo ICMP nie mogą zatrzymywać odbioru na 10 ms
+                if getattr(e, "winerror", None) not in (10040, 10054):
+                    time.sleep(0.01)
+                continue
 
         now = time.monotonic()
         if now - t_check >= 0.1:

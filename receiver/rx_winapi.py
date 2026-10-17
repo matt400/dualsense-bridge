@@ -4,6 +4,7 @@ import ctypes.wintypes as wt
 import ntpath
 import os
 import socket
+import struct
 import subprocess
 import sys
 
@@ -355,6 +356,21 @@ def no_connreset(sk):
         sk.ioctl(socket.SIO_UDP_CONNRESET, False)
     except Exception:
         pass
+
+
+def recv_timeout(sk, seconds):
+    """Gniazdo blokujące z limitem czasu odbioru w jądrze (SO_RCVTIMEO): recvfrom to jedno wywołanie systemowe.
+    settimeout() w Pythonie robi przed każdym odbiorem dodatkowe select() (gniazdo nieblokujące + czekanie).
+    Upłynięcie limitu: TimeoutError (Windows, WSAETIMEDOUT) albo BlockingIOError (Linux, EAGAIN)."""
+    try:
+        sk.settimeout(None)
+        if os.name == "nt":
+            val = struct.pack("I", max(1, round(seconds * 1000)))              # DWORD [ms]
+        else:
+            val = struct.pack("ll", int(seconds), round(seconds % 1 * 1e6))    # struct timeval
+        sk.setsockopt(socket.SOL_SOCKET, socket.SO_RCVTIMEO, val)
+    except (OSError, AttributeError, struct.error):
+        sk.settimeout(seconds)
 
 
 def bind_udp(port, what, rcvbuf=0):
