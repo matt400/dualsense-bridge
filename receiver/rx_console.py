@@ -37,6 +37,7 @@ import rx_audio
 import rx_display
 import rx_events as ev
 import rx_master as master
+import rx_settings
 import rx_state as S
 import rx_winapi as W
 from rx_buttons import BIT, BUTTON_CODES, DIRS, INPUTS, TRIG_ON, pressed_inputs
@@ -278,11 +279,19 @@ class Console:
 
     def pad_connected(self, i):
         """Pad w slocie i właśnie się połączył (nowy identyfikator albo ponownie utworzony wirtualny DS4)."""
-        if not (self.cfg.auto_on_master and master.is_master(i)):
+        if not self.cfg.auto_on_master:
+            return
+        if not master.is_master(i):
+            if S.pad_id[i]:                  # bez identyfikatora (pierwszy pakiet) master jest nieznany - to nie błąd
+                print(f"Console: controller {i} ({S.profile_key(i)}) connected - not the master "
+                      f"({rx_settings.cur.master.pad or 'none set'}), no auto-ON")
             return
         if self._skip_auto:
             self._skip_auto = False
+            print("Console: master connected - auto-ON skipped (receiver restarted with console mode off)")
+            ev.info(_("Tryb konsoli: auto-włączenie pominięte - restart receivera przy wyłączonym trybie"))
             return
+        print(f"Console: master connected on controller {i} - auto-ON queued")
         self._jobs.put(lambda: self._auto_on(i))
 
     def blocked_by(self):
@@ -351,8 +360,9 @@ class Console:
                 return
             try:
                 job()
-            except Exception:
+            except Exception as e:
                 print(f"Console: job error:\n{traceback.format_exc()}")
+                ev.error(_("Tryb konsoli: błąd - {err}").format(err=repr(e)))   # inaczej auto-ON ginął bez śladu w oknie
 
     def _tick(self):
         now = time.monotonic()
