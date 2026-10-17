@@ -98,6 +98,9 @@ try:
     nods4 = importlib.import_module("rx_ds4")
     check(nods4.vg is None and nods4.VG_ERROR is not None, "import rx_ds4 bez vgamepad nie wywraca receivera")
     nods4.init()
+    import rx_settings
+    from dataclasses import replace
+    rx_settings.apply(replace(rx_settings.cur, vpad=rx_settings.VpadConfig(fixed_slots=False)))   # sam slot 1, bez zastępczego 0
     seq = ev.since(0)[-1].seq if ev.since(0) else 0
     S.want[1].set()
     t = threading.Thread(target=nods4.slot_thread, args=(1,), daemon=True)

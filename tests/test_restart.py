@@ -28,7 +28,7 @@ import rx_console, rx_winapi, rx_net, rx_dsu, rx_state as S
 rx_console._display = lambda m: None; rx_console._audio = lambda n: None; rx_console._toast = lambda *a: None
 rx_winapi.release_single_instance = lambda: EVENTS.append("release_mutex")
 state_at_relaunch = {}
-def relaunch(env=None):
+def relaunch(env=None, admin=False):
     EVENTS.append("relaunch")
     state_at_relaunch["env"] = env
     for name, port in (("in", 25105), ("dsu", 26899)):

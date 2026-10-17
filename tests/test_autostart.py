@@ -55,4 +55,26 @@ msg = A.enable(r"C:\Py\pythonw.exe", r'"C:\r\receiver_controller.py"')
 assert "Task Scheduler" in msg and A.NAME not in reg
 assert A.disable() == "Autostart disabled." and runs[-1][:3] == ("/delete", "/tn", A.NAME)
 ok("błąd schtasks: wpis Run jako zapas; enable usuwa stary wpis; disable usuwa zadanie")
+
+# ---------- HIDMaestro: zadanie z najwyższymi uprawnieniami ----------
+assert A.LEAST in xml and A.HIGHEST not in xml, "domyślnie zwykłe uprawnienia"
+assert A.HIGHEST in A.task_xml("a.exe", "", "C:\\", "PC\\Ala", elevated=True)
+written = []
+def query_schtasks(*args):
+    runs.append(args)
+    if args[0] == "/query":
+        return types.SimpleNamespace(returncode=qrc[0], stdout=qout[0], stderr="")
+    if args[0] == "/create":
+        written.append(open(args[args.index("/xml") + 1], encoding="utf-16").read())
+    return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+A._schtasks = query_schtasks
+qrc, qout = [0], ["<Task>" + A.LEAST + "</Task>"]
+assert A.elevate(r"C:\Py\pythonw.exe", r'"C:\r\receiver_controller.py"') and A.HIGHEST in written[-1] \
+    and "receiver_controller.py" in written[-1], "zadanie bez uprawnień -> to samo zadanie z najwyższymi"
+qout[0] = "<Task>" + A.HIGHEST + "</Task>"
+n = len(written)
+assert not A.elevate("a.exe", "") and len(written) == n, "już podniesione: bez zmian"
+qrc[0] = 1
+assert not A.elevate("a.exe", "") and len(written) == n, "brak zadania (autostart wyłączony): nic nie tworzy"
+ok("HIDMaestro: zadanie autostartu z najwyższymi uprawnieniami tylko, gdy autostart jest włączony")
 print("AUTOSTART OK")

@@ -92,8 +92,9 @@ def set_autostart(on):
     """Autostart z Windows: zadanie Harmonogramu przy logowaniu (bez opóźnienia - rx_autostart)."""
     import rx_autostart
     if on:
+        import rx_winapi
         exe, args = autostart_command()
-        print(rx_autostart.enable(exe, args))
+        print(rx_autostart.enable(exe, args, elevated=rx_winapi.is_admin()))   # jako administrator = HIDMaestro przy starcie
     else:
         print(rx_autostart.disable())
 

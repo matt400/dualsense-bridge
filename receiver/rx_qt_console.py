@@ -1,4 +1,4 @@
-"""Receiver: okno ustawień (tray -> Ustawienia, albo przycisk w nagłówku okna) - siedem zakładek:
+"""Receiver: okno ustawień (tray -> Ustawienia, albo przycisk w nagłówku okna) - osiem zakładek:
 
   Tryb konsoli  przycisk pada wybierasz naciśnięciem go na padzie (rx_console.arm_capture), urządzenia audio to lista
                 aktywnych wyjść Windows (rx_audio, Odśwież); "Przetestuj" włącza tryb konsoli na kilka sekund
@@ -9,12 +9,15 @@
                 albo domyślnie dla wszystkich; próg niskiej baterii (ten sam ma ostrzeżenie na karcie pada)
   Wake-on-LAN   PS + przycisk przytrzymane na padzie, gdy receiver nie odpowiada -> nadajnik budzi komputer; MAC
                 i broadcast wpisane albo automatyczne (wykryte przez nadajnik - widać je tutaj)
+  Pady          wirtualne pady: HIDMaestro (DualSense) / ViGEmBus (DS4), ścieżka do HIDMaestro.Core.dll, stała kolejność
+                graczy (rx_settings.VpadConfig, rx_ds4); bez uprawnień administratora - restart jako administrator
   Okno          ekran, na którym pojawia się okno (receiver_ui.ini, MainWindow.place_on_screen)
   Kopie         kopie settings.json / console.json / remap.json z aktualizacji (rx_backup): przywróć (dwa kliknięcia,
                 potem restart receivera) albo zrób kopię teraz
 
-"Zapisz": mysz, master, lightbar i Wake-on-LAN działają od razu (settings.json, bez restartu). Zmiana trybu konsoli zapisuje console.json
-i prosi właściciela okna o restart receivera (sygnał saved) - po restarcie obowiązuje startup_mode jak przy autostarcie.
+"Zapisz": mysz, master, lightbar, Wake-on-LAN i pady działają od razu (settings.json, bez restartu). Zmiana trybu
+konsoli zapisuje console.json i prosi właściciela okna o restart receivera (sygnał saved) - po restarcie obowiązuje
+startup_mode jak przy autostarcie.
 """
 from rx_i18n import _
 from PySide6.QtCore import Qt, QTimer, Signal
@@ -25,6 +28,8 @@ from PySide6.QtWidgets import (QCheckBox, QColorDialog, QDialog, QGridLayout, QH
 import rx_audio
 import rx_backup
 import rx_console
+import rx_ds4
+import rx_hm
 import rx_lightbar
 import rx_update
 import rx_settings
@@ -39,7 +44,8 @@ from rx_qt_style import set_prop
 from rx_qt_widgets import (Combo, ConfirmButton, SliderRow, button, field, group, icon_button, icon_label, input_items, label,
                            left, pair)
 from rx_settings import (ABSENT, COMBO_BUTTONS, DEFAULT_PAD, LIGHT_MODES, LOW_PCT, MASTER_ACTIONS, MASTER_FEATURES, MOUSE_LIMITS,
-                         WOL_BUTTONS, WOL_HOLD_MS, LightbarConfig, MasterConfig, MouseConfig, PadLight, WolConfig)
+                         VPAD_BACKENDS, WOL_BUTTONS, WOL_HOLD_MS, LightbarConfig, MasterConfig, MouseConfig, PadLight, VpadConfig,
+                         WolConfig)
 
 CAPTURE_TIMEOUT_MS = 15000
 NO_AUDIO = "— nie zmieniaj dźwięku —"
@@ -50,6 +56,7 @@ RESTORE_RESTART_MS = 1500     # po przywróceniu kopii: tyle widać komunikat, p
 
 class ConsoleSettings(QDialog):
     saved = Signal()            # console.json zapisany - właściciel okna restartuje receiver
+    elevate = Signal()          # Pady: restart receivera jako administrator (HIDMaestro)
     applied = Signal()          # mysz / master zapisane i działają (bez restartu) - okno odświeża karty padów
     captured = Signal(str)      # nazwa przycisku z wątku sieci (Qt kolejkuje do wątku okna)
 
@@ -79,6 +86,7 @@ class ConsoleSettings(QDialog):
         self.tabs.addTab(_page(self._light_tab()), icon("lightbar"), _("Lightbar"))
         self.wol_page = _page(self._wol_tab())
         self.tabs.addTab(self.wol_page, icon("wake"), _("Wake-on-LAN"))
+        self.tabs.addTab(_page(self._vpad_tab()), icon("ps"), _("Pady"))
         self.tabs.addTab(_page(self._window_tab()), icon("window"), _("Okno"))
         self.tabs.addTab(_page(self._backup_tab()), icon("backup"), _("Kopie"))
         lay.addWidget(self.tabs, 1)
@@ -185,6 +193,56 @@ class ConsoleSettings(QDialog):
         lang = group(_("JĘZYK"), field(_("Język"), self.lang),
                      label(_("Zmiana języka działa po restarcie receivera."), "dim", wrap=True))
         return [window, lang]
+
+    def _vpad_tab(self):
+        self.vpad_backend = Combo([(k, _(v)) for k, v in VPAD_BACKENDS.items()])
+        self.vpad_backend.changed.connect(lambda _v: self._vpad_state())
+        self.vpad_dll = QLineEdit()
+        self.vpad_dll.setPlaceholderText(rx_hm.candidates()[0])
+        self.vpad_now = label("", "dim", wrap=True)
+        self.vpad_admin = button(_("Uruchom ponownie jako administrator"), small=True)
+        self.vpad_admin.setIcon(icon("shield"))
+        self.vpad_admin.clicked.connect(self.elevate.emit)
+        self.vpad_fixed = QCheckBox(_("Stała kolejność graczy"))
+        backend = group(_("WIRTUALNE PADY"),
+                        label(_("HIDMaestro tworzy natywny DualSense (gry widzą pada PS5) sterownikiem w trybie użytkownika - "
+                                "jest rozwijany. ViGEmBus (DualShock 4) nie jest już rozwijany, zostaje jako zapas. Tworzenie "
+                                "padów przez HIDMaestro wymaga uruchomienia receivera jako administrator (autostart robi to "
+                                "sam, gdy włączysz go z receivera uruchomionego jako administrator)."), "dim", wrap=True),
+                        field(_("Backend"), self.vpad_backend),
+                        field(_("HIDMaestro.Core.dll (plik albo folder; puste = folder hidmaestro obok receivera)"), self.vpad_dll),
+                        self.vpad_now, left(self.vpad_admin))
+        order = group(_("KOLEJNOŚĆ GRACZY"),
+                      self.vpad_fixed,
+                      label(_("Gry i Steam numerują pady wg kolejności podłączenia. Gdy pad 2 włączy się pierwszy, pad 1 "
+                              "dostaje najpierw pad zastępczy, więc pad 2 zawsze zostaje graczem 2. Który fizyczny pad to "
+                              "pad 1 / 2, pamięta nadajnik (slots.json, wg MAC). Zastępczy pad znika razem z padem 2."),
+                            "dim", wrap=True))
+        return [backend, order]
+
+    def _load_vpad(self, v):
+        self.vpad_backend.set_data(v.backend)
+        self.vpad_dll.setText(v.hm_dll)
+        self.vpad_fixed.setChecked(v.fixed_slots)
+        self._vpad_state()
+
+    def _vpad_state(self):
+        """Co działa teraz: rodzaj podłączonych padów, powód pracy bez HIDMaestro, przycisk restartu jako administrator."""
+        backend = self.vpad_backend.currentData()
+        used = sorted({rx_ds4.LABELS[k] for k in rx_ds4.kinds if k})
+        lines = [_("Teraz: {kinds}").format(kinds=", ".join(used)) if used else _("Teraz: żaden wirtualny pad nie jest podłączony")]
+        if backend != "vigem" and rx_ds4.hm_note:
+            lines.append(_("HIDMaestro nieużywany: {why}").format(why=rx_ds4.hm_note))
+        need_admin = backend != "vigem" and not rx_hm.is_admin()
+        if need_admin:
+            lines.append(_("Receiver działa bez uprawnień administratora - HIDMaestro nie utworzy padów."))
+        self.vpad_now.setText("\n".join(lines))
+        set_prop(self.vpad_now, "level", "warn" if need_admin or (backend == "hidmaestro" and rx_ds4.hm_note) else "")
+        self.vpad_admin.setVisible(need_admin)
+
+    def _collect_vpad(self):
+        return VpadConfig(backend=self.vpad_backend.currentData(), fixed_slots=self.vpad_fixed.isChecked(),
+                          hm_dll=self.vpad_dll.text().strip())
 
     def _backup_tab(self):
         self.backup_rows = QVBoxLayout()
@@ -480,6 +538,7 @@ class ConsoleSettings(QDialog):
         self._load_master(rx_settings.cur.master)
         self._load_light(rx_settings.cur.lightbar)
         self._load_wol(rx_settings.cur.wol)
+        self._load_vpad(rx_settings.cur.vpad)
         cfg = rx_console.ctl.cfg if rx_console.ctl else ConsoleConfig()
         self.set_button(cfg.toggle_button)
         self.dbl.setValue(cfg.double_click_ms)
@@ -556,7 +615,7 @@ class ConsoleSettings(QDialog):
                               claim_hold=self.claim.isChecked())
         return rx_settings.Settings(mouse, master, rx_settings.UiConfig(lang=self.lang.currentData()),
                                     LightbarConfig(low_pct=self.low_pct.value(), pads=dict(self._lights)),
-                                    self._collect_wol(), rx_settings.cur.log)
+                                    self._collect_wol(), rx_settings.cur.log, self._collect_vpad())
 
     def collect(self):
         return ConsoleConfig(toggle_button=self.toggle_button, double_click_ms=self.dbl.value(),

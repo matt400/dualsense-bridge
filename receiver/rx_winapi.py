@@ -108,10 +108,34 @@ def release_single_instance():
         _mutex = None
 
 
-def relaunch(env=None):
+def is_admin():
+    try:
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:
+        return False
+
+
+def relaunch_admin(cmd):
+    """cmd jako administrator (ShellExecute "runas" = okno UAC). -> True, gdy wystartował; odmowa w UAC -> False.
+    Zmienne środowiska nie przechodzą przez UAC (nowy proces ma środowisko użytkownika)."""
+    sh = ctypes.windll.shell32
+    sh.ShellExecuteW.argtypes = [wt.HWND, wt.LPCWSTR, wt.LPCWSTR, wt.LPCWSTR, wt.LPCWSTR, ctypes.c_int]
+    sh.ShellExecuteW.restype = ctypes.c_void_p
+    show = 0 if os.path.basename(cmd[0]).lower().startswith("pythonw") else 1      # SW_HIDE / SW_SHOWNORMAL
+    r = sh.ShellExecuteW(None, "runas", cmd[0], subprocess.list2cmdline(cmd[1:]), os.getcwd(), show)
+    return (r or 0) > 32
+
+
+def relaunch(env=None, admin=False):
     """Nowy proces receivera z tymi samymi argumentami (jak autostart). Wołać po zwolnieniu portów i blokady instancji.
-    env: dodatkowe zmienne środowiska dla nowego procesu (np. stan trybu konsoli)."""
+    env: dodatkowe zmienne środowiska dla nowego procesu (np. stan trybu konsoli). admin: przez UAC; odmowa = zwykły
+    restart (receiver nie może zniknąć)."""
     cmd = [sys.executable, os.path.abspath(sys.argv[0]), *sys.argv[1:]]
+    if admin:
+        if relaunch_admin(cmd):
+            print("Restarting as administrator:", subprocess.list2cmdline(cmd))
+            return
+        print("Administrator restart declined - restarting normally")
     kw = {"cwd": os.getcwd(), "close_fds": True, "env": {**os.environ, **(env or {})}}
     if os.path.basename(sys.executable).lower().startswith("pythonw"):      # autostart: bez konsoli, niezależny od starego
         kw.update(creationflags=0x00000008 | 0x00000200,                    # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP

@@ -12,7 +12,8 @@ from rx_shape import gyro_mouse_velocity, gyro_rates, gyro_stick, merge_triggers
 lock = threading.Lock()
 profile_lock = threading.RLock()            # wybór profilu (gra / edytor / skróty / ident) z kilku wątków
 stop = threading.Event()
-restart = False                            # True = po czystym zamknięciu uruchom receiver od nowa (zapis ustawień w oknie)
+restart = False                            # True = po czystym zamknięciu uruchom receiver od nowa (zapis ustawień w oknie);
+#                                            "admin" = to samo jako administrator (UAC - HIDMaestro)
 seen = SeqFilter(1.0)                      # odrzucanie spóźnionych / zdublowanych pakietów
 MACS = [bytes([0, 2, 3, 4, 5, 6 + s]) for s in range(5)]
 SENDER_TIMEOUT = 3.0                       # cisza dłuższa niż tyle (3 pingi) = nadajnik offline

@@ -1,4 +1,4 @@
-"""Receiver: feedback do pada (wibracja, lightbar) z gry przez ViGEm + krótkie potwierdzenia skrótów,
+"""Receiver: feedback do pada (wibracja, lightbar) z gry przez wirtualny pad (ViGEm / HIDMaestro) + krótkie potwierdzenia skrótów,
 oraz efekty spustów z aktywnego profilu (gra przez DS4 ich nie ustawi - robi to nadajnik raportem HID): opór, klik,
 wibracja spustu i wibracja z gry na spustach (liczona na nadajniku z tych samych pakietów wibracji). Funkcja mastera
 "triggers" (Ustawienia -> Master) = efekty tylko na padzie mastera, pozostałe pady mają zwykłe spusty.
@@ -61,6 +61,22 @@ def make_cb(i):
             pass
         fb_event.set()
     return cb
+
+
+def game(i, large=None, small=None, rgb=None):
+    """Wibracja / kolor lightbara z gry dla slotu i (wątek backendu wirtualnego pada); None = bez zmiany tej części.
+    Raport wyjściowy DualSense niesie silniki i kolor osobno, z własnymi flagami ważności."""
+    try:
+        f = fb[i]
+    except IndexError:
+        return
+    if large is not None:
+        f["large"], f["small"] = int(large), int(small or 0)
+    if rgb is not None:
+        f["r"], f["g"], f["b"] = (int(c) for c in rgb)
+        f["rgb"] = True
+    f["set"] = True
+    fb_event.set()
 
 
 def init():

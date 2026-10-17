@@ -1,4 +1,4 @@
-"""Receiver: raport rozszerzony wirtualnego DS4 (63 B) z surowego stanu pada."""
+"""Receiver: raport wirtualnego pada z surowego stanu: DS4 (63 B, ViGEm) i DualSense (63 B bez ID, HIDMaestro)."""
 import struct
 import time
 
@@ -60,4 +60,52 @@ def build_report(s, counter, mmode, b=None):
     t1, t2 = (NO_TOUCH, NO_TOUCH) if mmode else s["touch"]
     put_touch(b, 34, t1)
     put_touch(b, 38, t2)
+    return b
+
+
+# ---------------- DualSense (HIDMaestro) ----------------
+DS5_TOUCH_H = 1079        # dotyk w stanie jest w skali DS4 (1920x943) - DualSense ma 1920x1080
+_DS5_BATT = {0: 0x00, 1: 0x10, 2: 0x20}    # stan baterii w górnej połówce bajtu: rozładowanie / ładowanie / pełna
+
+
+def ds5_battery(b4):
+    """Bajt baterii DS4 (poziom 0..11 + 0x10 = kabel) -> bajt DualSense (poziom 0..10, stan w bitach 4..7)."""
+    level, cable = min(b4 & 0x0F, 10), b4 & 0x10
+    return level | _DS5_BATT[(2 if level >= 10 else 1) if cable else 0]
+
+
+def put_touch_ds5(b, off, f):
+    on, tid, x, y = f
+    put_touch(b, off, (on, tid, x, y * DS5_TOUCH_H // 942))
+
+
+def build_ds5_report(s, counter, mmode, b=None):
+    """Raport wejściowy USB DualSense 0x01 bez bajtu ID (63 B, jak hid-playstation dualsense_input_report): przyciski
+    w tych samych bitach co DS4, ale PS / touchpad osobno, a licznik w osobnym bajcie. Każdy zmienny bajt nadpisywany."""
+    if b is None:
+        b = bytearray(63)
+    b[0] = s["lx"]
+    b[1] = s["ly"]
+    b[2] = s["rx"]
+    b[3] = s["ry"]
+    b[4], b[5] = s["lt"], s["rt"]
+    b[6] = counter & 0xFF
+    face, sh = ds4_bits(s["mask"])
+    b[7] = DPAD[(s["hx"], s["hy"])] | face
+    b[8] = sh | (0x04 if s["lt"] else 0) | (0x08 if s["rt"] else 0)
+    b[9] = (1 if s["mask"] & PS_BIT else 0) | (2 if (s["tp"] and not mmode) else 0)
+    gx, gy, gz = s["gyro"]
+    ax, ay, az = s["acc"]
+    k = C.GYRO_TO_DS4                       # DualSense i DS4 mają te same jednostki gyro i akcelerometru
+    # timestamp czujników w jednostkach 1/3 us rzeczywistego czasu (jak w padzie - aplikacje liczą z niego dt)
+    struct.pack_into("<hhhhhhI", b, 15,
+                     clamp(int(gx * k), -32768, 32767),
+                     clamp(int(gy * k), -32768, 32767),
+                     clamp(int(gz * k), -32768, 32767),
+                     clamp(ax, -32768, 32767), clamp(ay, -32768, 32767), clamp(az, -32768, 32767),
+                     int(time.perf_counter() * 3_000_000) & 0xFFFFFFFF)
+    t1, t2 = (NO_TOUCH, NO_TOUCH) if mmode else s["touch"]
+    put_touch_ds5(b, 32, t1)
+    put_touch_ds5(b, 36, t2)
+    b[52] = ds5_battery(s["batt_ds4"])
     return b

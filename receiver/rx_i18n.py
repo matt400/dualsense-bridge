@@ -49,7 +49,8 @@ EN = {
     "●  brak sygnału": "●  no signal",
     "○  niepodłączony": "○  not connected",
     "b/d": "n/a",
-    "DS4: {ds4}  ·  touchpad: {tp}": "DS4: {ds4}  ·  touchpad: {tp}",
+    "Wirtualny pad: {pad}  ·  touchpad: {tp}": "Virtual pad: {pad}  ·  touchpad: {tp}",
+    "dotyk w grze": "game touch",
     "wł.": "on",
     "wył.": "off",
     "mysz": "mouse",
@@ -412,7 +413,7 @@ EN = {
     "Bluetooth (ponad minimum)": "Bluetooth (above minimum)",
     "Telefon (jądro → wysłanie)": "Phone (kernel → send)",
     "Sieć": "Network",
-    "PC (odbiór → wirtualny DS4)": "PC (receive → virtual DS4)",
+    "PC (odbiór → wirtualny pad)": "PC (receive → virtual pad)",
     "Brak pomiaru: pad leży albo nadajnik jest w starszej wersji (Aktualizuj).":
         "No measurement: the pad is idle or the sender is an older version (Update).",
     "Średnie odcinków. Stała część radia Bluetooth (~1–2 ms) jest niemierzalna.":
@@ -533,8 +534,39 @@ EN = {
     "{pad}: przerwa w sygnale ponad {s} s": "{pad}: signal gap over {s} s",
     "{pad}: niska bateria ({pct}%)": "{pad}: low battery ({pct}%)",
     "{pad}: akcja mastera {action} nieudana: {err}": "{pad}: master action {action} failed: {err}",
-    "{pad}: błąd wirtualnego DS4: {err} (czy ViGEmBus jest zainstalowany?)":
-        "{pad}: virtual DS4 error: {err} (is ViGEmBus installed?)",
+    "{pad}: błąd wirtualnego pada: {err} (czy ViGEmBus jest zainstalowany?)":
+        "{pad}: virtual pad error: {err} (is ViGEmBus installed?)",
+    "HIDMaestro nieużywany - wirtualne pady przez ViGEmBus: {why}": "HIDMaestro not used - virtual pads via ViGEmBus: {why}",
+    "tworzenie pada: {err}": "creating the pad: {err}",
+    "Autostart ustawiony na uprawnienia administratora (HIDMaestro)": "Autostart set to administrator rights (HIDMaestro)",
+    "Pady": "Pads",
+    "Uruchom ponownie jako administrator": "Restart as administrator",
+    "Stała kolejność graczy": "Fixed player order",
+    "WIRTUALNE PADY": "VIRTUAL PADS",
+    "HIDMaestro tworzy natywny DualSense (gry widzą pada PS5) sterownikiem w trybie użytkownika - jest rozwijany. ViGEmBus "
+    "(DualShock 4) nie jest już rozwijany, zostaje jako zapas. Tworzenie padów przez HIDMaestro wymaga uruchomienia "
+    "receivera jako administrator (autostart robi to sam, gdy włączysz go z receivera uruchomionego jako administrator).":
+        "HIDMaestro creates a native DualSense (games see a PS5 pad) with a user-mode driver - it is maintained. ViGEmBus "
+        "(DualShock 4) is no longer developed and stays as a fallback. Creating pads with HIDMaestro requires running the "
+        "receiver as administrator (autostart does it by itself once you enable it from a receiver running as administrator).",
+    "Backend": "Backend",
+    "HIDMaestro.Core.dll (plik albo folder; puste = folder hidmaestro obok receivera)":
+        "HIDMaestro.Core.dll (file or folder; empty = hidmaestro folder next to the receiver)",
+    "KOLEJNOŚĆ GRACZY": "PLAYER ORDER",
+    "Gry i Steam numerują pady wg kolejności podłączenia. Gdy pad 2 włączy się pierwszy, pad 1 dostaje najpierw pad "
+    "zastępczy, więc pad 2 zawsze zostaje graczem 2. Który fizyczny pad to pad 1 / 2, pamięta nadajnik (slots.json, "
+    "wg MAC). Zastępczy pad znika razem z padem 2.":
+        "Games and Steam number pads in the order they connect. When pad 2 turns on first, pad 1 gets a placeholder pad "
+        "first, so pad 2 always stays player 2. The sender remembers which physical pad is pad 1 / 2 (slots.json, by MAC). "
+        "The placeholder goes away together with pad 2.",
+    "Teraz: {kinds}": "Now: {kinds}",
+    "Teraz: żaden wirtualny pad nie jest podłączony": "Now: no virtual pad is plugged in",
+    "HIDMaestro nieużywany: {why}": "HIDMaestro not used: {why}",
+    "Receiver działa bez uprawnień administratora - HIDMaestro nie utworzy padów.":
+        "The receiver runs without administrator rights - HIDMaestro cannot create pads.",
+    "Automatycznie: HIDMaestro, gdy jest, inaczej ViGEmBus": "Automatic: HIDMaestro when available, otherwise ViGEmBus",
+    "HIDMaestro - DualSense (zapas: ViGEmBus)": "HIDMaestro - DualSense (fallback: ViGEmBus)",
+    "ViGEmBus - DualShock 4": "ViGEmBus - DualShock 4",
     "Nadajnik online ({ip})": "Sender online ({ip})",
     "Nadajnik offline - brak pakietów od {s} s": "Sender offline - no packets for {s} s",
     "Błąd obsługi pakietu: {err}": "Packet handling error: {err}",

@@ -5,7 +5,7 @@ from rxenv import RX                                                  # noqa  (z
 import rx_i18n
 from rx_buttons import LABELS
 from rx_editor import GYRO_MODES, NEW_GAME_HINT, STICK_NAME
-from rx_settings import ABSENT, LIGHT_MODES, LOG_LEVELS, MASTER_ACTIONS, MASTER_FEATURES
+from rx_settings import ABSENT, LIGHT_MODES, LOG_LEVELS, MASTER_ACTIONS, MASTER_FEATURES, VPAD_BACKENDS
 from rx_events import SENDER_TEXT
 from rx_qt_icons import EXTRA_TIPS
 from rx_bt import DONE_TEXT, OP_TEXT, RESULT_TEXT, STATE_TEXT
@@ -22,7 +22,7 @@ for f in glob.glob(os.path.join(RX, "*.py")):
 keys |= set(LABELS.values()) | set(STICK_NAME.values()) | set(GYRO_MODES.values()) | {NEW_GAME_HINT}
 keys |= {t for t, _ in MASTER_FEATURES.values()} | {t for t, _ in MASTER_ACTIONS.values()} | set(ABSENT.values())
 keys |= set(HOLD_ACTION.values()) | set(SHARE_ACTION.values())
-keys |= set(LIGHT_MODES.values()) | set(LOG_LEVELS.values()) | set(SENDER_TEXT.values()) | set(EXTRA_TIPS.values())
+keys |= set(LIGHT_MODES.values()) | set(LOG_LEVELS.values()) | set(VPAD_BACKENDS.values()) | set(SENDER_TEXT.values()) | set(EXTRA_TIPS.values())
 keys |= {*STATE_TEXT.values(), *OP_TEXT.values(), *DONE_TEXT.values(), *RESULT_TEXT.values(), "Operacja", "gotowe",
          "nie udało się", "błąd odczytu stanu", *BT_ACTION.values()}
 keys |= {"Wynik", "Fizycznie", "Rozszerz: oba ekrany aktywne", "Tylko monitor", "— nie zmieniaj dźwięku —",

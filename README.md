@@ -1,7 +1,8 @@
 # DualSense bridge
 
 DualSense bridge przesyła dane z pada PS5 (DualSense) do komputera z Windows przez sieć lokalną. Na PC pad działa
-jak zwykły pad PS4: przyciski, gałki, żyroskop, touchpad, a w drugą stronę wibracje i lightbar.
+jak zwykły DualSense (z HIDMaestro) albo pad PS4 (z ViGEmBus): przyciski, gałki, żyroskop, touchpad, a w drugą
+stronę wibracje i lightbar.
 
 Pad łączy się przez Bluetooth z **nadajnikiem**, czyli małym urządzeniem z Linuksem w pobliżu, np. Raspberry Pi albo
 starym telefonem z postmarketOS. Nadajnik od razu wysyła do PC każdą zmianę stanu pada. Dzięki temu PC może stać
@@ -15,7 +16,7 @@ Na PC jest okno do sterowania wszystkim, także samym padem:
 - pad master, któremu wolno więcej (np. gdy grają dzieci).
 
 ```
-DualSense ──Bluetooth──> nadajnik (sender/) ──sieć, UDP 5005──> PC (receiver/) ──> wirtualny pad DS4 ──> gry
+DualSense ──Bluetooth──> nadajnik (sender/) ──sieć, UDP 5005──> PC (receiver/) ──> wirtualny DualSense / DS4 ──> gry
                                                                        └──> serwer DSU (gyro dla emulatorów)
 ```
 
@@ -24,7 +25,7 @@ DualSense ──Bluetooth──> nadajnik (sender/) ──sieć, UDP 5005──>
 | | PC | Nadajnik |
 |---|---|---|
 | Sprzęt | komputer z Windows 10 / 11 | Raspberry Pi, stary telefon z postmarketOS albo inny komputer z Linuksem i Bluetooth |
-| Oprogramowanie | [Python 3.11+](https://www.python.org/downloads/), [Git for Windows](https://git-scm.com/download/win) | Python 3.11+, `git`, BlueZ, systemd, jądro ze sterownikiem `hid-playstation` |
+| Oprogramowanie | [Python 3.11+](https://www.python.org/downloads/), [Git for Windows](https://git-scm.com/download/win), [.NET 10](https://dotnet.microsoft.com/download/dotnet/10.0) (dla HIDMaestro) | Python 3.11+, `git`, BlueZ, systemd, jądro ze sterownikiem `hid-playstation` |
 | Sieć | ta sama sieć lokalna co nadajnik | najlepiej kabel (Ethernet); Wi-Fi działa, ale daje skoki opóźnienia |
 
 ## Instalacja
@@ -41,7 +42,12 @@ python receiver_controller.py --autostart on
 python receiver_controller.py
 ```
 
-- Instalator `vgamepad` zaproponuje sterownik **ViGEmBus** (wirtualne pady). Zainstaluj go.
+- **Wirtualne pady:** zalecany [HIDMaestro](https://github.com/hifihedgehog/HIDMaestro/releases) (natywny DualSense,
+  rozwijany). Pobierz plik `HIDMaestro-*.zip` i wypakuj folder z `HIDMaestro.Core.dll` (razem z plikami obok) do
+  `receiver\hidmaestro\`. HIDMaestro tworzy pady tylko wtedy, gdy receiver działa **jako administrator**, więc
+  uruchom wiersz poleceń jako administrator (także dla `--autostart on`).
+- Zapas: instalator `vgamepad` zaproponuje sterownik **ViGEmBus** (pad PS4). Zainstaluj go. Bez HIDMaestro albo bez
+  uprawnień administratora receiver użyje ViGEmBus. Wybór: Ustawienia → Pady.
 - Przy pierwszym starcie zapora Windows zapyta o dostęp do sieci. Zezwól w **sieciach prywatnych** (UDP 5005).
 - `--autostart on` uruchamia receiver zaraz po zalogowaniu do Windows (`--autostart off` wyłącza).
 - Receiver działa w zasobniku. Kliknij jego ikonę, żeby otworzyć okno.
@@ -71,7 +77,8 @@ Usunięcie usługi: `sudo ./install-service.sh --remove`.
 2. Na padzie przytrzymaj **Create + PS**, aż lightbar zacznie szybko migać.
 3. Przy padzie na liście kliknij **Sparuj**.
 
-Potem wystarczy włączyć pada przyciskiem PS, a połączy się sam. Pojawi się w oknie i w grach jako pad PS4.
+Potem wystarczy włączyć pada przyciskiem PS, a połączy się sam. Pojawi się w oknie i w grach jako DualSense (HIDMaestro)
+albo pad PS4 (ViGEmBus). Kolejność graczy jest stała: pad 2 nie zostanie graczem 1, nawet gdy włączysz go pierwszy.
 
 ## Pierwsze kroki
 
@@ -89,7 +96,8 @@ Ustawienia i profile zostają, a receiver robi ich kopię (Ustawienia → Kopie)
 ## Problemy
 
 Najczęstsze:
-- **Pad nie pojawia się w grach:** brakuje sterownika ViGEmBus. Zainstaluj go i uruchom receiver ponownie.
+- **Pad nie pojawia się w grach:** Ustawienia → Pady pokazują, czego brakuje (HIDMaestro, uprawnień administratora
+  albo ViGEmBus).
 - **„Nadajnik offline” w oknie:** zły `host` w `sender.toml`, zapora Windows (UDP 5005) albo nadajnik w innej sieci.
 - **Skoki opóźnienia:** nadajnik na Wi-Fi. Podłącz go kablem.
 

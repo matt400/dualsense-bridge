@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QMainWindow, Q
                                QSystemTrayIcon, QTabWidget, QToolButton, QVBoxLayout, QWidget)
 
 import rx_console
+import rx_ds4
 import rx_events as ev
 import rx_feedback as F
 import rx_games
@@ -271,7 +272,8 @@ class PadCard(QFrame):
         pct, flags = S.batt_info[i]
         low = ST.is_low(i, ST.low_pct())
         master = rx_master.is_master(i)
-        key = (alive, want, pct, flags, S.plugged[i], S.mouse_mode[i], S.profile_changes(i), S.active[i],
+        kind = rx_ds4.kinds[i] if i < len(rx_ds4.kinds) else None
+        key = (alive, want, pct, flags, S.plugged[i], kind, S.mouse_mode[i], S.profile_changes(i), S.active[i],
                master, S.pad_id[i], S.sender_info[i], ST.low_pct())
         if key == self._key:
             return low                        # nic się nie zmieniło - nie dotykaj widżetów
@@ -306,8 +308,9 @@ class PadCard(QFrame):
         pm.setDevicePixelRatio(2)
         self.mode_icon.setPixmap(pm)
         self.mode_icon.setToolTip((_("Touchpad jako mysz") if S.mouse_mode[i] else _("Touchpad jako dotyk DS4")) + "\n"
-                                  + _("DS4: {ds4}  ·  touchpad: {tp}").format(
-                                      ds4=_("wł.") if S.plugged[i] else _("wył."), tp=_("mysz") if S.mouse_mode[i] else "DS4"))
+                                  + _("Wirtualny pad: {pad}  ·  touchpad: {tp}").format(
+                                      pad=rx_ds4.LABELS[kind] if S.plugged[i] and kind else _("wył."),
+                                      tp=_("mysz") if S.mouse_mode[i] else _("dotyk w grze")))
         self.profile.setText(_("profil: {name}").format(name=_profile_label(S.active[i])) + (f" ({n})" if n else ""))
         text, level, tip = ST.rumble_status(i)
         problem = alive and level in ("bad", "warn")
@@ -757,6 +760,7 @@ class MainWindow(QMainWindow):
         if self.settings_dlg is None:
             self.settings_dlg = ConsoleSettings(self)
             self.settings_dlg.saved.connect(self.restart)
+            self.settings_dlg.elevate.connect(lambda: self.restart(admin=True))
             self.settings_dlg.applied.connect(self.slow_tick)
         self.settings_dlg.present()
 
@@ -839,11 +843,11 @@ class MainWindow(QMainWindow):
         if r.changed:
             QTimer.singleShot(UPDATE_RESTART_MS, self.restart)
 
-    def restart(self):
+    def restart(self, admin=False):
         """Restart (przycisk, zasobnik, zapisane ustawienia): zwykłe zamknięcie okna, a receiver sam startuje od nowa
-        po zwolnieniu portów i ViGEm."""
-        print("Restart requested from the window")
-        S.restart = True
+        po zwolnieniu portów i wirtualnych padów. admin: nowy proces jako administrator (UAC, HIDMaestro)."""
+        print("Restart requested from the window" + (" (as administrator)" if admin else ""))
+        S.restart = "admin" if admin else True
         self.quit()
 
     def quit(self):

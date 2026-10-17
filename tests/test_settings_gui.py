@@ -65,7 +65,7 @@ ok("aktualizacja: pasek 'Dostępna aktualizacja: N zmian - tytuł' i 'Nadajnik m
 # ---------- zakładki ustawień ----------
 win.open_settings(); pump(100)
 dlg = win.settings_dlg
-assert [dlg.tabs.tabText(i) for i in range(dlg.tabs.count())] == ["Tryb konsoli", "Mysz", "Master", "Lightbar", "Wake-on-LAN", "Okno", "Kopie"]
+assert [dlg.tabs.tabText(i) for i in range(dlg.tabs.count())] == ["Tryb konsoli", "Mysz", "Master", "Lightbar", "Wake-on-LAN", "Pady", "Okno", "Kopie"]
 assert dlg.toggle_button == "r2" and "R2" in dlg.pick_name.text() and not dlg.pick_icon.pixmap().isNull()
 assert dlg.auto_on.isChecked(), "domyślnie: tryb konsoli po połączeniu mastera"
 assert not dlg.tabs.tabIcon(2).isNull(), "zakładki z ikonami"
@@ -97,6 +97,34 @@ saved = json.load(open(C.SETTINGS_PATH))
 assert saved["mouse"]["click_freeze_ms"] == 250 and saved["master"]["only_master"] == [k for k in rx_settings.MASTER_FEATURES if k in m.only_master]
 ok("zapis myszy i mastera: działa od razu, bez restartu, settings.json")
 
+# ---------- Ustawienia -> Pady: backend, ścieżka DLL, stała kolejność; restart jako administrator ----------
+import rx_ds4, rx_hm
+dlg.tabs.setCurrentIndex(5); pump()
+assert dlg.vpad_backend.currentData() == "auto" and dlg.vpad_fixed.isChecked() and dlg.vpad_dll.text() == ""
+assert dlg.vpad_dll.placeholderText().endswith("HIDMaestro.Core.dll")
+real_admin = rx_hm.is_admin
+rx_hm.is_admin = lambda: False
+dlg.vpad_backend.set_data("hidmaestro"); dlg._vpad_state(); pump()
+assert dlg.vpad_admin.isVisible() and "administratora" in dlg.vpad_now.text(), dlg.vpad_now.text()
+dlg.grab().save(os.path.join(os.path.dirname(__file__), "gui_settings_pads.png"))
+dlg.vpad_backend.set_data("vigem"); dlg._vpad_state(); pump()
+assert not dlg.vpad_admin.isVisible(), "ViGEm nie potrzebuje administratora"
+asked = []
+win.restart = lambda admin=False: asked.append(admin)
+dlg.elevate.disconnect(); dlg.elevate.connect(lambda: win.restart(admin=True))
+dlg.vpad_backend.set_data("hidmaestro"); dlg._vpad_state(); dlg.vpad_admin.click(); pump()
+assert asked == [True], asked
+del win.restart
+rx_hm.is_admin = real_admin
+dlg.vpad_fixed.setChecked(False); dlg.vpad_dll.setText("  D:\\HM  ")
+dlg.save_btn.click(); pump()
+v = rx_settings.cur.vpad
+assert (v.backend, v.fixed_slots, v.hm_dll) == ("hidmaestro", False, "D:\\HM"), v
+assert json.load(open(C.SETTINGS_PATH))["vpad"] == {"backend": "hidmaestro", "fixed_slots": False, "hm_dll": "D:\\HM"}
+assert S.restart is False, "pady działają bez restartu"
+rx_settings.apply(rx_settings.defaults())
+ok("Ustawienia -> Pady: backend / DLL / kolejność zapisane od razu, restart jako administrator, gdy go brakuje")
+
 # ---------- ten sam przycisk w dwóch akcjach ----------
 dlg.actions["pause"].set_data("square"); dlg.tabs.setCurrentIndex(0)
 dlg.save_btn.click(); pump()
@@ -124,7 +152,7 @@ dlg.present(); pump()
 scr = [dlg.screen_box.itemData(i) for i in range(dlg.screen_box.count())]
 names = [k for k, _ in rx_qt.screens()]
 assert scr == ["", *names], (scr, names)
-dlg.screen_box.set_data(names[0]); dlg.tabs.setCurrentIndex(5)
+dlg.screen_box.set_data(names[0]); dlg.tabs.setCurrentIndex(6)
 dlg.save_btn.click(); pump()
 assert win.screen_choice() == names[0] and win.settings.value("screen") == names[0], "wybrany ekran zapisany"
 win.move(-5000, -5000); win.place_on_screen()
@@ -255,7 +283,7 @@ import rx_backup, rx_qt_console
 rx_qt_console.RESTORE_RESTART_MS = 50
 with open(C.SETTINGS_PATH, "w") as f: f.write('{"mouse": {"sens": 2.0}}')
 dlg = win.settings_dlg; dlg.hide(); dlg.present(); pump()
-dlg.tabs.setCurrentIndex(6); pump()
+dlg.tabs.setCurrentIndex(7); pump()
 n0 = len(rx_backup.list_backups())
 dlg._backup_now(); pump()
 rows = [dlg.backup_rows.itemAt(k).widget() for k in range(dlg.backup_rows.count())]
