@@ -356,7 +356,7 @@ def handle(t, i, data, arr=0):
                 S.pad_id[i] = pid
                 S.override[i] = None
                 S.reload_profile(i)
-            rx_console.pad_connected(i)   # nowy pad w slocie - jeśli to master, auto-ON trybu konsoli
+            rx_console.pad_connected(i, ident=True)   # nowy pad w slocie - jeśli to master, auto-ON trybu konsoli
             master.mouse_follows_master()  # touchpad jako mysz: pad master (mógł właśnie dojść albo zmienić slot)
             n = S.profile_changes(i)
             print(f"Controller {i}: id {pid}, profile {S.profile_label(S.active[i])}"

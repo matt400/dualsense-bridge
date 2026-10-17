@@ -42,6 +42,9 @@ Testy obejmują:
   pobierany jednym zapytaniem Range na plik (odpowiedź 200 = błąd), start jako administrator bez okna UAC dla drugiej
   kopii i bez pętli przy folderze tylko do odczytu, blokada receivera-administratora widziana z procesu bez uprawnień,
   zadania autostartu z własnymi argumentami (`test_hunt11.py`);
+  bez mastera restart przy wyłączonym trybie konsoli nie włącza go identyfikatorem pada (`test_console.py`), okno
+  wraca na środek po wyjściu z gry, która zmieniła rozdzielczość (`test_settings_gui.py`), polecenia Bluetooth jako
+  ten sam pakiet powtórzony (`test_bt.py`);
 - przycisk → gra, dziennik zdarzeń (też zdarzenia nadajnika end-to-end), lightbar od baterii, ustawienia dla nadajnika
   (`test_extras.py`, `test_extras_gui.py`) oraz Wake-on-LAN po stronie nadajnika - kombinacja, ARP, broadcast, magic
   packet, `wol.json` (`test_wol_tx.py`);

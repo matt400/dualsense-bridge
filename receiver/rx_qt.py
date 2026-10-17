@@ -385,6 +385,7 @@ class MainWindow(QMainWindow):
         self.root.setFocus()
         self._fitting = False                  # place_on_screen zmienia rozmiar - to nie wybór użytkownika
         self._alive = (False,) * C.NUM_PADS    # połączone pady z poprzedniego odświeżenia (okno na wierzch)
+        self._place_pending = False            # ekrany zmieniły się w trakcie gry - okno na środek po wyjściu z niej
         geo = settings.value("geometry")
         if not (geo and self.restoreGeometry(geo)):
             self.resize(DEFAULT_SIZE)
@@ -744,7 +745,10 @@ class MainWindow(QMainWindow):
         self._screen_timer.start()
 
     def _screens_settled(self):
-        if rx_games.in_game():                 # gra zmieniła rozdzielczość - poukładamy po wyjściu z niej
+        # gra zmieniła rozdzielczość - poukładamy po wyjściu z niej (_slow); wcześniej nic tego nie ponawiało i okno
+        # zostawało przesunięte / za duże, gdy gra przywracała rozdzielczość jeszcze na pierwszym planie
+        self._place_pending = rx_games.in_game()
+        if self._place_pending:
             return
         target = self.place_on_screen()
         print(f"Screens changed - window centred on {target.name() or 'screen'} "
@@ -1164,6 +1168,8 @@ class MainWindow(QMainWindow):
 
     def _slow(self):
         now = time.monotonic()
+        if self._place_pending and not rx_games.in_game():
+            self._screens_settled()
         self._pads_connected()
         online = S.sender_online(now)
         build = S.sender_build[:2] if S.sender_build else None

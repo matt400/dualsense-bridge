@@ -382,6 +382,15 @@ os.environ[rx_console.RESTART_ENV] = "0"
 c = new_console(toggle_button="r2"); feed(T_BYE, 1); time.sleep(1.1); feed(T_IDENT, 1, MAC.encode()); time.sleep(0.3)
 check(not c.on and rx_console.RESTART_ENV not in os.environ, "restart z wyłączonym trybem: powrót mastera go nie włącza")
 c.close(restart=True)
+feed(T_BYE, 1); time.sleep(1.1)
+rx_settings.apply(replace(rx_settings.cur, master=replace(rx_settings.cur.master, pad="")))
+os.environ[rx_console.RESTART_ENV] = "0"
+c = new_console(toggle_button="r2")
+state(0); feed(T_IDENT, 0, b"cc:cc:cc:00:00:09"); time.sleep(0.3)   # pierwszy pakiet, zaraz po nim identyfikator
+check(idle(c) and not c.on, "bez mastera: restart z wyłączonym trybem - identyfikator po pierwszym pakiecie go nie włącza")
+c.close(restart=True)
+feed(T_BYE, 0); time.sleep(1.1)
+rx_settings.apply(replace(rx_settings.cur, master=replace(rx_settings.cur.master, pad=MAC)))
 os.environ[rx_console.RESTART_ENV] = "1"
 calls.clear(); c = Console(ConsoleConfig()); c.start()
 check(turned(c) and ("display", "tv") in calls, f"restart z włączonym trybem: od razu ON: {calls}")

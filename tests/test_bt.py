@@ -342,6 +342,7 @@ rx_sent.clear()
 assert RB.pair(PAD)
 pk = [p for t, i, _sq, p in rx_sent]
 assert len(pk) == 3 and all(BODY[T_BTCMD].unpack_from(p, 4) == (BT_PAIR, 0, mac_bytes(PAD)) for p in pk)
+assert len({sq for _t, _i, sq, _p in rx_sent}) == 1, "polecenie Bluetooth: ten sam pakiet (numer) powtórzony, nie 3 osobne"
 assert RB.busy_op(PAD) == BT_PAIR and RB.any_busy() and RB.busy_op(PHONE) is None
 assert RB.busy_op(PAD, time.monotonic() + RB.PENDING_S + 1) is None, "zgubione polecenie nie wisi w nieskończoność"
 rx(T_BTSTATE, BTS_OK, BTF_BUSY, 0, 0, 0, 9, BT_PAIR, BTR_RUNNING, mac_bytes(PAD))

@@ -187,6 +187,17 @@ win._pref = small; win.place_on_screen()
 assert win.size() == small.boundedTo(area.size()) or win.size() == small, (win.size(), small)
 win._pref = area.size() + QSize(400, 400)
 win._screens_settled(); fits()
+# zmiana ekranów w trakcie gry: bez przestawiania okna, ale po wyjściu z gry okno wraca na środek (następne odświeżenie)
+import rx_games, rx_state as _S
+_S.game = "forzahorizon5.exe"; win.move(-5000, -5000)
+win._screens_settled()
+assert win._place_pending and win.frameGeometry().left() == -5000, "w grze okno zostaje (gra zmieniła rozdzielczość)"
+win.slow_tick()
+assert win._place_pending, "gra dalej na pierwszym planie - czeka"
+_S.game = "explorer.exe"; win.slow_tick()
+assert not win._place_pending, "po wyjściu z gry okno ułożone od nowa"
+fits()
+_S.game = None
 win._pref = pref
 ok("ekran okna: lista ekranów, zapis, przeniesienie, brak ekranu, zawsze środek i mieści się")
 
