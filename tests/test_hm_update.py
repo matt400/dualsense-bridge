@@ -151,7 +151,7 @@ try:
     RC.os.name = "nt"
     # zadanie administratora: start bez UAC
     task = []
-    rx_autostart.run_admin_task = lambda: task.append(1) or True
+    rx_autostart.run_admin_task = lambda *a: task.append(1) or True
     rx_winapi.is_admin = lambda: False
     rx_winapi.relaunch_admin = lambda cmd: ran.append(cmd) or True
     sys.argv = ["receiver_controller.py"]
@@ -166,7 +166,7 @@ try:
         pass
     check(task == [1] and len(ran) == 1, "zaraz po próbie przez zadanie: okno UAC zamiast drugiego zadania")
     os.utime(guard, (time.time() - 120, time.time() - 120))
-    rx_autostart.run_admin_task = lambda: task.append(2) and False
+    rx_autostart.run_admin_task = lambda *a: task.append(2) and False
     ran.clear()
     try:
         RC.elevate()
@@ -174,7 +174,7 @@ try:
         pass
     check(task[-1] == 2 and len(ran) == 1, "brak zadania: okno UAC")
     ran.clear(); task.clear()
-    rx_autostart.run_admin_task = lambda: task.append(3) or True
+    rx_autostart.run_admin_task = lambda *a: task.append(3) or True
     rx_winapi.relaunch_admin = lambda cmd: ran.append(cmd) or True
     rx_winapi.is_admin = lambda: False
     sys.argv = ["receiver_controller.py", "--autostart", "on"]

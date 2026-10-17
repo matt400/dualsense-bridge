@@ -10,14 +10,17 @@ przełączał ekranu w tryb konsoli. Zadanie „przy logowaniu” startuje bez t
   migrate()          przy starcie receivera: jest stary wpis Run -> zamiana na zadanie (raz, w tle)
   ensure_admin_task(exe, args)  zadanie DualSenseBridgeAdmin bez wyzwalacza, z najwyższymi uprawnieniami (tworzy je
                      receiver działający jako administrator) - ręczne uruchomienie receivera startuje przez nie
-  run_admin_task()   start receivera jako administrator bez okna UAC (schtasks /run DualSenseBridgeAdmin)
+  run_admin_task(args)  start receivera jako administrator bez okna UAC (schtasks /run DualSenseBridgeAdmin) - tylko,
+                     gdy zadanie ma te same argumenty co ten start
   elevate()          zadanie z najwyższymi uprawnieniami (HIDMaestro tworzy pady tylko jako administrator) - zmienić je
-                     może tylko proces administratora, więc robi to receiver uruchomiony jako administrator
+                     może tylko proces administratora, więc robi to receiver uruchomiony jako administrator; komenda
+                     zadania zostaje jego własna
 """
 import os
+import re
 import subprocess
 import tempfile
-from xml.sax.saxutils import escape
+from xml.sax.saxutils import escape, unescape
 
 NAME = "DualSenseBridge"
 ADMIN_NAME = "DualSenseBridgeAdmin"     # start na żądanie jako administrator (bez UAC) - bez wyzwalacza
@@ -92,6 +95,22 @@ def _set_run(cmd):
             pass
 
 
+_ACTION = re.compile(r"<Command>(.*?)</Command>\s*(?:<Arguments>(.*?)</Arguments>)?", re.S)
+_XML_QUOTES = {"&quot;": '"', "&apos;": "'"}
+
+
+def task_action(xml):
+    """(program, argumenty) z definicji zadania (schtasks /query /xml) albo None. Tylko gdy skrypt z argumentów istnieje:
+    schtasks oddaje XML w stronie kodowej konsoli, więc ścieżka z polskimi znakami może przyjść przekłamana - wtedy
+    None (wołający zostaje przy swojej komendzie)."""
+    m = _ACTION.search(xml or "")
+    if m is None:
+        return None
+    exe, args = unescape(m[1], _XML_QUOTES).strip(), unescape(m[2] or "", _XML_QUOTES).strip()
+    script = split_command(args)[0] if args else exe
+    return (exe, args) if os.path.isfile(script) else None
+
+
 def split_command(cmd):
     """Komenda z wpisu Run -> (program, argumenty): program w cudzysłowie albo do pierwszej spacji."""
     cmd = cmd.strip()
@@ -162,13 +181,16 @@ def migrate():
 
 
 def elevate(exe, args):
-    """Istniejące zadanie autostartu bez podniesionych uprawnień -> to samo zadanie (exe, args jak przy --autostart on)
-    z najwyższymi. -> True, gdy zmieniono. Brak zadania / już podniesione / błąd -> False (receiver działa dalej).
-    Definicja powstaje od nowa - XML z schtasks /query przychodzi w stronie kodowej konsoli (polskie znaki w ścieżce)."""
+    """Istniejące zadanie autostartu bez podniesionych uprawnień -> to samo zadanie z najwyższymi. -> True, gdy zmieniono.
+    Brak zadania / już podniesione / błąd -> False (receiver działa dalej). Definicja powstaje od nowa (XML z schtasks
+    /query przychodzi w stronie kodowej konsoli), ale z komendą zadania (task_action) - exe, args tego procesu tylko,
+    gdy jej nie da się odczytać. Wcześniej zawsze z argumentów bieżącego procesu: ręczny start bez --config (albo
+    z innymi opcjami) podmieniał autostart i przy następnym logowaniu receiver startował z innymi ustawieniami."""
     try:
         r = _schtasks("/query", "/tn", NAME, "/xml")
         if r.returncode != 0 or LEAST not in r.stdout:
             return False
+        exe, args = task_action(r.stdout) or (exe, args)
         ok, err = create_task(exe, args, elevated=True)
         if not ok:
             print(f"Autostart: cannot raise to highest privileges ({err})")
@@ -191,12 +213,18 @@ def ensure_admin_task(exe, args):
         return False
 
 
-def run_admin_task():
+def run_admin_task(args=None):
     """Receiver jako administrator bez UAC: istniejące zadanie ADMIN_NAME z najwyższymi uprawnieniami -> schtasks /run.
-    -> True, gdy wystartowało. Brak zadania / zwykłe uprawnienia w zadaniu -> False (wtedy okno UAC)."""
+    -> True, gdy wystartowało. Brak zadania / zwykłe uprawnienia w zadaniu -> False (wtedy okno UAC). args: argumenty
+    tego startu (rx_config.autostart_command) - zadanie z innymi -> False: zadanie uruchomiłoby receiver ze swoimi,
+    a --config / --pads tego startu przepadłyby po cichu."""
     try:
         r = _schtasks("/query", "/tn", ADMIN_NAME, "/xml")
         if r.returncode != 0 or HIGHEST not in r.stdout:
+            return False
+        own = task_action(r.stdout) if args is not None else None
+        if own is not None and own[1] != args:
+            print("Admin start task has other arguments than this start - asking through UAC instead")
             return False
         return _schtasks("/run", "/tn", ADMIN_NAME).returncode == 0
     except Exception as e:
