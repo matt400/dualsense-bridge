@@ -613,16 +613,23 @@ EN = {
     "Ten sam próg ma ostrzeżenie na karcie pada i powiadomienie z zasobnika. Ładujący się pad nie miga.":
         "The pad card warning and the tray notification use the same threshold. A charging pad doesn't blink.",
     "KOLOR LIGHTBARA": "LIGHTBAR COLOUR",
-    "Ten kolor świeci, dopóki gra albo program na PC (np. Steam) nie ustawi własnego - chyba że wyłączysz „Gra może "
-    "zmienić kolor”. Miganie przy niskiej baterii działa zawsze, a potwierdzenia (np. złoty błysk mastera) są na wierzchu.":
-        "This colour shows until a game or a program on the PC (e.g. Steam) sets its own - unless you turn off \"A game "
-        "can change the colour\". Low battery blinking always works, and confirmations (e.g. the master's gold flash) "
-        "are on top.",
-    "Gra może zmienić kolor (wyłączone = zawsze ten kolor)": "A game can change the colour (off = always this colour)",
-    "{pad}: program na PC (gra, Steam) ustawił kolor lightbara {hex} - ma pierwszeństwo przed kolorem z ustawień "
+    "Poza grą (pulpit, Steam, launchery - lista w Trybie konsoli) zawsze świeci ten kolor. W grze może go zastąpić "
+    "kolor gry, chyba że wyłączysz „Gra może zmienić kolor”. Miganie przy niskiej baterii działa zawsze, a potwierdzenia "
+    "(np. złoty błysk mastera) są na wierzchu.":
+        "Outside a game (desktop, Steam, launchers - the list in Console mode) this colour always shows. In a game the "
+        "game's colour can replace it, unless you turn off \"A game can change the colour\". Low battery blinking always "
+        "works, and confirmations (e.g. the master's gold flash) are on top.",
+    "Aktualizacja nie odpowiada (git) - spróbuj ponownie albo uruchom update.bat":
+        "The update isn't responding (git) - try again or run update.bat",
+    "Gra może zmienić kolor (tylko w trakcie gry; wyłączone = zawsze ten kolor)":
+        "A game can change the colour (only while playing; off = always this colour)",
+    "{pad}: gra ustawiła kolor lightbara {hex} - ma pierwszeństwo przed kolorem z ustawień "
     "(Ustawienia → Lightbar → „Gra może zmienić kolor”)":
-        "{pad}: a program on the PC (game, Steam) set the lightbar colour {hex} - it takes priority over the colour from "
+        "{pad}: the game set the lightbar colour {hex} - it takes priority over the colour from "
         "settings (Settings → Lightbar → \"A game can change the colour\")",
+    "{pad}: program na PC ustawił kolor lightbara {hex} - poza grą świeci kolor z ustawień, w grze ten":
+        "{pad}: a program on the PC set the lightbar colour {hex} - outside a game the colour from settings shows, in a "
+        "game this one",
     "{pad}: program na PC ustawił kolor lightbara {hex} - pominięty (zawsze kolor z ustawień)":
         "{pad}: a program on the PC set the lightbar colour {hex} - ignored (always the colour from settings)",
     "Pad": "Pad",

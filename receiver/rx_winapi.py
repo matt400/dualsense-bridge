@@ -243,6 +243,29 @@ def foreground_exe():
     return foreground_window()[1]
 
 
+def force_foreground(hwnd):
+    """Okno na pierwszy plan z procesu w tle. Windows blokuje SetForegroundWindow programom, które nie mają
+    aktywnego okna (zamiast tego miga przycisk na pasku zadań), więc: najpierw dołączenie do kolejki wejścia wątku
+    aktywnego okna (AttachThreadInput), a gdy to nie wystarczy - stuknięcie Alt (ostatnie wejście z klawiatury
+    "należy" do nas). -> True, gdy okno jest na pierwszym planie."""
+    fg = user32.GetForegroundWindow()
+    if not hwnd or fg == hwnd:
+        return bool(hwnd)
+    me = k32.GetCurrentThreadId()
+    other = user32.GetWindowThreadProcessId(fg, None) if fg else 0
+    attached = bool(other and other != me and user32.AttachThreadInput(other, me, True))
+    try:
+        user32.BringWindowToTop(hwnd)
+        done = bool(user32.SetForegroundWindow(hwnd))
+    finally:
+        if attached:
+            user32.AttachThreadInput(other, me, False)
+    if not done:
+        send_keys(VK_MENU)
+        done = bool(user32.SetForegroundWindow(hwnd))
+    return done
+
+
 def _declare_foreground_api():
     try:
         user32.GetForegroundWindow.restype = wt.HWND
@@ -253,6 +276,13 @@ def _declare_foreground_api():
         k32.CloseHandle.argtypes = [wt.HANDLE]
         user32.PostMessageW.argtypes = [wt.HWND, wt.UINT, wt.WPARAM, wt.LPARAM]
         user32.PostMessageW.restype = wt.BOOL
+        user32.AttachThreadInput.argtypes = [wt.DWORD, wt.DWORD, wt.BOOL]
+        user32.AttachThreadInput.restype = wt.BOOL
+        user32.SetForegroundWindow.argtypes = [wt.HWND]
+        user32.SetForegroundWindow.restype = wt.BOOL
+        user32.BringWindowToTop.argtypes = [wt.HWND]
+        user32.BringWindowToTop.restype = wt.BOOL
+        k32.GetCurrentThreadId.restype = wt.DWORD
     except AttributeError:
         pass
 

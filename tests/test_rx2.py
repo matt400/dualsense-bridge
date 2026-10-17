@@ -148,11 +148,18 @@ assert not fsent, "bez gry i potwierdzeń nic nie wysyłamy"
 F.pulse(0, "mouse"); time.sleep(0.35)
 vals = [v for _, _, v in fsent]
 assert vals[0] == (0, 150, 0, 90, 255) and vals[-1] == (0, 0, *C.IDLE_RGB), vals
-F.fb[0].update(set=True, rgb=True, small=10, large=20, r=1, g=2, b=3); F.fb_event.set(); time.sleep(0.05)
+S.game = "game.exe"                    # kolor z PC obowiązuje tylko w grze
+F.fb[0].update(set=True, rgb=True, small=10, large=20, r=1, g=2, b=3, t=time.monotonic()); F.fb_event.set(); time.sleep(0.05)
 F.pulse(0, "up"); time.sleep(0.2)
 vals = [v for _, _, v in fsent]
 assert (160, 0, 1, 2, 3) in vals and vals[-1] == (10, 20, 1, 2, 3), vals[-3:]
 ok("potwierdzenia: impuls nałożony na kolor gry, powrót do koloru gry / bezczynnego")
+F.fb[0]["t"] = time.monotonic()
+for exe, want in (("steam.exe", C.IDLE_RGB), ("explorer.exe", C.IDLE_RGB), ("game.exe", (1, 2, 3)), (None, C.IDLE_RGB)):
+    S.game = exe; F.fb_event.set(); time.sleep(0.05)
+    assert fsent[-1][2][2:] == tuple(want), (exe, fsent[-1])
+F.fb[0].update(small=0, large=0)
+ok("kolor z PC (Steam) poza grą pominięty - własny kolor; w grze kolor gry; powrót do gry = od razu kolor gry")
 
 # ---------- 9. raport DS4 i DSU nadal działają ----------
 import rx_report, rx_dsu

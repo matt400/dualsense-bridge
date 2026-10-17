@@ -56,6 +56,7 @@ cli.args[2](None, None, 200, 90, LIGHTBAR(255, 10, 0), None)     # wywołanie pr
 f = F.fb[0]
 check((f["large"], f["small"], f["r"], f["g"], f["b"], f["rgb"]) == (200, 90, 255, 10, 0, True),
       f"wibracja i kolor gry dochodzą jako liczby (kolor ze struktury, nie bajt): {f}")
+S.game = "game.exe"                                              # kolor gry obowiązuje tylko w grze
 val, ours, _b = F._target(0, time.monotonic())
 check(val == (90, 200, 255, 10, 0) and ours, f"do nadajnika: wibracja i kolor gry {val}")
 

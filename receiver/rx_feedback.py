@@ -3,9 +3,11 @@ oraz efekty spustów z aktywnego profilu (gra przez DS4 ich nie ustawi - robi to
 wibracja spustu i wibracja z gry na spustach (liczona na nadajniku z tych samych pakietów wibracji). Funkcja mastera
 "triggers" (Ustawienia -> Master) = efekty tylko na padzie mastera, pozostałe pady mają zwykłe spusty.
 
-Lightbar: gdy gra nic nie ustawiła albo pad ma "zawsze mój kolor" (PadLight.game = False) - kolor z ustawień pada
-(stały / wg baterii, rx_lightbar). Kolor z gry / programu na PC (np. Steam) obowiązuje do odłączenia wirtualnego pada,
-więc pierwszy taki kolor trafia do dziennika - inaczej "mój kolor nie działa" bez śladu. Niska bateria miga
+Lightbar: kolor z gry obowiązuje tylko, gdy na pierwszym planie jest gra (rx_games.in_game: nie pulpit, Steam,
+launcher) i pad ma "Gra może zmienić kolor" (PadLight.game). Poza grą i przy wyłączonej opcji - kolor z ustawień pada
+(stały / wg baterii, rx_lightbar). Steam ustawia kolor wirtualnego pada także na pulpicie - wcześniej przykrywał
+własny kolor aż do odłączenia pada. Kolor z PC jest pamiętany, więc po powrocie do gry wraca od razu. Pierwszy taki
+kolor trafia do dziennika - inaczej "mój kolor nie działa" bez śladu. Niska bateria miga
 na czerwono także nad kolorem gry; potwierdzenia (np. złoty błysk mastera) zawsze na wierzchu."""
 import threading
 import time
@@ -18,6 +20,17 @@ from proto import CAP_TRIG_FX, TRIG2_OFF, clamp
 from rx_config import C
 from rx_i18n import _
 from rx_shape import legacy_values, trigger_values
+
+_games = None          # rx_games (importuje ten moduł) - leniwie, przy pierwszym użyciu
+
+
+def in_game():
+    global _games
+    if _games is None:
+        import rx_games
+        _games = rx_games
+    return _games.in_game()
+
 
 FX_SENDER = 8          # od tej wersji nadajnik zna trig2 (z bitem CAP_TRIG_FX w pakiecie version)
 
@@ -144,12 +157,14 @@ def _note_game_color(i):
     f["note"] = False
     rgb = tuple(clamp(f[k], 0, 255) for k in ("r", "g", "b"))
     game = rx_settings.cur.lightbar.get(S.profile_key(i)).game
-    print(f"Controller {i}: lightbar colour {L.rgb_hex(rgb)} set by a program on the PC"
-          + ("" if game else " - ignored (own colour always)"))
-    ev.info((_("{pad}: program na PC (gra, Steam) ustawił kolor lightbara {hex} - ma pierwszeństwo przed kolorem z "
-               "ustawień (Ustawienia → Lightbar → „Gra może zmienić kolor”)") if game else
-             _("{pad}: program na PC ustawił kolor lightbara {hex} - pominięty (zawsze kolor z ustawień)"))
-            .format(pad=ev.pad_name(i), hex=L.rgb_hex(rgb)))
+    playing = in_game()
+    print(f"Controller {i}: lightbar colour {L.rgb_hex(rgb)} set by a program on the PC ({S.game})"
+          + ("" if game and playing else " - ignored (own colour always)" if not game else " - used only in a game"))
+    text = (_("{pad}: gra ustawiła kolor lightbara {hex} - ma pierwszeństwo przed kolorem z ustawień "
+              "(Ustawienia → Lightbar → „Gra może zmienić kolor”)") if game and playing else
+            _("{pad}: program na PC ustawił kolor lightbara {hex} - pominięty (zawsze kolor z ustawień)") if not game else
+            _("{pad}: program na PC ustawił kolor lightbara {hex} - poza grą świeci kolor z ustawień, w grze ten"))
+    ev.info(text.format(pad=ev.pad_name(i), hex=L.rgb_hex(rgb)))
 
 
 def _target(i, now):
@@ -158,8 +173,8 @@ def _target(i, now):
     cfg = rx_settings.cur.lightbar
     light = cfg.get(S.profile_key(i))
     motors = tuple(clamp(f[k], 0, 255) for k in ("small", "large")) if f["set"] else (0, 0)
-    if f["set"] and f["rgb"] and light.game:     # gra ma pierwszeństwo (kolor tylko, gdy go znamy), chyba że
-                                                 # pad ma ustawione "zawsze mój kolor"
+    if f["set"] and f["rgb"] and light.game and in_game():   # gra ma pierwszeństwo (kolor tylko, gdy go znamy), chyba
+                                                             # że pad ma "zawsze mój kolor" albo to nie gra (Steam)
         rgb, ours = tuple(clamp(f[k], 0, 255) for k in ("r", "g", "b")), True
     else:
         rgb, ours = L.own_color(light, S.batt_info[i][0], cfg.low_pct, C.IDLE_RGB)

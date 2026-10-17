@@ -3,7 +3,10 @@
 update() -> Result:
   1. folder repozytorium (nadrzędny dla receiver/) musi być klonem git - pobrany ZIP nie ma historii
   2. git pull --ff-only: tylko "przewinięcie" do wersji z GitHuba; lokalne zmiany w plikach kodu albo własne commity
-     -> komunikat gita, nic nie jest nadpisywane ani scalane
+     -> komunikat gita, nic nie jest nadpisywane ani scalane. Bez okien logowania (QUIET_ENV) i z limitem czasu - pull
+     z procesu w tle potrafił czekać na niewidoczne okno Git Credential Manager, a przycisk wisiał na "Aktualizuję…"
+  2a. kod pobrany wcześniej, ale nieuruchomiony (nieudany restart, git pull z konsoli): pull nie ma nic nowego, ale
+     działający receiver jest starszy niż HEAD -> też restart (wcześniej: "Masz najnowszą wersję" i stary kod dalej)
   3. zmienił się receiver/requirements.txt -> pip install -r (nowe biblioteki)
 Ustawienia użytkownika (console.json, settings.json, remap.json, receiver_ui.ini) są w .gitignore - pull ich nie rusza.
 Po pobraniu nowego kodu (przed restartem) powstaje kopia settings.json / console.json / remap.json w receiver/backups/
@@ -28,6 +31,7 @@ from rx_i18n import _
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REQUIREMENTS = "receiver/requirements.txt"
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+PULL_TIMEOUT_S = 90            # git pull (sieć); dłużej = błąd zamiast wiszącego przycisku
 
 
 @dataclass(frozen=True)
@@ -62,6 +66,11 @@ def version():
     if _version is None:
         _version = proto.git_version(ROOT)
     return _version
+
+
+def running(root=ROOT):
+    """Commit działającego kodu (z version(), liczony przy starcie) - tylko dla repozytorium receivera."""
+    return version()[0] if root == ROOT else ""
 
 
 def describe(commit, ts):
@@ -135,7 +144,8 @@ def _check(root, git):
     try:
         if proto.git(root, "fetch", "--quiet", git_exe=git, timeout=60, env=QUIET_ENV).returncode:
             return None
-        p = proto.git(root, "rev-list", "--count", "HEAD..@{u}", git_exe=git)
+        # od DZIAŁAJĄCEJ wersji, nie od HEAD: kod pobrany, ale nieuruchomiony to dalej aktualizacja do zrobienia
+        p = proto.git(root, "rev-list", "--count", f"{running(root) or 'HEAD'}..@{{u}}", git_exe=git)
         if p.returncode:
             return None
         behind = int(p.stdout.strip() or 0)
@@ -177,11 +187,17 @@ def update(root=ROOT, git=None, pip=True):
     if git is None:
         return Result(False, False, _("Nie znaleziono git - zainstaluj Git for Windows (git-scm.com)"))
     with _git_lock:                            # nie w trakcie sprawdzania GitHuba w tle
-        state, msg, old, new, files = proto.git_pull(root, git)
+        state, msg, old, new, files = proto.git_pull(root, git, env=QUIET_ENV, timeout=PULL_TIMEOUT_S)
     if state == UPD_FAILED:
         return Result(False, False, _("git pull nie powiódł się: {msg}").format(msg=msg), old, old)
+    cur = running(root)
     if state != UPD_DONE:
-        return Result(True, False, _("Masz najnowszą wersję"), old, new)
+        if not (cur and new and not new.startswith(cur)):
+            return Result(True, False, _("Masz najnowszą wersję"), old, new)
+        # nowy kod już na dysku, ale działa stary (np. poprzedni restart się nie udał) - uruchom nowy
+        old = proto.git(root, "rev-parse", cur, git_exe=git).stdout.strip() or cur
+        files = proto.git(root, "diff", "--name-only", old, new, git_exe=git).stdout.splitlines()
+        print(f"Update: code {new[:7]} already downloaded, running {cur} - restart needed")
     count = proto.git(root, "rev-list", "--count", f"{old}..{new}", git_exe=git).stdout.strip() or "?"
     text = _("Zaktualizowano ({n} zmian): {old} → {new}").format(n=count, old=old[:7], new=new[:7])
     text += " · " + _backup(old, new)

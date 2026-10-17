@@ -135,14 +135,18 @@
     (`settings.json`);
   - **Lightbar:** kolor per pad / domyślny, tryb, miganie, próg niskiej baterii (od razu);
   - **Wake-on-LAN:** włączenie, przycisk do pary z PS, czas przytrzymania, MAC i broadcast (puste = automatycznie);
-  - **Okno:** ekran, na którym pojawia się okno (na środku; gdy ekranu nie ma, okno zostaje na dostępnym), okno albo
-    pełny ekran (też F11 i przycisk w nagłówku), język: polski / English (zmiana po restarcie);
+  - **Okno:** ekran, na którym pojawia się okno (zawsze na środku; gdy ekranu nie ma - na dostępnym), okno albo
+    pełny ekran (też F11 i przycisk w nagłówku), język: polski / English (zmiana po restarcie). Po przełączeniu ekranów
+    (tryb konsoli, rozdzielczość / skalowanie TV) okno wraca na środek i mieści się na ekranie (zmniejszone na TV,
+    na monitorze wraca do swojego rozmiaru). Połączenie pada wyciąga okno na wierzch - ale nie w trakcie gry (ta sama
+    lista programów co w Trybie konsoli);
   - **Kopie:** kopie `settings.json`, `console.json` i `remap.json` zrobione przy aktualizacji (5 ostatnich, w
     `receiver/backups/`) albo ręcznie. „Przywróć” (dwa kliknięcia) najpierw zapisuje kopię bieżących plików - więc
     też da się to cofnąć - a potem uruchamia receiver od nowa.
 - **Lightbar** (Ustawienia → Lightbar), osobno dla każdego pada (MAC) albo domyślnie dla wszystkich:
-  - **gra ma pierwszeństwo** - własny kolor świeci, dopóki gra albo program na PC (np. Steam) nie ustawi lightbara;
-    opcja **„Gra może zmienić kolor”** wyłączona = zawsze kolor z ustawień. Pierwszy kolor z PC trafia do dziennika;
+  - **gra ma pierwszeństwo tylko w grze** - poza grą (pulpit, Steam / Big Picture, launchery - ta sama lista programów
+    co w Trybie konsoli) zawsze świeci własny kolor, nawet gdy Steam ustawi swój; w grze kolor gry zastępuje własny.
+    Opcja **„Gra może zmienić kolor”** wyłączona = zawsze kolor z ustawień. Pierwszy kolor z PC trafia do dziennika;
   - tryb **stały kolor** (wybór koloru; pusty = `idle_lightbar`) albo **kolor wg baterii** (czerwony przy progu → żółty →
     zielony od 80 %);
   - **miganie na czerwono przy niskiej baterii** - także w grze (nad kolorem gry), nie przy ładowaniu; przy czerwonym

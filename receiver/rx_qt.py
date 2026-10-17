@@ -52,9 +52,13 @@ from rx_qt_widgets import BatteryBar, ConfirmButton, Segmented, SegmentBar, butt
 LIVE_MS, SLOW_MS, APPLY_MS = 33, 400, 150
 UPDATE_WAIT_S = 60.0       # tyle najwyżej czekamy na wynik aktualizacji nadajnika (git pull na telefonie)
 UPDATE_RESTART_MS = 2500   # po udanej aktualizacji: tyle widać komunikat, potem restart receivera
+UPDATE_STUCK_S = 150.0     # git dłużej niż tyle (zawieszony mimo limitów) -> przycisk wraca, wynik i tak zadziała
 NOTE_S = 6.0           # tyle sekund komunikat (np. "Saved") zasłania status profilu
 VIEWS = (("out", "Wynik"), ("in", "Fizycznie"), ("test", "Test"))
 EXIT_HOLD_S = 1.0      # widok Test w trybie TV: tyle trzeba trzymać ○ testowanego pada, żeby wyjść z testu
+DEFAULT_SIZE = QSize(1160, 720)
+FIT_MARGIN = 24        # okno dopasowane do ekranu: tyle px luzu od krawędzi obszaru roboczego
+SCREEN_SETTLE_MS = 800 # zmiana ekranów (tryb konsoli, rozdzielczość TV) przychodzi seriami - układamy okno po ciszy
 
 
 @cache
@@ -379,12 +383,15 @@ class MainWindow(QMainWindow):
         self.select_pad(self.ed.slot)
         self.pad.set_selected(None)
         self.root.setFocus()
+        self._fitting = False                  # place_on_screen zmienia rozmiar - to nie wybór użytkownika
+        self._alive = (False,) * C.NUM_PADS    # połączone pady z poprzedniego odświeżenia (okno na wierzch)
         geo = settings.value("geometry")
         if not (geo and self.restoreGeometry(geo)):
-            self.resize(1160, 720)
-            screen = QApplication.primaryScreen().availableGeometry()
-            self.move(screen.center() - self.rect().center())
+            self.resize(DEFAULT_SIZE)
+        normal = self.normalGeometry().size()
+        self._pref = normal if normal.isValid() and not normal.isEmpty() else DEFAULT_SIZE   # rozmiar wybrany przez użytkownika
         self.place_on_screen()
+        self._watch_screens()
         split = settings.value("split")
         if split:
             self.split.restoreState(split)
@@ -671,19 +678,82 @@ class MainWindow(QMainWindow):
     def toggle_fullscreen(self):
         self.set_fullscreen(not self.fullscreen())
 
-    def place_on_screen(self):
-        """Przenosi okno na wybrany ekran (na środek, zmniejszone, jeśli się nie mieści). Wybranego ekranu nie ma
-        (np. monitor wyłączony w trybie konsoli) -> okno zostaje tam, gdzie jest; Qt pilnuje, żeby było widoczne."""
+    def target_screen(self):
+        """Ekran wybrany w Ustawieniach -> Okno; gdy go nie ma (monitor wyłączony w trybie konsoli) albo nic nie
+        wybrano - ten, na którym okno jest teraz (Windows przenosi okna z odłączonego ekranu na pozostały)."""
         name = self.screen_choice()
-        target = dict(screens()).get(name) if name else None
-        if target is None or (self.screen() is target and target.availableGeometry().contains(self.frameGeometry())):
-            return False
+        return (dict(screens()).get(name) if name else None) or self.screen() or QApplication.primaryScreen()
+
+    def place_on_screen(self):
+        """Okno zawsze na środku ekranu (target_screen) i w całości na nim: większe niż obszar roboczy (TV
+        1280x720 przy skalowaniu 200 %) jest zmniejszane, a na większym ekranie wraca do rozmiaru wybranego przez
+        użytkownika. Nie pokazuje okna (schowane w zasobniku zostaje schowane). -> ekran."""
+        target = self.target_screen()
         area = target.availableGeometry()
-        if self.isMaximized() or self.isFullScreen():
-            self.showNormal()
-        self.resize(min(self.width(), area.width() - 40), min(self.height(), area.height() - 60))
-        self.move(area.center() - self.rect().center())
-        return True
+        self._fitting = True
+        try:
+            state = self.windowState()
+            if state & (Qt.WindowState.WindowMaximized | Qt.WindowState.WindowFullScreen):
+                self.setWindowState(state & ~(Qt.WindowState.WindowMaximized | Qt.WindowState.WindowFullScreen))
+            frame = self.frameGeometry().size() - self.geometry().size()      # ramka i pasek tytułu (0 przed pokazaniem)
+            room = area.size() - frame - QSize(FIT_MARGIN, FIT_MARGIN)
+            size = self._pref.boundedTo(room).expandedTo(self.minimumSize())
+            if size != self.size():
+                self.resize(size)
+            g = self.frameGeometry()
+            g.moveCenter(area.center())
+            # większe niż ekran mimo zmniejszenia (minimalny rozmiar układu) - widoczny lewy górny róg z przyciskami
+            self.move(max(g.left(), area.left()), max(g.top(), area.top()))
+        finally:
+            self._fitting = False
+        return target
+
+    def resizeEvent(self, e):
+        """Rozmiar zmieniony przez użytkownika (nie dopasowanie do ekranu) = nowy rozmiar okna na duże ekrany."""
+        super().resizeEvent(e)
+        if self._fitting or not self.isVisible() or self.windowState() != Qt.WindowState.WindowNoState:
+            return
+        if getattr(self, "_screen_timer", None) is not None and self._screen_timer.isActive():
+            return                             # Windows zmniejsza okno przy zmianie ekranów - to nie wybór użytkownika
+        room = self.target_screen().availableGeometry().size() - QSize(FIT_MARGIN, FIT_MARGIN)
+        if e.size().width() < room.width() and e.size().height() < room.height():
+            self._pref = e.size()
+
+    def _watch_screens(self):
+        """Tryb konsoli przełącza obraz monitor <-> TV, zmienia rozdzielczość i skalowanie TV - po każdej takiej
+        zmianie okno wraca na środek i mieści się na ekranie (bez wyciągania na wierzch)."""
+        self._screen_timer = QTimer(self)
+        self._screen_timer.setSingleShot(True)
+        self._screen_timer.setInterval(SCREEN_SETTLE_MS)
+        self._screen_timer.timeout.connect(self._screens_settled)
+        app = QApplication.instance()
+        app.screenAdded.connect(self._screen_added)
+        app.screenRemoved.connect(self._screens_changed)
+        app.primaryScreenChanged.connect(self._screens_changed)
+        for sc in app.screens():
+            self._screen_added(sc, settle=False)
+
+    def _screen_added(self, sc, settle=True):
+        sc.geometryChanged.connect(self._screens_changed)
+        sc.availableGeometryChanged.connect(self._screens_changed)
+        sc.logicalDotsPerInchChanged.connect(self._screens_changed)
+        if settle:
+            self._screens_changed()
+
+    def _screens_changed(self, *_args):
+        self._screen_timer.start()
+
+    def _screens_settled(self):
+        if rx_games.in_game():                 # gra zmieniła rozdzielczość - poukładamy po wyjściu z niej
+            return
+        target = self.place_on_screen()
+        print(f"Screens changed - window centred on {target.name() or 'screen'} "
+              f"({target.availableGeometry().width()}x{target.availableGeometry().height()})")
+        if self.isVisible():
+            if self.fullscreen():
+                self.showFullScreen()
+            else:
+                self.showNormal()
 
     def bring_to_front(self):
         if self.isFullScreen() and not self.fullscreen():
@@ -695,6 +765,22 @@ class MainWindow(QMainWindow):
             self.showNormal()
         self.raise_()
         self.activateWindow()
+        if os.name == "nt":
+            W.force_foreground(int(self.winId()))   # proces w tle: samo activateWindow tylko miga na pasku zadań
+
+    def _pads_connected(self):
+        """Nowo połączony pad -> okno na wierzch, ale nie w trakcie gry (ta sama lista programów co tryb konsoli)."""
+        alive = tuple(bool(a) for a in S.alive)
+        new = [i for i, (now, before) in enumerate(zip(alive, self._alive, strict=False)) if now and not before]
+        self._alive = alive
+        if not new:
+            return
+        hwnd, exe = W.foreground_window()
+        if (hwnd and exe is None) or rx_games.in_game(exe or ""):  # brak dostępu do programu = może gra - nie ruszaj
+            print(f"Pad {new[0] + 1} connected - window stays in the background ({exe or 'unknown program'} in front)")
+            return
+        print(f"Pad {new[0] + 1} connected - window to the front")
+        self.bring_to_front()
 
     def _tray_clicked(self, reason):
         if reason in (QSystemTrayIcon.ActivationReason.Trigger, QSystemTrayIcon.ActivationReason.DoubleClick):
@@ -802,6 +888,9 @@ class MainWindow(QMainWindow):
         self.note(_("Pobieranie aktualizacji…"), "")
         self._upd_sender = S.sender_online() and S.sender_build is not None   # nowy nadajnik odpowie wynikiem
         self._upd_t0 = time.monotonic()
+        self._upd_result = None
+        self._upd_run = run = getattr(self, "_upd_run", 0) + 1
+        QTimer.singleShot(int(UPDATE_STUCK_S * 1000), lambda: self._update_stuck(run))
         self._upd_commit = S.sender_build[0] if S.sender_build else ""   # nowy commit po restarcie = zaktualizowany
         S.sender_update_msg = ""                 # powód z poprzedniej próby nie może opisać tej
         if S.sender_build is not None:
@@ -818,6 +907,18 @@ class MainWindow(QMainWindow):
             r = rx_update.Result(False, False, _("Aktualizacja nie powiodła się: {err}").format(err=repr(e)))
         self.update_done.emit(r)
 
+    def _update_stuck(self, run):
+        """Wątek aktualizacji nie skończył (git zawieszony) - przycisk nie może wisieć na "Aktualizuję…" do restartu
+        receivera. Spóźniony wynik nadal zadziała (restart po pobraniu kodu)."""
+        if run != self._upd_run or self._upd_result is not None:
+            return
+        print(f"Update: no result from git after {UPDATE_STUCK_S:g}s")
+        text = _("Aktualizacja nie odpowiada (git) - spróbuj ponownie albo uruchom update.bat")
+        ev.error(text)
+        self.update_btn.disarm()
+        self.update_btn.setEnabled(True)
+        self.note(text, "bad")
+
     def _update_finished(self, r):
         """Receiver gotowy - czekamy (najwyżej UPDATE_WAIT_S) na wynik nadajnika, potem komunikat i restart."""
         print(f"Update: {r.text}")
@@ -826,6 +927,8 @@ class MainWindow(QMainWindow):
 
     def _update_poll(self):
         r = self._upd_result
+        if r is None:
+            return
         waiting = (self._upd_sender and rx_update.sender_state(S.sender_build, self._upd_commit) == UPD_RUNNING
                    and time.monotonic() - self._upd_t0 < UPDATE_WAIT_S)
         if waiting:
@@ -1061,6 +1164,7 @@ class MainWindow(QMainWindow):
 
     def _slow(self):
         now = time.monotonic()
+        self._pads_connected()
         online = S.sender_online(now)
         build = S.sender_build[:2] if S.sender_build else None
         if (online, build) != self.online:

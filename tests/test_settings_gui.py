@@ -160,9 +160,30 @@ win.move(-5000, -5000); win.place_on_screen()
 assert QApplication.screens()[0].availableGeometry().contains(win.frameGeometry().center()), "okno przeniesione na wybrany ekran"
 win.set_screen_choice("NIE-MA-TAKIEGO"); dlg.hide(); dlg.present(); pump()
 assert dlg.screen_box.currentData() == "NIE-MA-TAKIEGO" and "niepodłączony" in dlg.screen_box.currentText()
-assert win.place_on_screen() is False, "brak wybranego ekranu -> okno zostaje"
+win.move(-5000, -5000)
+assert win.place_on_screen() is win.screen(), "brak wybranego ekranu -> ekran, na którym okno jest teraz"
+area = win.screen().availableGeometry()
+g = win.frameGeometry()
+assert (abs(g.center().x() - area.center().x()) <= 1 if g.width() <= area.width() else g.left() == area.left()), \
+    ("okno na środku ekranu (większe niż ekran: od lewej krawędzi)", g, area)
 win.set_screen_choice("")
-ok("ekran okna: lista ekranów, zapis, przeniesienie, brak ekranu")
+# ekran mniejszy niż okno (TV 1280x720 przy 200 %): okno zmniejszone i na środku, potem wraca do swojego rozmiaru
+from PySide6.QtCore import QSize
+pref = win._pref
+def fits():
+    g, m = win.frameGeometry(), win.minimumSizeHint().expandedTo(win.minimumSize())
+    lim = area.size() - QSize(rx_qt.FIT_MARGIN, rx_qt.FIT_MARGIN)
+    assert g.left() >= area.left() and g.top() >= area.top(), (area, g)          # przyciski zawsze widoczne
+    assert win.width() <= max(lim.width(), m.width()) and win.height() <= max(lim.height(), m.height()), (area, g, m)
+win._pref = area.size() + QSize(400, 400)
+win.place_on_screen(); fits()
+small = win.minimumSizeHint().expandedTo(QSize(300, 300))
+win._pref = small; win.place_on_screen()
+assert win.size() == small.boundedTo(area.size()) or win.size() == small, (win.size(), small)
+win._pref = area.size() + QSize(400, 400)
+win._screens_settled(); fits()
+win._pref = pref
+ok("ekran okna: lista ekranów, zapis, przeniesienie, brak ekranu, zawsze środek i mieści się")
 
 # ---------- pełny ekran, język, dozwolone programy, test wibracji ----------
 import os
@@ -298,4 +319,18 @@ assert json.load(open(C.SETTINGS_PATH))["mouse"]["sens"] == 2.0 and S.restart is
 assert rx_backup.list_backups()[0].reason == "restore" and not dlg.save_btn.isEnabled(), "Zapisz zablokowany do restartu"
 S.restart = False
 ok("Ustawienia -> Kopie: kopia teraz, przywrócenie po drugim kliknięciu, kopia bieżących, restart")
+# ---------- połączenie pada -> okno na wierzch, ale nie w grze ----------
+import rx_winapi
+fronts, real_front, real_fg = [], win.bring_to_front, rx_winapi.foreground_window
+win.bring_to_front = lambda: fronts.append(1)
+for fg, alive, want in (((1, "eldenring.exe"), [False, False], 0), ((1, "eldenring.exe"), [True, False], 0),
+                        ((1, "explorer.exe"), [True, False], 0), ((1, "steam.exe"), [True, True], 1),
+                        ((1, None), [False, False], 1), ((1, None), [True, False], 1),
+                        ((0, None), [False, False], 1), ((0, None), [True, False], 2)):
+    rx_winapi.foreground_window = lambda fg=fg: fg
+    S.alive[:] = alive; win._pads_connected()
+    assert len(fronts) == want, (fg, alive, fronts)
+win.bring_to_front, rx_winapi.foreground_window = real_front, real_fg
+S.alive[:] = [False] * len(S.alive); win._pads_connected()
+ok("połączenie pada: okno na wierzch na pulpicie / w Steam, w grze i przy nieznanym programie - nie")
 print("GUI USTAWIEŃ (MYSZ / MASTER) OK")
