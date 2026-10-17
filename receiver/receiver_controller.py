@@ -63,8 +63,12 @@ def _startup_events(rx_winapi):
             ev.info(_("Autostart przeniesiony do Harmonogramu zadań - receiver startuje zaraz po zalogowaniu"))
         # receiver działa jako administrator (HIDMaestro): zadanie autostartu dostaje najwyższe uprawnienia - od
         # następnego logowania startuje tak sam, bez okna UAC
-        if rx_winapi.is_admin() and rx_autostart.elevate(*rx_config.autostart_command()):
+        if not rx_winapi.is_admin():
+            return
+        cmd = rx_config.autostart_command()
+        if rx_autostart.elevate(*cmd):
             ev.info(_("Autostart ustawiony na uprawnienia administratora (HIDMaestro)"))
+        rx_autostart.ensure_admin_task(*cmd)       # następne ręczne uruchomienie jako administrator bez okna UAC
     threading.Thread(target=migrate, name="autostart", daemon=True).start()
 
 
@@ -81,15 +85,41 @@ def _gamebar():
 NO_ELEVATE = "--no-elevate"
 
 
+ELEVATE_GUARD_S = 60       # zadanie administratora uruchomione przed chwilą, a proces znów bez uprawnień -> UAC (bez pętli)
+
+
+def _guard_path():
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), ".elevate_try")
+
+
+def _recent_try():
+    """Ten start to skutek naszego schtasks /run sprzed chwili (zadanie nie dało uprawnień, np. konto bez admina)."""
+    try:
+        return time.time() - os.path.getmtime(_guard_path()) < ELEVATE_GUARD_S
+    except OSError:
+        return False
+
+
 def elevate():
-    """Windows bez uprawnień administratora: ten sam receiver od nowa przez UAC i wyjście. Odmowa w UAC / --no-elevate
-    -> dalej bez nich (wirtualne pady przez ViGEmBus). Przed rx_config.init: --autostart on też tworzy zadanie jako
-    administrator (z najwyższymi uprawnieniami)."""
+    """Windows bez uprawnień administratora: receiver od nowa jako administrator i wyjście. Najpierw przez zadanie
+    DualSenseBridgeAdmin (bez okna UAC; tworzy je receiver działający jako administrator), bez niego - okno UAC.
+    Odmowa w UAC / --no-elevate -> dalej bez uprawnień (wirtualne pady przez ViGEmBus). Przed rx_config.init:
+    --autostart on idzie zawsze przez UAC (zadanie uruchomiłoby receiver bez tej flagi)."""
     if os.name != "nt" or NO_ELEVATE in sys.argv[1:]:
         return
     import rx_winapi
     if rx_winapi.is_admin():
         return
+    if not any(a.startswith("--autostart") for a in sys.argv[1:]) and not _recent_try():
+        import rx_autostart
+        try:
+            with open(_guard_path(), "w") as f:
+                f.write(str(os.getpid()))
+        except OSError:
+            pass
+        if rx_autostart.run_admin_task():
+            print("Started as administrator through the DualSenseBridgeAdmin task (no UAC)")
+            sys.exit(0)
     cmd = [sys.executable, os.path.abspath(sys.argv[0]), *sys.argv[1:]]
     if rx_winapi.relaunch_admin(cmd):
         sys.exit(0)

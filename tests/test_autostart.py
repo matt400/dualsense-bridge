@@ -77,4 +77,16 @@ assert not A.elevate("a.exe", "") and len(written) == n, "już podniesione: bez 
 qrc[0] = 1
 assert not A.elevate("a.exe", "") and len(written) == n, "brak zadania (autostart wyłączony): nic nie tworzy"
 ok("HIDMaestro: zadanie autostartu z najwyższymi uprawnieniami tylko, gdy autostart jest włączony")
+
+# ---------- zadanie startu jako administrator (bez UAC) ----------
+written.clear(); runs.clear()
+assert A.ensure_admin_task(r"C:\Py\pythonw.exe", r'"C:\r\receiver_controller.py"')
+assert runs[-1][2] == A.ADMIN_NAME and A.HIGHEST in written[-1] and "<Triggers></Triggers>" in written[-1], "bez wyzwalacza"
+qrc[0], qout[0] = 0, "<Task>" + A.HIGHEST + "</Task>"
+assert A.run_admin_task() and runs[-1] == ("/run", "/tn", A.ADMIN_NAME)
+qout[0] = "<Task>" + A.LEAST + "</Task>"
+assert not A.run_admin_task() and runs[-1][0] == "/query", "zadanie bez najwyższych uprawnień: nie startuje (byłaby pętla)"
+qrc[0] = 1
+assert not A.run_admin_task(), "brak zadania"
+ok("zadanie DualSenseBridgeAdmin: tworzone bez wyzwalacza, uruchamiane tylko z najwyższymi uprawnieniami")
 print("AUTOSTART OK")

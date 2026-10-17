@@ -142,11 +142,39 @@ check(rx_hm.get("") is rx_hm._loaded, "jedna wersja HIDMaestro na proces")
 rx_hm._loaded = None
 
 # ---------- samouruchamianie jako administrator ----------
-import receiver_controller as RC, rx_winapi
-real = (RC.os.name, rx_winapi.is_admin, rx_winapi.relaunch_admin, sys.argv)
+import receiver_controller as RC, rx_winapi, rx_autostart
+real = (RC.os.name, rx_winapi.is_admin, rx_winapi.relaunch_admin, sys.argv, rx_autostart.run_admin_task, RC._guard_path)
 ran = []
+guard = os.path.join(ROOT, ".elevate_try")
+RC._guard_path = lambda: guard
 try:
     RC.os.name = "nt"
+    # zadanie administratora: start bez UAC
+    task = []
+    rx_autostart.run_admin_task = lambda: task.append(1) or True
+    rx_winapi.is_admin = lambda: False
+    rx_winapi.relaunch_admin = lambda cmd: ran.append(cmd) or True
+    sys.argv = ["receiver_controller.py"]
+    try:
+        RC.elevate()
+        check(False, "zadanie administratora: wyjście")
+    except SystemExit as e:
+        check(e.code == 0 and task == [1] and not ran and os.path.exists(guard), "start przez zadanie, bez okna UAC")
+    try:
+        RC.elevate()                               # zadanie dało proces bez uprawnień (konto bez admina): bez pętli
+    except SystemExit:
+        pass
+    check(task == [1] and len(ran) == 1, "zaraz po próbie przez zadanie: okno UAC zamiast drugiego zadania")
+    os.utime(guard, (time.time() - 120, time.time() - 120))
+    rx_autostart.run_admin_task = lambda: task.append(2) and False
+    ran.clear()
+    try:
+        RC.elevate()
+    except SystemExit:
+        pass
+    check(task[-1] == 2 and len(ran) == 1, "brak zadania: okno UAC")
+    ran.clear(); task.clear()
+    rx_autostart.run_admin_task = lambda: task.append(3) or True
     rx_winapi.relaunch_admin = lambda cmd: ran.append(cmd) or True
     rx_winapi.is_admin = lambda: False
     sys.argv = ["receiver_controller.py", "--autostart", "on"]
@@ -166,8 +194,9 @@ try:
     sys.argv = ["receiver_controller.py"]
     RC.elevate()
     check(not ran, "już administrator: bez UAC")
+    check(not task, "--autostart i wcześniejsze przypadki: zadanie nie jest używane")
 finally:
-    RC.os.name, rx_winapi.is_admin, rx_winapi.relaunch_admin, sys.argv = real
+    RC.os.name, rx_winapi.is_admin, rx_winapi.relaunch_admin, sys.argv, rx_autostart.run_admin_task, RC._guard_path = real
 
 print("HM UPDATE", "OK" if not fails else f"BŁĘDY: {len(fails)}")
 if fails:
