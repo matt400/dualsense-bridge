@@ -224,7 +224,11 @@ S.alive[0] = True; S.pad_id[0] = "aa:bb:cc:dd:ee:ff"
 F.reset(0); F.pulses[0] = None; F.fb_sent[0] = None
 S.batt_info[0] = (50, 0)
 R.apply(R.defaults(0.5, 15))
-assert F._target(0, 10.1) == ((0, 0, *idle), False, False), "domyślnie bez gry nic nie wysyłamy (jak dotąd)"
+assert F._target(0, 10.1) == ((0, 0, *idle), True, False), "kolor domyślny też wysyłany (pad nie zostaje ze starym kolorem)"
+R.apply(R.Settings(lightbar=R.LightbarConfig(15, {"aa:bb:cc:dd:ee:ff": R.PadLight("battery", "", True)})))
+assert F._target(0, 10.1)[0][2:] == LB.battery_rgb(50, 15)
+R.apply(R.defaults(0.5, 15))
+assert F._target(0, 10.1) == ((0, 0, *idle), True, False), "wg baterii -> domyślny: wraca kolor domyślny"
 R.apply(R.Settings(lightbar=R.LightbarConfig(15, {"aa:bb:cc:dd:ee:ff": R.PadLight("battery", "", True)})))
 val, ours, blink = F._target(0, 10.1)
 assert ours and not blink and val[2:] == LB.battery_rgb(50, 15), val

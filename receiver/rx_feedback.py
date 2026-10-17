@@ -175,10 +175,9 @@ def _target(i, now):
     motors = tuple(clamp(f[k], 0, 255) for k in ("small", "large")) if f["set"] else (0, 0)
     if f["set"] and f["rgb"] and light.game and in_game():   # gra ma pierwszeństwo (kolor tylko, gdy go znamy), chyba
                                                              # że pad ma "zawsze mój kolor" albo to nie gra (Steam)
-        rgb, ours = tuple(clamp(f[k], 0, 255) for k in ("r", "g", "b")), True
+        rgb = tuple(clamp(f[k], 0, 255) for k in ("r", "g", "b"))
     else:
-        rgb, ours = L.own_color(light, S.batt_info[i][0], cfg.low_pct, C.IDLE_RGB)
-        ours = ours or f["set"]
+        rgb, _custom = L.own_color(light, S.batt_info[i][0], cfg.low_pct, C.IDLE_RGB)
     base = (*motors, *rgb)
     blink = L.blinking(light, is_low(i, cfg.low_pct))
     if blink:
@@ -187,9 +186,10 @@ def _target(i, now):
     if p is not None and now >= p[0]:
         pulses[i] = p = None
     if p is None:
-        # bez gry, bez własnego koloru i bez potwierdzeń nie wysyłamy nic (pad zostaje z kolorem nadanym przez
-        # sterownik), ale po potwierdzeniu trzeba przywrócić kolor - stąd "fb_sent is not None"
-        return base, ours or blink or fb_sent[i] is not None, blink
+        # kolor domyślny (idle_lightbar) też jest wysyłany: nadajnik i pad trzymają ostatni kolor, więc po zmianie
+        # "wg baterii" -> "domyślny", po restarcie receivera albo ponownym połączeniu pad świecił dalej starym kolorem
+        # (np. wg baterii), bo "domyślny" znaczył "nic nie wysyłaj"
+        return base, True, blink
     return (p[1], p[2], *(p[3] or base[2:])), True, blink
 
 

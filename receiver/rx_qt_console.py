@@ -20,9 +20,9 @@ konsoli zapisuje console.json i prosi właściciela okna o restart receivera (sy
 startup_mode jak przy autostarcie.
 """
 from rx_i18n import _
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import (QCheckBox, QColorDialog, QDialog, QGridLayout, QHBoxLayout, QLineEdit, QPlainTextEdit,
+from PySide6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QDialog, QGridLayout, QHBoxLayout, QLineEdit, QPlainTextEdit,
                                QTabWidget, QVBoxLayout, QWidget)
 
 import rx_audio
@@ -52,6 +52,9 @@ CAPTURE_TIMEOUT_MS = 15000
 NO_AUDIO = "— nie zmieniaj dźwięku —"
 TV_RESOLUTIONS = ((0, 0), (1920, 1080), (2560, 1440), (3840, 2160))
 STARTUP_LABELS = {"extend": "Rozszerz: oba ekrany aktywne", "internal": "Tylko monitor"}
+PREF_SIZE = QSize(860, 780)   # rozmiar okna ustawień na dużym ekranie (mniejszy ekran -> mniejsze, z przewijaniem)
+FRAME_GUESS = QSize(16, 40)   # ramka i pasek tytułu Windows, zanim okno zostanie pokazane
+FIT_MARGIN = 24
 RESTORE_RESTART_MS = 1500     # po przywróceniu kopii: tyle widać komunikat, potem restart receivera
 
 
@@ -66,7 +69,7 @@ class ConsoleSettings(QDialog):
         self.setObjectName("root")
         self.setWindowTitle(_("Ustawienia"))
         self.setMinimumWidth(640)
-        self.resize(860, 780)
+        self.resize(PREF_SIZE)
         self.toggle_button = ConsoleConfig().toggle_button
         self.captured.connect(self._on_captured)
         self._cap_timer = QTimer(self, singleShot=True, interval=CAPTURE_TIMEOUT_MS)
@@ -76,8 +79,8 @@ class ConsoleSettings(QDialog):
     # ---------- budowa ----------
     def _build(self):
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(18, 16, 18, 16)
-        lay.setSpacing(12)
+        lay.setContentsMargins(18, 12, 18, 12)
+        lay.setSpacing(8)
         self.tabs = QTabWidget()
         self.tabs.tabBar().setDrawBase(False)
         self.tabs.tabBar().setExpanding(False)
@@ -92,8 +95,7 @@ class ConsoleSettings(QDialog):
         self.tabs.addTab(_page(self._backup_tab()), icon("backup"), _("Kopie"))
         lay.addWidget(self.tabs, 1)
 
-        self.status = label("", wrap=True)
-        lay.addWidget(self.status)
+        self.status = label("", wrap=True)      # w wierszu przycisków - osobna linia dawała pusty pas nad Zapisz
         self.test_btn = button(_("Przetestuj"))
         self.test_btn.setIcon(icon("tv"))
         self.test_btn.setToolTip(_("Włącza tryb konsoli na kilka sekund z wartościami z tego okna, potem wraca do trybu rozszerzonego"))
@@ -105,7 +107,7 @@ class ConsoleSettings(QDialog):
         row = QHBoxLayout()
         row.setSpacing(8)
         row.addWidget(self.test_btn)
-        row.addStretch(1)
+        row.addWidget(self.status, 1)
         row.addWidget(cancel)
         row.addWidget(self.save_btn)
         lay.addLayout(row)
@@ -589,9 +591,25 @@ class ConsoleSettings(QDialog):
         """Pokazuje okno; świeżo otwarte ma wartości z działającej konfiguracji (nie z poprzedniej, anulowanej edycji)."""
         if not self.isVisible():
             self.reload()
+            self._fit()
         self.show()
+        self._fit()                         # ramka okna (pasek tytułu) znana dopiero po pokazaniu
         self.raise_()
         self.activateWindow()
+
+    def _fit(self):
+        """Na środku ekranu okna głównego i w całości w obszarze roboczym (bez paska zadań): stałe 860x780 przy
+        1080p ze skalowaniem 150 % (720 px wysokości) wychodziło pod pasek zadań razem z przyciskami Zapisz."""
+        owner = self.parent()
+        scr = (owner.screen() if owner is not None else None) or self.screen() or QApplication.primaryScreen()
+        area = scr.availableGeometry()
+        frame = self.frameGeometry().size() - self.geometry().size() if self.isVisible() else FRAME_GUESS
+        size = PREF_SIZE.boundedTo(area.size() - frame - QSize(FIT_MARGIN, FIT_MARGIN)).expandedTo(self.minimumSizeHint())
+        self.resize(size.boundedTo(area.size() - frame))
+        g = self.frameGeometry()
+        g.setSize(self.size() + frame)
+        g.moveCenter(area.center())
+        self.move(max(g.left(), area.left()), max(g.top(), area.top()))
 
     def reload(self):
         self.save_btn.setEnabled(True)
