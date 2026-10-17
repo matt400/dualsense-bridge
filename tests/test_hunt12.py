@@ -1,5 +1,6 @@
 """Receiver: regresje z dwunastego przeglądu - kolor lightbara z gry / programu na PC (np. Steam) zasłaniał na stałe
-kolor z ustawień; opcja "Gra może zmienić kolor" per pad, wpis w dzienniku przy pierwszym kolorze z PC, zapis opcji.
+kolor z ustawień; opcja "Gra może zmienić kolor" per pad, wpis w dzienniku przy pierwszym kolorze z PC, zapis opcji;
+wibracja z gry zostawała po wyjściu z gry i w menu (np. Forza Horizon) - receiver odświeżał ją bez końca.
     python3 tests/test_hunt12.py receiver"""
 import json, os, sys, time
 sys.path.insert(0, os.path.dirname(__file__))
@@ -55,6 +56,36 @@ check(json.load(open(path))["lightbar"]["pads"][A]["game"] is False, "game zapis
 check(R.load(path).lightbar.pads[A].game is False, "game odczytane")
 json.dump({"lightbar": {"pads": {A: {"mode": "solid", "color": "#ff00ff"}}}}, open(path, "w"))
 check(R.load(path).lightbar.pads[A].game is True, "stary plik bez game - gra może zmienić kolor (jak dotąd)")
+
+# ---------- 4. wyjście z gry / alt-tab zatrzymuje wibrację z gry ----------
+import rx_games
+FG[0] = "forzahorizon5.exe"; rx_games.poll_once()
+F.game(0, 200, 100)
+check(F._target(0, now())[0][:2] == (100, 200), "gra wibruje")
+rx_games.poll_once()
+check(F._target(0, now())[0][:2] == (100, 200), "ten sam program na pierwszym planie - wibracja zostaje")
+FG[0] = None; rx_games.poll_once()
+check(F._target(0, now())[0][:2] == (100, 200), "chwilowo brak okna - bez zmian")
+FG[0] = "explorer.exe"; rx_games.poll_once()
+check(F._target(0, now())[0][:2] == (0, 0), "wyjście z gry (pulpit) - wibracja z gry zatrzymana")
+FG[0] = "forzahorizon5.exe"; rx_games.poll_once(); F.game(0, 50, 60)
+check(F._target(0, now())[0][:2] == (60, 50), "powrót do gry - nowa wibracja działa")
+FG[0] = "steamwebhelper.exe"; rx_games.poll_once()
+check(F._target(0, now())[0][:2] == (0, 0), "powrót do Steama - zatrzymana")
+
+# ---------- 5. gra w menu nie wysyła już raportów - wibracja wygasa po GAME_RUMBLE_STALE_S ----------
+sent_fb = []
+import threading
+F.reset(0); F.game(0, 180, 90)
+F.GAME_RUMBLE_STALE_S = 0.3
+th = threading.Thread(target=F._loop, args=(lambda i, v: sent_fb.append((time.monotonic(), v)),), daemon=True); th.start()
+t0 = time.monotonic()
+time.sleep(0.15); F.game(0, 180, 90)        # gra wciąż wysyła - bez wygaszenia
+time.sleep(0.3)
+check(F.fb[0]["large"] == 180, "raporty płyną - wibracja trwa")
+time.sleep(0.6)
+check(F.fb[0]["large"] == 0 and sent_fb and sent_fb[-1][1][:2] == (0, 0), f"brak raportów > STALE - zatrzymana: {sent_fb[-1:]}")
+S.stop.set(); F.fb_event.set(); th.join(2); S.stop.clear()
 
 print("HUNT12", "OK" if not fails else f"BŁĘDY: {len(fails)}")
 if fails:
