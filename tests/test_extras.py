@@ -229,6 +229,9 @@ R.apply(R.Settings(lightbar=R.LightbarConfig(15, {"aa:bb:cc:dd:ee:ff": R.PadLigh
 val, ours, blink = F._target(0, 10.1)
 assert ours and not blink and val[2:] == LB.battery_rgb(50, 15), val
 F.fb[0].update(set=True, rgb=True, small=1, large=2, r=9, g=9, b=9)
+S.game = "steam.exe"
+assert F._target(0, 10.1)[0][2:] == LB.battery_rgb(50, 15), "kolor z PC poza grą (Steam) - kolor wg baterii"
+S.game = "game.exe"
 assert F._target(0, 10.1)[0] == (1, 2, 9, 9, 9), "gra ma pierwszeństwo przed kolorem baterii"
 S.batt_info[0] = (10, 0)
 assert F._target(0, 10.1)[0] == (1, 2, 255, 0, 0) and F._target(0, 10.1)[2], "niska bateria miga nad kolorem gry"
