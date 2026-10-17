@@ -858,6 +858,7 @@ EN = {
     "Autostart przeniesiony do Harmonogramu zadań - receiver startuje zaraz po zalogowaniu":
         "Autostart moved to Task Scheduler - the receiver starts right after logon",
     "Receiver uruchomiony {s} s po starcie Windows": "Receiver started {s} s after Windows start",
+    "Receiver uruchomiony {s} s po zalogowaniu do Windows": "Receiver started {s} s after Windows logon",
     "Tryb konsoli czeka - na pierwszym planie {exe} (dodaj go do listy programów w Ustawieniach, jeśli to nie gra)":
         "Console mode waits - {exe} is in the foreground (add it to the program list in Settings if it is not a game)",
     "połączono pad master (pad {n}), po {s} s czekania": "master pad connected (pad {n}), after waiting {s} s",

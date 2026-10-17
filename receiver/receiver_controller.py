@@ -46,13 +46,16 @@ from rx_config import C
 
 
 def _startup_events(rx_winapi):
-    """Dziennik: ile po starcie Windows wystartował receiver (opóźniony autostart = późny tryb konsoli) i w tle
+    """Dziennik: ile po zalogowaniu (albo starcie Windows) wystartował receiver (opóźniony autostart = późny tryb konsoli) i w tle
     przeniesienie starego autostartu z wpisu Run do Harmonogramu zadań (start zaraz po zalogowaniu)."""
     import threading
 
     import rx_events as ev
     from rx_i18n import _
-    if (up := rx_winapi.uptime_s()) is not None:
+    if (logon := rx_winapi.since_logon_s()) is not None:
+        print(f"Receiver started {logon:.0f}s after logon")
+        ev.info(_("Receiver uruchomiony {s} s po zalogowaniu do Windows").format(s=round(logon)))
+    elif (up := rx_winapi.uptime_s()) is not None:
         print(f"Receiver started {up:.0f}s after Windows start")
         ev.info(_("Receiver uruchomiony {s} s po starcie Windows").format(s=round(up)))
     if os.name != "nt":

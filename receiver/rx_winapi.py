@@ -82,6 +82,39 @@ def uptime_s():
         return None
 
 
+class _WTSINFOW(ctypes.Structure):
+    _fields_ = [("State", ctypes.c_int), ("SessionId", wt.DWORD), *((n, wt.DWORD) for n in (
+                    "IncomingBytes", "OutgoingBytes", "IncomingFrames", "OutgoingFrames", "IncomingCompressedBytes",
+                    "OutgoingCompressedBytes")),
+                ("WinStationName", wt.WCHAR * 32), ("Domain", wt.WCHAR * 17), ("UserName", wt.WCHAR * 21),
+                *((n, ctypes.c_int64) for n in ("ConnectTime", "DisconnectTime", "LastInputTime", "LogonTime", "CurrentTime"))]
+
+
+WTS_CURRENT_SESSION, WTS_SESSION_INFO = 0xFFFFFFFF, 24
+
+
+def since_logon_s():
+    """Sekundy od zalogowania do bieżącej sesji Windows albo None. Czas od startu Windows (uptime_s) myli: przy
+    szybkim uruchamianiu (Fast Startup) "Zamknij" nie restartuje jądra, a uśpienie też się wlicza - wychodziła
+    godzina, choć receiver ruszył zaraz po zalogowaniu."""
+    try:
+        wts = ctypes.windll.wtsapi32
+        buf, size = ctypes.c_void_p(), wt.DWORD()
+        if not wts.WTSQuerySessionInformationW(None, WTS_CURRENT_SESSION, WTS_SESSION_INFO, ctypes.byref(buf),
+                                               ctypes.byref(size)):
+            return None
+        try:
+            if not buf.value or size.value < ctypes.sizeof(_WTSINFOW):
+                return None
+            info = _WTSINFOW.from_address(buf.value)
+            logon, now = info.LogonTime, info.CurrentTime        # FILETIME, jednostki 100 ns
+        finally:
+            wts.WTSFreeMemory(buf)
+        return (now - logon) / 1e7 if 0 < logon <= now else None
+    except (AttributeError, OSError, TypeError, ValueError):
+        return None
+
+
 MUTEX_NAME = "Local\\DualSenseBridgeReceiver"
 ERROR_ACCESS_DENIED, ERROR_ALREADY_EXISTS = 5, 183
 SYNCHRONIZE = 0x00100000
