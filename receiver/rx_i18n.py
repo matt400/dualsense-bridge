@@ -559,6 +559,12 @@ EN = {
     " (na GitHubie jest {v})": " ({v} is on GitHub)",
     "Pobieranie HIDMaestro: {err}": "HIDMaestro download: {err}",
     "automatycznie": "automatic",
+    "Zainstaluj .NET 10": "Install .NET 10",
+    "✓ .NET 10 zainstalowany - HIDMaestro zadziała przy następnym połączeniu pada":
+        "✓ .NET 10 installed - HIDMaestro works on the next pad connection",
+    "Instalacja .NET 10 nie udała się: {err}": ".NET 10 installation failed: {err}",
+    "Instalowanie .NET 10 (winget)…": "Installing .NET 10 (winget)…",
+    "Brakuje .NET 10 - HIDMaestro go wymaga.": ".NET 10 is missing - HIDMaestro needs it.",
     "HIDMaestro {v} pobrany - pady przejdą na DualSense przy następnym połączeniu":
         "HIDMaestro {v} downloaded - pads switch to DualSense on their next connection",
     "HIDMaestro {v} pobrany - zadziała po restarcie receivera": "HIDMaestro {v} downloaded - takes effect after a receiver restart",

@@ -198,6 +198,40 @@ try:
 finally:
     RC.os.name, rx_winapi.is_admin, rx_winapi.relaunch_admin, sys.argv, rx_autostart.run_admin_task, RC._guard_path = real
 
+# ---------- .NET 10: wybór runtime, brak = czytelny błąd i instalacja przez winget ----------
+import types as _t, subprocess
+RT = lambda v: _t.SimpleNamespace(name="Microsoft.NETCore.App", version=v)
+real_rt, real_clr, real_run, real_os = rx_hm.net_runtimes, rx_hm._clr_ready, subprocess.run, rx_hm.os.name
+try:
+    rx_hm._clr_ready = False
+    rx_hm.net_runtimes = lambda: [RT("8.0.20"), RT("9.0.9")]
+    check(rx_hm.best_runtime() is None, "tylko .NET 8 / 9: brak runtime'u dla HIDMaestro")
+    try:
+        rx_hm._load_clr("x.dll")
+        check(False, "brak .NET 10: błąd przed załadowaniem CLR")
+    except rx_hm.HMError as e:
+        check(e.need_dotnet and "8.0.20" in str(e) and "9.0.9" in str(e), f"komunikat z znalezionymi wersjami: {e}")
+    rx_hm.net_runtimes = lambda: [RT("8.0.20"), RT("10.0.2"), RT("10.0.12"), RT("11.0.0-preview")]
+    check(rx_hm.best_runtime().version == "11.0.0-preview" or rx_hm.best_runtime().version.startswith("1"), "najnowszy >= 10")
+    rx_hm.os.name = "nt"
+    rx_hm.net_runtimes = lambda: [RT("8.0.20")]
+    check(rx_hm.need_dotnet(), "okno: trzeba zainstalować .NET 10")
+    cmds = []
+    def fake_run(cmd, **kw):
+        cmds.append(cmd)
+        rx_hm.net_runtimes = lambda: [RT("10.0.12")]
+        return _t.SimpleNamespace(returncode=0, stdout="Successfully installed", stderr="")
+    subprocess.run = fake_run
+    ok_, msg = rx_hm.install_dotnet()
+    check(ok_ and cmds[0][:4] == ["winget", "install", "--id", rx_hm.WINGET_NET] and "--silent" in cmds[0], f"winget: {cmds}")
+    check(not rx_hm.need_dotnet(), "po instalacji .NET 10 jest")
+    rx_hm.net_runtimes = list
+    subprocess.run = lambda cmd, **kw: _t.SimpleNamespace(returncode=1, stdout="No package found", stderr="")
+    ok_, msg = rx_hm.install_dotnet()
+    check(not ok_ and "No package found" in msg, f"błąd winget: {msg}")
+finally:
+    rx_hm.net_runtimes, rx_hm._clr_ready, subprocess.run, rx_hm.os.name = real_rt, real_clr, real_run, real_os
+
 print("HM UPDATE", "OK" if not fails else f"BŁĘDY: {len(fails)}")
 if fails:
     sys.exit(1)
