@@ -16,6 +16,9 @@ BTN = lambda n: BIT[n]
 
 devices = [("1", "Speakers (Realtek)"), ("2", "LG TV (NVIDIA High Definition Audio)")]
 rx_audio.list_outputs = lambda: list(devices)
+import rx_settings as _R
+from dataclasses import replace as _replace
+_R.apply(_replace(_R.cur, master=_replace(_R.cur.master, pad="00:00:00:00:00:ff")))   # bez auto-ON pierwszego pada
 rx_console.ctl = ctl = Console(ConsoleConfig("share", 300, "LG TV (NVIDIA High Definition Audio)", "Dawne słuchawki", 45, "internal"))
 tests = []
 ctl.test = lambda cfg: tests.append(cfg)                       # bez wątku roboczego i bez poleceń systemowych

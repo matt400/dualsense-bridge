@@ -331,7 +331,8 @@ EN = {
     "OKNO": "WINDOW",
     "JĘZYK": "LANGUAGE",
     "PAD MASTER": "MASTER PAD",
-    "Włącz po połączeniu pada master": "Turn on when the master pad connects",
+    "Włącz po połączeniu pada master (bez mastera: pierwszego pada)":
+        "Turn on when the master pad connects (no master: the first pad)",
     "Wyłączasz go tym samym podwójnym kliknięciem; zostaje wyłączony do następnego połączenia mastera.":
         "Turn it off with the same double press; it stays off until the master connects again.",
     "Zmiana języka działa po restarcie receivera.": "The language changes after the receiver restarts.",
