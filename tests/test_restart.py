@@ -47,11 +47,16 @@ for k in range(10):
     s.sendto(c.pack(T_STATE, 0, 200, 128, 0, 128, 128, 0, 0, 0, 1, 77, 0, 0, 0, 8192, 0, 0, 0), ("127.0.0.1", 25105)); time.sleep(0.02)
 time.sleep(0.3)
 assert S.plugged[0], "wirtualny DS4 powinien być podłączony"
+for _ in range(100):                     # bez mastera pierwszy pad włącza tryb konsoli (rx_console.auto_pad)
+    if rx_console.is_on():
+        break
+    time.sleep(0.02)
+assert rx_console.is_on(), "pierwszy połączony pad (bez mastera) włącza tryb konsoli"
 S.restart = True; S.stop.set()
 t.join(5)
 assert not t.is_alive(), "main() nie zakończył się"
 assert "relaunch" in EVENTS, EVENTS
-assert state_at_relaunch == {"in": True, "dsu": True, "plugged": [False, False], "env": {"DSB_CONSOLE_ON": "0"}}, state_at_relaunch
+assert state_at_relaunch == {"in": True, "dsu": True, "plugged": [False, False], "env": {"DSB_CONSOLE_ON": "1"}}, state_at_relaunch
 assert EVENTS.index("unplug") < EVENTS.index("release_mutex") < EVENTS.index("relaunch"), EVENTS
 assert not errors, errors
 print("RESTART OK - kolejność:", [e for e in EVENTS if e != "plug"], "| porty wolne, wirtualny DS4 odłączony")

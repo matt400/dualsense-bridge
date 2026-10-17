@@ -157,7 +157,12 @@ state(1, mask=BIT[PS]); state(1, mask=BIT[PS] | BIT[R3])
 check(not S.states[1]["mask"] & BIT[R3], "R3 z kombinacji nie trafia do gry")
 check(wait_for(lambda: rx_settings.cur.master.pad == B), "PS + R3 trzymane CLAIM_S -> pad B jest masterem")
 state(1)
-check((1, "master") in pulses and json.load(open(C.SETTINGS_PATH))["master"]["pad"] == B, "złoty błysk i zapis do settings.json")
+def _saved_master():
+    try:
+        return json.load(open(C.SETTINGS_PATH))["master"]["pad"]
+    except (OSError, ValueError, KeyError):
+        return None                  # plik w trakcie zapisu (rx_settings.cur zmienia się przed zapisem)
+check(wait_for(lambda: (1, "master") in pulses and _saved_master() == B), "złoty błysk i zapis do settings.json")
 state(0, mask=BIT[PS]); state(0, mask=BIT[PS] | BIT[R3]); time.sleep(0.05); state(0, mask=BIT[PS]); time.sleep(0.3); state(0)
 check(rx_settings.cur.master.pad == B, "R3 puszczone przed czasem nie przejmuje mastera")
 settings(pad=B, claim_hold=False)

@@ -20,7 +20,7 @@ konsoli zapisuje console.json i prosi właściciela okna o restart receivera (sy
 startup_mode jak przy autostarcie.
 """
 from rx_i18n import _
-from PySide6.QtCore import QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QPoint, QRect, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QDialog, QGridLayout, QHBoxLayout, QLineEdit, QPlainTextEdit,
                                QTabWidget, QVBoxLayout, QWidget)
@@ -593,23 +593,31 @@ class ConsoleSettings(QDialog):
             self.reload()
             self._fit()
         self.show()
-        self._fit()                         # ramka okna (pasek tytułu) znana dopiero po pokazaniu
+        if not hasattr(self, "_frame"):
+            self._fit()                     # pierwsze otwarcie: prawdziwa ramka okna dopiero teraz
         self.raise_()
         self.activateWindow()
 
     def _fit(self):
         """Na środku ekranu okna głównego i w całości w obszarze roboczym (bez paska zadań): stałe 860x780 przy
-        1080p ze skalowaniem 150 % (720 px wysokości) wychodziło pod pasek zadań razem z przyciskami Zapisz."""
+        1080p ze skalowaniem 150 % (720 px wysokości) wychodziło pod pasek zadań razem z przyciskami Zapisz.
+        Ramka okna (pasek tytułu) jest znana dopiero po pokazaniu - zapamiętana, więc kolejne otwarcia ustawiają
+        okno raz, przed pokazaniem (bez przesuwania widocznego okna)."""
+        if self.isVisible():
+            self._frame = self.frameGeometry().size() - self.geometry().size()
+        frame = getattr(self, "_frame", FRAME_GUESS)
         owner = self.parent()
         scr = (owner.screen() if owner is not None else None) or self.screen() or QApplication.primaryScreen()
         area = scr.availableGeometry()
-        frame = self.frameGeometry().size() - self.geometry().size() if self.isVisible() else FRAME_GUESS
         size = PREF_SIZE.boundedTo(area.size() - frame - QSize(FIT_MARGIN, FIT_MARGIN)).expandedTo(self.minimumSizeHint())
-        self.resize(size.boundedTo(area.size() - frame))
-        g = self.frameGeometry()
-        g.setSize(self.size() + frame)
+        size = size.boundedTo(area.size() - frame)
+        if size != self.size():
+            self.resize(size)
+        g = QRect(QPoint(0, 0), size + frame)
         g.moveCenter(area.center())
-        self.move(max(g.left(), area.left()), max(g.top(), area.top()))
+        pos = QPoint(max(g.left(), area.left()), max(g.top(), area.top()))
+        if pos != self.pos():
+            self.move(pos)
 
     def reload(self):
         self.save_btn.setEnabled(True)
