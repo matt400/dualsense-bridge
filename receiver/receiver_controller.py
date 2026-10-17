@@ -32,6 +32,8 @@ wyłącz PC; PS + R3 przytrzymane 3 s = ten pad zostaje masterem; połączenie m
 Ustawienia: okno -> Ustawienia -> Master (settings.json).
 Konfiguracja: --config plik.toml|json (klucze jak w DEFAULTS), flagi CLI nadpisują plik.
 Autostart z Windows: --autostart on|off (zadanie Harmonogramu przy logowaniu, bez opóźnienia; pythonw bez konsoli).
+Administrator: na Windows receiver sam uruchamia się od nowa jako administrator (okno UAC; HIDMaestro tworzy pady
+tylko tak), zadanie autostartu dostaje najwyższe uprawnienia (bez UAC przy logowaniu); --no-elevate wyłącza.
 """
 import gc
 import os
@@ -57,13 +59,11 @@ def _startup_events(rx_winapi):
 
     def migrate():
         import rx_autostart
-        import rx_settings
         if rx_autostart.migrate():
             ev.info(_("Autostart przeniesiony do Harmonogramu zadań - receiver startuje zaraz po zalogowaniu"))
-        # HIDMaestro tworzy pady tylko jako administrator: receiver uruchomiony raz jako administrator podnosi
-        # uprawnienia zadania autostartu - od następnego logowania startuje tak sam, bez okna UAC
-        if rx_settings.cur.vpad.backend != "vigem" and rx_winapi.is_admin() \
-                and rx_autostart.elevate(*rx_config.autostart_command()):
+        # receiver działa jako administrator (HIDMaestro): zadanie autostartu dostaje najwyższe uprawnienia - od
+        # następnego logowania startuje tak sam, bez okna UAC
+        if rx_winapi.is_admin() and rx_autostart.elevate(*rx_config.autostart_command()):
             ev.info(_("Autostart ustawiony na uprawnienia administratora (HIDMaestro)"))
     threading.Thread(target=migrate, name="autostart", daemon=True).start()
 
@@ -78,7 +78,26 @@ def _gamebar():
         print(f"Game Bar: cannot update registry ({e!r})")
 
 
+NO_ELEVATE = "--no-elevate"
+
+
+def elevate():
+    """Windows bez uprawnień administratora: ten sam receiver od nowa przez UAC i wyjście. Odmowa w UAC / --no-elevate
+    -> dalej bez nich (wirtualne pady przez ViGEmBus). Przed rx_config.init: --autostart on też tworzy zadanie jako
+    administrator (z najwyższymi uprawnieniami)."""
+    if os.name != "nt" or NO_ELEVATE in sys.argv[1:]:
+        return
+    import rx_winapi
+    if rx_winapi.is_admin():
+        return
+    cmd = [sys.executable, os.path.abspath(sys.argv[0]), *sys.argv[1:]]
+    if rx_winapi.relaunch_admin(cmd):
+        sys.exit(0)
+    print("Administrator rights declined (UAC) - running without them: virtual pads via ViGEmBus")
+
+
 def main():
+    elevate()
     rx_config.init()
     sys.setswitchinterval(0.001)   # domyślne 5 ms = tyle może czekać wątek sieciowy, gdy inny trzyma GIL
 
@@ -120,6 +139,10 @@ def main():
     gc.freeze()        # obiekty ze startu nie są już skanowane przez GC - krótsze, rzadsze pauzy w wątkach czasu rzeczywistego
     slot_threads = [S.start_thread(f"slot{i}", rx_ds4.slot_thread, i) for i in range(C.NUM_PADS)]
     fb_thread = S.start_thread("feedback", rx_feedback.feedback_thread, rx_net.send_feedback, rx_net.send_triggers)
+    if os.name == "nt":
+        import rx_hm_update
+        rx_hm_update.on_installed = rx_ds4.hm_installed
+        S.start_thread("hidmaestro update", rx_hm_update.thread, S.stop, rx_ds4.hm_auto_enabled)
     S.start_thread("gyro mouse", rx_gyro.mouse_thread)
     if C.GAME_PROFILES:
         S.start_thread("game watch", rx_games.watch_thread)

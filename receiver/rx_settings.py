@@ -263,12 +263,13 @@ def _path(v):
 class VpadConfig:
     backend: str = "auto"         # auto | hidmaestro | vigem
     fixed_slots: bool = True      # pad zastępczy w pustych niższych slotach: pad 2 nigdy nie zostaje graczem 1
-    hm_dll: str = ""              # ścieżka do HIDMaestro.Core.dll (albo folderu); "" = hidmaestro\ obok receivera
+    hm_dll: str = ""              # ścieżka do HIDMaestro.Core.dll (albo folderu); "" = pobrany sam / hidmaestro\ obok
+    hm_auto: bool = True          # pobieraj i aktualizuj HIDMaestro z GitHuba (tylko bez własnej ścieżki hm_dll)
 
     V = None
 
 
-VpadConfig.V = {"backend": _choice(VPAD_BACKENDS), "fixed_slots": _bool, "hm_dll": _path}
+VpadConfig.V = {"backend": _choice(VPAD_BACKENDS), "fixed_slots": _bool, "hm_dll": _path, "hm_auto": _bool}
 
 
 @dataclass(frozen=True, slots=True)

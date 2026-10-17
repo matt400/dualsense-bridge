@@ -101,7 +101,7 @@ ok("zapis myszy i mastera: działa od razu, bez restartu, settings.json")
 import rx_ds4, rx_hm
 dlg.tabs.setCurrentIndex(5); pump()
 assert dlg.vpad_backend.currentData() == "auto" and dlg.vpad_fixed.isChecked() and dlg.vpad_dll.text() == ""
-assert dlg.vpad_dll.placeholderText().endswith("HIDMaestro.Core.dll")
+assert dlg.vpad_dll.placeholderText() == "automatycznie" and dlg.vpad_auto.isChecked()
 real_admin = rx_hm.is_admin
 rx_hm.is_admin = lambda: False
 dlg.vpad_backend.set_data("hidmaestro"); dlg._vpad_state(); pump()
@@ -116,11 +116,12 @@ dlg.vpad_backend.set_data("hidmaestro"); dlg._vpad_state(); dlg.vpad_admin.click
 assert asked == [True], asked
 del win.restart
 rx_hm.is_admin = real_admin
-dlg.vpad_fixed.setChecked(False); dlg.vpad_dll.setText("  D:\\HM  ")
+dlg.vpad_fixed.setChecked(False); dlg.vpad_dll.setText("  D:\\HM  "); dlg.vpad_auto.setChecked(False)
 dlg.save_btn.click(); pump()
 v = rx_settings.cur.vpad
 assert (v.backend, v.fixed_slots, v.hm_dll) == ("hidmaestro", False, "D:\\HM"), v
-assert json.load(open(C.SETTINGS_PATH))["vpad"] == {"backend": "hidmaestro", "fixed_slots": False, "hm_dll": "D:\\HM"}
+assert json.load(open(C.SETTINGS_PATH))["vpad"] == {"backend": "hidmaestro", "fixed_slots": False, "hm_dll": "D:\\HM",
+                                                     "hm_auto": False}
 assert S.restart is False, "pady działają bez restartu"
 rx_settings.apply(rx_settings.defaults())
 ok("Ustawienia -> Pady: backend / DLL / kolejność zapisane od razu, restart jako administrator, gdy go brakuje")

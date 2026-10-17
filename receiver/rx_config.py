@@ -108,6 +108,7 @@ def init(argv=None):
     ap.add_argument("--remap-file", dest="remap_file", help="plik z profilami remapowania (domyślnie remap.json)")
     ap.add_argument("--stats", action="store_true", default=None, help="pokazuj statystyki pakietów")
     ap.add_argument("--no-gui", action="store_true", default=None, help="bez okna")
+    ap.add_argument("--no-elevate", action="store_true", help="bez ponownego uruchomienia jako administrator (UAC)")
     ap.add_argument("--autostart", choices=["on", "off"], help="włącz/wyłącz uruchamianie z Windows i wyjdź")
     args = ap.parse_args(argv)
 

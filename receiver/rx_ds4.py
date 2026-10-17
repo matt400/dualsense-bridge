@@ -212,6 +212,24 @@ def _note_hm(text, warn):
     (ev.warn if warn else ev.info)(_("HIDMaestro nieużywany - wirtualne pady przez ViGEmBus: {why}").format(why=text))
 
 
+def hm_auto_enabled():
+    """Pobieranie HIDMaestro z GitHuba: backend go używa, automat włączony i bez własnej ścieżki DLL."""
+    cfg = rx_settings.cur.vpad
+    return cfg.backend != "vigem" and cfg.hm_auto and not cfg.hm_dll
+
+
+def hm_installed(tag):
+    """rx_hm_update pobrał nową wersję. Nic nie było załadowane -> następne podłączenie pada już przez HIDMaestro
+    (podłączone pady zostają - bez przełączania w trakcie gry); załadowana starsza -> nowa po restarcie."""
+    global _hm_warned
+    if rx_hm.loaded() is None:
+        rx_hm.reset()
+        _hm_warned = None
+        ev.info(_("HIDMaestro {v} pobrany - pady przejdą na DualSense przy następnym połączeniu").format(v=tag))
+    else:
+        ev.info(_("HIDMaestro {v} pobrany - zadziała po restarcie receivera").format(v=tag))
+
+
 def hm_backend():
     """-> backend HIDMaestro albo None (ustawienie vigem albo HIDMaestro niedostępny - powód w hm_note)."""
     global hm_note
