@@ -168,9 +168,9 @@ class Bluetooth:
             self.dups = {k: t for k, t in self.dups.items() if now - t < DUP_S}
             self.dups[key] = now
             if op == BT_SCAN_START:
-                _spawn(self.start_scan(clamp(arg or BT_SCAN_MAX_S, 1, BT_SCAN_MAX_S)))
+                state.spawn(self.start_scan(clamp(arg or BT_SCAN_MAX_S, 1, BT_SCAN_MAX_S)))
             elif op == BT_SCAN_STOP:
-                _spawn(self.stop_scan())
+                state.spawn(self.stop_scan())
             elif op in OPS:
                 self.start_op(op, arg, mac)
         self.poke()
@@ -184,7 +184,7 @@ class Bluetooth:
             self.last = (op, BTR_BUSY, mac)
             return
         self.running, self.last = True, (op, BTR_RUNNING, mac)
-        self.busy = _spawn(self._op(op, arg, mac))
+        self.busy = state.spawn(self._op(op, arg, mac))
 
     async def _op(self, op: int, arg: int, mac: bytes) -> None:
         what = " ".join(filter(None, (OP_NAMES[op], mac_text(mac), "on" if op == BT_POWER and arg else "")))
@@ -333,7 +333,7 @@ class Bluetooth:
             self.scan_end = time.monotonic() + secs
             self.last = (BT_SCAN_START, BTR_OK, b"")
             print(f"Bluetooth scan for {secs}s")
-            _spawn(self._scan_watch(self.scan))
+            state.spawn(self._scan_watch(self.scan))
         self.poke()
 
     async def _scan_watch(self, proc: asyncio.subprocess.Process) -> None:
@@ -418,13 +418,6 @@ OPS: dict[int, Callable[[Bluetooth, int, str], Awaitable[None]]] = {
 }
 OP_NAMES = {BT_LIST: "list", BT_SCAN_START: "scan", BT_SCAN_STOP: "scan stop", BT_PAIR: "pair", BT_CONNECT: "connect",
             BT_DISCONNECT: "disconnect", BT_REMOVE: "remove", BT_POWER: "power"}
-
-
-def _spawn(coro: Awaitable[None]) -> asyncio.Task:
-    t = asyncio.get_running_loop().create_task(coro)
-    state.bg_tasks.add(t)
-    t.add_done_callback(state.bg_tasks.discard)
-    return t
 
 
 bt = Bluetooth()

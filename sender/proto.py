@@ -307,6 +307,30 @@ def load_config(path, defaults=None):
     return cfg
 
 
+def write_file(path, data):
+    """Zapis atomowy (plik tymczasowy + fsync + zamiana): przerwany zapis, zanik zasilania albo uśpienie / wyłączenie
+    PC zaraz po zapisie (akcje mastera) nie zostawią pustego ani uciętego pliku - bez fsync os.replace mógł podmienić
+    plik, którego dane nie doszły jeszcze na dysk. Nieudany zapis usuwa plik tymczasowy. data: str (UTF-8) albo bajty."""
+    tmp = path + ".tmp"
+    try:
+        with open(tmp, "wb") as f:
+            f.write(data.encode("utf-8") if isinstance(data, str) else data)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def write_json(path, obj, **kw):
+    """write_file() dla JSON (kw jak w json.dumps, np. indent, sort_keys); na końcu znak nowej linii."""
+    write_file(path, json.dumps(obj, **kw) + "\n")
+
+
 # ---------------- git: wersja kodu i aktualizacja (receiver i nadajnik) ----------------
 GIT_PATHS = (r"C:\Program Files\Git\cmd\git.exe", r"C:\Program Files (x86)\Git\cmd\git.exe")
 # klucz wdrożeniowy (tylko do odczytu) nadajnika i jego known_hosts - w .git, więc nigdy nie trafiają do repozytorium;

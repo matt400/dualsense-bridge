@@ -17,7 +17,7 @@ import os
 import string
 from dataclasses import asdict, dataclass, field, fields, replace
 
-from proto import mac_bytes, mac_text
+from proto import mac_bytes, mac_text, write_json
 from rx_buttons import BUTTON_CODES
 
 # ---------------- funkcje sprawdzające (wartość z JSON -> wartość albo ValueError) ----------------
@@ -300,13 +300,9 @@ def load(path, base=None):
 
 def save(s, path):
     """Zapis atomowy (plik tymczasowy + zamiana)."""
-    tmp = path + ".tmp"
     data = {"version": 1, "mouse": asdict(s.mouse), "master": {**asdict(s.master), "only_master": list(s.master.only_master)},
             "ui": asdict(s.ui), "lightbar": asdict(s.lightbar), "wol": asdict(s.wol), "log": asdict(s.log)}
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-        f.write("\n")
-    os.replace(tmp, path)
+    write_json(path, data, indent=2, ensure_ascii=False)
 
 
 def on_change(fn):

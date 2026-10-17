@@ -9,7 +9,7 @@ from rx_i18n import _
 from functools import cache
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap
+from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap, QPolygonF
 
 from rx_buttons import LABELS
 
@@ -187,14 +187,9 @@ def _gear(p):
     import math
     p.setPen(_pen(FG, 1.6))
     p.setBrush(Qt.BrushStyle.NoBrush)
-    path = QPainterPath()
-    for k in range(16):
-        a = math.pi * 2 * k / 16
-        r = 9 if k % 2 == 0 else 6.8
-        pt = QPointF(12 + r * math.cos(a), 12 + r * math.sin(a))
-        path.moveTo(pt) if k == 0 else path.lineTo(pt)
-    path.closeSubpath()
-    p.drawPath(path)
+    radii = (9, 6.8)                       # zęby i wręby na zmianę
+    p.drawPolygon(QPolygonF([QPointF(12 + radii[k % 2] * math.cos(math.pi * k / 8), 12 + radii[k % 2] * math.sin(math.pi * k / 8))
+                             for k in range(16)]))
     p.drawEllipse(QPointF(12, 12), 2.8, 2.8)
 
 

@@ -10,6 +10,7 @@ import json
 import os
 import threading
 
+from proto import write_json
 from rx_config import C
 from rx_i18n import _
 from rx_shape import STICK_DEF, STICK_LIMITS
@@ -86,11 +87,8 @@ def set_drift(key, values):
 def _write(pads):
     """Zapis atomowy (plik tymczasowy + zamiana). Wołać pod _lock."""
     p = path()
-    tmp = p + ".tmp"
     try:
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump({"version": 1, "pads": {k: {"drift": v} for k, v in pads.items()}}, f, indent=2, sort_keys=True)
-        os.replace(tmp, p)
+        write_json(p, {"version": 1, "pads": {k: {"drift": v} for k, v in pads.items()}}, indent=2, sort_keys=True)
     except OSError as e:
         return False, _("Zapis nieudany: {err}").format(err=e)
     return True, _("Zapisano - {file}").format(file=os.path.basename(p))

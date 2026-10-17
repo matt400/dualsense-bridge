@@ -10,7 +10,7 @@ import evdev
 import sender_events as events
 import sender_state as state
 import sender_streams as streams
-from proto import E_ERROR, E_PAD_OFF, E_PAD_ON, LAT_NONE, T_BYE
+from proto import E_ERROR, E_PAD_OFF, E_PAD_ON, LAT_NONE, T_BYE, write_json
 from sender_config import C, IDLE_TP, SETTLE_S
 from sender_ctrl import Ctrl
 from sender_rumble import Rumble
@@ -93,11 +93,8 @@ def _load_slots():
 def _save_slots():
     if not C.SLOTS_FILE:
         return
-    tmp = C.SLOTS_FILE + ".tmp"
     try:
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(state.saved_slots, f, indent=1, sort_keys=True)
-        os.replace(tmp, C.SLOTS_FILE)
+        write_json(C.SLOTS_FILE, state.saved_slots, indent=1, sort_keys=True)
     except OSError as e:
         print(f"Cannot write {C.SLOTS_FILE}: {e!r}")
 
@@ -128,15 +125,13 @@ def pick_slot(key):
 
 
 def dispatch_feedback(idx, vals):
-    for c in state.active.values():
-        if c.idx == idx:
-            c.apply_feedback(*vals)
+    if (c := state.ctrl_by_idx(idx)) is not None:
+        c.apply_feedback(*vals)
 
 
 def dispatch_triggers(idx, vals):
-    for c in state.active.values():
-        if c.idx == idx:
-            c.set_triggers(vals)
+    if (c := state.ctrl_by_idx(idx)) is not None:
+        c.set_triggers(vals)
 
 
 def grab(dev, label):
@@ -301,9 +296,7 @@ async def supervisor():
                 _first_seen.pop(key, None)
                 c = Ctrl(idx, key, g["pad"], g.get("motion"), g.get("touch"))
                 state.active[key] = c
-                t = asyncio.create_task(run_ctrl(c))
-                state.bg_tasks.add(t)
-                t.add_done_callback(state.bg_tasks.discard)
+                state.spawn(run_ctrl(c))
             if first and not state.active:
                 print("No DualSense found yet - connect controller (bluetoothctl), waiting...")
             first = False

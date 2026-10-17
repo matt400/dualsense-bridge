@@ -6,12 +6,11 @@ Kalibracja z okna (CMD_GYRO_CAL): pad leży nieruchomo przez arg sekund; wynik (
 """
 import asyncio
 import json
-import os
 import re
 import time
 
 import sender_net as net
-from proto import CAL_FEW, CAL_MAX_S, CAL_MOVED, CAL_OK, CALF_STORED, T_CALRES, clamp
+from proto import CAL_FEW, CAL_MAX_S, CAL_MOVED, CAL_OK, CALF_STORED, T_CALRES, clamp, write_json
 from sender_config import BURST_DELAYS, C
 
 MIN_SAMPLES = 20
@@ -50,11 +49,8 @@ def save(key, bias):
     data[key.lower()] = {"bias": [round(b, 1) for b in bias], "t": int(time.time())}
     if not C.GYRO_CAL_FILE:
         return True
-    tmp = C.GYRO_CAL_FILE + ".tmp"
     try:
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=1, sort_keys=True)
-        os.replace(tmp, C.GYRO_CAL_FILE)
+        write_json(C.GYRO_CAL_FILE, data, indent=1, sort_keys=True)
     except OSError as e:
         print(f"Cannot write {C.GYRO_CAL_FILE}: {e!r}")
         return False

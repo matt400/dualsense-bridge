@@ -17,18 +17,8 @@ MAC_RE = re.compile(r"[0-9a-f]{2}(?::[0-9a-f]{2}){5}", re.IGNORECASE)
 RETRY_S = 10.0          # ponowne wyłączenie tego samego pada najwcześniej po tylu sekundach
 
 
-def _spawn(coro):
-    t = asyncio.get_running_loop().create_task(coro)
-    state.bg_tasks.add(t)
-    t.add_done_callback(state.bg_tasks.discard)
-
-
 def per_s(n, dt):
     return max(0, min(0xFFFF, round(n / dt))) if dt > 0 else 0
-
-
-def ctrl_by_idx(idx):
-    return next((c for c in state.active.values() if c.idx == idx), None)
 
 
 async def power_off(c, reason):
@@ -60,13 +50,13 @@ async def power_off(c, reason):
 
 def on_command(idx, cmd, arg):
     if cmd == CMD_UPDATE:                  # dotyczy całego nadajnika, nie pada (idx = 255)
-        _spawn(sender_update.run())
+        state.spawn(sender_update.run())
         return
-    c = ctrl_by_idx(idx)
+    c = state.ctrl_by_idx(idx)
     if c is None:
         return
     if cmd == CMD_POWER_OFF:
-        _spawn(power_off(c, "requested from PC"))
+        state.spawn(power_off(c, "requested from PC"))
     elif cmd == CMD_GYRO_CAL:            # kalibracja żyroskopu z okna (arg sekund) albo sam stan (arg 0)
         if arg:
             calib.request(c, arg)
@@ -100,4 +90,4 @@ def _info_tick(prev, now):
         net.emit(T_INFO, c.idx, rtt, per_s(pad - p0, dt), per_s(motion - m0, dt))
         if C.IDLE_OFF_S and now - c.last_input > C.IDLE_OFF_S:
             c.last_input = now            # kolejna próba dopiero po następnym okresie bezczynności
-            _spawn(power_off(c, f"idle for {C.IDLE_OFF_S / 60:g} min"))
+            state.spawn(power_off(c, f"idle for {C.IDLE_OFF_S / 60:g} min"))

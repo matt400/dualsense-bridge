@@ -40,7 +40,9 @@ import rx_master as master
 import rx_state as S
 import rx_winapi as W
 from rx_buttons import BIT, BUTTON_CODES, DIRS, INPUTS, TRIG_ON, pressed_inputs
+from proto import write_json
 from rx_config import C
+from rx_settings import _bool, _choice, _num
 
 STARTUP_MODES = ("extend", "internal")
 # programy, przy których wolno przełączać tryb konsoli (pulpit, Steam / Big Picture, launchery, ten receiver)
@@ -58,28 +60,6 @@ RESTART_ENV = "DSB_CONSOLE_ON" # restart z okna: "1" / "0" = tryb konsoli przed 
 DISPLAY_ARG = {"extend": "/extend", "internal": "/internal", "tv": "/external"}
 POWER_WAIT_S = 8.0             # tyle najwyżej czeka wyłączenie / uśpienie PC na powrót ekranów do extend
 _STOP = object()
-
-
-def _number(lo, hi):
-    def check(v):
-        if isinstance(v, bool) or not isinstance(v, (int, float)) or not lo <= v <= hi:
-            raise ValueError(f"expected a number {lo}..{hi}")
-        return int(v)
-    return check
-
-
-def _choice(options):
-    def check(v):
-        if v not in options:
-            raise ValueError(f"expected one of {tuple(options)}")
-        return v
-    return check
-
-
-def _bool(v):
-    if not isinstance(v, bool):
-        raise ValueError("expected true / false")
-    return v
 
 
 def _apps(v):
@@ -129,7 +109,7 @@ class ConsoleConfig:
                 continue
             try:
                 values[f.name] = _VALIDATORS[f.name](raw[f.name])
-            except ValueError as e:
+            except (ValueError, TypeError) as e:       # TypeError: nieoczekiwany typ z ręcznej edycji
                 print(f"Console: bad {f.name} = {raw[f.name]!r} ({e}) - using default {f.default!r}")
                 fixed = True
         return cls(**values), fixed
@@ -137,17 +117,17 @@ class ConsoleConfig:
 
 _VALIDATORS = {
     "toggle_button": _choice(INPUTS),
-    "double_click_ms": _number(100, 2000),
+    "double_click_ms": _num(100, 2000),
     "audio_tv": _text,
     "audio_pc": _text,
-    "timeout_s": _number(5, 3600),
+    "timeout_s": _num(5, 3600),
     "startup_mode": _choice(STARTUP_MODES),
-    "tv_width": _number(0, 15360),
-    "tv_height": _number(0, 8640),
+    "tv_width": _num(0, 15360),
+    "tv_height": _num(0, 8640),
     "tv_scale": lambda v: int(_choice((0, *rx_display.DPI_VALUES))(v)),
     "auto_on_master": _bool,
     "allowed_apps": _apps,
-    "version": _number(1, CONFIG_VERSION),
+    "version": _num(1, CONFIG_VERSION),
 }
 
 
@@ -176,11 +156,7 @@ def load(path):
 
 def save(cfg, path):
     """Zapis atomowy (plik tymczasowy + zamiana): przerwany zapis nie zostawi pustego console.json."""
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(asdict(cfg), f, indent=2, ensure_ascii=False)
-        f.write("\n")
-    os.replace(tmp, path)
+    write_json(path, asdict(cfg), indent=2, ensure_ascii=False)
 
 
 def detector(name):

@@ -18,12 +18,12 @@ import json
 import os
 import threading
 
-from proto import PAD_KEYS
+from proto import PAD_KEYS, write_json
 from rx_shape import _byte, _unit, normalize_gyro, normalize_triggers, normalize_tuning
 
 BIT = {c: 1 << k for k, c in enumerate(PAD_KEYS)}
 MASK_ALL = (1 << len(PAD_KEYS)) - 1
-PS_BIT, L1_BIT, R1_BIT = BIT[316], BIT[310], BIT[311]
+PS_BIT = BIT[316]
 
 BUTTON_CODES = {"cross": 304, "circle": 305, "triangle": 307, "square": 308,
                 "l1": 310, "r1": 311, "share": 314, "options": 315, "ps": 316, "l3": 317, "r3": 318}
@@ -279,11 +279,8 @@ class RemapStore:
 
     def _write(self, done="Zapisano - {file}"):
         """Zapis atomowy (plik tymczasowy + zamiana) - przerwanie w trakcie nie psuje remap.json. Wołać pod _lock."""
-        tmp = self.path + ".tmp"
         try:
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump({"version": 3, "profiles": self.saved}, f, indent=2, sort_keys=True)
-            os.replace(tmp, self.path)
+            write_json(self.path, {"version": 3, "profiles": self.saved}, indent=2, sort_keys=True)
         except OSError as e:
             return False, _("Zapis nieudany: {err}").format(err=e)
         return True, _(done).format(file=os.path.basename(self.path))
