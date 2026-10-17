@@ -543,15 +543,26 @@ EN = {
     "Uruchom ponownie jako administrator": "Restart as administrator",
     "Stała kolejność graczy": "Fixed player order",
     "WIRTUALNE PADY": "VIRTUAL PADS",
-    "HIDMaestro tworzy natywny DualSense (gry widzą pada PS5) sterownikiem w trybie użytkownika - jest rozwijany. ViGEmBus "
-    "(DualShock 4) nie jest już rozwijany, zostaje jako zapas. Tworzenie padów przez HIDMaestro wymaga uruchomienia "
-    "receivera jako administrator (autostart robi to sam, gdy włączysz go z receivera uruchomionego jako administrator).":
-        "HIDMaestro creates a native DualSense (games see a PS5 pad) with a user-mode driver - it is maintained. ViGEmBus "
-        "(DualShock 4) is no longer developed and stays as a fallback. Creating pads with HIDMaestro requires running the "
-        "receiver as administrator (autostart does it by itself once you enable it from a receiver running as administrator).",
     "Backend": "Backend",
-    "HIDMaestro.Core.dll (plik albo folder; puste = folder hidmaestro obok receivera)":
-        "HIDMaestro.Core.dll (file or folder; empty = hidmaestro folder next to the receiver)",
+    "HIDMaestro tworzy natywny DualSense (gry widzą pada PS5) sterownikiem w trybie użytkownika - jest rozwijany. "
+    "Receiver pobiera go sam i uruchamia się jako administrator (tego wymaga tworzenie padów). ViGEmBus (DualShock 4) "
+    "nie jest już rozwijany, zostaje jako zapas.":
+        "HIDMaestro creates a native DualSense (games see a PS5 pad) with a user-mode driver - it is maintained. The "
+        "receiver downloads it by itself and runs as administrator (creating pads requires it). ViGEmBus (DualShock 4) "
+        "is no longer developed and stays as a fallback.",
+    "Własna HIDMaestro.Core.dll (plik albo folder; puste = pobrana automatycznie)":
+        "Own HIDMaestro.Core.dll (file or folder; empty = downloaded automatically)",
+    "Pobieraj i aktualizuj HIDMaestro automatycznie (GitHub, raz na dobę)":
+        "Download and update HIDMaestro automatically (GitHub, once a day)",
+    "HIDMaestro: sprawdzanie / pobieranie…": "HIDMaestro: checking / downloading…",
+    "HIDMaestro {v} pobrany": "HIDMaestro {v} downloaded",
+    " (na GitHubie jest {v})": " ({v} is on GitHub)",
+    "Pobieranie HIDMaestro: {err}": "HIDMaestro download: {err}",
+    "automatycznie": "automatic",
+    "HIDMaestro {v} pobrany - pady przejdą na DualSense przy następnym połączeniu":
+        "HIDMaestro {v} downloaded - pads switch to DualSense on their next connection",
+    "HIDMaestro {v} pobrany - zadziała po restarcie receivera": "HIDMaestro {v} downloaded - takes effect after a receiver restart",
+    "Sprawdź teraz": "Check now",
     "KOLEJNOŚĆ GRACZY": "PLAYER ORDER",
     "Gry i Steam numerują pady wg kolejności podłączenia. Gdy pad 2 włączy się pierwszy, pad 1 dostaje najpierw pad "
     "zastępczy, więc pad 2 zawsze zostaje graczem 2. Który fizyczny pad to pad 1 / 2, pamięta nadajnik (slots.json, "

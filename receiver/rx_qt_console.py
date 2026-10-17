@@ -30,6 +30,7 @@ import rx_backup
 import rx_console
 import rx_ds4
 import rx_hm
+import rx_hm_update
 import rx_lightbar
 import rx_update
 import rx_settings
@@ -198,20 +199,28 @@ class ConsoleSettings(QDialog):
         self.vpad_backend = Combo([(k, _(v)) for k, v in VPAD_BACKENDS.items()])
         self.vpad_backend.changed.connect(lambda _v: self._vpad_state())
         self.vpad_dll = QLineEdit()
-        self.vpad_dll.setPlaceholderText(rx_hm.candidates()[0])
+        self.vpad_dll.setPlaceholderText(_("automatycznie"))
         self.vpad_now = label("", "dim", wrap=True)
         self.vpad_admin = button(_("Uruchom ponownie jako administrator"), small=True)
         self.vpad_admin.setIcon(icon("shield"))
         self.vpad_admin.clicked.connect(self.elevate.emit)
         self.vpad_fixed = QCheckBox(_("Stała kolejność graczy"))
+        self.vpad_auto = QCheckBox(_("Pobieraj i aktualizuj HIDMaestro automatycznie (GitHub, raz na dobę)"))
+        self.vpad_auto.toggled.connect(lambda _on: self._vpad_state())
+        self.vpad_check = button(_("Sprawdź teraz"), small=True)
+        self.vpad_check.setIcon(icon("update"))
+        self.vpad_check.clicked.connect(self._hm_check)
+        self._hm_timer = QTimer(self, interval=500)
+        self._hm_timer.timeout.connect(self._vpad_state)
         backend = group(_("WIRTUALNE PADY"),
                         label(_("HIDMaestro tworzy natywny DualSense (gry widzą pada PS5) sterownikiem w trybie użytkownika - "
-                                "jest rozwijany. ViGEmBus (DualShock 4) nie jest już rozwijany, zostaje jako zapas. Tworzenie "
-                                "padów przez HIDMaestro wymaga uruchomienia receivera jako administrator (autostart robi to "
-                                "sam, gdy włączysz go z receivera uruchomionego jako administrator)."), "dim", wrap=True),
+                                "jest rozwijany. Receiver pobiera go sam i uruchamia się jako administrator (tego wymaga "
+                                "tworzenie padów). ViGEmBus (DualShock 4) nie jest już rozwijany, zostaje jako zapas."),
+                              "dim", wrap=True),
                         field(_("Backend"), self.vpad_backend),
-                        field(_("HIDMaestro.Core.dll (plik albo folder; puste = folder hidmaestro obok receivera)"), self.vpad_dll),
-                        self.vpad_now, left(self.vpad_admin))
+                        self.vpad_auto,
+                        field(_("Własna HIDMaestro.Core.dll (plik albo folder; puste = pobrana automatycznie)"), self.vpad_dll),
+                        self.vpad_now, row_of(self.vpad_check, self.vpad_admin))
         order = group(_("KOLEJNOŚĆ GRACZY"),
                       self.vpad_fixed,
                       label(_("Gry i Steam numerują pady wg kolejności podłączenia. Gdy pad 2 włączy się pierwszy, pad 1 "
@@ -224,13 +233,35 @@ class ConsoleSettings(QDialog):
         self.vpad_backend.set_data(v.backend)
         self.vpad_dll.setText(v.hm_dll)
         self.vpad_fixed.setChecked(v.fixed_slots)
+        self.vpad_auto.setChecked(v.hm_auto)
         self._vpad_state()
 
-    def _vpad_state(self):
-        """Co działa teraz: rodzaj podłączonych padów, powód pracy bez HIDMaestro, przycisk restartu jako administrator."""
+    def _hm_check(self):
+        """Sprawdzenie i ewentualne pobranie w tle (do kilku minut - ~56 MB); stan odświeżany co 0.5 s."""
+        import threading
+        threading.Thread(target=rx_hm_update.check, kwargs={"force": True}, name="hidmaestro check", daemon=True).start()
+        self._hm_timer.start()
+        self._vpad_state(busy=True)
+
+    def _vpad_state(self, busy=False):
+        """Co działa teraz: rodzaj podłączonych padów, wersja HIDMaestro (pobrana / najnowsza / pobieranie / błąd), powód
+        pracy bez HIDMaestro, przycisk restartu jako administrator."""
         backend = self.vpad_backend.currentData()
         used = sorted({rx_ds4.LABELS[k] for k in rx_ds4.kinds if k})
         lines = [_("Teraz: {kinds}").format(kinds=", ".join(used)) if used else _("Teraz: żaden wirtualny pad nie jest podłączony")]
+        st = rx_hm_update.refresh_status() if not rx_hm_update.status.busy else rx_hm_update.status
+        busy = busy or st.busy
+        if busy:
+            lines.append(_("HIDMaestro: sprawdzanie / pobieranie…"))
+        elif st.version:
+            newer = st.latest and rx_hm_update.version_key(st.latest) > rx_hm_update.version_key(st.version)
+            lines.append(_("HIDMaestro {v} pobrany").format(v=st.version)
+                         + (_(" (na GitHubie jest {v})").format(v=st.latest) if newer else ""))
+        if st.error and not busy:
+            lines.append(_("Pobieranie HIDMaestro: {err}").format(err=st.error))
+        if not busy:
+            self._hm_timer.stop()
+        self.vpad_check.setEnabled(not busy and backend != "vigem")
         if backend != "vigem" and rx_ds4.hm_note:
             lines.append(_("HIDMaestro nieużywany: {why}").format(why=rx_ds4.hm_note))
         need_admin = backend != "vigem" and not rx_hm.is_admin()
@@ -242,7 +273,7 @@ class ConsoleSettings(QDialog):
 
     def _collect_vpad(self):
         return VpadConfig(backend=self.vpad_backend.currentData(), fixed_slots=self.vpad_fixed.isChecked(),
-                          hm_dll=self.vpad_dll.text().strip())
+                          hm_dll=self.vpad_dll.text().strip(), hm_auto=self.vpad_auto.isChecked())
 
     def _backup_tab(self):
         self.backup_rows = QVBoxLayout()
@@ -711,6 +742,7 @@ class ConsoleSettings(QDialog):
         super().hideEvent(e)
         if self._cap_timer.isActive():
             self._stop_capture()
+        self._hm_timer.stop()
 
 
 def _backup_reason(b):
@@ -769,6 +801,16 @@ def _spin(lo, hi, step, suffix):
     box.setSingleStep(step)
     box.setSuffix(suffix)
     return box
+
+
+def row_of(*widgets):
+    """Przyciski w rzędzie, do lewej."""
+    row = QHBoxLayout()
+    row.setSpacing(8)
+    for w in widgets:
+        row.addWidget(w)
+    row.addStretch(1)
+    return row
 
 
 def _wrap(layout):

@@ -51,7 +51,8 @@ Testy obejmują:
   padem (`test_bt_gui.py`);
 - panel skrótów pada (`test_keys_gui.py`) i autostart przez Harmonogram zadań z migracją wpisu Run (`test_autostart.py`);
 - wirtualne pady: backend HIDMaestro / ViGEmBus i ich zmiana w trakcie, pad zastępczy dla stałej kolejności graczy,
-  raport DualSense, feedback z raportu wyjściowego DualSense (`test_vpad.py`, zakładka Pady w `test_settings_gui.py`).
+  raport DualSense, feedback z raportu wyjściowego DualSense (`test_vpad.py`, zakładka Pady w `test_settings_gui.py`),
+  pobieranie HIDMaestro przez HTTP Range, wersje, błędy zipa / sieci i uruchamianie jako administrator (`test_hm_update.py`).
 
 Działanie z prawdziwym padem, ViGEm, HIDMaestro (pythonnet, sterownik), `DisplaySwitch.exe`, przełączaniem dźwięku (pycaw) i powiadomieniami Windows trzeba
 sprawdzić ręcznie.

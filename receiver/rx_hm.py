@@ -5,7 +5,8 @@ siedzi w samej DLL i instaluje się przy pierwszym użyciu (InstallDriver, idemp
 uprawnień administratora (Windows: SeLoadDriverPrivilege) - bez nich backend się nie ładuje i receiver wraca do ViGEm.
 
   get(cfg_path)   -> Backend (ładowany raz na ścieżkę DLL; błąd zapamiętany do reset())
-  find_dll(path)  ścieżka z ustawień albo hidmaestro/HIDMaestro.Core.dll obok receivera
+  find_dll(path)  ścieżka z ustawień albo najnowsza pobrana wersja (rx_hm_update: hidmaestro/vX.Y.Z/), potem
+                  hidmaestro/HIDMaestro.Core.dll obok receivera (wypakowana ręcznie)
   Backend.create(slot, on_fb) -> Pad: build() pisze raport DualSense do pad.buf, submit() wysyła go bez kopiowania
 
 Gorąca ścieżka: SubmitRawReport(ReadOnlySpan<byte>) nie da się zawołać z pythonnet wprost (Span to ref struct), więc
@@ -39,6 +40,8 @@ class HMError(Exception):
 _lock = threading.Lock()
 _cache = {}                    # ścieżka DLL -> Backend albo HMError (nie próbujemy w kółko - reset() przy zmianie ustawień)
 _clr_ready = False
+_loaded = None                 # załadowany Backend: jedna wersja HIDMaestro na proces (CLR nie zwalnia DLL) - nowsza
+#                                pobrana w trakcie działa od restartu receivera
 
 
 def here():
@@ -49,7 +52,9 @@ def candidates(cfg_path=""):
     if cfg_path:
         p = os.path.expandvars(os.path.expanduser(cfg_path))
         return [os.path.join(p, DLL) if os.path.isdir(p) else p]
-    return [os.path.join(here(), "hidmaestro", DLL), os.path.join(here(), DLL)]
+    import rx_hm_update
+    newest = rx_hm_update.newest_dll()
+    return [*([newest] if newest else []), os.path.join(here(), "hidmaestro", DLL), os.path.join(here(), DLL)]
 
 
 def find_dll(cfg_path=""):
@@ -65,6 +70,10 @@ def is_admin():
         return False
 
 
+def loaded():
+    return _loaded
+
+
 def reset():
     """Zmiana ustawień: następne get() próbuje od nowa (np. po wskazaniu innej DLL). Załadowany backend zostaje."""
     with _lock:
@@ -74,6 +83,9 @@ def reset():
 
 def get(cfg_path=""):
     """-> Backend albo HMError. Ładowanie (CoreCLR + sterownik) tylko raz - pierwszy wątek slotu płaci ~0.5-1 s."""
+    global _loaded
+    if _loaded is not None:
+        return _loaded
     path = find_dll(cfg_path)
     if path is None:
         raise HMError(f"{DLL} not found ({', '.join(candidates(cfg_path))})", missing=True)
@@ -91,7 +103,7 @@ def get(cfg_path=""):
                 err = HMError(f"{type(e).__name__}: {e}")
                 _cache[path] = err
                 raise err from e
-            _cache[path] = hit
+            _cache[path] = _loaded = hit
         return hit
 
 
