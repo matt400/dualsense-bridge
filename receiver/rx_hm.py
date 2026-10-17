@@ -120,23 +120,30 @@ def _major(version):
 
 
 def net_runtimes():
-    """Zainstalowane wersje Microsoft.NETCore.App (clr_loader szuka ich jak dotnet: DOTNET_ROOT, Program Files)."""
+    """Zainstalowane wersje Microsoft.NETCore.App (clr_loader szuka ich jak dotnet: DOTNET_ROOT, Program Files).
+    None = nie wiadomo (brak pythonnet/clr_loader) - to nie to samo co brak .NET."""
     try:
         from clr_loader import find_runtimes
+    except ImportError:
+        return None
+    try:
         return [r for r in find_runtimes() if r.name == "Microsoft.NETCore.App"]
     except Exception:
         return []
 
 
-def best_runtime():
+def best_runtime(runtimes=None):
     """Najnowszy runtime >= NET_MAJOR albo None."""
-    ok = [r for r in net_runtimes() if _major(r.version) >= NET_MAJOR]
+    ok = [r for r in (net_runtimes() if runtimes is None else runtimes) or () if _major(r.version) >= NET_MAJOR]
     return max(ok, key=lambda r: tuple(_major(x) for x in str(r.version).split("."))) if ok else None
 
 
 def need_dotnet():
-    """Okno: brak .NET 10 (z pythonnet - bez niego clr_loader i tak nie znajdzie runtime'u)."""
-    return os.name == "nt" and not _clr_ready and best_runtime() is None
+    """Okno: brak .NET 10. Bez pythonnet nie wiadomo - wtedy błąd pythonnet, a nie propozycja instalacji .NET."""
+    if os.name != "nt" or _clr_ready:
+        return False
+    rts = net_runtimes()
+    return rts is not None and best_runtime(rts) is None
 
 
 def install_dotnet():
@@ -161,14 +168,15 @@ def _load_clr(path):
     wczytywał DLL bez żadnego typu - import kończył się "No module named 'HIDMaestro'"."""
     global _clr_ready
     if not _clr_ready:
+        rts = net_runtimes()                    # najpierw .NET: konkretny błąd zamiast ogólnego "brak pythonnet"
+        rt = best_runtime(rts)
+        if rt is None and rts is not None:
+            found = ", ".join(sorted(str(r.version) for r in rts)) or "none"
+            raise HMError(f".NET {NET_MAJOR} runtime not installed (found: {found})", need_dotnet=True)
         try:
             from pythonnet import load
         except ImportError:
             raise HMError("pythonnet not installed (pip install pythonnet)") from None
-        rt = best_runtime()
-        if rt is None:
-            found = ", ".join(sorted(str(r.version) for r in net_runtimes())) or "none"
-            raise HMError(f".NET {NET_MAJOR} runtime not installed (found: {found})", need_dotnet=True)
         try:
             load("coreclr", runtime_spec=rt)
         except RuntimeError:

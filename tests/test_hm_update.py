@@ -199,7 +199,7 @@ finally:
     RC.os.name, rx_winapi.is_admin, rx_winapi.relaunch_admin, sys.argv, rx_autostart.run_admin_task, RC._guard_path = real
 
 # ---------- .NET 10: wybór runtime, brak = czytelny błąd i instalacja przez winget ----------
-import types as _t, subprocess
+import types as _t, subprocess, importlib.util
 RT = lambda v: _t.SimpleNamespace(name="Microsoft.NETCore.App", version=v)
 real_rt, real_clr, real_run, real_os = rx_hm.net_runtimes, rx_hm._clr_ready, subprocess.run, rx_hm.os.name
 try:
@@ -229,6 +229,14 @@ try:
     subprocess.run = lambda cmd, **kw: _t.SimpleNamespace(returncode=1, stdout="No package found", stderr="")
     ok_, msg = rx_hm.install_dotnet()
     check(not ok_ and "No package found" in msg, f"błąd winget: {msg}")
+    rx_hm.net_runtimes = lambda: None          # brak pythonnet/clr_loader: nie wiadomo, czy .NET jest
+    check(not rx_hm.need_dotnet(), "bez pythonnet: okno nie proponuje instalacji .NET")
+    if importlib.util.find_spec("pythonnet") is None:
+        try:
+            rx_hm._load_clr("x.dll")
+            check(False, "bez pythonnet: błąd")
+        except rx_hm.HMError as e:
+            check(not e.need_dotnet and "pythonnet" in str(e), f"bez pythonnet: komunikat o pythonnet: {e}")
 finally:
     rx_hm.net_runtimes, rx_hm._clr_ready, subprocess.run, rx_hm.os.name = real_rt, real_clr, real_run, real_os
 
