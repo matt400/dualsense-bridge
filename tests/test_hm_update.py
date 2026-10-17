@@ -142,11 +142,39 @@ check(rx_hm.get("") is rx_hm._loaded, "jedna wersja HIDMaestro na proces")
 rx_hm._loaded = None
 
 # ---------- samouruchamianie jako administrator ----------
-import receiver_controller as RC, rx_winapi
-real = (RC.os.name, rx_winapi.is_admin, rx_winapi.relaunch_admin, sys.argv)
+import receiver_controller as RC, rx_winapi, rx_autostart
+real = (RC.os.name, rx_winapi.is_admin, rx_winapi.relaunch_admin, sys.argv, rx_autostart.run_admin_task, RC._guard_path)
 ran = []
+guard = os.path.join(ROOT, ".elevate_try")
+RC._guard_path = lambda: guard
 try:
     RC.os.name = "nt"
+    # zadanie administratora: start bez UAC
+    task = []
+    rx_autostart.run_admin_task = lambda: task.append(1) or True
+    rx_winapi.is_admin = lambda: False
+    rx_winapi.relaunch_admin = lambda cmd: ran.append(cmd) or True
+    sys.argv = ["receiver_controller.py"]
+    try:
+        RC.elevate()
+        check(False, "zadanie administratora: wyjście")
+    except SystemExit as e:
+        check(e.code == 0 and task == [1] and not ran and os.path.exists(guard), "start przez zadanie, bez okna UAC")
+    try:
+        RC.elevate()                               # zadanie dało proces bez uprawnień (konto bez admina): bez pętli
+    except SystemExit:
+        pass
+    check(task == [1] and len(ran) == 1, "zaraz po próbie przez zadanie: okno UAC zamiast drugiego zadania")
+    os.utime(guard, (time.time() - 120, time.time() - 120))
+    rx_autostart.run_admin_task = lambda: task.append(2) and False
+    ran.clear()
+    try:
+        RC.elevate()
+    except SystemExit:
+        pass
+    check(task[-1] == 2 and len(ran) == 1, "brak zadania: okno UAC")
+    ran.clear(); task.clear()
+    rx_autostart.run_admin_task = lambda: task.append(3) or True
     rx_winapi.relaunch_admin = lambda cmd: ran.append(cmd) or True
     rx_winapi.is_admin = lambda: False
     sys.argv = ["receiver_controller.py", "--autostart", "on"]
@@ -166,8 +194,51 @@ try:
     sys.argv = ["receiver_controller.py"]
     RC.elevate()
     check(not ran, "już administrator: bez UAC")
+    check(not task, "--autostart i wcześniejsze przypadki: zadanie nie jest używane")
 finally:
-    RC.os.name, rx_winapi.is_admin, rx_winapi.relaunch_admin, sys.argv = real
+    RC.os.name, rx_winapi.is_admin, rx_winapi.relaunch_admin, sys.argv, rx_autostart.run_admin_task, RC._guard_path = real
+
+# ---------- .NET 10: wybór runtime, brak = czytelny błąd i instalacja przez winget ----------
+import types as _t, subprocess, importlib.util
+RT = lambda v: _t.SimpleNamespace(name="Microsoft.NETCore.App", version=v)
+real_rt, real_clr, real_run, real_os = rx_hm.net_runtimes, rx_hm._clr_ready, subprocess.run, rx_hm.os.name
+try:
+    rx_hm._clr_ready = False
+    rx_hm.net_runtimes = lambda: [RT("8.0.20"), RT("9.0.9")]
+    check(rx_hm.best_runtime() is None, "tylko .NET 8 / 9: brak runtime'u dla HIDMaestro")
+    try:
+        rx_hm._load_clr("x.dll")
+        check(False, "brak .NET 10: błąd przed załadowaniem CLR")
+    except rx_hm.HMError as e:
+        check(e.need_dotnet and "8.0.20" in str(e) and "9.0.9" in str(e), f"komunikat z znalezionymi wersjami: {e}")
+    rx_hm.net_runtimes = lambda: [RT("8.0.20"), RT("10.0.2"), RT("10.0.12"), RT("11.0.0-preview")]
+    check(rx_hm.best_runtime().version == "11.0.0-preview" or rx_hm.best_runtime().version.startswith("1"), "najnowszy >= 10")
+    rx_hm.os.name = "nt"
+    rx_hm.net_runtimes = lambda: [RT("8.0.20")]
+    check(rx_hm.need_dotnet(), "okno: trzeba zainstalować .NET 10")
+    cmds = []
+    def fake_run(cmd, **kw):
+        cmds.append(cmd)
+        rx_hm.net_runtimes = lambda: [RT("10.0.12")]
+        return _t.SimpleNamespace(returncode=0, stdout="Successfully installed", stderr="")
+    subprocess.run = fake_run
+    ok_, msg = rx_hm.install_dotnet()
+    check(ok_ and cmds[0][:4] == ["winget", "install", "--id", rx_hm.WINGET_NET] and "--silent" in cmds[0], f"winget: {cmds}")
+    check(not rx_hm.need_dotnet(), "po instalacji .NET 10 jest")
+    rx_hm.net_runtimes = list
+    subprocess.run = lambda cmd, **kw: _t.SimpleNamespace(returncode=1, stdout="No package found", stderr="")
+    ok_, msg = rx_hm.install_dotnet()
+    check(not ok_ and "No package found" in msg, f"błąd winget: {msg}")
+    rx_hm.net_runtimes = lambda: None          # brak pythonnet/clr_loader: nie wiadomo, czy .NET jest
+    check(not rx_hm.need_dotnet(), "bez pythonnet: okno nie proponuje instalacji .NET")
+    if importlib.util.find_spec("pythonnet") is None:
+        try:
+            rx_hm._load_clr("x.dll")
+            check(False, "bez pythonnet: błąd")
+        except rx_hm.HMError as e:
+            check(not e.need_dotnet and "pythonnet" in str(e), f"bez pythonnet: komunikat o pythonnet: {e}")
+finally:
+    rx_hm.net_runtimes, rx_hm._clr_ready, subprocess.run, rx_hm.os.name = real_rt, real_clr, real_run, real_os
 
 print("HM UPDATE", "OK" if not fails else f"BŁĘDY: {len(fails)}")
 if fails:

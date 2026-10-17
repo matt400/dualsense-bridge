@@ -121,8 +121,9 @@ def relaunch_admin(cmd):
     sh = ctypes.windll.shell32
     sh.ShellExecuteW.argtypes = [wt.HWND, wt.LPCWSTR, wt.LPCWSTR, wt.LPCWSTR, wt.LPCWSTR, ctypes.c_int]
     sh.ShellExecuteW.restype = ctypes.c_void_p
-    show = 0 if os.path.basename(cmd[0]).lower().startswith("pythonw") else 1      # SW_HIDE / SW_SHOWNORMAL
-    r = sh.ShellExecuteW(None, "runas", cmd[0], subprocess.list2cmdline(cmd[1:]), os.getcwd(), show)
+    # zawsze SW_SHOWNORMAL: Windows stosuje tę wartość do pierwszego ShowWindow nowego procesu - SW_HIDE (pythonw) sprawiał,
+    # że okno receivera nie pojawiało się po kliknięciu ikony w zasobniku; pythonw i tak nie ma konsoli do pokazania
+    r = sh.ShellExecuteW(None, "runas", cmd[0], subprocess.list2cmdline(cmd[1:]), os.getcwd(), 1)
     return (r or 0) > 32
 
 

@@ -262,3 +262,5 @@ receiver/backups/
 
 # HIDMaestro (HIDMaestro.Core.dll i zależności) wypakowany przez użytkownika
 receiver/hidmaestro/
+# start jako administrator przez zadanie (receiver_controller.elevate)
+receiver/.elevate_try

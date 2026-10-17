@@ -210,6 +210,11 @@ class ConsoleSettings(QDialog):
         self.vpad_check = button(_("Sprawdź teraz"), small=True)
         self.vpad_check.setIcon(icon("update"))
         self.vpad_check.clicked.connect(self._hm_check)
+        self.vpad_net = button(_("Zainstaluj .NET 10"), small=True)
+        self.vpad_net.setIcon(icon("update"))
+        self.vpad_net.clicked.connect(self._net_install)
+        self._net_busy = False
+        self._net_msg = ""
         self._hm_timer = QTimer(self, interval=500)
         self._hm_timer.timeout.connect(self._vpad_state)
         backend = group(_("WIRTUALNE PADY"),
@@ -220,7 +225,7 @@ class ConsoleSettings(QDialog):
                         field(_("Backend"), self.vpad_backend),
                         self.vpad_auto,
                         field(_("Własna HIDMaestro.Core.dll (plik albo folder; puste = pobrana automatycznie)"), self.vpad_dll),
-                        self.vpad_now, row_of(self.vpad_check, self.vpad_admin))
+                        self.vpad_now, row_of(self.vpad_check, self.vpad_net, self.vpad_admin))
         order = group(_("KOLEJNOŚĆ GRACZY"),
                       self.vpad_fixed,
                       label(_("Gry i Steam numerują pady wg kolejności podłączenia. Gdy pad 2 włączy się pierwszy, pad 1 "
@@ -243,6 +248,20 @@ class ConsoleSettings(QDialog):
         self._hm_timer.start()
         self._vpad_state(busy=True)
 
+    def _net_install(self):
+        """.NET 10 przez winget w tle (kilka minut); po instalacji HIDMaestro działa od następnego podłączenia pada."""
+        import threading
+
+        def run():
+            ok, msg = rx_hm.install_dotnet()
+            self._net_msg = _("✓ .NET 10 zainstalowany - HIDMaestro zadziała przy następnym połączeniu pada") if ok \
+                else _("Instalacja .NET 10 nie udała się: {err}").format(err=msg)
+            self._net_busy = False
+        self._net_busy, self._net_msg = True, ""
+        threading.Thread(target=run, name="dotnet install", daemon=True).start()
+        self._hm_timer.start()
+        self._vpad_state()
+
     def _vpad_state(self, busy=False):
         """Co działa teraz: rodzaj podłączonych padów, wersja HIDMaestro (pobrana / najnowsza / pobieranie / błąd), powód
         pracy bez HIDMaestro, przycisk restartu jako administrator."""
@@ -259,7 +278,16 @@ class ConsoleSettings(QDialog):
                          + (_(" (na GitHubie jest {v})").format(v=st.latest) if newer else ""))
         if st.error and not busy:
             lines.append(_("Pobieranie HIDMaestro: {err}").format(err=st.error))
-        if not busy:
+        need_net = backend != "vigem" and rx_hm.need_dotnet()
+        if self._net_busy:
+            lines.append(_("Instalowanie .NET 10 (winget)…"))
+        elif self._net_msg:
+            lines.append(self._net_msg)
+        elif need_net:
+            lines.append(_("Brakuje .NET 10 - HIDMaestro go wymaga."))
+        self.vpad_net.setVisible(need_net or self._net_busy)
+        self.vpad_net.setEnabled(not self._net_busy)
+        if not busy and not self._net_busy:
             self._hm_timer.stop()
         self.vpad_check.setEnabled(not busy and backend != "vigem")
         if backend != "vigem" and rx_ds4.hm_note:

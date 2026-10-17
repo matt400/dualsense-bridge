@@ -29,12 +29,17 @@ OUT_REPORT = 0x02              # raport wyjściowy DualSense: silniki, efekty sp
 HID_OUTPUT = 0                 # HMOutputSource.HidOutput
 
 
-class HMError(Exception):
-    """HIDMaestro niedostępny; missing = brak DLL (w trybie auto to zwykła sytuacja, bez ostrzeżenia)."""
+NET_MAJOR = 10                 # HIDMaestro.Core.dll jest pod net10.0 - starszy runtime nie wczyta jej typów
+WINGET_NET = "Microsoft.DotNet.Runtime.10"
 
-    def __init__(self, msg, missing=False):
+
+class HMError(Exception):
+    """HIDMaestro niedostępny; missing = brak DLL (w trybie auto to zwykła sytuacja, bez ostrzeżenia);
+    need_dotnet = brak .NET 10 (okno proponuje instalację)."""
+
+    def __init__(self, msg, missing=False, need_dotnet=False):
         super().__init__(msg)
-        self.missing = missing
+        self.missing, self.need_dotnet = missing, need_dotnet
 
 
 _lock = threading.Lock()
@@ -107,20 +112,77 @@ def get(cfg_path=""):
         return hit
 
 
+def _major(version):
+    try:
+        return int(str(version).split(".")[0])
+    except ValueError:
+        return 0
+
+
+def net_runtimes():
+    """Zainstalowane wersje Microsoft.NETCore.App (clr_loader szuka ich jak dotnet: DOTNET_ROOT, Program Files).
+    None = nie wiadomo (brak pythonnet/clr_loader) - to nie to samo co brak .NET."""
+    try:
+        from clr_loader import find_runtimes
+    except ImportError:
+        return None
+    try:
+        return [r for r in find_runtimes() if r.name == "Microsoft.NETCore.App"]
+    except Exception:
+        return []
+
+
+def best_runtime(runtimes=None):
+    """Najnowszy runtime >= NET_MAJOR albo None."""
+    ok = [r for r in (net_runtimes() if runtimes is None else runtimes) or () if _major(r.version) >= NET_MAJOR]
+    return max(ok, key=lambda r: tuple(_major(x) for x in str(r.version).split("."))) if ok else None
+
+
+def need_dotnet():
+    """Okno: brak .NET 10. Bez pythonnet nie wiadomo - wtedy błąd pythonnet, a nie propozycja instalacji .NET."""
+    if os.name != "nt" or _clr_ready:
+        return False
+    rts = net_runtimes()
+    return rts is not None and best_runtime(rts) is None
+
+
+def install_dotnet():
+    """.NET 10 przez winget (receiver działa jako administrator - bez okien). -> (ok, opis). Wołać w tle (do kilku min)."""
+    import subprocess
+    cmd = ["winget", "install", "--id", WINGET_NET, "--exact", "--silent", "--accept-package-agreements",
+           "--accept-source-agreements", "--disable-interactivity"]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=900, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except (OSError, subprocess.SubprocessError) as e:
+        return False, f"winget: {e!r}"
+    reset()
+    if best_runtime() is not None:
+        return True, ".NET 10 installed"
+    tail = (r.stdout or r.stderr or "").strip().splitlines()[-1:] or [f"exit code {r.returncode}"]
+    return False, f"winget: {tail[0]}"
+
+
 def _load_clr(path):
-    """CoreCLR przez pythonnet (raz na proces) i referencja do HIDMaestro.Core.dll z jej folderu (zależności obok)."""
+    """CoreCLR przez pythonnet (raz na proces) i referencja do HIDMaestro.Core.dll z jej folderu (zależności obok).
+    Runtime wybierany jawnie (>= .NET 10): clr_loader bez wskazania bierze najnowszy zainstalowany, a starszy niż 10
+    wczytywał DLL bez żadnego typu - import kończył się "No module named 'HIDMaestro'"."""
     global _clr_ready
     if not _clr_ready:
+        rts = net_runtimes()                    # najpierw .NET: konkretny błąd zamiast ogólnego "brak pythonnet"
+        rt = best_runtime(rts)
+        if rt is None and rts is not None:
+            found = ", ".join(sorted(str(r.version) for r in rts)) or "none"
+            raise HMError(f".NET {NET_MAJOR} runtime not installed (found: {found})", need_dotnet=True)
         try:
             from pythonnet import load
         except ImportError:
             raise HMError("pythonnet not installed (pip install pythonnet)") from None
         try:
-            load("coreclr")
+            load("coreclr", runtime_spec=rt)
         except RuntimeError:
             pass                                # runtime już załadowany (np. drugi backend po zmianie ustawień)
         except Exception as e:
-            raise HMError(f".NET runtime: {e} (install .NET 10 Desktop Runtime)") from e
+            raise HMError(f".NET runtime: {e}") from e
         _clr_ready = True
     import clr
     folder = os.path.dirname(path)
@@ -158,6 +220,18 @@ def submit_delegate(clr, ctrl_type):
         raise HMError(f"cannot bind SubmitRawReport: {e!r}") from e
 
 
+def _type_error(path):
+    """DLL wczytana, a typów nie ma: pierwszy brakujący składnik z LoaderExceptions (zależność, wersja runtime)."""
+    try:
+        from System.Reflection import Assembly
+        Assembly.LoadFrom(path).GetTypes()
+        return "no HIDMaestro types (unknown cause)"
+    except Exception as e:
+        inner = getattr(getattr(e, "InnerException", None), "LoaderExceptions", None) or getattr(e, "LoaderExceptions", None)
+        first = next((str(x.Message) for x in inner or () if x is not None), None)
+        return f"cannot load its types: {first or e}"
+
+
 class Backend:
     name = "hm"
     order_wait = ORDER_WAIT
@@ -166,7 +240,10 @@ class Backend:
         if not is_admin():
             raise HMError("administrator rights required (Windows needs them to create a virtual device)")
         clr = _load_clr(path)
-        from HIDMaestro import HMContext, HMController
+        try:
+            from HIDMaestro import HMContext, HMController
+        except ImportError:
+            raise HMError(f"{os.path.basename(path)}: {_type_error(path)}") from None
         from System import IntPtr
         self.IntPtr = IntPtr
         self.ctx = HMContext()

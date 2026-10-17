@@ -8,6 +8,9 @@ przełączał ekranu w tryb konsoli. Zadanie „przy logowaniu” startuje bez t
   enable(exe, args)  zadanie DualSenseBridge (schtasks /xml) i usunięcie starego wpisu Run; błąd -> zostaje wpis Run
   disable()          usuwa zadanie i wpis Run
   migrate()          przy starcie receivera: jest stary wpis Run -> zamiana na zadanie (raz, w tle)
+  ensure_admin_task(exe, args)  zadanie DualSenseBridgeAdmin bez wyzwalacza, z najwyższymi uprawnieniami (tworzy je
+                     receiver działający jako administrator) - ręczne uruchomienie receivera startuje przez nie
+  run_admin_task()   start receivera jako administrator bez okna UAC (schtasks /run DualSenseBridgeAdmin)
   elevate()          zadanie z najwyższymi uprawnieniami (HIDMaestro tworzy pady tylko jako administrator) - zmienić je
                      może tylko proces administratora, więc robi to receiver uruchomiony jako administrator
 """
@@ -17,6 +20,7 @@ import tempfile
 from xml.sax.saxutils import escape
 
 NAME = "DualSenseBridge"
+ADMIN_NAME = "DualSenseBridgeAdmin"     # start na żądanie jako administrator (bez UAC) - bez wyzwalacza
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
@@ -29,16 +33,15 @@ def user_id():
 LEAST, HIGHEST = "<RunLevel>LeastPrivilege</RunLevel>", "<RunLevel>HighestAvailable</RunLevel>"
 
 
-def task_xml(exe, args, workdir, user, elevated=False):
+def task_xml(exe, args, workdir, user, elevated=False, logon=True):
     """Definicja zadania: przy logowaniu tego użytkownika, bez opóźnienia i bez limitu czasu, zwykły priorytet.
-    elevated: najwyższe uprawnienia (administrator bez okna UAC przy logowaniu)."""
+    elevated: najwyższe uprawnienia (administrator bez okna UAC); logon=False: bez wyzwalacza (start na żądanie)."""
     e = escape
+    trigger = f"<LogonTrigger><Enabled>true</Enabled><UserId>{e(user)}</UserId></LogonTrigger>" if logon else ""
     return f"""<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo><Description>DualSense bridge receiver</Description></RegistrationInfo>
-  <Triggers>
-    <LogonTrigger><Enabled>true</Enabled><UserId>{e(user)}</UserId></LogonTrigger>
-  </Triggers>
+  <Triggers>{trigger}</Triggers>
   <Principals>
     <Principal id="Author"><UserId>{e(user)}</UserId><LogonType>InteractiveToken</LogonType>
       {HIGHEST if elevated else LEAST}</Principal>
@@ -100,19 +103,19 @@ def split_command(cmd):
     return exe, args.strip()
 
 
-def create_task(exe, args, elevated=False):
+def create_task(exe, args, elevated=False, name=NAME, logon=True):
     """-> (ok, opis błędu)."""
     script = split_command(args)[0] if args else exe
-    return _create_xml(task_xml(exe, args, os.path.dirname(os.path.abspath(script)), user_id(), elevated))
+    return _create_xml(task_xml(exe, args, os.path.dirname(os.path.abspath(script)), user_id(), elevated, logon), name)
 
 
-def _create_xml(xml):
+def _create_xml(xml, name=NAME):
     """Zadanie z definicji XML -> (ok, opis błędu). XML w UTF-16 (tak go czyta schtasks); plik tymczasowy usuwany zawsze."""
     fd, path = tempfile.mkstemp(suffix=".xml")
     try:
         with os.fdopen(fd, "w", encoding="utf-16") as f:
             f.write(xml)
-        r = _schtasks("/create", "/tn", NAME, "/xml", path, "/f")
+        r = _schtasks("/create", "/tn", name, "/xml", path, "/f")
         return r.returncode == 0, (r.stderr or r.stdout).strip()
     except (OSError, subprocess.SubprocessError) as e:
         return False, repr(e)
@@ -172,4 +175,30 @@ def elevate(exe, args):
         return ok
     except Exception as e:
         print(f"Autostart: elevation failed: {e!r}")
+        return False
+
+
+def ensure_admin_task(exe, args):
+    """Zadanie startu na żądanie z najwyższymi uprawnieniami - odświeżane przy każdym starcie jako administrator (ta sama
+    komenda co autostart; folder receivera mógł się przenieść). -> True, gdy jest."""
+    try:
+        ok, err = create_task(exe, args, elevated=True, name=ADMIN_NAME, logon=False)
+        if not ok:
+            print(f"Admin start task: cannot create ({err})")
+        return ok
+    except Exception as e:
+        print(f"Admin start task: {e!r}")
+        return False
+
+
+def run_admin_task():
+    """Receiver jako administrator bez UAC: istniejące zadanie ADMIN_NAME z najwyższymi uprawnieniami -> schtasks /run.
+    -> True, gdy wystartowało. Brak zadania / zwykłe uprawnienia w zadaniu -> False (wtedy okno UAC)."""
+    try:
+        r = _schtasks("/query", "/tn", ADMIN_NAME, "/xml")
+        if r.returncode != 0 or HIGHEST not in r.stdout:
+            return False
+        return _schtasks("/run", "/tn", ADMIN_NAME).returncode == 0
+    except Exception as e:
+        print(f"Admin start task: cannot run ({e!r})")
         return False

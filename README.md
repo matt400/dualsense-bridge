@@ -43,9 +43,10 @@ python receiver_controller.py
 ```
 
 - **Wirtualne pady:** [HIDMaestro](https://github.com/hifihedgehog/HIDMaestro) (natywny DualSense, rozwijany) receiver
-  pobiera i aktualizuje sam (~56 MB, chwilę po pierwszym starcie). Receiver uruchamia się **jako administrator** (okno
-  UAC - HIDMaestro tworzy pady tylko tak); zadanie autostartu dostaje najwyższe uprawnienia, więc przy logowaniu UAC
-  już się nie pojawia. `--no-elevate` wyłącza samo podnoszenie uprawnień.
+  pobiera i aktualizuje sam (~56 MB, chwilę po pierwszym starcie). Receiver uruchamia się **jako administrator**
+  (HIDMaestro tworzy pady tylko tak). Okno UAC pojawia się tylko przy pierwszym starcie: potem receiver startuje przez
+  zadanie Harmonogramu z najwyższymi uprawnieniami (`DualSenseBridgeAdmin`, autostart tak samo). `--no-elevate`
+  wyłącza samo podnoszenie uprawnień.
 - Zapas: instalator `vgamepad` zaproponuje sterownik **ViGEmBus** (pad PS4). Zainstaluj go. Bez HIDMaestro albo bez
   uprawnień administratora receiver użyje ViGEmBus. Wybór: Ustawienia → Pady.
 - Przy pierwszym starcie zapora Windows zapyta o dostęp do sieci. Zezwól w **sieciach prywatnych** (UDP 5005).
