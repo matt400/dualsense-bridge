@@ -37,6 +37,7 @@ import rx_audio
 import rx_display
 import rx_events as ev
 import rx_master as master
+import rx_settings
 import rx_state as S
 import rx_winapi as W
 from rx_buttons import BIT, BUTTON_CODES, DIRS, INPUTS, TRIG_ON, pressed_inputs
@@ -222,6 +223,15 @@ def _step(what, fn, *args):
         ev.error(_("Tryb konsoli: {what} - błąd: {err}").format(what=what, err=repr(e)))
 
 
+def auto_pad(i):
+    """Połączenie pada w slocie i włącza tryb konsoli: pad master, a bez ustawionego mastera (każdy pad może
+    wszystko) - pierwszy połączony pad. Wcześniej bez mastera auto-ON nie działało nigdy (po starcie PC tryb
+    zostawał wyłączony); drugi pad dochodzący później nie włącza ponownie trybu wyłączonego ręcznie."""
+    if rx_settings.cur.master.pad:
+        return master.is_master(i)
+    return not any(S.alive[k] for k in range(len(S.alive)) if k != i)
+
+
 class Console:
     def __init__(self, cfg):
         self.cfg = cfg
@@ -278,11 +288,20 @@ class Console:
 
     def pad_connected(self, i):
         """Pad w slocie i właśnie się połączył (nowy identyfikator albo ponownie utworzony wirtualny DS4)."""
-        if not (self.cfg.auto_on_master and master.is_master(i)):
+        if not self.cfg.auto_on_master:
+            return
+        if not auto_pad(i):
+            if S.pad_id[i]:                  # bez identyfikatora (pierwszy pakiet) master jest nieznany - to nie błąd
+                print(f"Console: controller {i} ({S.profile_key(i)}) connected - "
+                      + (f"not the master ({rx_settings.cur.master.pad})" if rx_settings.cur.master.pad
+                         else "another controller is already connected") + ", no auto-ON")
             return
         if self._skip_auto:
             self._skip_auto = False
+            print("Console: master connected - auto-ON skipped (receiver restarted with console mode off)")
+            ev.info(_("Tryb konsoli: auto-włączenie pominięte - restart receivera przy wyłączonym trybie"))
             return
+        print(f"Console: master connected on controller {i} - auto-ON queued")
         self._jobs.put(lambda: self._auto_on(i))
 
     def blocked_by(self):
@@ -294,7 +313,7 @@ class Console:
         return exe if exe and exe not in self.cfg.allowed_apps else None
 
     def _auto_on(self, i):
-        if self.on or not master.is_master(i):     # w kolejce mógł zmienić się pad w slocie albo master
+        if self.on or not auto_pad(i):             # w kolejce mógł zmienić się pad w slocie albo master
             return
         if (exe := self.blocked_by()) is not None:
             print(f"Console: master connected, {exe} in the foreground - console mode waits until it is not")
@@ -351,14 +370,15 @@ class Console:
                 return
             try:
                 job()
-            except Exception:
+            except Exception as e:
                 print(f"Console: job error:\n{traceback.format_exc()}")
+                ev.error(_("Tryb konsoli: błąd - {err}").format(err=repr(e)))   # inaczej auto-ON ginął bez śladu w oknie
 
     def _tick(self):
         now = time.monotonic()
         if self._pending is not None:
             i = self._pending
-            if self.on or not S.alive[i] or not master.is_master(i):
+            if self.on or not S.alive[i] or not auto_pad(i):
                 self._pending = None                 # już włączony / master odszedł - nie czekaj dalej
             elif self.blocked_by() is None:
                 self._pending = None

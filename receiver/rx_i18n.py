@@ -331,7 +331,8 @@ EN = {
     "OKNO": "WINDOW",
     "JĘZYK": "LANGUAGE",
     "PAD MASTER": "MASTER PAD",
-    "Włącz po połączeniu pada master": "Turn on when the master pad connects",
+    "Włącz po połączeniu pada master (bez mastera: pierwszego pada)":
+        "Turn on when the master pad connects (no master: the first pad)",
     "Wyłączasz go tym samym podwójnym kliknięciem; zostaje wyłączony do następnego połączenia mastera.":
         "Turn it off with the same double press; it stays off until the master connects again.",
     "Zmiana języka działa po restarcie receivera.": "The language changes after the receiver restarts.",
@@ -862,6 +863,9 @@ EN = {
     "Tryb konsoli czeka - na pierwszym planie {exe} (dodaj go do listy programów w Ustawieniach, jeśli to nie gra)":
         "Console mode waits - {exe} is in the foreground (add it to the program list in Settings if it is not a game)",
     "połączono pad master (pad {n}), po {s} s czekania": "master pad connected (pad {n}), after waiting {s} s",
+    "Tryb konsoli: auto-włączenie pominięte - restart receivera przy wyłączonym trybie":
+        "Console mode: auto-on skipped - receiver restarted with console mode off",
+    "Tryb konsoli: błąd - {err}": "Console mode: error - {err}",
     "Tryb konsoli: Windows przywrócił oba ekrany - ponowne przełączenie na TV":
         "Console mode: Windows restored both screens - switching to the TV again",
 }
