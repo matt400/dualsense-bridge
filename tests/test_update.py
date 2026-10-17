@@ -94,4 +94,35 @@ assert U.check_available(tmp) is None, "nie klon -> brak informacji"
 git(chk, "remote", "set-url", "origin", os.path.join(tmp, "nie-ma"))
 assert U.check_available(chk) is None, "brak sieci / repo -> brak informacji"
 ok("sprawdzanie GitHuba: liczba zmian i tytuł najnowszej, bez zmiany plików; błędy -> brak informacji")
+
+# ---------- kod pobrany wcześniej, ale działa stary (nieudany restart / pull z konsoli) ----------
+pre = os.path.join(tmp, "pre")
+git(tmp, "clone", "-q", origin, pre)
+start = git(pre, "rev-parse", "HEAD").strip()
+commit(origin, "receiver/rx_x.py", "a = 6\n", "pobrane wcześniej")
+commit(origin, "receiver/requirements.txt", "vgamepad\nnowa\n", "deps2")
+git(pre, "pull", "-q", "--ff-only")                       # nowy kod na dysku, receiver dalej na `start`
+U.running, real_running = (lambda root=None: start[:7]), U.running
+called.clear()
+r = U.update(pre)
+assert r.ok and r.changed and r.old == start and "(2 " in r.text, r
+assert called == [pre], "requirements.txt zmieniony od DZIAŁAJĄCEJ wersji -> pip"
+U.running = lambda root=None: git(pre, "rev-parse", "HEAD").strip()[:7]
+r = U.update(pre, pip=False)
+assert r.ok and not r.changed and "najnowszą" in r.text, r
+U.running = lambda root=None: start[:7]
+a = U.check_available(pre)
+assert a.behind == 2, ("dostępna aktualizacja liczona od działającej wersji", a)
+U.running = real_running
+ok("kod już pobrany, działa starszy: restart zamiast 'Masz najnowszą wersję'; plakietka liczy od działającej wersji")
+
+calls = []
+import proto
+real_git = proto.git
+proto.git = lambda root, *a, **k: calls.append((a, k.get("env"), k.get("timeout"))) or real_git(root, *a, **k)
+U.update(work, pip=False)
+proto.git = real_git
+pull = [c for c in calls if c[0][:1] == ("pull",)]
+assert pull and pull[0][1] == U.QUIET_ENV and pull[0][2] == U.PULL_TIMEOUT_S, pull
+ok("git pull bez okien logowania i z limitem czasu (przycisk nie wisi na 'Aktualizuję…')")
 print("UPDATE OK")

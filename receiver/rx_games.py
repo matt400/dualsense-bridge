@@ -24,6 +24,18 @@ def is_game(exe):
     return exe not in NOT_GAMES and exe not in C.GAME_IGNORE
 
 
+def in_game(exe=None):
+    """Na pierwszym planie jest gra: program spoza listy programów trybu konsoli (pulpit, Steam / Big Picture,
+    launchery, ten receiver - Ustawienia -> Tryb konsoli) i spoza NOT_GAMES. exe=None -> ostatnio odczytany program
+    (S.game, co POLL_S). Pusta lista trybu konsoli = sama NOT_GAMES."""
+    exe = S.game if exe is None else exe
+    if not exe:
+        return False
+    import rx_console          # rx_console -> rx_master -> rx_feedback -> (leniwie) ten moduł
+    apps = rx_console.ctl.cfg.allowed_apps if rx_console.ctl is not None else rx_console.DEFAULT_APPS
+    return exe not in apps and is_game(exe)
+
+
 def poll_once():
     try:
         exe = W.foreground_exe()
@@ -31,8 +43,12 @@ def poll_once():
         return
     if not exe:
         return
-    if exe != S.game and S.game is not None:
-        F.stop_game_rumble(f"{S.game} -> {exe}")
+    if exe != S.game:
+        if S.game is not None:
+            F.stop_game_rumble(f"{S.game} -> {exe}")
+        changed = True
+    else:
+        changed = False
     if is_game(exe) and recent[:1] != [exe]:
         recent[:] = [exe, *[e for e in recent if e != exe][:RECENT_MAX - 1]]
     for i in S.set_game(exe):
@@ -41,6 +57,8 @@ def poll_once():
         label = S.profile_label(S.active[i])
         print(f"Controller {i}: {exe} -> profile {label}")
         F.pulse(i, "auto_default" if label == "default" else "auto_profile")
+    if changed:
+        F.fb_event.set()       # gra <-> pulpit: kolor lightbara z gry obowiązuje tylko w grze (rx_feedback._target)
 
 
 def watch_thread():

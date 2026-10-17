@@ -433,9 +433,11 @@ def git_version(root, git_exe=None):
         return "", 0, ""
 
 
-def git_pull(root, git_exe=None):
+def git_pull(root, git_exe=None, env=None, timeout=120):
     """git pull --ff-only (tylko przewinięcie do wersji z GitHuba, lokalne zmiany -> błąd, nic nie nadpisane).
-    -> (UPD_*, komunikat gita przy błędzie, stary commit, nowy commit, zmienione pliki)."""
+    env: dodatkowe zmienne dla gita (receiver: bez okien logowania - inaczej pull z procesu w tle czekał na niewidoczne
+    okno Git Credential Manager do końca limitu czasu). -> (UPD_*, komunikat gita przy błędzie, stary commit, nowy
+    commit, zmienione pliki)."""
     if not os.path.isdir(os.path.join(root, ".git")):
         return UPD_NOT_GIT, "", "", "", []
     git_exe = git_exe or find_git()
@@ -443,7 +445,7 @@ def git_pull(root, git_exe=None):
         return UPD_NO_GIT, "", "", "", []
     try:
         old = git(root, "rev-parse", "HEAD", git_exe=git_exe).stdout.strip()
-        p = git(root, "pull", "--ff-only", git_exe=git_exe, timeout=120)
+        p = git(root, "pull", "--ff-only", git_exe=git_exe, timeout=timeout, env=env)
         if p.returncode:
             return UPD_FAILED, git_error(p.stderr or p.stdout), old, old, []
         new = git(root, "rev-parse", "HEAD", git_exe=git_exe).stdout.strip()

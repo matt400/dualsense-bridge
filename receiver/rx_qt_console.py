@@ -448,12 +448,12 @@ class ConsoleSettings(QDialog):
         colors.addWidget(reset_color)
         self.light_blink = QCheckBox(_("Miganie na czerwono przy niskiej baterii (także w grze)"))
         self.light_blink.toggled.connect(self._light_edited)
-        self.light_game = QCheckBox(_("Gra może zmienić kolor (wyłączone = zawsze ten kolor)"))
+        self.light_game = QCheckBox(_("Gra może zmienić kolor (tylko w trakcie gry; wyłączone = zawsze ten kolor)"))
         self.light_game.toggled.connect(self._light_edited)
         pad = group(_("KOLOR LIGHTBARA"),
-                    label(_("Ten kolor świeci, dopóki gra albo program na PC (np. Steam) nie ustawi własnego - chyba że wyłączysz "
-                            "„Gra może zmienić kolor”. Miganie przy niskiej baterii działa zawsze, a potwierdzenia (np. złoty "
-                            "błysk mastera) są na wierzchu."), "dim", wrap=True),
+                    label(_("Poza grą (pulpit, Steam, launchery - lista w Trybie konsoli) zawsze świeci ten kolor. W grze "
+                            "może go zastąpić kolor gry, chyba że wyłączysz „Gra może zmienić kolor”. Miganie przy niskiej "
+                            "baterii działa zawsze, a potwierdzenia (np. złoty błysk mastera) są na wierzchu."), "dim", wrap=True),
                     field(_("Pad"), self.light_pad), self.light_own,
                     pair(field(_("Tryb"), self.light_mode), field(_("Kolor"), _wrap(colors))),
                     self.light_game, self.light_blink)

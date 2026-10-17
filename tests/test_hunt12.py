@@ -23,8 +23,12 @@ now = time.monotonic
 # ---------- 1. kolor z gry: domyślnie ma pierwszeństwo, "zawsze mój" go pomija ----------
 R.apply(R.Settings(lightbar=R.LightbarConfig(15, {A: R.PadLight("solid", "#ff00ff", True)})))
 check(F._target(0, now())[0][2:] == (255, 0, 255), "bez koloru z gry - kolor z ustawień")
+S.game = "game.exe"
 F.game(0, rgb=(0, 0, 255))
 check(F._target(0, now())[0][2:] == (0, 0, 255), "gra ustawiła kolor - domyślnie ma pierwszeństwo")
+S.game = "steam.exe"
+check(F._target(0, now())[0][2:] == (255, 0, 255), "Steam / pulpit (poza grą) - kolor z ustawień mimo koloru z PC")
+S.game = "game.exe"
 R.apply(R.Settings(lightbar=R.LightbarConfig(15, {A: R.PadLight("solid", "#ff00ff", True, game=False)})))
 val, ours, _b = F._target(0, now())
 check(val[2:] == (255, 0, 255) and ours, "game = False - zawsze kolor z ustawień, mimo koloru z gry")
@@ -40,6 +44,10 @@ check(F.fb[0]["note"], "kolor z gry oznaczony do wpisu")
 F._note_game_color(0)
 new = [e.text for e in ev.since(seq)]
 check(len(new) == 1 and "#040506" in new[0] and "Gra może zmienić kolor" in new[0], f"wpis w dzienniku: {new}")
+S.game = "steam.exe"; F.game(0, rgb=(4, 5, 6)); F.fb[0]["note"] = True; F._note_game_color(0)
+new = [e.text for e in ev.since(seq)]
+check("poza grą" in new[-1], f"wpis w dzienniku poza grą: {new[-1]}")
+S.game = "game.exe"
 F.game(0, rgb=(7, 8, 9))
 check(not F.fb[0]["note"], "kolejne kolory z gry bez nowych wpisów")
 F.reset(0)

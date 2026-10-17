@@ -38,6 +38,7 @@ tylko tak), zadanie autostartu dostaje najwyższe uprawnienia (bez UAC przy logo
 import gc
 import os
 import sys
+import threading
 import time
 
 import rx_config
@@ -85,6 +86,7 @@ def _gamebar():
 NO_ELEVATE = "--no-elevate"
 
 
+RESTART_GUARD_S = 20.0     # restart: sprzątanie dłuższe niż tyle -> nowy proces i tak startuje, stary kończy się od razu
 ELEVATE_GUARD_S = 60       # zadanie administratora uruchomione przed chwilą, a proces znów bez uprawnień -> UAC (bez pętli)
 
 
@@ -210,6 +212,21 @@ def main():
             print("PySide6 not installed (pip install -r requirements.txt) - running without GUI")
             use_gui = False
 
+    restart_once = threading.Lock()      # nowy proces startuje raz: zwykłe zamknięcie albo strażnik restartu
+
+    def restart_now(console_on, force=False):
+        if not restart_once.acquire(blocking=False):
+            return
+        if force:
+            print(f"Shutdown takes more than {RESTART_GUARD_S:g}s - restarting anyway")
+            rx_winapi.release_single_instance()
+        try:
+            rx_winapi.relaunch({rx_console.RESTART_ENV: "1" if console_on else "0"}, admin=S.restart == "admin")
+        except OSError as e:
+            print(f"Restart failed: {e!r} - start the receiver manually")
+        if force:
+            os._exit(0)          # stary proces nie może zostać (porty, wirtualne pady)
+
     try:
         if use_gui:
             import rx_qt
@@ -228,6 +245,11 @@ def main():
         print("\nStopped.")
     finally:
         S.stop.set()
+        console_on = rx_console.is_on()
+        if S.restart:            # zawieszone sprzątanie (sterownik pada, przełączanie ekranu) nie może zablokować restartu
+            guard = threading.Timer(RESTART_GUARD_S, restart_now, (console_on, True))
+            guard.daemon = True
+            guard.start()
         rx_feedback.fb_event.set()          # wątek feedbacku kończy się zaraz - potem efekty spustów nie wrócą
         fb_thread.join(1.0)
         rx_feedback.release_triggers(rx_net.send_triggers)   # pad nie może zostać z twardym spustem po wyjściu
@@ -238,17 +260,13 @@ def main():
         deadline = time.monotonic() + 2.0
         for t in slot_threads:      # wątki slotów odłączają wirtualne DS4 od ViGEm (koniec wątku = odłączone)
             t.join(max(0.0, deadline - time.monotonic()))
-        console_on = rx_console.is_on()
         rx_console.close(restart=S.restart)
         rx_net.close()
         rx_dsu.close()
         rx_winapi.release_single_instance()
         rx_winapi.end_timer()
         if S.restart:               # porty, ViGEm i blokada instancji są już zwolnione - nowy proces startuje jak z autostartu
-            try:
-                rx_winapi.relaunch({rx_console.RESTART_ENV: "1" if console_on else "0"}, admin=S.restart == "admin")
-            except OSError as e:
-                print(f"Restart failed: {e!r} - start the receiver manually")
+            restart_now(console_on)
         if C.log_handle is not None:
             try:
                 C.log_handle.flush()
