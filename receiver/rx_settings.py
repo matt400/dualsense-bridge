@@ -152,6 +152,7 @@ class PadLight:
     mode: str = "solid"           # solid | battery - tylko gdy gra nie ustawiła koloru
     color: str = ""               # "#rrggbb" dla trybu solid; "" = idle_lightbar z receiver.toml
     blink: bool = True            # niska bateria: czerwone miganie (także nad kolorem z gry)
+    game: bool = True             # gra / program na PC może zmienić kolor (False = zawsze kolor z ustawień pada)
 
 
 def _color(v):
@@ -165,7 +166,7 @@ def _color(v):
 
 
 def _pads(v):
-    """{"*" | MAC: {"mode", "color", "blink"}} -> {klucz: PadLight}; złe wpisy pomijane."""
+    """{"*" | MAC: {"mode", "color", "blink", "game"}} -> {klucz: PadLight}; złe wpisy pomijane."""
     if not isinstance(v, dict):
         raise ValueError("expected {pad: {mode, color, blink}}")
     out = {}
@@ -174,7 +175,7 @@ def _pads(v):
             if not isinstance(raw, dict):
                 raise ValueError("expected an object")
             out[_text(k)] = PadLight(mode=_choice(LIGHT_MODES)(raw.get("mode", "solid")), color=_color(raw.get("color", "")),
-                                     blink=_bool(raw.get("blink", True)))
+                                     blink=_bool(raw.get("blink", True)), game=_bool(raw.get("game", True)))
         except (ValueError, TypeError) as e:
             print(f"Settings: lightbar for {k!r} ignored ({e})")
     return out

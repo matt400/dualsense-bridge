@@ -86,6 +86,9 @@ def screens():
     return [(sc.name() or f"#{n}", sc) for n, sc in enumerate(QApplication.screens(), 1)]
 
 
+STATS_HELP = "zwykle = 95 na 100 pomiarów było tak szybkich albo szybszych, max = najwolniejszy pomiar"
+
+
 class PadCard(QFrame):
     """Karta pada po lewej - tylko to, co ważne na pierwszy rzut oka: bateria, opóźnienie pad -> gra (z paskiem
     odcinków), profil i tryb touchpada; szczegóły (rozbicie opóźnienia, ping, utrata, Hz) w podpowiedzi. Problem
@@ -143,7 +146,7 @@ class PadCard(QFrame):
         lat.setSpacing(px(6))
         self.lat_icon = icon_label("stopwatch", px(16))
         self.lat = label("", "big")                  # średnie opóźnienie pad -> gra (albo ping, gdy brak pomiaru)
-        self.lat_stats = label("", "small")          # p95 · max
+        self.lat_stats = label("", "small")          # zwykle ≤ p95 · max
         self.mode_icon = label("")
         lat.addWidget(self.lat_icon)
         lat.addWidget(self.lat)
@@ -246,6 +249,7 @@ class PadCard(QFrame):
         else:
             rows = [f"<b>{_('Opóźnienie pad → gra')}: {summ.avg:.1f} ms</b> &nbsp;"
                     + dim.format(_("średnia · {stats} ms · {n} próbek z 5 s").format(stats=ST.stats_text(summ), n=summ.n)),
+                    dim.format(_(STATS_HELP)),
                     *PadCard._rows(summ),
                     dim.format(_("Średnie odcinków. Stała część radia Bluetooth (~1–2 ms) jest niemierzalna."))]
         if link:
@@ -259,6 +263,7 @@ class PadCard(QFrame):
             f"<b>{_('Przycisk → gra')}: {summ.avg:.1f} ms</b> &nbsp;"
             + dim.format(_("średnia · {stats} ms · {n} z ostatnich {keep} naciśnięć").format(
                 stats=ST.stats_text(summ), n=summ.n, keep=rx_latency.BUTTON_KEEP)),
+            dim.format(_(STATS_HELP)),
             *PadCard._rows(summ),
             dim.format(_("Tylko przyciski, D-pad i spusty (wciśnięcie / puszczenie) - bez gałek i żyroskopu."))])
 

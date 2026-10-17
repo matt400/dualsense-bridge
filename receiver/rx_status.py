@@ -76,8 +76,9 @@ def latency_level(summary, i, now):
 
 
 def stats_text(summary):
-    """"p95 3.1 · max 4.0" - druga, mała część napisu opóźnienia na karcie pada."""
-    return f"p95 {summary.p95:.1f} · max {summary.max:.1f}"
+    """"zwykle ≤ 3.1 · max 4.0" - druga, mała część napisu opóźnienia na karcie pada. "zwykle" = 95. percentyl
+    (95 na 100 pomiarów nie wolniejszych) - "p95" nic nie mówił użytkownikowi; objaśnienie w podpowiedzi."""
+    return _("zwykle ≤ {p95} · max {max}").format(p95=f"{summary.p95:.1f}", max=f"{summary.max:.1f}")
 
 
 def latency_parts(summary):

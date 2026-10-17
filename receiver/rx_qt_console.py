@@ -23,7 +23,7 @@ from rx_i18n import _
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (QCheckBox, QColorDialog, QDialog, QGridLayout, QHBoxLayout, QLineEdit, QPlainTextEdit,
-                               QSpinBox, QTabWidget, QVBoxLayout, QWidget)
+                               QTabWidget, QVBoxLayout, QWidget)
 
 import rx_audio
 import rx_backup
@@ -43,7 +43,7 @@ from rx_i18n import LANGS
 from rx_qt_icons import icon
 from rx_qt_style import set_prop
 from rx_qt_widgets import (Combo, ConfirmButton, SliderRow, button, field, group, icon_button, icon_label, input_items, label,
-                           left, pair)
+                           left, pair, spinbox)
 from rx_settings import (ABSENT, COMBO_BUTTONS, DEFAULT_PAD, LIGHT_MODES, LOW_PCT, MASTER_ACTIONS, MASTER_FEATURES, MOUSE_LIMITS,
                          VPAD_BACKENDS, WOL_BUTTONS, WOL_HOLD_MS, LightbarConfig, MasterConfig, MouseConfig, PadLight, VpadConfig,
                          WolConfig)
@@ -121,8 +121,8 @@ class ConsoleSettings(QDialog):
         pick.addWidget(self.pick_icon)
         pick.addWidget(self.pick_name, 1)
         pick.addWidget(self.pick)
-        self.dbl = _spin(100, 2000, 50, " ms")
-        self.timeout = _spin(5, 3600, 5, " s")
+        self.dbl = spinbox(100, 2000, 50, " ms")
+        self.timeout = spinbox(5, 3600, 5, " s")
         self.auto_on = QCheckBox(_("Włącz po połączeniu pada master"))
         self.auto_on.setIcon(icon("crown"))
         switching = group(_("PRZEŁĄCZANIE"),
@@ -426,7 +426,7 @@ class ConsoleSettings(QDialog):
 
     def _light_tab(self):
         self._lights, self._color, self._light_key, self._loading = {}, "", DEFAULT_PAD, False
-        self.low_pct = _spin(*LOW_PCT, 1, " %")
+        self.low_pct = spinbox(*LOW_PCT, 1, " %")
         low = group(_("NISKA BATERIA"),
                     field(_("Próg niskiej baterii"), self.low_pct),
                     label(_("Ten sam próg ma ostrzeżenie na karcie pada i powiadomienie z zasobnika. Ładujący się pad "
@@ -448,19 +448,22 @@ class ConsoleSettings(QDialog):
         colors.addWidget(reset_color)
         self.light_blink = QCheckBox(_("Miganie na czerwono przy niskiej baterii (także w grze)"))
         self.light_blink.toggled.connect(self._light_edited)
+        self.light_game = QCheckBox(_("Gra może zmienić kolor (wyłączone = zawsze ten kolor)"))
+        self.light_game.toggled.connect(self._light_edited)
         pad = group(_("KOLOR LIGHTBARA"),
-                    label(_("Gra ma pierwszeństwo: ten kolor świeci, dopóki gra sama nie ustawi lightbara. Miganie przy niskiej "
-                            "baterii działa zawsze, a potwierdzenia (np. złoty błysk mastera) są na wierzchu."), "dim", wrap=True),
+                    label(_("Ten kolor świeci, dopóki gra albo program na PC (np. Steam) nie ustawi własnego - chyba że wyłączysz "
+                            "„Gra może zmienić kolor”. Miganie przy niskiej baterii działa zawsze, a potwierdzenia (np. złoty "
+                            "błysk mastera) są na wierzchu."), "dim", wrap=True),
                     field(_("Pad"), self.light_pad), self.light_own,
                     pair(field(_("Tryb"), self.light_mode), field(_("Kolor"), _wrap(colors))),
-                    self.light_blink)
+                    self.light_game, self.light_blink)
         return [low, pad]
 
     def _wol_tab(self):
         self.wol_on = QCheckBox(_("Budzenie komputera z pada"))
         self.wol_on.setIcon(icon("wake"))
         self.wol_btn = Combo(input_items(WOL_BUTTONS, text=True))
-        self.wol_hold = _spin(*WOL_HOLD_MS, 100, " ms")
+        self.wol_hold = spinbox(*WOL_HOLD_MS, 100, " ms")
         combo = QHBoxLayout()
         combo.setSpacing(8)
         combo.addWidget(icon_label("ps"))
@@ -508,13 +511,14 @@ class ConsoleSettings(QDialog):
         self.light_own.setChecked(key == DEFAULT_PAD or key in self._lights)
         self.light_mode.set_data(light.mode)
         self.light_blink.setChecked(light.blink)
+        self.light_game.setChecked(light.game)
         self._set_color(light.color, store=False)
         self._loading = False
         self._light_enable()
 
     def _light_enable(self):
         own = self.light_own.isChecked()
-        for w in (self.light_mode, self.light_color, self.light_blink):
+        for w in (self.light_mode, self.light_color, self.light_blink, self.light_game):
             w.setEnabled(own)
         self.light_color.setEnabled(own and self.light_mode.currentData() == "solid")
 
@@ -542,7 +546,7 @@ class ConsoleSettings(QDialog):
             self._lights.pop(key, None)
         else:
             self._lights[key] = PadLight(mode=self.light_mode.currentData(), color=self._color,
-                                         blink=self.light_blink.isChecked())
+                                         blink=self.light_blink.isChecked(), game=self.light_game.isChecked())
         self._light_enable()
 
     # ---------- Wake-on-LAN ----------
@@ -821,14 +825,6 @@ def _hidpi(name, size):
     pm = pixmap(name, size * 2)
     pm.setDevicePixelRatio(2)
     return pm
-
-
-def _spin(lo, hi, step, suffix):
-    box = QSpinBox()
-    box.setRange(lo, hi)
-    box.setSingleStep(step)
-    box.setSuffix(suffix)
-    return box
 
 
 def row_of(*widgets):

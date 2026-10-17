@@ -107,7 +107,7 @@ parts = ST.latency_parts(sm)
 assert [k for k, *_ in parts] == ["bt", "phone", "net", "pc"]
 assert [k for k, *_ in ST.latency_parts(L.Summary(sm.avg, sm.p95, sm.max, None, sm.phone, sm.net, sm.pc, sm.n))] \
     == ["phone", "net", "pc"], "starszy nadajnik bez znaczników pada: bez odcinka Bluetooth"
-assert ST.stats_text(sm) == "p95 2.7 · max 2.7"
+assert ST.stats_text(sm) == "zwykle ≤ 2.7 · max 2.7"
 S.alive[0] = True; S.info[0] = None; S.link_loss = 0.0
 assert ST.latency_level(sm, 0, time.monotonic()) == "ok"
 assert ST.latency_level(L.Summary(20, 30, 40, None, 1, 1, 1, 50), 0, time.monotonic()) == "bad"

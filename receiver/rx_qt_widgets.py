@@ -2,7 +2,7 @@
 zwijana sekcja "Zaawansowane", pasek odcinków opóźnienia."""
 from PySide6.QtCore import QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPainterPath
-from PySide6.QtWidgets import (QButtonGroup, QComboBox, QFrame, QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout,
+from PySide6.QtWidgets import (QButtonGroup, QComboBox, QFrame, QHBoxLayout, QLabel, QPushButton, QSlider, QSpinBox, QVBoxLayout,
                                QWidget)
 
 from rx_qt_style import LINE, OK, TRACK, px, set_prop
@@ -34,6 +34,17 @@ def icon_button(name, tip_text, size=20):
     b.setIconSize(QSize(px(size), px(size)))
     b.setToolTip(tip_text)
     return b
+
+
+def spinbox(lo, hi, step=1, suffix=""):
+    """Pole liczbowe. Padding z arkusza stylu nie przesuwa pola tekstowego QSpinBox (tekst przyklejony do lewej
+    krawędzi, inaczej niż w QLineEdit / QComboBox) - lewy odstęp przez marginesy wewnętrznego pola."""
+    box = QSpinBox()
+    box.setRange(lo, hi)
+    box.setSingleStep(step)
+    box.setSuffix(suffix)
+    box.lineEdit().setTextMargins(px(10), 0, 0, 0)
+    return box
 
 
 def icon_label(name, size=22):

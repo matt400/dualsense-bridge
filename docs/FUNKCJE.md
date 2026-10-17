@@ -12,7 +12,7 @@
   jest cofany, przez ~150 ms po wciśnięciu i puszczeniu kursor stoi, a przeciąganie z wciśniętym klikiem zaczyna się
   dopiero po wyraźnym ruchu palca. Czułość i te czasy: Ustawienia → Mysz (działa od razu).
 - **Jedno okno do wszystkiego** (PySide6, ikona w zasobniku):
-  - po lewej karty padów: bateria, **prawdziwe opóźnienie pad → gra** (średnia, p95 i max z 5 s, z paskiem odcinków:
+  - po lewej karty padów: bateria, **prawdziwe opóźnienie pad → gra** (średnia, „zwykle ≤” = 95 na 100 pomiarów i max z 5 s, z paskiem odcinków:
     Bluetooth / nadajnik / sieć / PC), pod nim **przycisk → gra** (to samo tylko dla naciśnięć - ostatnie 100, z resetem),
     aktywny profil, test wibracji, wyłączenie pada, korona mastera; ping, utrata pakietów i Hz w podpowiedzi;
     niepodłączony pad to sama nazwa;
@@ -141,7 +141,8 @@
     `receiver/backups/`) albo ręcznie. „Przywróć” (dwa kliknięcia) najpierw zapisuje kopię bieżących plików - więc
     też da się to cofnąć - a potem uruchamia receiver od nowa.
 - **Lightbar** (Ustawienia → Lightbar), osobno dla każdego pada (MAC) albo domyślnie dla wszystkich:
-  - **gra ma pierwszeństwo** - własny kolor świeci, dopóki gra sama nie ustawi lightbara;
+  - **gra ma pierwszeństwo** - własny kolor świeci, dopóki gra albo program na PC (np. Steam) nie ustawi lightbara;
+    opcja **„Gra może zmienić kolor”** wyłączona = zawsze kolor z ustawień. Pierwszy kolor z PC trafia do dziennika;
   - tryb **stały kolor** (wybór koloru; pusty = `idle_lightbar`) albo **kolor wg baterii** (czerwony przy progu → żółty →
     zielony od 80 %);
   - **miganie na czerwono przy niskiej baterii** - także w grze (nad kolorem gry), nie przy ładowaniu; przy czerwonym
@@ -161,7 +162,7 @@
   - Komputer musi mieć włączony Wake-on-LAN w BIOS / UEFI i we właściwościach karty sieciowej (Zarządzanie energią:
     „Zezwalaj temu urządzeniu na wznawianie”, „Tylko magic packet”); najlepiej po kablu - przez Wi-Fi zwykle nie działa.
 - **Wyłączanie pada** z PC albo samo po bezczynności (domyślnie 15 min).
-- **Opóźnienie pad → gra** (średnia, p95, max; pasek = średnie odcinków) mierzone dla każdej zmiany stanu pada
+- **Opóźnienie pad → gra** (średnia, „zwykle ≤” = 95. percentyl, max; pasek = średnie odcinków) mierzone dla każdej zmiany stanu pada
   (przycisk, gałka, ruch), od chwili, gdy jądro nadajnika dostało raport z pada, do oddania raportu wirtualnemu DS4. Nadajnik zna zegar PC z odpowiedzi na ping
   (jak NTP, pomiar o najmniejszym RTT), więc sieć jest mierzona w jedną stronę, nie jako połowa pingu. Odcinki:
   **Bluetooth** - opóźnienie radia ponad najlepszy przypadek z 2 s (znaczniki czasu pada; stała część ~1-2 ms jest

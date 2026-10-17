@@ -3,16 +3,20 @@ oraz efekty spustów z aktywnego profilu (gra przez DS4 ich nie ustawi - robi to
 wibracja spustu i wibracja z gry na spustach (liczona na nadajniku z tych samych pakietów wibracji). Funkcja mastera
 "triggers" (Ustawienia -> Master) = efekty tylko na padzie mastera, pozostałe pady mają zwykłe spusty.
 
-Lightbar: gdy gra nic nie ustawiła - kolor z ustawień pada (stały / wg baterii, rx_lightbar); niska bateria miga
+Lightbar: gdy gra nic nie ustawiła albo pad ma "zawsze mój kolor" (PadLight.game = False) - kolor z ustawień pada
+(stały / wg baterii, rx_lightbar). Kolor z gry / programu na PC (np. Steam) obowiązuje do odłączenia wirtualnego pada,
+więc pierwszy taki kolor trafia do dziennika - inaczej "mój kolor nie działa" bez śladu. Niska bateria miga
 na czerwono także nad kolorem gry; potwierdzenia (np. złoty błysk mastera) zawsze na wierzchu."""
 import threading
 import time
 
+import rx_events as ev
 import rx_lightbar as L
 import rx_settings
 import rx_state as S
 from proto import CAP_TRIG_FX, TRIG2_OFF, clamp
 from rx_config import C
+from rx_i18n import _
 from rx_shape import legacy_values, trigger_values
 
 FX_SENDER = 8          # od tej wersji nadajnik zna trig2 (z bitem CAP_TRIG_FX w pakiecie version)
@@ -55,6 +59,7 @@ def make_cb(i):
             f["large"], f["small"] = int(large_motor), int(small_motor)
             if hasattr(led_number, "Red"):
                 f["r"], f["g"], f["b"] = int(led_number.Red), int(led_number.Green), int(led_number.Blue)
+                f["note"] = f["note"] or not f["rgb"]
                 f["rgb"] = True
             f["set"] = True
         except Exception:
@@ -74,6 +79,7 @@ def game(i, large=None, small=None, rgb=None):
         f["large"], f["small"] = int(large), int(small or 0)
     if rgb is not None:
         f["r"], f["g"], f["b"] = (int(c) for c in rgb)
+        f["note"] = f["note"] or not f["rgb"]
         f["rgb"] = True
     f["set"] = True
     fb_event.set()
@@ -81,7 +87,8 @@ def game(i, large=None, small=None, rgb=None):
 
 def init():
     n = C.NUM_PADS
-    fb[:] = [{"small": 0, "large": 0, "r": 0, "g": 0, "b": 0, "set": False, "rgb": False} for _ in range(n)]
+    fb[:] = [{"small": 0, "large": 0, "r": 0, "g": 0, "b": 0, "set": False, "rgb": False, "note": False}
+             for _ in range(n)]
     fb_sent[:] = [None] * n
     trig_sent[:] = [None] * n
     pulses[:] = [None] * n
@@ -95,7 +102,7 @@ rx_settings.on_change(lambda _old, _new: fb_event.set())    # nowy kolor / tryb 
 def reset(i):
     """Nowy / odłączony wirtualny DS4 w slocie: gra jeszcze nic nie ustawiła (bez init() - nic do czyszczenia)."""
     if i < len(fb):
-        fb[i].update(set=False, small=0, large=0, rgb=False)
+        fb[i].update(set=False, small=0, large=0, rgb=False, note=False)
         fb_sent[i] = None
 
 
@@ -114,13 +121,28 @@ def is_low(i, low_pct):
     return pct <= 100 and not flags & 1 and pct <= low_pct
 
 
+def _note_game_color(i):
+    """Pierwszy kolor lightbara z gry / programu na PC po utworzeniu wirtualnego pada - wpis w dzienniku."""
+    f = fb[i]
+    f["note"] = False
+    rgb = tuple(clamp(f[k], 0, 255) for k in ("r", "g", "b"))
+    game = rx_settings.cur.lightbar.get(S.profile_key(i)).game
+    print(f"Controller {i}: lightbar colour {L.rgb_hex(rgb)} set by a program on the PC"
+          + ("" if game else " - ignored (own colour always)"))
+    ev.info((_("{pad}: program na PC (gra, Steam) ustawił kolor lightbara {hex} - ma pierwszeństwo przed kolorem z "
+               "ustawień (Ustawienia → Lightbar → „Gra może zmienić kolor”)") if game else
+             _("{pad}: program na PC ustawił kolor lightbara {hex} - pominięty (zawsze kolor z ustawień)"))
+            .format(pad=ev.pad_name(i), hex=L.rgb_hex(rgb)))
+
+
 def _target(i, now):
     """-> (wartość feedbacku do wysłania, czy w ogóle sterujemy tym padem, czy lightbar miga)."""
     f = fb[i]
     cfg = rx_settings.cur.lightbar
     light = cfg.get(S.profile_key(i))
     motors = tuple(clamp(f[k], 0, 255) for k in ("small", "large")) if f["set"] else (0, 0)
-    if f["set"] and f["rgb"]:           # gra ma pierwszeństwo (kolor tylko, gdy go znamy)
+    if f["set"] and f["rgb"] and light.game:     # gra ma pierwszeństwo (kolor tylko, gdy go znamy), chyba że
+                                                 # pad ma ustawione "zawsze mój kolor"
         rgb, ours = tuple(clamp(f[k], 0, 255) for k in ("r", "g", "b")), True
     else:
         rgb, ours = L.own_color(light, S.batt_info[i][0], cfg.low_pct, C.IDLE_RGB)
@@ -204,6 +226,8 @@ def _loop(send, send_trig=None):
                 continue
             if send_trig is not None:
                 triggers_tick(i, now, send_trig)
+            if fb[i]["note"]:
+                _note_game_color(i)
             val, ours, b = _target(i, now)
             blink = blink or b
             if not ours:
