@@ -17,7 +17,7 @@ Najczęściej zmieniane:
 | `idle_off_min` | sender | 15 | wyłącz pada po tylu minutach bez użycia, 0 = nigdy |
 | `low_latency` | sender | true | procesor nadajnika bez głębokiego uśpienia + najszybsze rdzenie (wymaga roota) |
 | `cpu_latency_us` | sender | 50 | `low_latency`: maks. czas wybudzenia procesora w µs |
-| `rt_priority` | sender | 10 | SCHED_FIFO z tym priorytetem, `0` = zwykły planista (wymaga roota) |
+| `rt_priority` | sender | 10 | SCHED_FIFO z tym priorytetem, `0` = zwykły planista (wymaga roota; działa też na musl - postmarketOS, Alpine) |
 | `rumble` | sender | auto | wibracja: `auto` (sterownik i raport HID naraz), `evdev`, `hidraw`, `off` |
 | `key` | oba | "" | wspólny klucz HMAC (opcjonalne uwierzytelnianie pakietów) |
 | `mouse_sens`, `scroll_sens` | receiver | 0.5, 0.6 | czułość myszy i przewijania touchpadem |

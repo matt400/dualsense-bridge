@@ -135,8 +135,12 @@ for sq in [10, 11, 12, 14, 15, 15, 13, 20]:     # zgubione: 16..19 (4), 13 spó�
     ls.packet(sq)
 ls.states[0] = 5; ls.t0 -= 1.0; ls.tick(time.monotonic())
 assert abs(S.link_loss - 100 * (1 - 5 / 10)) < 1e-6 and S.pps[0] > 4, (S.link_loss, S.pps)
+N.send_repeat = ORIG_SEND_REPEAT
 sent.clear(); N.send_cmd(0, CMD_POWER_OFF)
+assert len(sent) == 1, "pierwsza kopia od razu, powtórki później"
+time.sleep(N.REPEAT_DELAYS[1] + 0.05)
 assert len(sent) == 3 and all(x[0] == T_CMD and x[1] == 0 for x in sent)
+assert len({x[3] for x in sent}) == 1, "ten sam pakiet (jeden numer) - nadajnik wykona polecenie raz"
 ok("pakiet info, utrata pakietów z numerów sekwencyjnych, polecenie wyłączenia")
 
 # ---------- 8. potwierdzenia na padzie ----------
@@ -167,4 +171,15 @@ import rx_report, rx_dsu
 state(0, mask=BIT[304]); rep = rx_report.build_report(S.states[0], 1, False); assert len(rep) == 63 and rep[4] & 0x20
 pkt = rx_dsu.dsu_data(0, S.states[0], 1); assert len(pkt) == 100 and pkt[37] == 0x40
 ok("raport DS4 / DSU")
+import socket as _socket
+_sk = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM); _sk.bind(("127.0.0.1", 0))
+W.recv_timeout(_sk, 0.1)
+_t0 = time.monotonic()
+try:
+    _sk.recvfrom(64); _err = None
+except (TimeoutError, BlockingIOError) as e:
+    _err = e
+assert _sk.gettimeout() is None and _err is not None and 0.05 < time.monotonic() - _t0 < 1.0, (_sk.gettimeout(), _err)
+_sk.close()
+ok("gniazdo odbioru: limit czasu w jądrze (SO_RCVTIMEO), bez select() przed każdym pakietem")
 print("RECEIVER v5 OK")

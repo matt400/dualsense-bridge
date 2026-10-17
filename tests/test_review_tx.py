@@ -89,7 +89,8 @@ from proto import T_STATE, T_TOUCH
 sender_config.C.CAL_S, sender_config.C.MOTION_MIN_DT = 0, 0
 sender_net.init()
 sent = []
-sender_net.emit = sender_ctrl.net.emit = sup.emit = lambda t, i, *v: sent.append((t, v))
+sender_net.emit = sender_ctrl.net.emit = lambda t, i, *v: sent.append((t, v))
+sup.emit_repeat = lambda t, i, *v, **k: sent.append((t, v))
 E = lambda t, c, v: types.SimpleNamespace(type=t, code=c, value=v)
 
 

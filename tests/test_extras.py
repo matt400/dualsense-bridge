@@ -130,6 +130,7 @@ assert v == (SCFG_WOL, bytes(6), bytes(4), PAD_KEYS.index(315), 1000), v
 sent.clear()
 R.update(None, wol=R.WolConfig(mac="AA-BB-CC-DD-EE-FF".lower().replace("-", ":"), bcast="192.168.1.255", button="triangle",
                                hold_ms=2000), log=R.LogConfig(sender=True))
+rx_net.flush_repeats()
 sc = [x for x in sent if x[0] == T_SCFG]
 assert len(sc) == 3 and sc[0][1] == 255, "zmiana od razu, 3 kopie (UDP)"
 assert BODY[T_SCFG].unpack_from(sc[0][3], 4) == (SCFG_WOL | SCFG_EVENTS, bytes.fromhex("aabbccddeeff"),

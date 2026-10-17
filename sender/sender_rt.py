@@ -11,6 +11,7 @@ oszczędzania energii procesora:
   planista           SCHED_FIFO (rt_priority): wątek nadajnika nie czeka w kolejce za innymi procesami. Z flagą
                      RESET_ON_FORK - uruchamiane programy (bluetoothctl) dostają zwykły priorytet.
 """
+import errno
 import glob
 import os
 import struct
@@ -63,14 +64,37 @@ def pin_fast_cpus(sys_root="/sys"):
     return "fast cores " + ",".join(map(str, sorted(cpus)))
 
 
+# numer wywołania systemowego sched_setscheduler (asm-generic: aarch64, riscv64; inne architektury osobno)
+_SYS_SCHED_SETSCHEDULER = {"x86_64": 144, "i686": 156, "i386": 156, "armv7l": 156, "armv6l": 156, "armv8l": 156}
+
+
+def _sched_syscall(policy, priority):
+    """sched_setscheduler wprost przez syscall. musl (Alpine, postmarketOS) celowo nie implementuje tej funkcji libc
+    (zawsze ENOSYS), więc os.sched_setscheduler nie działa tam nigdy, także jako root."""
+    import ctypes
+    import platform
+    libc = ctypes.CDLL(None, use_errno=True)
+    nr = _SYS_SCHED_SETSCHEDULER.get(platform.machine(), 119)
+    param = ctypes.c_int(priority)                  # struct sched_param { int sched_priority; }
+    if libc.syscall(ctypes.c_long(nr), 0, policy, ctypes.byref(param)) != 0:
+        e = ctypes.get_errno()
+        raise OSError(e, os.strerror(e))
+
+
 def realtime(priority):
     if not priority:
         return None
     policy = os.SCHED_FIFO | getattr(os, "SCHED_RESET_ON_FORK", 0)
     try:
-        os.sched_setscheduler(0, policy, os.sched_param(priority))
+        try:
+            os.sched_setscheduler(0, policy, os.sched_param(priority))
+        except OSError as e:
+            if e.errno != errno.ENOSYS:
+                raise
+            _sched_syscall(policy, priority)     # musl: funkcja libc nie istnieje, jądro obsługuje ją normalnie
     except (OSError, AttributeError) as e:
-        print(f"Low latency: realtime scheduling unavailable ({e}) - run with doas")
+        hint = " - run with doas" if getattr(e, "errno", None) in (errno.EPERM, errno.EACCES) else ""
+        print(f"Low latency: realtime scheduling unavailable ({e}){hint}")
         return None
     return f"SCHED_FIFO {priority}"
 

@@ -271,6 +271,10 @@ class Backend:
             raise
 
 
+OUT_LEN = 47                                  # część raportu wyjściowego, którą czytamy
+OUT_USED = (0, 1, 2, 3, 44, 45, 46)           # flagi ważności, silniki, kolor lightbara (parse_output)
+
+
 def parse_output(report_id, data):
     """Raport wyjściowy DualSense (bez bajtu ID) -> ((duży, mały) | None, (r, g, b) | None). Flagi ważności decydują,
     które części gra ustawia: bit 0/1 flagi 0 = silniki, bit 2 flagi 1 = kolor lightbara."""
@@ -306,7 +310,14 @@ class Pad:
             if int(pkt.Source) != HID_OUTPUT:
                 return
             d = pkt.Data.ToArray()
-            motors, rgb = parse_output(int(pkt.ReportId), [d[k] for k in range(min(len(d), 47))])
+            n = len(d)
+            # tylko bajty, których używa parse_output: każdy odczyt tablicy .NET przez pythonnet to osobne wywołanie
+            # (47 na raport, gry wysyłają je co klatkę - z GIL-em, którego potrzebuje wątek sieci)
+            data = [0] * min(n, OUT_LEN)
+            for k in OUT_USED:
+                if k < n:
+                    data[k] = d[k]
+            motors, rgb = parse_output(int(pkt.ReportId), data)
             if motors is not None or rgb is not None:
                 self.on_fb(motors, rgb)
         except Exception:

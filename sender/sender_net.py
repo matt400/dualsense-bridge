@@ -30,6 +30,7 @@ BUILD_S = 5.0                         # co tyle wersja kodu nadajnika (pakiet bu
 PING_S = 0.25                         # 4 pingi/s: mediana z 2 s jest stabilna, a pojedynczy skok jej nie zmienia
 recent_rtt = collections.deque(maxlen=8)   # ostatnie pomiary - do pakietu info (okno w GUI receivera)
 last_pong = 0.0
+REPEAT_DELAYS = (0.01, 0.03)          # powtórki emit_repeat [s]
 
 
 class PcClock:
@@ -117,18 +118,37 @@ def close_sock():
         sock = None
 
 
-def emit(ptype, idx, *vals):
+def send_raw(data):
     global sock_bad, tx_count
     s = sock
     if s is None:
         return
     try:
-        s.send(codec.pack(ptype, idx, *vals))
+        s.send(data)
         tx_count += 1
     except (BlockingIOError, ConnectionRefusedError):
         pass
     except OSError:
         sock_bad = True
+
+
+def emit(ptype, idx, *vals):
+    send_raw(codec.pack(ptype, idx, *vals))
+
+
+def emit_repeat(ptype, idx, *vals, delays=REPEAT_DELAYS):
+    """Pakiet, który nie może zginąć (bye): ten sam (ten sam numer - odbiorca obsłuży go raz) teraz i powtórki po
+    delays s. Trzy kopie naraz ginęły razem przy jednej serii strat (zakłócenie, zatkana kolejka)."""
+    data = codec.pack(ptype, idx, *vals)
+    send_raw(data)
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        for _ in delays:
+            send_raw(data)
+        return
+    for d in delays:
+        loop.call_later(d, send_raw, data)
 
 
 def on_readable():
