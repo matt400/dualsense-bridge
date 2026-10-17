@@ -27,6 +27,8 @@ import rx_master; rx_master.init(C.NUM_PADS); import rx_testmode; rx_testmode.in
 from proto import Codec, PAD_KEYS
 N.codec = Codec()
 ORIG_SEND_PEER = N.send_peer
+ORIG_SEND_REPEAT = N.send_repeat
+N.send_repeat = lambda pkt, n: [N.send_peer(pkt) for _ in range(n)]   # testy: kopie od razu (rozłożenie: test_rx2)
 sent = []                                      # pakiety wysłane do nadajnika
 N.send_peer = lambda pkt: sent.append(N.codec.parse(pkt) + (pkt,))
 BIT = {c: 1 << k for k, c in enumerate(PAD_KEYS)}

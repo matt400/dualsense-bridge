@@ -135,6 +135,7 @@ for sq in [10, 11, 12, 14, 15, 15, 13, 20]:     # zgubione: 16..19 (4), 13 spó�
     ls.packet(sq)
 ls.states[0] = 5; ls.t0 -= 1.0; ls.tick(time.monotonic())
 assert abs(S.link_loss - 100 * (1 - 5 / 10)) < 1e-6 and S.pps[0] > 4, (S.link_loss, S.pps)
+N.send_repeat = ORIG_SEND_REPEAT
 sent.clear(); N.send_cmd(0, CMD_POWER_OFF)
 assert len(sent) == 1, "pierwsza kopia od razu, powtórki później"
 time.sleep(N.REPEAT_DELAYS[1] + 0.05)

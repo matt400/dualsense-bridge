@@ -6,6 +6,7 @@ sys.path.insert(1, TX)
 from proto import CMD_POWER_OFF
 # --- receiver na losowym porcie ---
 N.send_peer = ORIG_SEND_PEER
+N.send_repeat = ORIG_SEND_REPEAT
 C.IN_PORT = 0
 N.init()
 port = N.in_sock.getsockname()[1]
