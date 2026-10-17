@@ -144,9 +144,10 @@ fsent = []
 S.alive[0] = True
 th = threading.Thread(target=F.feedback_thread, args=(lambda i, v: fsent.append((time.monotonic(), i, v)),), daemon=True)
 th.start(); time.sleep(0.05)
-assert not fsent, "bez gry i potwierdzeń nic nie wysyłamy"
+assert all(v == (0, 0, *C.IDLE_RGB) for _, _, v in fsent), ("bez gry i potwierdzeń tylko kolor domyślny (pad nie zostaje ze starym kolorem), bez wibracji", fsent)
+n0 = len(fsent)
 F.pulse(0, "mouse"); time.sleep(0.35)
-vals = [v for _, _, v in fsent]
+vals = [v for _, _, v in fsent[n0:]]
 assert vals[0] == (0, 150, 0, 90, 255) and vals[-1] == (0, 0, *C.IDLE_RGB), vals
 S.game = "game.exe"                    # kolor z PC obowiązuje tylko w grze
 F.fb[0].update(set=True, rgb=True, small=10, large=20, r=1, g=2, b=3, t=time.monotonic()); F.fb_event.set(); time.sleep(0.05)
