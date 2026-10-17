@@ -861,4 +861,6 @@ EN = {
     "Tryb konsoli czeka - na pierwszym planie {exe} (dodaj go do listy programów w Ustawieniach, jeśli to nie gra)":
         "Console mode waits - {exe} is in the foreground (add it to the program list in Settings if it is not a game)",
     "połączono pad master (pad {n}), po {s} s czekania": "master pad connected (pad {n}), after waiting {s} s",
+    "Tryb konsoli: Windows przywrócił oba ekrany - ponowne przełączenie na TV":
+        "Console mode: Windows restored both screens - switching to the TV again",
 }
