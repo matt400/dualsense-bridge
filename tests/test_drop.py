@@ -7,7 +7,8 @@ import sender_net as net, sender_streams as st, sender_ctrl, sender_supervisor a
 from sender_ctrl import Ctrl
 out = []
 def emit(t, i, *v): out.append((t, v))
-net.emit = sender_ctrl.net.emit = sup.emit = emit
+net.emit = sender_ctrl.net.emit = emit
+sup.emit_repeat = lambda t, i, *v, **k: emit(t, i, *v)
 class Ev:
     def __init__(s, t, c, v): s.type, s.code, s.value = t, c, v
 class AI:

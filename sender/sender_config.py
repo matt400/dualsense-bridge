@@ -28,7 +28,7 @@ DEFAULTS = {
     "motion_min_dt": 0.001,        # j.w. dla ruchu; próbki gyro/acc w oknie są uśredniane
     "motion_deadband_gyro": 128,
     "motion_deadband_acc": 16,
-    "rescan_s": 2.0,
+    "rescan_s": 2.0,               # zapasowy skan padów; nowy pad wykrywa od razu inotify na /dev/input
     "stick_deadzone": 3,
     "calibrate_s": 1.0,
     "calibrate_max_range": 4096,

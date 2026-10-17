@@ -1,7 +1,7 @@
 """Receiver: wirtualne pady - backend HIDMaestro (DualSense) / ViGEmBus (DS4), stała kolejność graczy (pad zastępczy),
 raport DualSense, feedback z raportu wyjściowego, zmiana backendu w ustawieniach.
     python3 tests/test_vpad.py receiver"""
-import os, sys, threading, time
+import os, sys, threading, time, types
 from dataclasses import replace
 sys.path.insert(0, os.path.dirname(__file__))
 from rxenv import *                                              # noqa
@@ -133,6 +133,23 @@ motors, rgb = rx_hm.parse_output(0x02, data)
 check(motors == (200, 40) and rgb == (1, 2, 3), f"parse_output: lewy = duży, prawy = mały, kolor: {motors} {rgb}")
 check(rx_hm.parse_output(0x02, bytearray(47)) == (None, None), "bez flag ważności nic nie zmienia")
 check(rx_hm.parse_output(0x05, data) == (None, None), "inny raport ignorowany")
+class NetArray(list):              # tablica .NET: każdy odczyt elementu to wywołanie przez pythonnet
+    reads = 0
+    def __getitem__(self, k):
+        NetArray.reads += 1
+        return list.__getitem__(self, k)
+class OutPkt:
+    Source, ReportId = rx_hm.HID_OUTPUT, rx_hm.OUT_REPORT
+    def __init__(self, raw):
+        self.Data = types.SimpleNamespace(ToArray=lambda: NetArray(raw))
+hm_pad, got_fb = object.__new__(rx_hm.Pad), []
+hm_pad.on_fb = lambda m, c: got_fb.append((m, c))
+hm_pad._on_output(None, OutPkt(list(data) + [0] * 16))
+check(got_fb == [((200, 40), (1, 2, 3))] and NetArray.reads <= len(rx_hm.OUT_USED),
+      f"wyjście HIDMaestro: tylko potrzebne bajty ({NetArray.reads} odczytów) - {got_fb}")
+got_fb.clear()
+hm_pad._on_output(None, OutPkt(list(data[:10])))
+check(got_fb == [], "za krótki raport wyjściowy - bez feedbacku i bez wyjątku")
 p.on_fb(motors, rgb)
 f = F.fb[0]
 check((f["large"], f["small"], f["r"], f["g"], f["b"], f["rgb"], f["set"]) == (200, 40, 1, 2, 3, True, True), f"F.game: {f}")

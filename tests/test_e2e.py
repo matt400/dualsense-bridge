@@ -6,6 +6,7 @@ sys.path.insert(1, TX)
 from proto import CMD_POWER_OFF
 # --- receiver na losowym porcie ---
 N.send_peer = ORIG_SEND_PEER
+N.send_repeat = ORIG_SEND_REPEAT
 C.IN_PORT = 0
 N.init()
 port = N.in_sock.getsockname()[1]
@@ -52,7 +53,7 @@ async def main():
     N.send_cmd(0, CMD_POWER_OFF)
     F.pulse(0, "profile")
     await asyncio.sleep(0.5)
-    assert got["cmd"] == [(0, CMD_POWER_OFF)] * 3, got["cmd"]          # filtrowanie powtórek robi sender_control
+    assert got["cmd"] == [(0, CMD_POWER_OFF)], got["cmd"]          # 3 kopie tego samego pakietu - nadajnik wykonuje raz
     fbv = [v for _, v in got["fb"]]
     assert any(v[1] == 190 for v in fbv) and fbv[-1][:2] == (0, 0), fbv   # przed pulsem: kolor domyślny lightbara
     hb.cancel()
@@ -62,6 +63,6 @@ async def main():
     assert not S.alive[0] and not S.want[0].is_set()
     pinger.cancel(); info.cancel()
     print(f"OK   end-to-end UDP: stan, ident -> profil, ping {S.info[0] and S.info[0][0]} ms, info, scfg -> wol.json, "
-          f"zdarzenie nadajnika w dzienniku, wyłączenie (3 pakiety), potwierdzenie {fbv[0]} -> {fbv[-1]}, bye")
+          f"zdarzenie nadajnika w dzienniku, wyłączenie (3 kopie, wykonane raz), potwierdzenie {fbv[0]} -> {fbv[-1]}, bye")
 asyncio.run(main())
 print("E2E OK")

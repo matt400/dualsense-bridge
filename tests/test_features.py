@@ -164,7 +164,7 @@ assert len(trig) == n, "bez oporu - bez odświeżania"
 ok("feedback: opór przy zmianie profilu, odświeżanie, wyłączenie")
 
 sent.clear()
-rx_net.send_triggers(1, (0, 0, 3, 6), 2)
+rx_net.send_triggers(1, (0, 0, 3, 6), 2); rx_net.flush_repeats()
 pk = [x for x in sent if x[0] == T_TRIG]
 assert len(pk) == 2 and pk[0][1] == 1 and BODY[T_TRIG].unpack_from(pk[0][3], 4) == (0, 0, 3, 6), pk
 ok("rx_net.send_triggers: pakiet trig do nadajnika")
