@@ -28,6 +28,7 @@ dsu = None
 _threads = []
 dsu_clients = {}
 dsu_lock = threading.Lock()
+_resend = [False]           # nowy subskrybent: tx_thread wysyła stan wszystkich podłączonych padów od razu
 _cache = {}
 _acache = {}
 ANALOG_BITS = ((0, 0x80), (0, 0x40), (0, 0x20), (0, 0x10),               # d-pad: lewo, dół, prawo, góra
@@ -111,6 +112,8 @@ def rx_thread():
                     new = addr not in dsu_clients
                     dsu_clients[addr] = time.monotonic()
                     S.dsu_active = True
+                    if new:
+                        _resend[0] = True
                 if new:
                     S.dsu_wake.set()       # nowy klient od razu dostaje stan
         except OSError:
@@ -141,6 +144,11 @@ def tx_thread():
                     del dsu_clients[a]
             clients = list(dsu_clients)
             S.dsu_active = bool(clients)
+            resend, _resend[0] = _resend[0], False
+        if resend:
+            # nowy klient (emulator) nie znał stanu: bez tego pad bez ruchu (ten sam "ver") dostawał go dopiero po
+            # dsu_tx_interval, a wcześniej klient widział puste dane - start gry z przechyleniem / pustym gyro
+            last_ver = [-1] * n
         if not clients:
             continue
         mono = time.monotonic()

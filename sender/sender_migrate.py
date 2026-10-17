@@ -12,6 +12,8 @@ import os
 import re
 import sys
 
+from proto import write_file
+
 # klucz -> (stare wartości domyślne, nowa wartość domyślna, powód)
 CHANGES = {
     "pad_min_dt": ((0.004,), 0.001, "limiter 4 ms -> 1 ms (szybsze gałki)"),
@@ -66,10 +68,7 @@ def migrate(path, log=print):
         st = os.stat(path)
         with open(path + ".bak", "w", encoding="utf-8") as f:
             f.write(text)
-        tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            f.write(new)
-        os.replace(tmp, path)
+        write_file(path, new)
         if hasattr(os, "chown"):
             for p in (path, path + ".bak"):
                 try:

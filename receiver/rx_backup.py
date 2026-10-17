@@ -17,6 +17,7 @@ import shutil
 import time
 from dataclasses import dataclass
 
+from proto import write_file
 from rx_config import C
 
 KEEP = 5
@@ -126,11 +127,7 @@ def restore(name, commit=""):
                 data[n] = f.read()
         create("restore", commit)
         for n, raw in data.items():
-            dst = files()[n]
-            tmp = dst + ".tmp"
-            with open(tmp, "wb") as f:
-                f.write(raw)
-            os.replace(tmp, dst)
+            write_file(files()[n], raw)
     except OSError as e:
         return False, _("Nie udało się przywrócić kopii: {err}").format(err=e)
     return True, _("Przywrócono kopię z {when} - receiver uruchomi się od nowa").format(when=describe_time(b.time))

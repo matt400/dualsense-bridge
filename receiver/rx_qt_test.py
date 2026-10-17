@@ -14,7 +14,7 @@ import time
 from collections import deque
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QFontMetricsF, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QColor, QFont, QFontMetricsF, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QSizePolicy, QWidget
 
 import rx_drift as D
@@ -98,13 +98,11 @@ class MotionChart(QWidget):
             step = plot.width() / (n - 1)
             x0 = plot.right() - (len(self.data) - 1) * step
             for k, (_name, color) in enumerate(AXES):
-                path = QPainterPath()
-                for j, row in enumerate(self.data):
-                    pt = QPointF(x0 + j * step, mid - row[k] / rng * plot.height() / 2)
-                    path.moveTo(pt) if j == 0 else path.lineTo(pt)
+                ky = plot.height() / 2 / rng
+                # jedna linia łamana zamiast ścieżki budowanej punkt po punkcie (wykres odświeża się kilkadziesiąt razy/s)
+                pts = QPolygonF([QPointF(x0 + j * step, mid - row[k] * ky) for j, row in enumerate(self.data)])
                 p.setPen(QPen(QColor(color), 1.6))
-                p.setBrush(Qt.BrushStyle.NoBrush)
-                p.drawPath(path)
+                p.drawPolyline(pts)
         p.setFont(_font(11, True))
         p.setPen(QColor(DIM))
         p.drawText(QPointF(r.left() + px(8), r.top() + px(14)), self.title)

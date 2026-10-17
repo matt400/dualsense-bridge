@@ -37,7 +37,8 @@ Testy obejmują:
   w trybie TV, rejestracja wibracji z gry w ViGEm (sygnatura callbacku z vgamepad, kolor lightbara jako struktura),
   receiver bez ViGEmBus, obiekty COM audio zwalniane przed CoUninitialize; skróty, akcje mastera i przycisk trybu
   konsoli na granicy widoku Test liczone od trzymanych wejść, Bluetooth nadajnika bez busctl / uprawnień, autobias
-  po kalibracji z okna (`test_hunt9.py`, `test_hunt9_tx.py`);
+  po kalibracji z okna (`test_hunt9.py`, `test_hunt9_tx.py`); nowy klient DSU od razu dostaje stan, zapis plików
+  ustawień atomowy z fsync - `proto.write_file` / `write_json` (`test_hunt10.py`, `test_hunt10_tx.py`);
 - przycisk → gra, dziennik zdarzeń (też zdarzenia nadajnika end-to-end), lightbar od baterii, ustawienia dla nadajnika
   (`test_extras.py`, `test_extras_gui.py`) oraz Wake-on-LAN po stronie nadajnika - kombinacja, ARP, broadcast, magic
   packet, `wol.json` (`test_wol_tx.py`);

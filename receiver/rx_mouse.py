@@ -146,7 +146,3 @@ def mouse_button(i, btn):
         drag[i] = None
     mdown[i] = btn if btn in BTN else 0
     frozen[i] = now + m.click_freeze_ms / 1000
-
-
-def mouse_click(i, down):
-    mouse_button(i, 1 if down else 0)

@@ -141,9 +141,6 @@ QMessageBox {{ background: {CARD}; }}
 """
 
 
-QSS = qss()
-
-
 def apply_theme(app: QApplication, k=1.0):
     """Styl Fusion + ciemna paleta (dla elementów, których QSS nie obejmuje: okna dialogowe, podpowiedzi) + QSS.
     k = skala (tryb TV); zmiana skali tylko podmienia QSS, paleta zostaje."""

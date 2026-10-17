@@ -12,7 +12,6 @@ idzie też prosto na IP komputera (wpis ARP telefonu zwykle jeszcze go pamięta)
 import asyncio
 import ipaddress
 import json
-import os
 import re
 import socket
 import subprocess
@@ -21,7 +20,7 @@ from dataclasses import asdict, dataclass, replace
 
 import sender_events as events
 import sender_net as net
-from proto import E_WOL, E_WOL_FAIL, KEY_BIT, PAD_KEYS, SCFG_EVENTS, SCFG_WOL, WOL_PORTS, mac_bytes, mac_text, magic_packet
+from proto import E_WOL, E_WOL_FAIL, KEY_BIT, PAD_KEYS, SCFG_EVENTS, SCFG_WOL, WOL_PORTS, mac_bytes, mac_text, magic_packet, write_json
 from sender_config import C
 
 PS_BIT = KEY_BIT[316]
@@ -73,11 +72,8 @@ def save(path=None):
     path = path or C.WOL_FILE
     if not path:
         return
-    tmp = path + ".tmp"
     try:
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump({**asdict(cfg), "learned_mac": learned}, f, indent=2)
-        os.replace(tmp, path)
+        write_json(path, {**asdict(cfg), "learned_mac": learned}, indent=2)
     except OSError as e:
         print(f"WoL: cannot write {path}: {e!r}")
 

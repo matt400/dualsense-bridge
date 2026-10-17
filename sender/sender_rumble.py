@@ -81,21 +81,20 @@ def firmware_version(fd):
     return buf[FW_VERSION_AT] | buf[FW_VERSION_AT + 1] << 8 if buf[0] == FW_REPORT else None
 
 
+OFF_EFFECT = bytes([TRIG_OFF]) + bytes(TRIGGER_LEN - 1)    # efekt Off: spust bez oporu
+
+
 def trigger_effect(start, force):
     """Stały opór spustu (efekt "Feedback" 0x21, 11 B): od strefy `start` (0-9, strefa = 10 % skoku) do końca, siła
     `force` 1-8 we wszystkich tych strefach; force 0 -> efekt Off (spust bez oporu). Bity: 10 stref aktywnych
     (2 B) i po 3 bity siły na strefę (4 B), little endian."""
-    out = bytearray(TRIGGER_LEN)
     if not force or not 0 <= start <= TRIG_START_MAX:
-        out[0] = TRIG_OFF
-        return bytes(out)
+        return OFF_EFFECT
+    out = bytearray(TRIGGER_LEN)
     out[0] = TRIG_FEEDBACK
     out[1:3] = _zones(start).to_bytes(2, "little")
     out[3:7] = _levels(start, min(force, TRIG_FORCE_MAX) - 1)
     return bytes(out)
-
-
-OFF_EFFECT = trigger_effect(0, 0)
 
 
 def _zones(start):
@@ -111,10 +110,9 @@ def _levels(start, level):
 def weapon_effect(pos, force):
     """Klik jak spust broni (efekt "Weapon" 0x25): opór od strefy `pos` (2-7) narasta do strefy pos + 1 i tam puszcza
     (kliknięcie); siła 1-8; force 0 albo zły punkt -> Off."""
-    out = bytearray(TRIGGER_LEN)
     if not force or not TRIG_CLICK_MIN <= pos <= TRIG_CLICK_MAX:
-        out[0] = TRIG_OFF
-        return bytes(out)
+        return OFF_EFFECT
+    out = bytearray(TRIGGER_LEN)
     out[0] = TRIG_WEAPON
     out[1:3] = ((1 << pos) | (1 << (pos + 1))).to_bytes(2, "little")
     out[3] = min(force, TRIG_FORCE_MAX) - 1
@@ -124,10 +122,9 @@ def weapon_effect(pos, force):
 def vibration_effect(start, amp, freq):
     """Drganie spustu (efekt "Vibration" 0x26) od strefy `start` (0-9) do końca: amplituda 1-8, częstotliwość 1-255 Hz;
     amplituda albo częstotliwość 0 -> Off."""
-    out = bytearray(TRIGGER_LEN)
     if not amp or not freq or not 0 <= start <= TRIG_START_MAX:
-        out[0] = TRIG_OFF
-        return bytes(out)
+        return OFF_EFFECT
+    out = bytearray(TRIGGER_LEN)
     out[0] = TRIG_VIBRATION
     out[1:3] = _zones(start).to_bytes(2, "little")
     out[3:7] = _levels(start, min(amp, TRIG_AMP_MAX) - 1)
