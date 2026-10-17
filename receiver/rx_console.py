@@ -286,9 +286,14 @@ class Console:
         else:
             self._last_click[i] = now
 
-    def pad_connected(self, i):
-        """Pad w slocie i właśnie się połączył (nowy identyfikator albo ponownie utworzony wirtualny DS4)."""
+    def pad_connected(self, i, ident=False):
+        """Pad w slocie i właśnie się połączył (pierwszy pakiet po ciszy) albo przysłał nowy identyfikator (ident).
+        Bez mastera w ustawieniach decyduje samo połączenie: identyfikator przychodzi zaraz po pierwszym pakiecie i
+        drugi raz ustawiał auto-ON - po restarcie receivera z wyłączonym trybem pierwszy raz zużywał pominięcie
+        (_skip_auto), a drugi włączał tryb mimo wszystko; przy grze na pierwszym planie ostrzeżenie szło dwa razy."""
         if not self.cfg.auto_on_master:
+            return
+        if ident and not rx_settings.cur.master.pad:
             return
         if not auto_pad(i):
             if S.pad_id[i]:                  # bez identyfikatora (pierwszy pakiet) master jest nieznany - to nie błąd
@@ -490,9 +495,9 @@ def on_state(i, mask, hx, hy, lt, rt):
         ctl.on_state(i, mask, hx, hy, lt, rt)
 
 
-def pad_connected(i):
+def pad_connected(i, ident=False):
     if ctl is not None:
-        ctl.pad_connected(i)
+        ctl.pad_connected(i, ident)
 
 
 def resync(i):

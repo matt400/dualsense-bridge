@@ -4,8 +4,8 @@
 Pakiety przychodzą w wątku sieci (on_packet), okno czyta je w swoim: stan i lista to niezmienne obiekty podmieniane
 jednym przypisaniem, więc bez blokad. Lista z nadajnika idzie rundami (btstate z BTF_LIST i ile urządzeń, potem
 btdev z numerami); podmieniamy ją dopiero po całej rundzie - zgubiony pakiet zostawia poprzednią listę, nie dziurawą.
-Polecenia idą 3x (UDP), nadajnik odrzuca powtórki. Polecenie tylko do nadajnika, który przysłał btstate - starszy
-odrzuciłby nieznaną długość i okno czekałoby w nieskończoność.
+Polecenia idą 3x (UDP, ten sam pakiet rozłożony w czasie), nadajnik odrzuca powtórki. Polecenie tylko do nadajnika,
+który przysłał btstate - starszy odrzuciłby nieznaną długość i okno czekałoby w nieskończoność.
 """
 import time
 from dataclasses import dataclass, field
@@ -215,8 +215,9 @@ def send(op: int, arg: int = 0, mac: str = "") -> bool:
     if op in OPS:                      # operacja w toku od razu (skan i keepalive nie blokują przycisków)
         pending = (op, mac_text(raw), time.monotonic())
         _logged = None                 # ta sama operacja drugi raz też trafi do dziennika
-    for _n in range(3):
-        rx_net.send_peer(rx_net.codec.pack(T_BTCMD, 255, op, arg, raw))
+    # ten sam pakiet (ten sam numer) teraz i dwa razy później - jak polecenia pada (rx_net.send_repeat): trzy kopie
+    # naraz ginęły razem przy jednej serii strat, a każda z osobnym numerem była dla nadajnika osobnym poleceniem
+    rx_net.send_repeat(rx_net.codec.pack(T_BTCMD, 255, op, arg, raw), 3)
     return True
 
 

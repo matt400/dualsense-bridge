@@ -122,7 +122,7 @@ else:
 # ---------- odłączenie po ciszy: inny pad w tym slocie nie jest "masterem" ----------
 connected = []
 real_pc = rx_console.pad_connected
-rx_console.pad_connected = lambda i: connected.append((i, rx_master.is_master(i)))
+rx_console.pad_connected = lambda i, ident=False: connected.append((i, rx_master.is_master(i)))
 M_ID = "aa:aa:aa:aa:aa:09"
 rx_settings.apply(Settings(MouseConfig(), MasterConfig(pad=M_ID)))
 feed(T_IDENT, 1, M_ID.encode()); state(1)
@@ -151,7 +151,7 @@ class BrokenPad:
         raise OSError("ViGEmBus not installed")
 rx_ds4.vg.VDS4Gamepad = BrokenPad
 connected.clear()
-rx_console.pad_connected = lambda i: connected.append(i)
+rx_console.pad_connected = lambda i, ident=False: connected.append(i)
 S.ignore_until[1] = 0.0
 S.want[0].clear()                                   # slot 0 nie czeka w kolejce (wait_turn)
 from dataclasses import replace as _replace
