@@ -20,11 +20,16 @@ from rx_settings import LOG_LEVELS, LOG_LINES
 COLOR = {"info": FG, "warn": WARN, "error": BAD}
 
 
+def _order(e):
+    """Kolejność w panelu: czas wpisu (nadajnik podaje własny), przy równym czasie - kolejność dodania."""
+    return e.t, e.seq
+
+
 class LogPanel(QFrame):
     def __init__(self):
         super().__init__()
         self.setObjectName("logpanel")
-        self._seq = 0
+        self._seq, self._last = 0, (0.0, 0)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(px(16), px(8), px(16), px(10))
         lay.setSpacing(px(6))
@@ -90,7 +95,14 @@ class LogPanel(QFrame):
         new = ev.since(self._seq)
         if not new:
             return
-        self._seq = new[-1].seq
+        new.sort(key=_order)
+        if self._seq and _order(new[0]) < self._last:
+            # zdarzenie nadajnika z jego czasem (zbierane, gdy receiver nie działał, np. "pad połączony z telefonem"
+            # sprzed startu receivera) jest starsze niż pokazane wpisy - dopisane na końcu psuło kolejność czasu
+            self.rebuild()
+            return
+        self._seq = max(e.seq for e in new)
+        self._last = max(self._last, _order(new[-1]))
         cfg = rx_settings.cur.log
         bar = self.view.verticalScrollBar()
         at_end = bar.value() >= bar.maximum() - 4
@@ -103,7 +115,7 @@ class LogPanel(QFrame):
     def rebuild(self):
         self.view.clear()
         self.view.setMaximumBlockCount(rx_settings.cur.log.max_lines)
-        self._seq = 0
+        self._seq, self._last = 0, (0.0, 0)
         self.tick()
 
     def copy(self):

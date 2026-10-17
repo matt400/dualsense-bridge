@@ -192,6 +192,26 @@ rx_console._tv_mode = lambda w, h, sc: calls.append(("tv", w, h, sc))
 c.close(restart=True)
 ok("błędy ekranu / dźwięku / toastu logowane, nic się nie wywala")
 
+# ---------- Windows przywraca "rozszerz" po włączeniu -> ponowne przełączenie na TV ----------
+screens = [2, 1]
+rx_console._screens = lambda: screens.pop(0) if screens else 1
+c = new_console(); calls.clear()
+def run(fn):                                           # w wątku roboczym (jak _tick), bez wyścigu z nim
+    c._jobs.put(fn); idle(c)
+run(lambda: c._apply(True))
+check(calls.count(("display", "tv")) == 1 and len(c._verify) == len(rx_console.VERIFY_AFTER_S), "włączenie + plan sprawdzeń")
+run(lambda: (setattr(c, "_verify", [0.0, 0.0, 0.0]), c._tick()))
+check(calls.count(("display", "tv")) == 2, f"dwa ekrany po włączeniu -> TV jeszcze raz: {calls}")
+run(c._tick)
+check(calls.count(("display", "tv")) == 2 and not c._verify, "już tylko TV - koniec pilnowania")
+run(lambda: c._apply(False))
+check(not c._verify, "wyłączony - bez sprawdzania")
+rx_console._screens = lambda: None
+run(lambda: (c._apply(True), setattr(c, "_verify", [0.0]), c._tick()))
+check(calls.count(("display", "tv")) == 3 and not c._verify, "nie da się sprawdzić ekranów - bez ponawiania")
+c.close(restart=True)
+ok("tryb konsoli: obraz wraca na oba ekrany -> ponowne przełączenie na TV")
+
 # ---------- wybór przycisku na padzie ----------
 c = new_console(); got = []
 state(0, mask=BIT[SHARE])                                  # trzymany w chwili uzbrojenia - nie liczy się

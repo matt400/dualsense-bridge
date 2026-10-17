@@ -150,6 +150,11 @@ win.grab().save(os.path.join(os.path.dirname(__file__), "gui_master2.png"))
 ok("remap: tytuł z ikoną, cele z ikoną i nazwą")
 # ---------- ekran okna ----------
 dlg.present(); pump()
+area = dlg.screen().availableGeometry()
+assert area.contains(dlg.frameGeometry()) or dlg.size() == dlg.size().expandedTo(dlg.minimumSizeHint()), \
+    ("okno ustawień w obszarze roboczym (nie pod paskiem zadań)", area, dlg.frameGeometry())
+assert area.contains(dlg.save_btn.mapToGlobal(dlg.save_btn.rect().bottomRight())), "przycisk Zapisz widoczny"
+ok("okno ustawień mieści się na ekranie, Zapisz widoczny")
 scr = [dlg.screen_box.itemData(i) for i in range(dlg.screen_box.count())]
 names = [k for k, _ in rx_qt.screens()]
 assert scr == ["", *names], (scr, names)

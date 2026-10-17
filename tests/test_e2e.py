@@ -54,7 +54,7 @@ async def main():
     await asyncio.sleep(0.5)
     assert got["cmd"] == [(0, CMD_POWER_OFF)] * 3, got["cmd"]          # filtrowanie powtórek robi sender_control
     fbv = [v for _, v in got["fb"]]
-    assert fbv and fbv[0][1] == 190 and fbv[-1][:2] == (0, 0), fbv
+    assert any(v[1] == 190 for v in fbv) and fbv[-1][:2] == (0, 0), fbv   # przed pulsem: kolor domyślny lightbara
     hb.cancel()
     for _ in range(3):
         net.emit(8, 0)                                                # bye

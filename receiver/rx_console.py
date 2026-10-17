@@ -58,6 +58,9 @@ TRIG_HI, TRIG_LO = 192, 96     # spust jako przycisk trybu: wciśnięty od głę
                                # (histereza - drżenie spustu w okolicy progu nie daje "podwójnego kliknięcia")
 RESTART_ENV = "DSB_CONSOLE_ON" # restart z okna: "1" / "0" = tryb konsoli przed restartem (zostaje taki sam)
 DISPLAY_ARG = {"extend": "/extend", "internal": "/internal", "tv": "/external"}
+VERIFY_AFTER_S = (3.0, 10.0, 25.0)   # po włączeniu: sprawdzenie, czy obraz jest tylko na TV (i ponowienie). Po starcie
+                               # Windows (logowanie, budzenie TV po HDMI) przywraca zapamiętany układ "rozszerz" -
+                               # tryb był "włączony", a obraz zostawał na obu ekranach
 POWER_WAIT_S = 8.0             # tyle najwyżej czeka wyłączenie / uśpienie PC na powrót ekranów do extend
 _STOP = object()
 
@@ -181,6 +184,14 @@ def _display(mode):
                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
 
+def _screens():
+    """Liczba aktywnych ekranów albo None (brak API / błąd - wtedy bez sprawdzania)."""
+    try:
+        return len(rx_display.active_sources())
+    except (OSError, AttributeError):
+        return None
+
+
 def _tv_mode(w, h, scale):
     print(f"Console: TV {rx_display.apply_tv(w, h, scale)}")
 
@@ -218,6 +229,7 @@ class Console:
         self._jobs = queue.SimpleQueue()
         self._since = time.monotonic()      # kiedy ostatnio zmienił się tryb (auto-OFF liczy od późniejszego z: pakiet, zmiana)
         self._revert = None                 # (kiedy, cfg) - powrót do OFF po "Przetestuj"
+        self._verify = []                   # kiedy sprawdzić, czy włączony tryb faktycznie ma obraz tylko na TV
         self._detect = detector(cfg.toggle_button)
         self._trigger = cfg.toggle_button in ("l2", "r2")
         self._down = [False] * C.NUM_PADS
@@ -353,6 +365,9 @@ class Console:
                 self._apply(True, why=_("połączono pad master (pad {n}), po {s} s czekania").format(
                     n=i + 1, s=round(now - self._pending_since)))
                 return
+        if self.on and self._verify and now >= self._verify[0]:
+            self._verify.pop(0)
+            self._check_tv()
         if self._revert and now >= self._revert[0]:
             self._apply(False, self._revert[1], _("koniec testu"))
         elif self.on and now - max(self._since, max(S.last_seen, default=0.0)) > self.cfg.timeout_s:
@@ -375,6 +390,7 @@ class Console:
     def _apply(self, on, cfg=None, why="", toast=True):
         cfg = cfg or self.cfg
         self.on, self._since, self._revert = on, time.monotonic(), None
+        self._verify = [self._since + d for d in VERIFY_AFTER_S] if on else []
         _step("display", _display, "tv" if on else "extend")
         if on and ((cfg.tv_width and cfg.tv_height) or cfg.tv_scale):
             _step("TV resolution / scaling", _tv_mode, cfg.tv_width, cfg.tv_height, cfg.tv_scale)
@@ -384,6 +400,19 @@ class Console:
         ev.info((_("Tryb konsoli włączony") if on else _("Tryb konsoli wyłączony")) + (f" ({why})" if why else ""))
         if toast:
             _step("toast", _toast, _("Tryb konsoli włączony") if on else _("Tryb konsoli wyłączony"), why)
+
+    def _check_tv(self):
+        """Tryb włączony, a aktywny jest więcej niż jeden ekran (Windows przywrócił "rozszerz") -> przełącz ponownie."""
+        n = _screens()
+        if n is None or n <= 1:
+            self._verify.clear()             # tylko TV (albo nie da się sprawdzić) - dalej nie pilnujemy
+            return
+        cfg = self._revert[1] if self._revert else self.cfg
+        print(f"Console: ON, but {n} displays are active (Windows restored its layout) - switching to the TV again")
+        ev.warn(_("Tryb konsoli: Windows przywrócił oba ekrany - ponowne przełączenie na TV"))
+        _step("display", _display, "tv")
+        if (cfg.tv_width and cfg.tv_height) or cfg.tv_scale:
+            _step("TV resolution / scaling", _tv_mode, cfg.tv_width, cfg.tv_height, cfg.tv_scale)
 
     def _test(self, cfg):
         self._apply(True, cfg)

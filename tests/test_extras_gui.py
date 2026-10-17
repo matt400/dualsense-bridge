@@ -41,6 +41,12 @@ win.log_panel.level.set_data("info"); win.log_panel.level.changed.emit("info"); 
 assert "📱 Wysłano Wake-on-LAN" in win.log_panel.view.toPlainText()
 ev.info("nowy wpis"); win.slow_tick(); pump()
 assert win.log_panel.view.toPlainText().splitlines()[-1].endswith("nowy wpis"), "odświeżanie dopisuje nowe"
+import time as _t
+ev.add("info", "pad połączony z telefonem", sender=True, t=_t.time() - 120); win.slow_tick(); pump()
+lines = win.log_panel.view.toPlainText().splitlines()
+old_i = next(k for k, l in enumerate(lines) if l.endswith("pad połączony z telefonem"))
+assert old_i < next(k for k, l in enumerate(lines) if l.endswith("nowy wpis")) and lines[-1].endswith("nowy wpis"), \
+    ("starsze zdarzenie nadajnika wstawione wg czasu, nie na koniec", lines)
 win.log_panel.limit.setValue(50); win.log_panel.limit.editingFinished.emit(); pump()
 for k in range(80):
     ev.info(f"wpis {k}")
