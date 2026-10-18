@@ -5,6 +5,7 @@ import re
 import time
 from subprocess import DEVNULL, PIPE
 
+import sender_bt
 import sender_calib as calib
 import sender_net as net
 import sender_state as state
@@ -32,6 +33,8 @@ async def power_off(c, reason):
         return
     print(f"Controller {c.idx}: powering off ({reason})")
     events.info(E_POWER_OFF, c.idx, reason)
+    if await sender_bt.bt.disconnect_pad(c.key):     # kontroler, z którym pad jest połączony (także dongle hci1)
+        return
     try:
         proc = await asyncio.create_subprocess_exec("bluetoothctl", "disconnect", c.key, stdout=DEVNULL, stderr=PIPE)
     except FileNotFoundError:
