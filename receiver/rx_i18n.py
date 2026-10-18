@@ -774,15 +774,19 @@ EN = {
     "dongle USB": "USB dongle",
     "Kontroler Bluetooth": "Bluetooth controller",
     "Auto": "Auto",
-    "Wbudowany": "Built-in",
     "Ręcznie": "Manual",
+    "Wybrany": "Selected",
+    "Zawsze kontroler wybrany przyciskiem Użyj (gdy go nie ma - jak Auto)":
+        "Always the controller chosen with Use (if it is missing - like Auto)",
+    "wewnętrzny USB": "internal USB",
+    "wbudowany": "built-in",
+    "Użyj": "Use",
+    "używany": "in use",
+    "wybrany": "selected",
     "Najlepszy kontroler: dongle USB przed wbudowanym (zwykle mniejsze opóźnienie), pozostałe wyłączone":
         "Best controller: USB dongle before built-in (usually lower latency), the others off",
-    "Wbudowany kontroler, dongle USB wyłączony": "Built-in controller, USB dongle off",
     "Nadajnik nie zmienia kontrolerów - ustawiasz je sam (rfkill, bluetoothctl)":
         "The sender leaves controllers alone - set them yourself (rfkill, bluetoothctl)",
-    "Używany: dongle USB": "In use: USB dongle",
-    "Używany: wbudowany": "In use: built-in",
     "Dongle Bluetooth USB zwykle zmniejsza opóźnienie padów": "A USB Bluetooth dongle usually lowers pad latency",
     "Po zmianie kontrolera sparuj pady ponownie (każdy ma własny adres)":
         "After switching controllers pair the pads again (each has its own address)",

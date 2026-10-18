@@ -12,15 +12,17 @@ from dataclasses import dataclass, field
 
 import rx_events as ev
 import rx_net
-from proto import (BODY, BT_ADAPTER, BT_CONNECT, BT_DISCONNECT, BT_LIST, BT_PAIR, BT_POWER, BT_REMOVE, BT_RSSI_NONE, BT_SCAN_MAX_S,
-                   BT_SCAN_START, BT_SCAN_STOP, BTD_CONNECTED, BTD_PAD, BTD_PAIRED, BTD_TRUSTED, BTF_BUSY, BTF_HAS_BUILTIN,
-                   BTF_HAS_USB, BTF_MODE_SHIFT, BTF_ON_USB, BTF_SCANNING,
+from proto import (BODY, BTC_ACTIVE, BTC_BLOCKED, BTC_FIXED, BTC_PICKED, BTC_USB, BTD_CONNECTED, BTD_PAD, BTD_PAIRED,
+                   BTD_TRUSTED, BTF_BUSY, BTF_HAS_BUILTIN, BTF_HAS_USB, BTF_MODE_SHIFT, BTF_ON_USB, BTF_SCANNING,
                    BTR_AUTH, BTR_BUSY, BTR_DENIED, BTR_FAILED, BTR_NONE, BTR_NOT_FOUND, BTR_OFF, BTR_OK, BTR_RUNNING,
-                   BTR_TIMEOUT, BTS_BLOCKED, BTS_DENIED, BTS_ERROR, BTS_NO_ADAPTER, BTS_NO_SERVICE, BTS_NO_TOOL, BTS_OFF,
-                   BTS_OK, T_BTCMD, T_BTDEV, T_BTSTATE, cstr, mac_bytes, mac_text)
+                   BTR_TIMEOUT, BTS_BLOCKED, BTS_DENIED, BTS_ERROR, BTS_NO_ADAPTER, BTS_NO_SERVICE, BTS_NO_TOOL,
+                   BTS_OFF, BTS_OK, BT_ADAPTER, BT_ADAPTER_USE, BT_CONNECT, BT_DISCONNECT, BT_LIST, BT_PAIR,
+                   BT_POWER, BT_REMOVE, BT_RSSI_NONE, BT_SCAN_MAX_S, BT_SCAN_START, BT_SCAN_STOP, T_BTCMD, T_BTCTRL,
+                   T_BTDEV, T_BTSTATE, cstr, mac_bytes, mac_text)
 from rx_i18n import _
 
-OPS = frozenset({BT_PAIR, BT_CONNECT, BT_DISCONNECT, BT_REMOVE, BT_POWER, BT_ADAPTER})   # operacje na urządzeniu / adapterze
+# operacje na urządzeniu / adapterze
+OPS = frozenset({BT_PAIR, BT_CONNECT, BT_DISCONNECT, BT_REMOVE, BT_POWER, BT_ADAPTER, BT_ADAPTER_USE})
 BTF_LIST = 4                 # flaga btstate: zaraz za nim runda listy (sender_bt.BTF_LIST)
 STALE_S = 12.0               # stan starszy niż tyle (bez panelu nadajnik wysyła go co 5 s) = nieznany
 KEEPALIVE_S = 2.0            # otwarty panel ponawia BT_LIST co tyle (nadajnik wysyła listę przez BT_ACTIVE_S)
@@ -32,10 +34,11 @@ STATE_TEXT = {
     BTS_NO_TOOL: "brak busctl (systemd) na telefonie", BTS_ERROR: "błąd odczytu stanu",
 }
 OP_TEXT = {BT_PAIR: "Parowanie", BT_CONNECT: "Łączenie", BT_DISCONNECT: "Rozłączanie", BT_REMOVE: "Usuwanie",
-           BT_POWER: "Zasilanie Bluetooth", BT_SCAN_START: "Skanowanie", BT_ADAPTER: "Zmiana kontrolera"}
+           BT_POWER: "Zasilanie Bluetooth", BT_SCAN_START: "Skanowanie", BT_ADAPTER: "Zmiana kontrolera",
+           BT_ADAPTER_USE: "Zmiana kontrolera"}
 DONE_TEXT = {BT_PAIR: "sparowano i połączono", BT_CONNECT: "połączono", BT_DISCONNECT: "rozłączono",
              BT_REMOVE: "usunięto z telefonu", BT_POWER: "gotowe", BT_SCAN_START: "rozpoczęte",
-             BT_ADAPTER: "gotowe"}
+             BT_ADAPTER: "gotowe", BT_ADAPTER_USE: "gotowe"}
 RESULT_TEXT = {
     BTR_FAILED: "nie udało się", BTR_TIMEOUT: "brak odpowiedzi urządzenia",
     BTR_NOT_FOUND: "telefon nie widzi urządzenia - uruchom skanowanie",
@@ -72,6 +75,34 @@ class Device:
         if self.rssi is None:
             return 0
         return sum(self.rssi >= t for t in (-90, -78, -66, -55))
+
+
+@dataclass(frozen=True, slots=True)
+class Controller:
+    """Kontroler Bluetooth nadajnika (wbudowany / dongle USB) z listy btctrl."""
+    index: int            # N z hciN
+    name: str             # nazwa urządzenia
+    flags: int
+
+    @property
+    def usb(self) -> bool:
+        return bool(self.flags & BTC_USB)
+
+    @property
+    def fixed(self) -> bool:
+        return bool(self.flags & BTC_FIXED)
+
+    @property
+    def active(self) -> bool:
+        return bool(self.flags & BTC_ACTIVE)
+
+    @property
+    def blocked(self) -> bool:
+        return bool(self.flags & BTC_BLOCKED)
+
+    @property
+    def picked(self) -> bool:
+        return bool(self.flags & BTC_PICKED)
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,14 +151,16 @@ class _Round:
 
 status: Status | None = None
 devices: tuple[Device, ...] = ()
+controllers: tuple[Controller, ...] = ()       # kontrolery nadajnika (nadajnik z wyborem kontrolera)
+_cround: _Round | None = None
 pending: tuple[int, str, float] | None = None   # wysłane polecenie (op, MAC, czas) - przycisk "w toku" od razu
 _round: _Round | None = None
 _logged: tuple[int, int, str] | None = None
 
 
 def reset() -> None:
-    global status, devices, pending, _round, _logged
-    status, devices, pending, _round, _logged = None, (), None, None, None
+    global status, devices, pending, _round, _logged, controllers, _cround
+    status, devices, pending, _round, _logged, controllers, _cround = None, (), None, None, None, (), None
 
 
 # ---------- wątek sieci ----------
@@ -138,14 +171,18 @@ def on_packet(t: int, data: bytes, now: float | None = None) -> None:
         _on_state(v, now)
     elif t == T_BTDEV:
         _on_dev(v)
+    elif t == T_BTCTRL:
+        _on_ctrl(v)
 
 
 def _on_state(v: tuple, now: float) -> None:
-    global status, devices, _round
+    global status, devices, _round, controllers
     st, flags, left, conn, n, gen, op, res, mac = v
     prev, status = status, Status(st, flags, left, conn, op, res, mac_text(mac), now)
     if prev is None:
         print(f"Sender Bluetooth: {STATE_TEXT.get(st, st)}")
+    if not flags & (BTF_HAS_USB | BTF_HAS_BUILTIN):   # starszy nadajnik albo brak kontrolerów - lista pusta
+        controllers = ()
     if flags & BTF_LIST:
         if n == 0:
             devices, _round = (), None
@@ -163,6 +200,20 @@ def _on_dev(v: tuple) -> None:
     r.got[k] = Device(mac_text(mac), cstr(name) or mac_text(mac), None if rssi == BT_RSSI_NONE else rssi, flags)
     if len(r.got) == total:
         devices, _round = tuple(r.got[i] for i in range(total)), None
+
+
+def _on_ctrl(v: tuple) -> None:
+    """Runda kontrolerów: podmiana listy dopiero, gdy jest cała (jak urządzenia)."""
+    global controllers, _cround
+    gen, k, total, flags, index, name = v
+    r = _cround
+    if r is None or r.gen != gen or r.total != total:
+        r = _cround = _Round(gen, total)
+    if k >= total:
+        return
+    r.got[k] = Controller(index, cstr(name) or f"hci{index}", flags)
+    if len(r.got) == total:
+        controllers, _cround = tuple(r.got[i] for i in range(total)), None
 
 
 def _log_result(s: Status) -> None:
@@ -270,9 +321,19 @@ def power(on: bool) -> bool:
 
 
 def adapter(mode: int) -> bool:
-    """Tryb wyboru kontrolera BTA_* (tylko nadajnik, który go podaje w btstate)."""
+    """Tryb wyboru kontrolera BTA_AUTO / BTA_MANUAL (tylko nadajnik, który go podaje w btstate)."""
     s = status
     return s is not None and s.mode != 0 and send(BT_ADAPTER, mode)
+
+
+def use_controller(index: int) -> bool:
+    """Konkretny kontroler hciN z listy - nadajnik zapamiętuje go po identyfikatorze urządzenia."""
+    s = status
+    return s is not None and s.mode != 0 and send(BT_ADAPTER_USE, index)
+
+
+def active_controller() -> Controller | None:
+    return next((c for c in controllers if c.active), None)
 
 
 def indicator(now: float | None = None) -> tuple[str, str]:
@@ -287,7 +348,9 @@ def indicator(now: float | None = None) -> tuple[str, str]:
     if s.state != BTS_OK:
         return ("warn" if s.state == BTS_OFF else "bad"), head
     head += "  ·  " + _("połączone: {n}").format(n=s.connected)
-    if s.on_usb:
+    if (c := active_controller()) is not None:
+        head += "  ·  " + c.name
+    elif s.on_usb:
         head += "  ·  " + _("dongle USB")
     if s.scanning:
         return "scan", head + "  ·  " + _("skanowanie {s} s").format(s=s.scan_left)

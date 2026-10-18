@@ -9,7 +9,8 @@
 # wol_file = "wol.json"       # Wake-on-LAN i zdarzenia do dziennika: ustawienia z okna receivera zapisane na telefonie
 # gyro_cal_file = "gyro_cal.json"   # kalibracja żyroskopu z okna receivera per pad (MAC); "" = bez zapisu
 # bt_adapter = "auto"   # kontroler Bluetooth: auto (dongle USB przed wbudowanym, reszta wyłączona rfkill) | builtin |
-#   manual (nadajnik nic nie zmienia); wybór z okna receivera (panel Bluetooth) zapisuje się w bt_file i ma pierwszeństwo
+#   manual (nadajnik nic nie zmienia); wybór z okna (panel Bluetooth: Użyj / Auto / Ręcznie) zapisuje się w bt_file
+#   i ma pierwszeństwo
 # bt_file = "bt.json"
 # grab_pad = true
 # grab_touch = true

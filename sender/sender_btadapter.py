@@ -6,14 +6,14 @@ do kilkunastu ms w odcinku „Bluetooth (ponad minimum)” na karcie pada; dongl
 
   auto     najlepszy kontroler: dongle USB > wewnętrzny USB (laptop: port oznaczony przez firmware jako stały) >
            wbudowany na UART / SDIO; przy remisie niższy numer hciN. Pozostałe blokuje rfkill.
-  builtin  odwrotnie - wbudowany przed USB (dongle zostaje wpięty, ale nieużywany)
+  pick     konkretny kontroler wybrany w oknie (zapamiętany po identyfikatorze urządzenia: USB vid:pid[:serial],
+           wbudowany - compatible / ścieżka; nie po hciN, który zmienia się z kolejnością wykrywania). Gdy go nie ma
+           (dongle wyjęty) - jak auto, a po powrocie znów on. W sender.toml: "builtin" = wbudowany przed USB.
   manual   nic nie zmienia (Bluetooth ustawiasz sam: rfkill, bluetoothctl)
 
-Kontroler poznajemy po ścieżce urządzenia w /sys (szyna USB, atrybut `removable`), nie po MAC ani numerze hciN -
-numery zmieniają się z kolejnością wykrywania. Wybrany dostaje link policy bez SNIFF (pad nie usypia łącza: pierwsze
-naciśnięcie po bezruchu bez kilku ms opóźnienia). Zestaw kontrolerów sprawdzamy co odświeżenie stanu Bluetooth, więc
-wpięcie / wyjęcie dongla w trakcie pracy przełącza bez restartu; wyjęty dongle odblokowuje wbudowany.
-Pady trzeba raz sparować z każdym kontrolerem (każdy ma własny adres).
+Wybrany dostaje link policy bez SNIFF (pad nie usypia łącza: pierwsze naciśnięcie po bezruchu bez kilku ms opóźnienia).
+Zestaw kontrolerów sprawdzamy co odświeżenie stanu Bluetooth, więc wpięcie / wyjęcie dongla w trakcie pracy przełącza
+bez restartu; wyjęty dongle odblokowuje wbudowany. Pady trzeba raz sparować z każdym kontrolerem (własny adres).
 """
 import contextlib
 import fcntl
@@ -22,26 +22,33 @@ import shutil
 import socket
 import struct
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
-from proto import BTA_AUTO, BTA_BUILTIN, BTA_MANUAL, write_json
+from proto import BTA_AUTO, BTA_MANUAL, BTA_PICK, write_json
 
 SYSFS = Path("/sys/class/bluetooth")
-MODES = {"auto": BTA_AUTO, "builtin": BTA_BUILTIN, "manual": BTA_MANUAL}
+MODES = {"auto": BTA_AUTO, "pick": BTA_PICK, "manual": BTA_MANUAL}
 MODE_NAMES = {v: k for k, v in MODES.items()}
+RULE_BUILTIN = "builtin"            # klucz-reguła z sender.toml: wbudowany przed USB
 AF_BLUETOOTH = getattr(socket, "AF_BLUETOOTH", 31)
 BTPROTO_HCI = 1
 HCISETLINKPOL = 0x400448CD          # _IOW('H', 205, int)
 HCI_LP_RSWITCH = 0x0001             # link policy: tylko zmiana roli (bez HOLD / SNIFF / PARK)
 BUILTIN, USB_FIXED, USB = 0, 1, 2   # ranga kontrolera (auto bierze najwyższą)
 KIND_TEXT = {BUILTIN: "built-in", USB_FIXED: "internal USB", USB: "USB"}
+# prefiks compatible z device tree -> producent (wbudowane radia telefonów i płytek)
+VENDORS = {"qcom": "Qualcomm", "brcm": "Broadcom", "infineon": "Infineon", "cypress": "Cypress", "realtek": "Realtek",
+           "mediatek": "MediaTek", "ti": "Texas Instruments", "marvell": "Marvell", "nxp": "NXP", "intel": "Intel",
+           "amlogic": "Amlogic", "rockchip": "Rockchip", "allwinner": "Allwinner", "sprd": "Unisoc"}
 
 
 @dataclass(frozen=True, slots=True)
 class Ctrl:
-    name: str                       # hciN
-    rank: int                       # BUILTIN / USB_FIXED / USB
+    name: str                                       # hciN
+    rank: int                                       # BUILTIN / USB_FIXED / USB
+    label: str = field(default="", compare=False)   # nazwa urządzenia do okna
+    key: str = ""                                   # trwały identyfikator (wybór z okna)
 
     @property
     def index(self) -> int:
@@ -52,34 +59,78 @@ class Ctrl:
         return self.rank != BUILTIN
 
 
-def _rank(dev: Path) -> int:
-    """Szyna kontrolera z jego ścieżki w /sys: USB (wymienny / nieznany) albo USB stały, inaczej wbudowany."""
-    if "/usb" not in str(dev):
-        return BUILTIN
-    for parent in dev.parents:      # interfejs USB -> urządzenie USB z atrybutem removable
-        with contextlib.suppress(OSError):
-            return USB_FIXED if (parent / "removable").read_text().strip() == "fixed" else USB
-    return USB
+def _read(path: Path) -> str:
+    with contextlib.suppress(OSError):
+        return path.read_text(errors="replace").strip("\0\n ")
+    return ""
+
+
+def _usb_info(dev: Path) -> tuple[int, str, str]:
+    """-> (ranga, nazwa, klucz) kontrolera na USB: nazwa z deskryptora (product / manufacturer), klucz vid:pid[:serial]."""
+    usb = next((p for p in dev.parents if (p / "idVendor").is_file()), None)
+    if usb is None:
+        return USB, "USB Bluetooth", "usb:?"
+    vid, pid, serial = _read(usb / "idVendor"), _read(usb / "idProduct"), _read(usb / "serial")
+    product, maker = _read(usb / "product"), _read(usb / "manufacturer")
+    if product and maker and maker.lower() not in product.lower() and maker.lower() not in ("generic", "unknown"):
+        label = f"{maker} {product}"
+    else:
+        label = product or maker or f"USB {vid}:{pid}"
+    rank = USB_FIXED if _read(usb / "removable") == "fixed" else USB
+    return rank, label, ":".join(filter(None, ("usb", vid, pid, serial)))
+
+
+def _builtin_info(dev: Path) -> tuple[str, str]:
+    """-> (nazwa, klucz) wbudowanego kontrolera: compatible z device tree (qcom,wcn3990-bt -> Qualcomm WCN3990),
+    inaczej sterownik, inaczej ogólna nazwa; klucz - compatible albo nazwa urządzenia nadrzędnego."""
+    for p in dev.parents:
+        if p.name in ("devices", "/", ""):
+            break
+        compat = _read(p / "of_node" / "compatible").split("\0")[0]
+        if compat:
+            vendor, _sep, chip = compat.partition(",")
+            chip = chip.removesuffix("-bt").upper() if chip else ""
+            return f"{VENDORS.get(vendor, vendor.capitalize())} {chip}".strip(), f"builtin:{compat}"
+        if (p / "driver").exists():
+            return f"Bluetooth ({(p / 'driver').resolve().name})", f"builtin:{p.name}"
+    return "Bluetooth", f"builtin:{dev.parent.parent.name}"
+
+
+def _ctrl(link: Path) -> Ctrl:
+    dev = link.resolve()
+    if "/usb" in str(dev):
+        rank, label, key = _usb_info(dev)
+    else:
+        rank, (label, key) = BUILTIN, _builtin_info(dev)
+    return Ctrl(link.name, rank, label, key)
 
 
 def scan(sysfs: Path = SYSFS) -> tuple[Ctrl, ...]:
     """Kontrolery z /sys/class/bluetooth (bez wpisów połączeń hciN:uchwyt), po numerze."""
-    found = [Ctrl(p.name, _rank(p.resolve())) for p in sysfs.glob("hci*") if p.name[3:].isdigit()]
+    found = [_ctrl(p) for p in sysfs.glob("hci*") if p.name[3:].isdigit()]
     return tuple(sorted(found, key=lambda c: c.index))
 
 
-def choose(ctrls: tuple[Ctrl, ...], mode: int) -> Ctrl | None:
-    """Kontroler do użycia albo None (tryb ręczny / brak kontrolerów)."""
+def choose(ctrls: tuple[Ctrl, ...], mode: int, key: str = "") -> Ctrl | None:
+    """Kontroler do użycia albo None (tryb ręczny / brak kontrolerów). pick bez wybranego kontrolera = auto."""
     if mode == BTA_MANUAL or not ctrls:
         return None
-    sign = 1 if mode == BTA_AUTO else -1
-    return max(ctrls, key=lambda c: (sign * c.rank, -c.index))
+    if mode == BTA_PICK:
+        if key == RULE_BUILTIN:
+            return max(ctrls, key=lambda c: (-c.rank, -c.index))
+        if pick := next((c for c in ctrls if c.key == key), None):
+            return pick
+    return max(ctrls, key=lambda c: (c.rank, -c.index))
 
 
-def set_blocked(name: str, blocked: bool, sysfs: Path = SYSFS) -> None:
+def is_blocked(name: str, sysfs: Path = SYSFS) -> bool:
+    return any(_read(s) == "1" for s in (sysfs / name).glob("rfkill*/soft"))
+
+
+def set_blocked(name: str, block: bool, sysfs: Path = SYSFS) -> None:
     for soft in (sysfs / name).glob("rfkill*/soft"):
-        if soft.read_text().strip() != ("1" if blocked else "0"):
-            soft.write_text("1" if blocked else "0")
+        if _read(soft) != ("1" if block else "0"):
+            soft.write_text("1" if block else "0")
 
 
 def no_sniff(name: str) -> bool:
@@ -97,9 +148,9 @@ def no_sniff(name: str) -> bool:
     return False
 
 
-def apply(ctrls: tuple[Ctrl, ...], mode: int, sysfs: Path = SYSFS, sniff=None) -> Ctrl | None:
+def apply(ctrls: tuple[Ctrl, ...], mode: int, key: str = "", sysfs: Path = SYSFS, sniff=None) -> Ctrl | None:
     """Wybrany odblokowany i bez SNIFF, reszta zablokowana. Tryb ręczny: nic. -> wybrany."""
-    pick = choose(ctrls, mode)
+    pick = choose(ctrls, mode, key)
     if pick is None:
         return None
     for c in ctrls:
@@ -116,36 +167,44 @@ def unblock_all(ctrls: tuple[Ctrl, ...], sysfs: Path = SYSFS) -> None:
 
 
 def describe(ctrls: tuple[Ctrl, ...], pick: Ctrl | None, mode: int) -> str:
-    rest = ", ".join(f"{c.name} ({KIND_TEXT[c.rank]})" for c in ctrls if c != pick)
+    def text(c):
+        return f"{c.name} {c.label} ({KIND_TEXT[c.rank]})"
+    rest = ", ".join(text(c) for c in ctrls if c != pick)
     if pick is None:
         return f"Bluetooth adapter ({MODE_NAMES[mode]}): " + (rest or "none")
-    return (f"Bluetooth adapter ({MODE_NAMES[mode]}): {pick.name} ({KIND_TEXT[pick.rank]})"
-            + (f", blocked: {rest}" if rest else ""))
+    return f"Bluetooth adapter ({MODE_NAMES[mode]}): {text(pick)}" + (f", blocked: {rest}" if rest else "")
 
 
 # ---------- tryb: sender.toml (domyślny) + bt.json (wybór z okna) ----------
-def mode_from(text: str) -> int:
-    return MODES.get(str(text).strip().lower(), BTA_AUTO)
+def mode_from(text: str) -> tuple[int, str]:
+    """bt_adapter z sender.toml -> (tryb, klucz): auto | builtin | manual."""
+    t = str(text).strip().lower()
+    if t == RULE_BUILTIN:
+        return BTA_PICK, RULE_BUILTIN
+    return MODES.get(t, BTA_AUTO), ""
 
 
-def load_mode(path: str, default: int) -> int:
-    """Tryb zapisany z okna albo domyślny z konfiguracji."""
+def load_mode(path: str, default: tuple[int, str]) -> tuple[int, str]:
+    """(tryb, klucz) zapisany z okna albo domyślny z konfiguracji."""
     if not path:
         return default
     try:
         with open(path, encoding="utf-8") as f:
             raw = json.load(f)
-        return MODES[raw["mode"]] if isinstance(raw, dict) and raw.get("mode") in MODES else default
     except FileNotFoundError:
         return default
     except (OSError, ValueError) as e:
         print(f"Bluetooth adapter: {path} ignored ({e!r})")
         return default
+    if not isinstance(raw, dict) or raw.get("mode") not in MODES:
+        return default
+    mode, key = MODES[raw["mode"]], raw.get("device", "")
+    return (mode, key) if mode != BTA_PICK or (isinstance(key, str) and key) else default
 
 
-def save_mode(path: str, mode: int) -> None:
+def save_mode(path: str, mode: int, key: str = "") -> None:
     if path:
         try:
-            write_json(path, {"mode": MODE_NAMES[mode]}, indent=2)
+            write_json(path, {"mode": MODE_NAMES[mode], **({"device": key} if mode == BTA_PICK else {})}, indent=2)
         except OSError as e:
             print(f"Bluetooth adapter: cannot write {path}: {e!r}")
