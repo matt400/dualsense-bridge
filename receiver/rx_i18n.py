@@ -489,9 +489,9 @@ EN = {
     # ---------- kopie ustawień ----------
     "Kopie": "Backups",
     "KOPIE USTAWIEŃ": "SETTINGS BACKUPS",
-    "Przed każdą aktualizacją receiver kopiuje settings.json, console.json i remap.json (zostaje {n} ostatnich). "
+    "Przed każdą aktualizacją receiver kopiuje settings.json, console.json, remap.json i padcal.json (zostaje {n} ostatnich). "
     "Przywrócenie najpierw zapisuje kopię bieżących plików - też da się je cofnąć - a potem uruchamia receiver od nowa.":
-        "Before every update the receiver copies settings.json, console.json and remap.json (the last {n} are kept). "
+        "Before every update the receiver copies settings.json, console.json, remap.json and padcal.json (the last {n} are kept). "
         "Restoring first backs up the current files - so it can be undone too - and then restarts the receiver.",
     "Zrób kopię teraz": "Back up now",
     "Nie ma jeszcze żadnej kopii.": "No backups yet.",
