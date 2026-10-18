@@ -48,6 +48,9 @@ Testy obejmują:
   bateria wirtualnego DualSense w skali 0-10 (pełny pad bez kabla to 100 %, nie 85 %) (`test_vpad.py`), wybór
   kontrolera Bluetooth odporny na błąd rfkill w połowie - wybrany odblokowany przed blokowaniem reszty, nieudana
   zmiana ponawiana (`test_btadapter_tx.py`);
+  przy kilku kontrolerach Bluetooth (wbudowany zablokowany + dongle) skan z okna na wybranym kontrolerze
+  (`select` w bluetoothctl, limit czasu po naszej stronie) i wyłączanie pada przez D-Bus na kontrolerze, z którym
+  jest połączony (`test_hunt15_tx.py`);
 - przycisk → gra, dziennik zdarzeń (też zdarzenia nadajnika end-to-end), lightbar od baterii, ustawienia dla nadajnika
   (`test_extras.py`, `test_extras_gui.py`) oraz Wake-on-LAN po stronie nadajnika - kombinacja, ARP, broadcast, magic
   packet, `wol.json` (`test_wol_tx.py`);

@@ -114,16 +114,21 @@ def is_pad(props: dict[str, Any]) -> bool:
     return _val(props, "Icon") == "input-gaming" or ((cls >> 8) & 0x1F == 0x05 and (cls >> 2) & 0x0F in (1, 2))
 
 
-def parse_objects(text: str, prefer: str = "") -> tuple[int, str, list[Device]]:
+def parse_objects(text: str, prefer: str = "", info: dict[str, Any] | None = None) -> tuple[int, str, list[Device]]:
     """Wynik `busctl --json=short call ... GetManagedObjects` -> (BTS_*, ścieżka adaptera, urządzenia).
     Adapter wybrany przez sender_btadapter (prefer, np. /org/bluez/hci1), inaczej pierwszy włączony, a gdy żaden nie
-    jest włączony - pierwszy (hci0); urządzenia bez nazwy i bez parowania (beacony, telefony w pobliżu) pominięte."""
+    jest włączony - pierwszy (hci0); urządzenia bez nazwy i bez parowania (beacony, telefony w pobliżu) pominięte.
+    info (słownik) dostaje "address" wybranego adaptera i "count" - ile adapterów widzi BlueZ (skan: select)."""
     objects: dict[str, dict[str, Any]] = json.loads(text)["data"][0]
     adapters = {path: ifaces[ADAPTER] for path, ifaces in objects.items() if ADAPTER in ifaces}
+    if info is not None:
+        info.update(address="", count=len(adapters))
     if not adapters:
         return BTS_NO_ADAPTER, "", []
     path = prefer if prefer in adapters else min(adapters, key=lambda p: (not _val(adapters[p], "Powered", False), p))
     a = adapters[path]
+    if info is not None:
+        info["address"] = str(_val(a, "Address", "") or "").upper()
     if _val(a, "Powered", False):
         st = BTS_OK
     else:
@@ -143,6 +148,32 @@ def parse_objects(text: str, prefer: str = "") -> tuple[int, str, list[Device]]:
     return st, path, devices[:BT_DEV_MAX]
 
 
+async def _scan_feed(proc: asyncio.subprocess.Process, address: str, wait_s: float = 3.0) -> None:
+    """Skan na wybranym kontrolerze: polecenia do bluetoothctl dopiero, gdy wypisze ten kontroler (BlueZ podaje
+    kontrolery asynchronicznie po starcie - wcześniejsze "select" kończyło się "Controller ... not available"), najdłużej
+    wait_s. Potem czyta wyjście do końca procesu: pełny potok zatrzymałby bluetoothctl w trakcie skanu."""
+    loop = asyncio.get_running_loop()
+    end, seen, sent = loop.time() + wait_s, "", False
+    try:
+        while True:
+            try:
+                chunk = await (proc.stdout.read(4096) if sent else
+                               asyncio.wait_for(proc.stdout.read(4096), max(0.0, end - loop.time())))
+            except TimeoutError:
+                chunk = None
+            if not sent:
+                seen = (seen + (chunk or b"").decode(errors="replace").upper())[-256:]
+                if chunk is None or address in seen:
+                    proc.stdin.write(f"select {address}\nscan on\n".encode())
+                    await proc.stdin.drain()
+                    sent = True
+                    continue
+            if not chunk:
+                return
+    except (OSError, ValueError):            # proces zakończony (zatrzymanie skanu) - potok zamknięty
+        return
+
+
 class Bluetooth:
     """Stan i operacje Bluetooth nadajnika. run: wykonawca poleceń (testy podstawiają własny)."""
 
@@ -151,6 +182,8 @@ class Bluetooth:
         self.emit = emit or (lambda *a: net.emit(*a))
         self.state = BTS_ERROR
         self.adapter = ""
+        self.adapter_addr = ""                       # adres (MAC) adaptera self.adapter
+        self.adapter_count = 0                       # ile adapterów widzi BlueZ
         self.devices: list[Device] = []
         self.last = (BTR_NONE, BTR_NONE, b"")       # ostatnia operacja: (BT_*, BTR_*, MAC 6 B)
         self.busy: asyncio.Task | None = None       # zadanie operacji (testy czekają na nie)
@@ -262,7 +295,9 @@ class Bluetooth:
             self.state = classify(err or out, STATES, BTS_ERROR)
             return
         try:
-            self.state, self.adapter, self.devices = parse_objects(out, self.prefer())
+            info: dict[str, Any] = {}
+            self.state, self.adapter, self.devices = parse_objects(out, self.prefer(), info)
+            self.adapter_addr, self.adapter_count = info["address"], info["count"]
         except (ValueError, KeyError, IndexError, TypeError, AttributeError) as e:
             print(f"Bluetooth: unexpected busctl output: {e!r}")
             self.state = BTS_ERROR
@@ -404,6 +439,29 @@ class Bluetooth:
         path = self.need(mac)
         await self.call(self.adapter, ADAPTER, "RemoveDevice", "o", path)
 
+    async def disconnect_pad(self, mac: str) -> bool:
+        """Wyłączenie pada (okno / bezczynność): Disconnect przez D-Bus na kontrolerze, z którym pad jest połączony.
+        `bluetoothctl disconnect` szuka urządzenia tylko na domyślnym kontrolerze bluetoothctl (hci0) - przy padzie
+        na donglu (hci1) kończył się "Device ... not available" i pad się nie wyłączał. -> False, gdy D-Bus nie
+        pomógł (brak busctl / BlueZ, pad nieznany) - wtedy zostaje bluetoothctl."""
+        try:
+            out = await self.busctl("call", BLUEZ, "/", "org.freedesktop.DBus.ObjectManager", "GetManagedObjects")
+            objects: dict[str, dict[str, Any]] = json.loads(out)["data"][0]
+        except (BtError, ValueError, KeyError, IndexError, TypeError, AttributeError):
+            return False
+        want = mac.upper()
+        found = [(p, d) for p, ifaces in objects.items() if isinstance(d := ifaces.get(DEVICE), dict)
+                 and str(_val(d, "Address", "")).upper() == want]
+        path = next((p for p, d in found if _val(d, "Connected", False)), None)
+        if path is None:
+            return False
+        try:
+            await self.call(path, DEVICE, "Disconnect", timeout=CONNECT_S)
+        except BtError as e:
+            print(f"Bluetooth disconnect {mac} failed: {e}")
+            return False
+        return True
+
     # ---------- skan ----------
     def scanning(self) -> bool:
         return self.scan is not None and self.scan.returncode is None
@@ -420,8 +478,19 @@ class Bluetooth:
             await self.ensure_on()
             if not self.adapter:
                 raise self.no_adapter()
-            self.scan = await asyncio.create_subprocess_exec(BLUETOOTHCTL, "--timeout", str(secs), "scan", "on",
-                                                             stdin=DEVNULL, stdout=DEVNULL, stderr=DEVNULL)
+            if self.adapter_count > 1 and self.adapter_addr:
+                # kilka kontrolerów (wbudowany zablokowany + dongle): `bluetoothctl scan on` skanuje domyślnym
+                # kontrolerem bluetoothctl - pierwszym znanym BlueZ (hci0, zwykle zablokowany wbudowany), a nie wybranym.
+                # Skan kończył się od razu błędem "NotReady" i nowego pada nie dało się sparować z okna.
+                # Tryb interaktywny: "select <adres>" i "scan on" przez stdin (--timeout działa tylko bez trybu
+                # interaktywnego - limit pilnuje _scan_watch).
+                self.scan = await asyncio.create_subprocess_exec(BLUETOOTHCTL, stdin=PIPE, stdout=PIPE, stderr=DEVNULL)
+                state.spawn(_scan_feed(self.scan, self.adapter_addr))
+                limit = secs
+            else:
+                self.scan = await asyncio.create_subprocess_exec(BLUETOOTHCTL, "--timeout", str(secs), "scan", "on",
+                                                                 stdin=DEVNULL, stdout=DEVNULL, stderr=DEVNULL)
+                limit = secs + 1                     # zapas: bluetoothctl kończy sam
         except FileNotFoundError:
             self.last = (BT_SCAN_START, BTR_FAILED, b"")
             print("Bluetooth scan failed: bluetoothctl not found (install bluez)")
@@ -435,11 +504,20 @@ class Bluetooth:
             self.scan_end = time.monotonic() + secs
             self.last = (BT_SCAN_START, BTR_OK, b"")
             print(f"Bluetooth scan for {secs}s")
-            state.spawn(self._scan_watch(self.scan))
+            state.spawn(self._scan_watch(self.scan, limit))
         self.poke()
 
-    async def _scan_watch(self, proc: asyncio.subprocess.Process) -> None:
-        await proc.wait()
+    async def _scan_watch(self, proc: asyncio.subprocess.Process, limit: float) -> None:
+        """Koniec skanu: proces sam się kończy (--timeout); bez tego (tryb interaktywny, bluetoothctl bez --timeout)
+        zatrzymanie po limit s - skan zabiera radio padom, nie może trwać dłużej niż obiecany limit."""
+        try:
+            await asyncio.wait_for(asyncio.shield(proc.wait()), limit)
+        except TimeoutError:
+            if self.scan is proc:
+                async with self.scan_lock:
+                    if self.scan is proc:
+                        await self._stop_scan()
+            await proc.wait()
         if self.scan is proc:
             self.scan = None
             print("Bluetooth scan finished")

@@ -224,7 +224,7 @@ else:
 dlg.hide(); dlg.present(); pump()
 assert dlg.win_mode.currentData() == "window" and dlg.lang.currentData() == "pl"
 dlg.win_mode.set_data("full"); dlg.save_btn.click(); pump(100)
-assert win.fullscreen() and win.isFullScreen(), "Ustawienia -> Okno -> Pełny ekran"
+assert win.fullscreen() and (is_ci or win.isFullScreen()), "Ustawienia -> Okno -> Pełny ekran"   # CI: jak wyżej
 win.set_fullscreen(False); pump(100)
 assert "steam.exe" in dlg.apps.toPlainText().split()
 dlg.hide(); dlg.present(); pump()
