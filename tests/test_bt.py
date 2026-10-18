@@ -40,6 +40,7 @@ class FakeBlueZ:
     """BlueZ dla wykonawcy poleceń: GetManagedObjects, Pair, Connect, Disconnect, RemoveDevice, Powered, Trusted."""
     def __init__(s):
         s.powered, s.power_state, s.calls, s.fail, s.missing, s.delay = True, "on", [], {}, None, 0.0
+        s.pairable, s.bond_needs_pairable = False, True     # BlueZ wiąże przy parowaniu tylko z Pairable=true
         s.devs = {PAD: {"Name": "DualSense Wireless Controller", "Class": 0x002508, "Paired": False, "Connected": False,
                         "RSSI": -58},
                   PAD2: {"Name": "DualSense Wireless Controller", "Icon": "input-gaming", "Paired": True, "Trusted": True,
@@ -71,11 +72,16 @@ class FakeBlueZ:
             return (1, "", s.fail["objects"]) if "objects" in s.fail else (0, s.objects(), "")
         mac = next((m for m in s.devs if cmd[2 if cmd[0] == "set-property" else 2] == SB.dev_path("/org/bluez/hci0", m)), None)
         if cmd[0] == "set-property":
+            if cmd[4] in s.fail:
+                return 1, "", s.fail[cmd[4]]
             if cmd[3] == "org.bluez.Adapter1":
-                s.powered = cmd[-1] == "true"
+                setattr(s, {"Powered": "powered", "Pairable": "pairable"}[cmd[4]], cmd[-1] == "true")
             else:
                 s.devs[mac][cmd[4]] = cmd[-1] == "true"
             return 0, "", ""
+        if cmd[0] == "get-property":
+            v = s.devs[mac].get(cmd[4])
+            return (1, "", "Unknown property") if v is None else (0, json.dumps(var("b", v)), "")
         method = cmd[4]
         if method in s.fail:
             return 1, "", s.fail[method]
@@ -83,6 +89,7 @@ class FakeBlueZ:
             del s.devs[next(m for m in s.devs if SB.dev_path("/org/bluez/hci0", m) == cmd[-1])]
         elif method == "Pair":
             s.devs[mac]["Paired"] = True
+            s.devs[mac]["Bonded"] = s.pairable or not s.bond_needs_pairable
         elif method in ("Connect", "Disconnect"):
             s.devs[mac]["Connected"] = method == "Connect"
         return 0, "", ""
@@ -128,8 +135,11 @@ async def t_ops():
     await b.busy
     pad = SB.dev_path("/org/bluez/hci0", PAD)
     ops = [c for c in bz.calls if c[-1] != "GetManagedObjects"]
-    assert ops == [("call", pad, "org.bluez.Device1", "Pair"), ("set-property", pad, "org.bluez.Device1", "Trusted", "b", "true"),
+    assert ops == [("set-property", "/org/bluez/hci0", "org.bluez.Adapter1", "Pairable", "b", "true"),
+                   ("call", pad, "org.bluez.Device1", "Pair"), ("get-property", pad, "org.bluez.Device1", "Bonded"),
+                   ("set-property", pad, "org.bluez.Device1", "Trusted", "b", "true"),
                    ("call", pad, "org.bluez.Device1", "Connect")], ops
+    assert bz.pairable and bz.devs[PAD]["Bonded"], "Pairable przed Pair -> klucz zapisany"
     assert b.last == (BT_PAIR, BTR_OK, mac_bytes(PAD)) and bz.devs[PAD]["Connected"] and bz.devs[PAD]["Trusted"]
     s = states()[-1]
     assert s[:5] == (BTS_OK, SB.BTF_LIST, 0, 2, 3) and s[6:8] == (BT_PAIR, BTR_OK), s
@@ -137,7 +147,7 @@ async def t_ops():
     assert [r[1:3] for r in rows] == [(0, 3), (1, 3), (2, 3)] and {r[0] for r in rows} == {s[5]}, "runda: numer i ile"
     assert rows[0][3] == mac_bytes(PAD) and rows[0][5] & BTD_CONNECTED, "połączony pad na górze listy"
     assert rows[2][4] == -91 and rows[0][4] == -58 and rows[2][6].rstrip(b"\0").decode() == "Telefon sąsiada"
-    ok("parowanie: 3 powtórki = jedno, Pair -> Trusted -> Connect, wynik i runda listy do okna")
+    ok("parowanie: 3 powtórki = jedno, Pairable -> Pair -> Bonded? -> Trusted -> Connect, wynik i runda listy do okna")
 
     bz.calls.clear(); tx_out.clear()
     b.on_command(BT_PAIR, 0, mac_bytes(PAD2))
@@ -173,6 +183,37 @@ async def t_ops():
     assert b.last == (BT_DISCONNECT, BTR_BUSY, mac_bytes(PAD2)), "druga operacja w trakcie pierwszej"
     await b.busy; bz.delay = 0
     ok("błędy BlueZ: odrzucone parowanie, już sparowany, przekroczony czas, operacja w trakcie innej = BUSY")
+
+    pad = SB.dev_path("/org/bluez/hci0", PAD)
+    bz.devs[PAD] |= {"Paired": True, "Bonded": False, "Trusted": False, "Connected": False}
+    bz.calls.clear(); b.dups.clear()
+    b.on_command(BT_PAIR, 0, mac_bytes(PAD)); await b.busy
+    assert b.last[1] == BTR_AUTH and PAD not in bz.devs, "sparowany bez klucza: zapomniany, do ponownego parowania"
+    assert ("call", pad, "org.bluez.Device1", "Pair") not in bz.calls
+    bz.devs[PAD] = {"Name": "DualSense Wireless Controller", "Class": 0x002508, "Paired": False, "RSSI": -58}
+    bz.pairable, bz.fail["Pairable"] = False, "Call failed: Not supported"; b.dups.clear()
+    b.on_command(BT_PAIR, 0, mac_bytes(PAD)); await b.busy
+    assert b.last[1] == BTR_AUTH and bz.devs[PAD]["Bonded"] is False and not bz.devs[PAD].get("Connected"), \
+        "adapter bez wiązania: błąd w oknie zamiast pada, który po wyłączeniu już nie wróci"
+    del bz.fail["Pairable"]
+    bz.devs[PAD] |= {"Bonded": True, "Trusted": False}
+    await b.refresh()
+    assert bz.devs[PAD]["Trusted"] and next(d for d in b.devices if d.mac == PAD).flags & BTD_TRUSTED, "trust_pads"
+    bz.calls.clear(); await b.refresh()
+    assert not [c for c in bz.calls if c[0] == "set-property"], "zaufany - bez kolejnych wywołań przy odświeżeniu"
+    bz.devs[PAD]["Trusted"] = False; bz.fail["Trusted"] = "Call failed: Access denied"; bz.calls.clear()
+    await b.refresh(); await b.refresh()
+    assert sum(c[0] == "set-property" for c in bz.calls) == 1, "nieudane Trusted ponawiane nie co odświeżenie"
+    del bz.fail["Trusted"]
+    bz.devs[PHONE] = {"Name": "Telefon", "Paired": True, "Trusted": False}
+    await b.refresh()
+    assert not bz.devs[PHONE]["Trusted"], "nie-pady bez automatycznego zaufania"
+    b.untrusted.clear(); b.devices = [d for d in b.devices if d.mac != PAD]   # connect bez trust_pads w refresh
+    bz.devs[PAD] |= {"Trusted": False, "Connected": False}; b.dups.clear()
+    bz.devs[PAD]["Icon"] = "phone"; bz.devs[PAD]["Class"] = 0
+    b.on_command(BT_CONNECT, 0, mac_bytes(PAD)); await b.busy
+    assert bz.devs[PAD]["Trusted"] and bz.devs[PAD]["Connected"], "połączenie też ustawia zaufanie"
+    ok("wiązanie i zaufanie: Pairable, sparowany bez klucza = zapomniany, zaufanie przy odświeżeniu i połączeniu")
 
     bz.powered = False; b.dups.clear()
     await b.refresh()
