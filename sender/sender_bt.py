@@ -207,6 +207,7 @@ class Bluetooth:
         self.ctrls: tuple[btadapter.Ctrl, ...] | None = None
         self.pick: btadapter.Ctrl | None = None
         self.adapter_err = ""
+        self.untrusted: set[str] = set()             # pady, którym nie dało się ustawić Trusted (trust_pads)
 
     # ---------- polecenia z okna (wątek pętli asyncio, z on_readable) ----------
     def on_command(self, op: int, arg: int, mac: bytes, now: float | None = None) -> None:
@@ -302,6 +303,22 @@ class Bluetooth:
         except (ValueError, KeyError, IndexError, TypeError, AttributeError) as e:
             print(f"Bluetooth: unexpected busctl output: {e!r}")
             self.state = BTS_ERROR
+            return
+        await self.trust_pads()
+
+    async def trust_pads(self) -> None:
+        """Sparowane pady bez zaufania (sparowane poza oknem albo starszą wersją) - zaufane od razu: inaczej BlueZ
+        odrzuca połączenie, które zaczyna pad (włączenie przyciskiem PS), i pad gaśnie po kilku sekundach mrugania."""
+        want = BTD_PAD | BTD_PAIRED
+        for d in [d for d in self.devices if d.flags & (want | BTD_TRUSTED) == want and d.mac not in self.untrusted]:
+            try:
+                await self.set_prop(dev_path(self.adapter, d.mac), DEVICE, "Trusted", True)
+            except BtError as e:
+                self.untrusted.add(d.mac)            # raz w logu, nie przy każdym odświeżeniu (co IDLE_S)
+                print(f"Bluetooth {d.mac}: cannot set trusted: {e}")
+                continue
+            print(f"Bluetooth {d.mac}: paired pad was not trusted - trusted now")
+            self.devices[self.devices.index(d)] = Device(d.mac, d.name, d.rssi, d.flags | BTD_TRUSTED)
 
     # ---------- wybór kontrolera ----------
     def get_mode(self) -> int:
@@ -429,23 +446,55 @@ class Bluetooth:
         if self.state in (BTS_OFF, BTS_BLOCKED):
             await self.power(True)
 
+    async def get_bool(self, path: str, iface: str, name: str) -> bool | None:
+        """Właściwość logiczna BlueZ; None = brak (starszy BlueZ bez "Bonded") albo nieczytelna."""
+        try:
+            return bool(json.loads(await self.busctl("get-property", BLUEZ, path, iface, name))["data"])
+        except (BtError, ValueError, KeyError, TypeError):
+            return None
+
+    async def bonded(self, path: str) -> bool:
+        """Klucz łącza zapisany. Sparowany bez wiązania (adapter z Pairable=false, np. świeżo wpięty dongle) działa
+        tylko do rozłączenia: BlueZ (input, ClassicBondedOnly) odrzuca HID - brak /dev/input, a pad włączany PS
+        mruga kilka sekund i gaśnie. Starszy BlueZ bez właściwości "Bonded" - Paired znaczy to samo."""
+        return await self.get_bool(path, DEVICE, "Bonded") is not False
+
+    async def _pair_once(self, path: str) -> None:
+        try:
+            await self.call(path, DEVICE, "Pair", timeout=PAIR_S)
+        except BtError as e:
+            if "already exists" not in str(e).lower():
+                raise
+
     async def pair(self, mac: str) -> None:
-        """Parowanie (BlueZ bez agenta = NoInputNoOutput, jak DualSense), zaufanie (pad sam się potem łączy) i
-        połączenie. Już sparowany -> tylko zaufanie i połączenie."""
+        """Parowanie (BlueZ bez agenta = NoInputNoOutput, jak DualSense) z wiązaniem, zaufanie (pad sam się potem
+        łączy) i połączenie. Sparowany bez wiązania -> zapomniany i sparowany od nowa (pad musi być w trybie
+        parowania); sparowany z wiązaniem -> tylko zaufanie i połączenie."""
         await self.stop_scan()
         path = self.need(mac)
-        if not next(d for d in self.devices if d.mac == mac).flags & BTD_PAIRED:
-            try:
-                await self.call(path, DEVICE, "Pair", timeout=PAIR_S)
-            except BtError as e:
-                if "already exists" not in str(e).lower():
-                    raise
+        with contextlib.suppress(BtError):           # bez Pairable BlueZ paruje bez zapisu klucza
+            await self.set_prop(self.adapter, ADAPTER, "Pairable", True)
+        paired = bool(next(d for d in self.devices if d.mac == mac).flags & BTD_PAIRED)
+        if paired and not await self.bonded(path):
+            print(f"Bluetooth {mac}: paired without bonding - re-pairing")
+            await self.call(self.adapter, ADAPTER, "RemoveDevice", "o", path)
+            raise BtError("paired without a stored key - removed, put the pad in pairing mode and pair again",
+                          BTR_AUTH)
+        if not paired:
+            await self._pair_once(path)
+            if not await self.bonded(path):
+                raise BtError("paired without a stored key (adapter not bondable) - pair again", BTR_AUTH)
         await self.set_prop(path, DEVICE, "Trusted", True)
         await self.call(path, DEVICE, "Connect", timeout=CONNECT_S)
 
     async def connect(self, mac: str) -> None:
+        """Połączenie; zaufanie też tutaj - pad sparowany wcześniej poza oknem (bluetoothctl) bez trust łączyłby
+        się tylko z telefonu, a włączany przyciskiem PS gasł po kilku sekundach."""
         await self.stop_scan()
-        await self.call(self.need(mac), DEVICE, "Connect", timeout=CONNECT_S)
+        path = self.need(mac)
+        with contextlib.suppress(BtError):
+            await self.set_prop(path, DEVICE, "Trusted", True)
+        await self.call(path, DEVICE, "Connect", timeout=CONNECT_S)
 
     async def disconnect(self, mac: str) -> None:
         await self.call(self.need(mac), DEVICE, "Disconnect", timeout=CONNECT_S)

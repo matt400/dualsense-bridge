@@ -22,4 +22,5 @@
 | Panel Bluetooth: szara kropka / „brak danych” | nadajnik offline albo starszy niż v10 - Aktualizuj |
 | Panel Bluetooth: czerwona kropka | opis w podpowiedzi: „brak uprawnień” = nadajnik nie działa jako root, „usługa bluetooth nie działa” = `sudo systemctl enable --now bluetooth`, „brak busctl” = system bez systemd, „zablokowany (rfkill)” = `sudo rfkill unblock bluetooth` |
 | Sparuj: „parowanie odrzucone” / „brak odpowiedzi urządzenia” | pad nie jest w trybie parowania (Create + PS, aż lightbar szybko miga) - włącz go i uruchom skanowanie jeszcze raz; pad sparowany wcześniej z konsolą: Zapomnij, potem Sparuj |
+| Pad sparowany, ale nie ma go jako P2, a włączony przyciskiem PS mruga kilka sekund i gaśnie | BlueZ nie zapisał klucza (adapter bez `Pairable`) albo pad nie był zaufany. Nadajnik ustawia teraz zaufanie sam; pad bez klucza jest zapominany - włącz go w trybie parowania (Create + PS), uruchom skanowanie i Sparuj jeszcze raz |
 | Gra w co-op widzi pady dziwnie (Steam) | Steam → biblioteka → gra → Właściwości → Kontroler: spróbuj „Wyłącz Steam Input” (gra czyta dwa DS4 sama) albo odwrotnie; kolejność graczy w Big Picture → Ustawienia → Kontroler |
