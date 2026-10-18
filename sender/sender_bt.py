@@ -12,8 +12,9 @@ Bez otwartego panelu w oknie: tylko stan adaptera co IDLE_S (kropka w nagłówku
 (okno ponawia BT_LIST, dopóki panel jest otwarty) i w trakcie skanu / operacji: stan i lista urządzeń co sekundę.
 Operacje idą po jednej (BlueZ odrzuca równoległe); druga w trakcie -> wynik BTR_BUSY. Brak busctl, bluetoothd,
 adaptera albo uprawnień to stan BTS_* w oknie, nie wyjątek - pętla działa dalej.
-Przy kilku kontrolerach (wbudowany + dongle USB) wybór robi sender_btadapter - przy każdym odświeżeniu stanu, więc
-dongle wpięty w trakcie pracy przejmuje pady bez restartu; tryb (auto / wbudowany / ręcznie) można zmienić z okna.
+Przy kilku kontrolerach (wbudowany + dongle USB) wybór robi sender_btadapter - przy każdym odświeżeniu stanu, a bez
+receivera co IDLE_S, więc dongle wpięty w trakcie pracy przejmuje pady bez restartu (także przy wyłączonym PC); tryb
+(auto / wbudowany / ręcznie) można zmienić z okna.
 """
 import asyncio
 import contextlib
@@ -323,6 +324,7 @@ class Bluetooth:
         except OSError:
             ctrls = ()
         if not force and ctrls == self.ctrls and not self.adapter_err:
+            await self.keep_no_sniff()               # jądro przywraca SNIFF przy każdym włączeniu kontrolera
             return                                   # po błędzie: ponowienie przy każdym odświeżeniu, aż się uda
         self.ctrls, old = ctrls, self.pick
         mode = self.get_mode()
@@ -344,6 +346,20 @@ class Bluetooth:
             # odblokowany kontroler BlueZ zwykle włącza sam (AutoEnable); gdy nie - tu, bez czekania na okno
             with contextlib.suppress(BtError):
                 await self.set_prop(self.prefer(), ADAPTER, "Powered", True)
+            await self.keep_no_sniff()               # włączenie przed chwilą przywróciło SNIFF
+
+    async def keep_no_sniff(self) -> None:
+        """Wybrany kontroler bez SNIFF - ponownie, gdy jądro ją przywróciło (włączenie kontrolera). Bez tego pad
+        połączony po włączeniu (start telefonu, odblokowanie dongla) miał SNIFF przez całe połączenie: skoki opóźnienia
+        pierwszego naciśnięcia po bezruchu."""
+        if self.pick is None or self.sysfs is None:
+            return
+        name = self.pick.name
+        st = await asyncio.to_thread(btadapter.dev_info, name)
+        if st is None:                               # stanu nie da się odczytać - zostaje ustawienie z wyboru kontrolera
+            return
+        if await asyncio.to_thread(btadapter.ensure_no_sniff, name, None, lambda _name: st):
+            print(f"Bluetooth adapter: sniff mode disabled on {name} (controller was powered on)")
 
     async def set_mode(self, mode: int, key: str = "") -> None:
         """Z okna: BTA_AUTO / BTA_MANUAL (BT_ADAPTER) albo konkretny kontroler (BT_ADAPTER_USE -> BTA_PICK)."""
@@ -578,16 +594,21 @@ class Bluetooth:
         """Stan do receivera: co IDLE_S sam stan, przy otwartym panelu / skanie / operacji co TICK_S z listą.
         Tylko do receivera, który zna nowe pakiety (przysłał scfg) - starszy odrzuca nieznane długości."""
         self.wake = asyncio.Event()
-        t_sent = 0.0
+        t_sent = t_adapter = float("-inf")
         try:
             while True:
                 now = time.monotonic()
                 active = self.active(now)
                 if net.new_receiver(now) and (active or now - t_sent >= IDLE_S):
-                    t_sent = now
+                    t_sent = t_adapter = now
                     if not self.running:
                         await self.refresh()          # w trakcie operacji odświeża ją sama (BlueZ zajęty)
                     self.send(full=active)
+                elif now - t_adapter >= IDLE_S and not self.running:
+                    # wybór kontrolera i link policy bez receivera: telefon startuje przy wyłączonym PC (pad budzi go
+                    # przez Wake-on-LAN), receiver nie działa - wcześniej dongle i brak SNIFF czekały na okno na PC
+                    t_adapter = now
+                    await self.check_adapters()
                 self.wake.clear()
                 with contextlib.suppress(TimeoutError):
                     await asyncio.wait_for(self.wake.wait(), TICK_S if active else IDLE_S / 5)
