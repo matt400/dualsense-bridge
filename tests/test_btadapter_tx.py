@@ -195,6 +195,30 @@ async def main():
         assert b.pick.name == "hci1" and not fs.blocked("hci1")
         ok("ręcznie odblokowuje wszystko, zły tryb odrzucony, auto wraca do dongla, wyjęty dongle - wbudowany sam")
 
+        # błąd zapisu rfkill: wybrany odblokowany PRZED blokowaniem reszty, a nieudana zmiana jest ponawiana
+        fs = Sys(); fs.add("hci0", "uart"); fs.add("hci1", "usb", **DONGLE)
+        A.set_blocked("hci1", True, fs.cls)                       # dongle zablokowany (np. po trybie wbudowanym)
+        real_set, fail = A.set_blocked, [True]
+
+        def flaky(name, block, sysfs=A.SYSFS):
+            if fail[0] and name == "hci0" and block:              # zablokowanie wbudowanego się nie udaje
+                raise OSError(5, "Input/output error")
+            real_set(name, block, sysfs)
+        A.set_blocked = flaky
+        try:
+            b = SB.Bluetooth(run=run, emit=emit, sysfs=fs.cls)
+            calls.clear()
+            await b.refresh()
+            assert not fs.blocked("hci1") and not fs.blocked("hci0"), "nigdy oba radia zablokowane"
+            assert b.adapter_err and b.pick.name == "hci1"
+            fail[0] = False
+            await b.refresh()                                     # ten sam zestaw kontrolerów - ponowienie
+            assert fs.blocked("hci0") and not fs.blocked("hci1") and not b.adapter_err
+            assert ["set-property", "org.bluez", "/org/bluez/hci1", "org.bluez.Adapter1", "Powered", "b", "true"] in calls
+        finally:
+            A.set_blocked = real_set
+        ok("błąd rfkill w połowie: wybrany już odblokowany; nieudana zmiana ponawiana przy następnym odświeżeniu")
+
         plain = SB.Bluetooth(run=run, emit=emit)                   # bez /sys (testy, starszy układ) - bez wyboru
         await plain.refresh()
         n = len(out)

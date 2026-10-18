@@ -68,9 +68,15 @@ DS5_TOUCH_H = 1079        # dotyk w stanie jest w skali DS4 (1920x943) - DualSen
 _DS5_BATT = {0: 0x00, 1: 0x10, 2: 0x20}    # stan baterii w górnej połówce bajtu: rozładowanie / ładowanie / pełna
 
 
+DS4_BATT_MAX = 8          # bajt baterii DS4 bez kabla: poziom 0..8 (rx_net.batt_codes), z kablem 0..10 (11 = pełna)
+
+
 def ds5_battery(b4):
-    """Bajt baterii DS4 (poziom 0..11 + 0x10 = kabel) -> bajt DualSense (poziom 0..10, stan w bitach 4..7)."""
-    level, cable = min(b4 & 0x0F, 10), b4 & 0x10
+    """Bajt baterii DS4 (bez kabla poziom 0..8, z kablem 0..11, 0x10 = kabel) -> bajt DualSense (poziom 0..10, stan
+    w bitach 4..7). Bez kabla skala 0..8 -> 0..10: przepisana wprost dawała pełnemu padowi poziom 8, czyli 85 %
+    w grach i Steam (hid-playstation: poziom * 10 + 5)."""
+    level, cable = b4 & 0x0F, b4 & 0x10
+    level = min(level, 10) if cable else min(10, round(level * 10 / DS4_BATT_MAX))
     return level | _DS5_BATT[(2 if level >= 10 else 1) if cable else 0]
 
 

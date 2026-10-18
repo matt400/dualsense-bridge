@@ -287,22 +287,25 @@ class Bluetooth:
             ctrls = btadapter.scan(self.sysfs)
         except OSError:
             ctrls = ()
-        if not force and ctrls == self.ctrls:
-            return
+        if not force and ctrls == self.ctrls and not self.adapter_err:
+            return                                   # po błędzie: ponowienie przy każdym odświeżeniu, aż się uda
         self.ctrls, old = ctrls, self.pick
         mode = self.get_mode()
         try:
             self.pick = await asyncio.to_thread(btadapter.apply, ctrls, mode, self.key, self.sysfs)
-            self.adapter_err = ""
         except OSError as e:
             self.pick = btadapter.choose(ctrls, mode, self.key)
             if str(e) != self.adapter_err:
-                self.adapter_err = str(e)
                 print(f"Bluetooth adapter: cannot switch ({e}) - run the sender as root")
+            self.adapter_err = str(e) or repr(e)
             return
+        recovered = bool(self.adapter_err)           # wcześniej nieudane: wybrany dopiero teraz odblokowany
+        if recovered:
+            print("Bluetooth adapter: switched after an earlier error")
+            self.adapter_err = ""
         if len(ctrls) > 1 or force:
             print(btadapter.describe(ctrls, self.pick, mode))
-        if self.pick is not None and self.pick != old:
+        if self.pick is not None and (self.pick != old or recovered):
             # odblokowany kontroler BlueZ zwykle włącza sam (AutoEnable); gdy nie - tu, bez czekania na okno
             with contextlib.suppress(BtError):
                 await self.set_prop(self.prefer(), ADAPTER, "Powered", True)

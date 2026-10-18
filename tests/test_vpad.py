@@ -210,7 +210,10 @@ check(b[32] == 7 and b[33] == 0x7F and (b[34] & 0x0F) == 0x07 and ((b[34] >> 4) 
       "dotyk w skali DualSense (1920x1080)")
 check(b[36] & 0x80, "drugi palec nieaktywny")
 check(b[52] == 0x15, f"bateria: poziom 5, ładowanie: {b[52]:#x}")
-check(R.ds5_battery(0x10 | 11) == 0x2A and R.ds5_battery(8) == 8, "pełna przy kablu, rozładowanie bez kabla")
+check(R.ds5_battery(0x10 | 11) == 0x2A, "pełna przy kablu")
+import rx_net as N
+check([R.ds5_battery(N.batt_codes(p, 0)[1]) for p in (100, 50, 0)] == [10, 5, 0],
+      "bez kabla skala DS4 0..8 -> DualSense 0..10 (100 % = poziom 10, nie 8 = 85 % w grze)")
 b = R.build_ds5_report(s, 1, True)
 check(b[9] == 0x01 and b[32] & 0x80, "tryb myszy: bez kliku touchpada i dotyku w grze")
 

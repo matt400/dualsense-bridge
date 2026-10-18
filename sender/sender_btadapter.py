@@ -149,12 +149,16 @@ def no_sniff(name: str) -> bool:
 
 
 def apply(ctrls: tuple[Ctrl, ...], mode: int, key: str = "", sysfs: Path = SYSFS, sniff=None) -> Ctrl | None:
-    """Wybrany odblokowany i bez SNIFF, reszta zablokowana. Tryb ręczny: nic. -> wybrany."""
+    """Wybrany odblokowany i bez SNIFF, reszta zablokowana. Tryb ręczny: nic. -> wybrany.
+    Najpierw odblokowanie wybranego, potem blokowanie reszty: błąd zapisu w połowie (np. EIO z rfkill) zostawia
+    najwyżej dwa włączone radia - przy odwrotnej kolejności telefon bez ekranu zostawał bez żadnego Bluetooth."""
     pick = choose(ctrls, mode, key)
     if pick is None:
         return None
+    set_blocked(pick.name, False, sysfs)
     for c in ctrls:
-        set_blocked(c.name, c != pick, sysfs)
+        if c != pick:
+            set_blocked(c.name, True, sysfs)
     if not (sniff or no_sniff)(pick.name):
         print(f"Bluetooth adapter: cannot disable sniff mode on {pick.name} (needs root)")
     return pick

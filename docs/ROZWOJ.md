@@ -45,6 +45,9 @@ Testy obejmują:
   bez mastera restart przy wyłączonym trybie konsoli nie włącza go identyfikatorem pada (`test_console.py`), okno
   wraca na środek po wyjściu z gry, która zmieniła rozdzielczość (`test_settings_gui.py`), polecenia Bluetooth jako
   ten sam pakiet powtórzony (`test_bt.py`);
+  bateria wirtualnego DualSense w skali 0-10 (pełny pad bez kabla to 100 %, nie 85 %) (`test_vpad.py`), wybór
+  kontrolera Bluetooth odporny na błąd rfkill w połowie - wybrany odblokowany przed blokowaniem reszty, nieudana
+  zmiana ponawiana (`test_btadapter_tx.py`);
 - przycisk → gra, dziennik zdarzeń (też zdarzenia nadajnika end-to-end), lightbar od baterii, ustawienia dla nadajnika
   (`test_extras.py`, `test_extras_gui.py`) oraz Wake-on-LAN po stronie nadajnika - kombinacja, ARP, broadcast, magic
   packet, `wol.json` (`test_wol_tx.py`);
