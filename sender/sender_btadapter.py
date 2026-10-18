@@ -11,9 +11,11 @@ do kilkunastu ms w odcinku „Bluetooth (ponad minimum)” na karcie pada; dongl
            (dongle wyjęty) - jak auto, a po powrocie znów on. W sender.toml: "builtin" = wbudowany przed USB.
   manual   nic nie zmienia (Bluetooth ustawiasz sam: rfkill, bluetoothctl)
 
-Wybrany dostaje link policy bez SNIFF (pad nie usypia łącza: pierwsze naciśnięcie po bezruchu bez kilku ms opóźnienia).
-Zestaw kontrolerów sprawdzamy co odświeżenie stanu Bluetooth, więc wpięcie / wyjęcie dongla w trakcie pracy przełącza
-bez restartu; wyjęty dongle odblokowuje wbudowany. Pady trzeba raz sparować z każdym kontrolerem (własny adres).
+Wybrany dostaje link policy bez SNIFF (pad nie usypia łącza: pierwsze naciśnięcie po bezruchu bez kilku ms opóźnienia);
+jądro przywraca SNIFF przy każdym włączeniu kontrolera, więc jest sprawdzana i poprawiana przy każdym sprawdzeniu.
+Zestaw kontrolerów sprawdzamy co kilka sekund (sender_bt, także bez receivera - PC wyłączony, Wake-on-LAN), więc
+wpięcie / wyjęcie dongla w trakcie pracy przełącza bez restartu; wyjęty dongle odblokowuje wbudowany. Pady trzeba raz
+sparować z każdym kontrolerem (własny adres).
 """
 import contextlib
 import fcntl
@@ -34,7 +36,10 @@ RULE_BUILTIN = "builtin"            # klucz-reguła z sender.toml: wbudowany prz
 AF_BLUETOOTH = getattr(socket, "AF_BLUETOOTH", 31)
 BTPROTO_HCI = 1
 HCISETLINKPOL = 0x400448CD          # _IOW('H', 205, int)
-HCI_LP_RSWITCH = 0x0001             # link policy: tylko zmiana roli (bez HOLD / SNIFF / PARK)
+HCIGETDEVINFO = 0x800448D3          # _IOR('H', 211, int) -> struct hci_dev_info
+DEV_INFO_SIZE, DEV_FLAGS_AT, DEV_POLICY_AT = 92, 16, 36   # rozmiar hci_dev_info, pola flags i link_policy
+HCI_UP = 0x0001                     # bit flags: kontroler włączony
+HCI_LP_RSWITCH, HCI_LP_SNIFF = 0x0001, 0x0004   # link policy: zmiana roli (bez HOLD / SNIFF / PARK); SNIFF
 BUILTIN, USB_FIXED, USB = 0, 1, 2   # ranga kontrolera (auto bierze najwyższą)
 KIND_TEXT = {BUILTIN: "built-in", USB_FIXED: "internal USB", USB: "USB"}
 # prefiks compatible z device tree -> producent (wbudowane radia telefonów i płytek)
@@ -148,7 +153,32 @@ def no_sniff(name: str) -> bool:
     return False
 
 
-def apply(ctrls: tuple[Ctrl, ...], mode: int, key: str = "", sysfs: Path = SYSFS, sniff=None) -> Ctrl | None:
+def dev_info(name: str) -> tuple[bool, int] | None:
+    """(kontroler włączony, link policy) z jądra (ioctl HCIGETDEVINFO) albo None (brak AF_BLUETOOTH / uprawnień)."""
+    buf = bytearray(DEV_INFO_SIZE)
+    struct.pack_into("@H", buf, 0, int(name[3:]))
+    try:
+        with socket.socket(AF_BLUETOOTH, socket.SOCK_RAW, BTPROTO_HCI) as s:
+            fcntl.ioctl(s.fileno(), HCIGETDEVINFO, buf, True)
+    except (OSError, ValueError):
+        return None
+    (flags,), (policy,) = struct.unpack_from("@I", buf, DEV_FLAGS_AT), struct.unpack_from("@I", buf, DEV_POLICY_AT)
+    return bool(flags & HCI_UP), policy
+
+
+def ensure_no_sniff(name: str, sniff=None, info=None) -> bool | None:
+    """Link policy kontrolera bez SNIFF. Jądro ustawia ją od nowa przy KAŻDYM włączeniu kontrolera (Write Default
+    Link Policy z jego możliwości - SNIFF wraca), więc jednorazowe ustawienie przy wyborze kontrolera znikało, gdy
+    BlueZ włączał go chwilę później (odblokowanie rfkill, Powered, restart bluetoothd, ponowne wpięcie dongla).
+    -> None: nic do zrobienia (już bez SNIFF albo kontroler wyłączony - zrobi się przy następnym sprawdzeniu po
+    włączeniu), True: ustawiono teraz, False: nie udało się. Bez HCIGETDEVINFO - ustawia zawsze (jak dawniej)."""
+    st = (info or dev_info)(name)
+    if st is not None and (not st[0] or not st[1] & HCI_LP_SNIFF):
+        return None
+    return (sniff or no_sniff)(name)
+
+
+def apply(ctrls: tuple[Ctrl, ...], mode: int, key: str = "", sysfs: Path = SYSFS, sniff=None, info=None) -> Ctrl | None:
     """Wybrany odblokowany i bez SNIFF, reszta zablokowana. Tryb ręczny: nic. -> wybrany.
     Najpierw odblokowanie wybranego, potem blokowanie reszty: błąd zapisu w połowie (np. EIO z rfkill) zostawia
     najwyżej dwa włączone radia - przy odwrotnej kolejności telefon bez ekranu zostawał bez żadnego Bluetooth."""
@@ -159,7 +189,7 @@ def apply(ctrls: tuple[Ctrl, ...], mode: int, key: str = "", sysfs: Path = SYSFS
     for c in ctrls:
         if c != pick:
             set_blocked(c.name, True, sysfs)
-    if not (sniff or no_sniff)(pick.name):
+    if ensure_no_sniff(pick.name, sniff, info) is False:
         print(f"Bluetooth adapter: cannot disable sniff mode on {pick.name} (needs root)")
     return pick
 

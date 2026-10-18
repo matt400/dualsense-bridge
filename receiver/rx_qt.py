@@ -384,7 +384,7 @@ class MainWindow(QMainWindow):
         self.pad.set_selected(None)
         self.root.setFocus()
         self._fitting = False                  # place_on_screen zmienia rozmiar - to nie wybór użytkownika
-        self._alive = (False,) * C.NUM_PADS    # połączone pady z poprzedniego odświeżenia (okno na wierzch)
+        self._connected = (False,) * C.NUM_PADS   # połączone pady z poprzedniego odświeżenia (okno na wierzch)
         self._place_pending = False            # ekrany zmieniły się w trakcie gry - okno na środek po wyjściu z niej
         geo = settings.value("geometry")
         if not (geo and self.restoreGeometry(geo)):
@@ -773,10 +773,12 @@ class MainWindow(QMainWindow):
             W.force_foreground(int(self.winId()))   # proces w tle: samo activateWindow tylko miga na pasku zadań
 
     def _pads_connected(self):
-        """Nowo połączony pad -> okno na wierzch, ale nie w trakcie gry (ta sama lista programów co tryb konsoli)."""
-        alive = tuple(bool(a) for a in S.alive)
-        new = [i for i, (now, before) in enumerate(zip(alive, self._alive, strict=False)) if now and not before]
-        self._alive = alive
+        """Nowo połączony pad -> okno na wierzch, ale nie w trakcie gry (ta sama lista programów co tryb konsoli).
+        Połączenie = S.want (jak wpis "połączony" w dzienniku i auto-ON trybu konsoli), a nie S.alive: alive gaśnie
+        już po stale_s (0,5 s) ciszy - chwilowa przerwa w sygnale wyciągała okno na wierzch, np. nad Steam Big Picture."""
+        conn = tuple(w.is_set() for w in S.want)
+        new = [i for i, (now, before) in enumerate(zip(conn, self._connected, strict=False)) if now and not before]
+        self._connected = conn
         if not new:
             return
         hwnd, exe = W.foreground_window()

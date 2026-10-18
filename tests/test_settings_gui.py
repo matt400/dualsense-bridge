@@ -339,14 +339,22 @@ ok("Ustawienia -> Kopie: kopia teraz, przywrócenie po drugim kliknięciu, kopia
 import rx_winapi
 fronts, real_front, real_fg = [], win.bring_to_front, rx_winapi.foreground_window
 win.bring_to_front = lambda: fronts.append(1)
+def set_want(states):
+    for w, on in zip(S.want, states):
+        w.set() if on else w.clear()
 for fg, alive, want in (((1, "eldenring.exe"), [False, False], 0), ((1, "eldenring.exe"), [True, False], 0),
                         ((1, "explorer.exe"), [True, False], 0), ((1, "steam.exe"), [True, True], 1),
                         ((1, None), [False, False], 1), ((1, None), [True, False], 1),
                         ((0, None), [False, False], 1), ((0, None), [True, False], 2)):
     rx_winapi.foreground_window = lambda fg=fg: fg
-    S.alive[:] = alive; win._pads_connected()
+    set_want(alive); win._pads_connected()
     assert len(fronts) == want, (fg, alive, fronts)
+# chwilowa cisza (stale_s): alive gaśnie i wraca, ale pad dalej połączony (want) - okno zostaje, gdzie było
+rx_winapi.foreground_window = lambda: (1, "steam.exe")
+set_want([True, False]); win._pads_connected(); n = len(fronts)
+S.alive[:] = [False, False]; win._pads_connected(); S.alive[:] = [True, False]; win._pads_connected()
+assert len(fronts) == n, "przerwa w sygnale to nie nowe połączenie pada"
 win.bring_to_front, rx_winapi.foreground_window = real_front, real_fg
-S.alive[:] = [False] * len(S.alive); win._pads_connected()
-ok("połączenie pada: okno na wierzch na pulpicie / w Steam, w grze i przy nieznanym programie - nie")
+set_want([False] * len(S.want)); S.alive[:] = [False] * len(S.alive); win._pads_connected()
+ok("połączenie pada: okno na wierzch na pulpicie / w Steam, w grze i przy nieznanym programie - nie; nie po przerwie")
 print("GUI USTAWIEŃ (MYSZ / MASTER) OK")
