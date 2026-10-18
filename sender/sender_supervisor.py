@@ -10,7 +10,7 @@ import evdev
 import sender_events as events
 import sender_state as state
 import sender_streams as streams
-from proto import E_ERROR, E_PAD_OFF, E_PAD_ON, LAT_NONE, T_BYE, write_json
+from proto import E_ERROR, E_PAD_OFF, E_PAD_ON, LAT_NONE, T_BYE, TRIG2_OFF, write_json
 from sender_config import C, IDLE_TP, SETTLE_S
 from sender_ctrl import Ctrl
 from sender_rumble import Rumble
@@ -205,7 +205,7 @@ async def run_ctrl(c):
     try:
         c.init_state()
         c.rumble = Rumble(c.idx, c.pad_dev, C.RUMBLE)
-        if any(c.triggers):                   # efekty spustów przyszły z PC, zanim pad był gotowy
+        if c.triggers != TRIG2_OFF:           # efekty spustów przyszły z PC, zanim pad był gotowy
             c.rumble.set_triggers(c.triggers)
         print(f"== Controller {c.idx} ({c.key})")
         print(f"   Pad:    {c.pad_dev.name} ({c.pad_dev.path})")

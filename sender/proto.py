@@ -52,6 +52,11 @@ nieznaną długość, więc wariant idzie tylko do strony, o której wiadomo, ż
                          Wibracja z gry (RFX_ON): L2 drga wg dużego silnika, R2 wg małego; na czas wibracji zastępuje
                          efekt spustu, po RFX_HOLD_S ciszy spust wraca do efektu. Tylko do nadajnika z CAP_TRIG_FX
                          (v8+); starszy dostaje zwykły trig (sam opór)
+  trig3  (typ 15) "12B11s11sB" PC -> nadajnik: trig2 z profilu + efekty spustów ustawione przez grę na wirtualnym DualSense
+                         (HIDMaestro): surowe 11 B efektu L2, R2 (jak w raporcie wyjściowym pada), flagi TRG3_* (który
+                         efekt gry jest ważny). Na każdym spuście wygrywa profil (tryb inny niż TFX_OFF), inaczej efekt gry;
+                         gdy gra ustawia efekty, receiver wyłącza w trig2 wibrację z gry na spustach. Tylko do nadajnika
+                         z CAP_TRIG_RAW (v11+); starszy dostaje trig2 / trig (tylko profil)
 Bluetooth telefonu sterowany z okna (v10+; telefon bez ekranu). Nadajnik ogłasza obsługę sam - pakietem btstate (idx 255)
 do receivera, od którego przyszedł scfg; receiver wysyła btcmd dopiero po btstate (starszy nadajnik odrzuciłby długość):
   btcmd   (typ 10) "BB6s"      PC -> nadajnik (idx 255): operacja BT_*, argument (BT_SCAN_START: sekundy, najwyżej
@@ -91,14 +96,16 @@ HDR0 = VER << 4
 (T_EVENT, T_STATE, T_TOUCH, T_CLICK, T_MOUSE, T_PING, T_FB, T_PONG, T_BYE, T_IDENT, T_CMD, T_INFO, T_VERSION,
  T_BUILD, T_UPDMSG, T_TRIG) = range(16)
 T_STATE2, T_PONG2, T_SCFG, T_CALRES, T_BUILD2, T_TRIG2 = 0x101, 0x107, 0x10A, 0x10B, 0x10D, 0x10F   # warianty dłuższe
+T_TRIG3 = 0x20F                                                     # efekty spustów z profilu i z gry (v11+)
 T_BTDEV, T_BTSTATE, T_BTCMD = 0x109, 0x10C, 0x20A                                                 # Bluetooth (v10+)
 T_BTCTRL = 0x209                                                    # kontrolery Bluetooth nadajnika (wybór z okna)
 WIRE = {T_STATE2: T_STATE, T_PONG2: T_PONG, T_SCFG: T_CMD, T_CALRES: T_INFO, T_BUILD2: T_BUILD, T_TRIG2: T_TRIG,
-        T_BTDEV: T_IDENT, T_BTSTATE: T_VERSION, T_BTCMD: T_CMD, T_BTCTRL: T_IDENT}
-SENDER_VERSION = 10
+        T_BTDEV: T_IDENT, T_BTSTATE: T_VERSION, T_BTCMD: T_CMD, T_BTCTRL: T_IDENT, T_TRIG3: T_TRIG}
+SENDER_VERSION = 11
 RUMBLE_EVDEV, RUMBLE_HIDRAW, CAP_TRIGGERS = 1, 2, 4     # bity pakietu version (CAP_TRIGGERS: opór spustów działa)
 CAP_TRIG_FX = 8                                         # bit pakietu version: nadajnik zna trig2 (klik, wibracja, z gry)
 CAP_CALIB = 16                                          # bit pakietu version: CMD_GYRO_CAL i CMD_RAW_STICKS (v9+)
+CAP_TRIG_RAW = 32                                       # bit pakietu version: nadajnik zna trig3 (efekty spustów z gry)
 LAT_NONE = 0xFFFF                                       # pole opóźnienia w state2: brak pomiaru (powtórka, brak danych)
 TRIG_START_MAX, TRIG_FORCE_MAX = 9, 8                   # opór spustu: strefa początku 0-9 (co 10 %), siła 1-8
 TFX_OFF, TFX_RES, TFX_CLICK, TFX_VIB = range(4)         # tryb efektu spustu (pakiet trig2)
@@ -108,6 +115,8 @@ RFX_ON = 1                                              # flaga trig2: wibracja 
 RFX_GAIN_MAX = 200                                      # siła wibracji z gry na spustach [%]
 RFX_HOLD_S = 0.3                                        # tyle ciszy silników, zanim spust wróci do swojego efektu
 TRIG2_OFF = (TFX_OFF, 0, 0, 0) * 2 + (0, 0, 0, 0)       # trig2: wszystko wyłączone
+TRG3_L2, TRG3_R2 = 1, 2                                 # flagi trig3: efekt gry dla L2 / R2 jest ważny
+TRIG_RAW_LEN = 11                                       # efekt spustu w raporcie wyjściowym DualSense [B]
 # dlaczego nie ma wibracji przez raport HID (pakiet version): ok, rumble=off, brak uprawnień, jądro bez hidraw,
 # nie znaleziono hidraw pada, inny błąd otwarcia
 WHY_OK, WHY_OFF, WHY_ACCESS, WHY_NO_HIDRAW, WHY_NOT_FOUND, WHY_OPEN = range(6)
@@ -169,6 +178,7 @@ BODY = {
     T_CALRES: struct.Struct("!BB3i3iI"),        # stan CAL_*, flagi CALF_*, zapisany bias xyz, bieżący bias xyz, czas zapisu
     T_BUILD2: struct.Struct("!7sIB6s4s"),       # build + MAC PC i broadcast, których użyje Wake-on-LAN
     T_TRIG2: struct.Struct("!12B"),             # efekty L2, R2 (tryb, a, b, c) + wibracja z gry (flagi, %, Hz, 0)
+    T_TRIG3: struct.Struct("!12B11s11sB"),      # trig2 z profilu + surowe efekty gry L2, R2 + flagi TRG3_*
     T_BTCMD: struct.Struct("!BB6s"),            # operacja BT_*, argument, MAC
     T_BTSTATE: struct.Struct("!BBBBBHBB6s"),    # BTS_*, BTF_*, skan [s], połączone, na liście, runda, op, BTR_*, MAC
     T_BTDEV: struct.Struct("!HBB6sbB32s"),      # runda, numer, ile, MAC, RSSI, BTD_*, nazwa
@@ -178,7 +188,7 @@ STATE_FIELDS = 17                               # pola stanu w state / state2 (b
 BODY_LEN = {t: s.size for t, s in BODY.items()}
 assert BODY_LEN == {0: 62, 1: 36, 2: 12, 3: 1, 4: 5, 5: 8, 6: 5, 7: 8, 8: 0, 9: 17, 10: 2, 11: 6, 12: 3, 13: 12, 14: 120,
                     15: 4, T_STATE2: 44, T_PONG2: 16, T_SCFG: 14, T_CALRES: 30, T_BUILD2: 22, T_TRIG2: 12,
-                    T_BTCMD: 8, T_BTSTATE: 15, T_BTDEV: 44, T_BTCTRL: 46}, BODY_LEN
+                    T_BTCMD: 8, T_BTSTATE: 15, T_BTDEV: 44, T_BTCTRL: 46, T_TRIG3: 35}, BODY_LEN
 # (typ w nagłówku, długość treści) -> typ w programie
 BY_SIZE = {(WIRE.get(t, t), s.size): t for t, s in BODY.items()}
 assert len(BY_SIZE) == len(BODY), "dwa typy z tą samą długością w jednym typie nagłówka"

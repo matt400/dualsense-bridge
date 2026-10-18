@@ -263,8 +263,8 @@ def create_pad(idx):
     podłączenie znów próbuje HIDMaestro (błędy PnP bywają chwilowe)."""
     hm = hm_backend()
     if hm is not None:
-        def on_fb(motors, rgb):
-            F.game(idx, *(motors or (None, None)), rgb=rgb)
+        def on_fb(motors, rgb, trig=None):
+            F.game(idx, *(motors or (None, None)), rgb=rgb, trig=trig)
         try:
             return hm.create(idx, on_fb), "hm"
         except Exception as e:

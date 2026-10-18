@@ -34,6 +34,11 @@
     i częstotliwością; na czas wibracji zastępuje efekt spustu, po chwili ciszy efekt wraca. Liczy to nadajnik
     z tych samych pakietów wibracji - bez dodatkowego ruchu w sieci. Klik, drgania i wibracja z gry wymagają
     nadajnika v8 (starszy dostaje sam opór);
+  - **efekty spustów z gry**: gra z obsługą DualSense ustawia je na wirtualnym DualSense (HIDMaestro), a receiver
+    przekazuje je do pada bez zmian (każdy tryb, jaki wyśle gra). Na spuście z efektem w profilu wygrywa profil;
+    gdy gra sama steruje spustami, wibracja z gry na spustach jest wyłączona. Działają w każdym programie (także
+    Steam), zostają przy alt-tab i znikają po zamknięciu programu, który je ustawił, albo po odłączeniu pada.
+    Funkcja mastera „Efekty spustów” obejmuje też je. Wymagają nadajnika v11; pierwszy efekt gry trafia do dziennika;
   - profile per gra (`gra.exe`), które włączają się same, gdy gra jest aktywnym oknem;
   - zmiany działają na padzie od razu, zapis do `remap.json` jest osobno;
   - akcje nieodwracalne (wyłączenie pada, usunięcie profilu, reset, restart receivera) wymagają drugiego kliknięcia;

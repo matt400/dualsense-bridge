@@ -16,7 +16,7 @@ import rx_events as ev
 import rx_lightbar as L
 import rx_settings
 import rx_state as S
-from proto import CAP_TRIG_FX, TRIG2_OFF, clamp
+from proto import CAP_TRIG_FX, CAP_TRIG_RAW, TRG3_L2, TRG3_R2, TRIG2_OFF, TRIG_RAW_LEN, clamp
 from rx_config import C
 from rx_i18n import _
 from rx_shape import legacy_values, trigger_values
@@ -33,6 +33,9 @@ def in_game():
 
 
 FX_SENDER = 8          # od tej wersji nadajnik zna trig2 (z bitem CAP_TRIG_FX w pakiecie version)
+RAW_SENDER = 11        # od tej wersji nadajnik zna trig3 - efekty spustów z gry (bit CAP_TRIG_RAW)
+NO_GAME_TRIG = (None, None)    # gra nie ustawiła efektów spustów (L2, R2)
+TRIG_OFF_MODES = (0x00, 0x05)  # pierwszy bajt efektu spustu: brak / Off - gra zwolniła spust
 
 TRIG_REFRESH_S = 2.0   # efekty spustów odświeżane co tyle (pad po ponownym połączeniu / zgubiony pakiet)
 TRIG_REPEAT = 3        # zmiana efektów wysyłana tyle razy (UDP)
@@ -85,13 +88,19 @@ def make_cb(i):
     return cb
 
 
-def game(i, large=None, small=None, rgb=None):
-    """Wibracja / kolor lightbara z gry dla slotu i (wątek backendu wirtualnego pada); None = bez zmiany tej części.
-    Raport wyjściowy DualSense niesie silniki i kolor osobno, z własnymi flagami ważności."""
+def game(i, large=None, small=None, rgb=None, trig=None):
+    """Wibracja / kolor lightbara / efekty spustów z gry dla slotu i (wątek backendu wirtualnego pada); None = bez
+    zmiany tej części. Raport wyjściowy DualSense niesie silniki, kolor i każdy spust osobno, z własnymi flagami
+    ważności. trig = (L2, R2): surowe 11 B efektu albo None (ten spust bez zmian)."""
     try:
         f = fb[i]
     except IndexError:
         return
+    if trig is not None and any(t is not None for t in trig):
+        new = tuple(bytes(t) if t is not None else old for t, old in zip(trig, f["trig"], strict=True))
+        if new != f["trig"]:
+            f["trig_note"] = f["trig_note"] or f["trig"] == NO_GAME_TRIG
+            f["trig"], f["trig_owner"] = new, S.game     # podmiana całej krotki - wątek feedbacku czyta spójną
     if large is not None:
         f["large"], f["small"] = int(large), int(small or 0)
         f["t"] = time.monotonic()
@@ -101,6 +110,22 @@ def game(i, large=None, small=None, rgb=None):
         f["rgb"] = True
     f["set"] = True
     fb_event.set()
+
+
+def forget_ended_games(running):
+    """Efekty spustów ustawione przez program, którego już nie ma (gra zamknięta bez zwolnienia spustów - jak wibracja
+    w Forza Horizon) -> zwolnione. running(exe) -> czy program działa. Efekty programu nieznanego (None) zostają do
+    zmiany z gry albo odłączenia pada. -> sloty, którym zwolniono spusty."""
+    out = []
+    for i, f in enumerate(fb):
+        owner = f["trig_owner"]
+        if owner and f["trig"] != NO_GAME_TRIG and owner != S.game and not running(owner):
+            f["trig"], f["trig_owner"] = NO_GAME_TRIG, None
+            print(f"Controller {i}: {owner} closed - its trigger effects released")
+            out.append(i)
+    if out:
+        fb_event.set()
+    return out
 
 
 def stop_game_rumble(why):
@@ -117,7 +142,7 @@ def stop_game_rumble(why):
 def init():
     n = C.NUM_PADS
     fb[:] = [{"small": 0, "large": 0, "r": 0, "g": 0, "b": 0, "set": False, "rgb": False, "note": False,
-              "t": 0.0}
+              "t": 0.0, "trig": NO_GAME_TRIG, "trig_owner": None, "trig_note": False}
              for _ in range(n)]
     fb_sent[:] = [None] * n
     trig_sent[:] = [None] * n
@@ -132,7 +157,8 @@ rx_settings.on_change(lambda _old, _new: fb_event.set())    # nowy kolor / tryb 
 def reset(i):
     """Nowy / odłączony wirtualny DS4 w slocie: gra jeszcze nic nie ustawiła (bez init() - nic do czyszczenia)."""
     if i < len(fb):
-        fb[i].update(set=False, small=0, large=0, rgb=False, note=False)
+        fb[i].update(set=False, small=0, large=0, rgb=False, note=False, trig=NO_GAME_TRIG, trig_owner=None,
+                     trig_note=False)
         fb_sent[i] = None
 
 
@@ -149,6 +175,25 @@ def is_low(i, low_pct):
     """Bateria znana, nie ładuje się i jest na progu albo poniżej (ten sam test co karta pada w oknie)."""
     pct, flags = S.batt_info[i]
     return pct <= 100 and not flags & 1 and pct <= low_pct
+
+
+def _note_game_triggers(i):
+    """Pierwsze efekty spustów z gry po utworzeniu wirtualnego pada - wpis w dzienniku (co z nimi będzie)."""
+    import rx_master        # rx_master importuje ten moduł
+    f = fb[i]
+    f["trig_note"] = False
+    who = f["trig_owner"] or "?"
+    if not sender_raw(i):
+        why, text = "sender too old", _("{pad}: {exe} ustawia efekty spustów - nadajnik w starszej wersji ich nie przekaże "
+                                         "(kliknij Aktualizuj)")
+    elif not rx_master.allowed(i, "triggers"):
+        why, text = "master only", _("{pad}: {exe} ustawia efekty spustów - pominięte (efekty spustów tylko dla pada "
+                                     "master)")
+    else:
+        why, text = "", _("{pad}: {exe} ustawia efekty spustów - idą do pada (spust z efektem w profilu zostaje "
+                          "z profilu)")
+    print(f"Controller {i}: trigger effects set by {who}" + (f" - not used ({why})" if why else ""))
+    ev.info(text.format(pad=ev.pad_name(i), exe=who))
 
 
 def _note_game_color(i):
@@ -195,7 +240,7 @@ def _target(i, now):
 
 def feedback_thread(send, send_trig=None):
     """send(slot, (mała, duża, r, g, b)) - wysyłka do nadajnika (rx_net.send_feedback);
-    send_trig(slot, wartości trig2 (12) albo trig (4), powtórzenia) - efekty spustów (rx_net.send_triggers)."""
+    send_trig(slot, wartości trig3 (15), trig2 (12) albo trig (4), powtórzenia) - efekty spustów (rx_net.send_triggers)."""
     _loop(send, send_trig)
 
 
@@ -205,11 +250,32 @@ def sender_fx(i):
     return info is not None and info[0] >= FX_SENDER and bool(info[1] & CAP_TRIG_FX)
 
 
+def sender_raw(i):
+    """Nadajnik tego pada zna trig3 (efekty spustów ustawione przez grę)."""
+    info = S.sender_info[i]
+    return info is not None and info[0] >= RAW_SENDER and bool(info[1] & CAP_TRIG_RAW)
+
+
+def game_drives(game):
+    """Gra trzyma na którymś spuście efekt (inny niż brak / Off)."""
+    return any(t is not None and t[0] not in TRIG_OFF_MODES for t in game)
+
+
 def trigger_target(i):
-    """Wartości do wysłania: trig2 dla nowego nadajnika, trig (sam opór) dla starszego; bez efektów, gdy
-    efekty spustów są tylko dla mastera, a to nie master."""
+    """Wartości do wysłania: trig3 (profil + efekty spustów z gry), gdy gra je ustawiła i nadajnik je zna, inaczej
+    trig2 dla nowego nadajnika, trig (sam opór) dla starszego; bez efektów (także z gry), gdy efekty spustów są tylko
+    dla mastera, a to nie master. Na spuście z efektem w profilu wygrywa profil (rozstrzyga nadajnik - tryb inny niż
+    TFX_OFF); gdy gra sama steruje spustami, wibracja z gry na spustach z profilu jest wyłączona."""
     import rx_master        # rx_master importuje ten moduł
-    vals = trigger_values(S.remap_maps[i]["triggers"]) if rx_master.allowed(i, "triggers") else TRIG2_OFF
+    if not rx_master.allowed(i, "triggers"):
+        vals, game = TRIG2_OFF, NO_GAME_TRIG
+    else:
+        vals, game = trigger_values(S.remap_maps[i]["triggers"]), fb[i]["trig"] if i < len(fb) else NO_GAME_TRIG
+    if game != NO_GAME_TRIG and sender_raw(i):
+        if game_drives(game):
+            vals = (*vals[:8], 0, 0, 0, 0)
+        flags = (TRG3_L2 if game[0] is not None else 0) | (TRG3_R2 if game[1] is not None else 0)
+        return (*vals, *(t if t is not None else bytes(TRIG_RAW_LEN) for t in game), flags)
     return vals if sender_fx(i) else legacy_values(vals)
 
 
@@ -235,7 +301,8 @@ def release_triggers(send_trig):
     który zwalnia spusty, gdy odświeżenia z PC ustaną (uśpienie / awaria PC)."""
     for i, last in enumerate(trig_sent):
         if last is not None and any(last[0]):
-            send_trig(i, TRIG2_OFF if len(last[0]) == len(TRIG2_OFF) else (0, 0, 0, 0), TRIG_REPEAT)
+            # trig3 (efekty gry) też zwalnia trig2 - nadajnik v11 zapomina wtedy efekty gry
+            send_trig(i, TRIG2_OFF if len(last[0]) >= len(TRIG2_OFF) else (0, 0, 0, 0), TRIG_REPEAT)
             trig_sent[i] = None
 
 
@@ -260,6 +327,8 @@ def _loop(send, send_trig=None):
                 triggers_tick(i, now, send_trig)
             if fb[i]["note"]:
                 _note_game_color(i)
+            if fb[i]["trig_note"]:
+                _note_game_triggers(i)
             f = fb[i]
             if (f["large"] or f["small"]) and now - f["t"] > GAME_RUMBLE_STALE_S:
                 f["large"] = f["small"] = 0
