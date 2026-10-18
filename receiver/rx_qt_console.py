@@ -312,7 +312,7 @@ class ConsoleSettings(QDialog):
         now.setIcon(icon("backup"))
         now.clicked.connect(self._backup_now)
         box = group(_("KOPIE USTAWIEŃ"),
-                    label(_("Przed każdą aktualizacją receiver kopiuje settings.json, console.json i remap.json "
+                    label(_("Przed każdą aktualizacją receiver kopiuje settings.json, console.json, remap.json i padcal.json "
                             "(zostaje {n} ostatnich). Przywrócenie najpierw zapisuje kopię bieżących plików - też da się "
                             "je cofnąć - a potem uruchamia receiver od nowa.").format(n=rx_backup.KEEP), "dim", wrap=True),
                     self.backup_rows, left(now))

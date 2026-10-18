@@ -53,7 +53,9 @@ Testy obejmują:
   jest połączony (`test_hunt15_tx.py`);
   wybór kontrolera Bluetooth i link policy bez SNIFF także bez receivera (PC wyłączony, Wake-on-LAN), SNIFF
   poprawiany po każdym włączeniu kontrolera - układ `hci_dev_info` jak w jądrze (`test_hunt16_tx.py`); okno na wierzch
-  tylko przy nowym połączeniu pada, nie po chwilowej przerwie w sygnale (`test_settings_gui.py`);
+  tylko przy nowym połączeniu pada, nie po chwilowej przerwie w sygnale (`test_settings_gui.py`); aktualizacja
+  HIDMaestro w trakcie pracy nie usuwa folderu wersji załadowanej w procesie (zależności DLL wczytują się leniwie) -
+  znika dopiero po restarcie (`test_hm_update.py`);
 - przycisk → gra, dziennik zdarzeń (też zdarzenia nadajnika end-to-end), lightbar od baterii, ustawienia dla nadajnika
   (`test_extras.py`, `test_extras_gui.py`) oraz Wake-on-LAN po stronie nadajnika - kombinacja, ARP, broadcast, magic
   packet, `wol.json` (`test_wol_tx.py`);

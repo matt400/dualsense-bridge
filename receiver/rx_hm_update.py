@@ -79,11 +79,24 @@ def newest_dll():
     return os.path.join(found[0][1], DLL) if found else None
 
 
+def in_use():
+    """Folder wersji HIDMaestro załadowanej w tym procesie albo None. CLR blokuje tylko pliki już wczytane - zależności
+    (Microsoft.Windows.SDK.NET.dll, WinRT.Runtime.dll) wczytuje dopiero przy pierwszym użyciu ich typów."""
+    import rx_hm                              # rx_hm importuje ten moduł - import tutaj
+    b = rx_hm.loaded()
+    path = getattr(b, "path", None)
+    return os.path.normcase(os.path.dirname(os.path.abspath(path))) if path else None
+
+
 def cleanup(keep):
-    """Starsze wersje i resztki przerwanych pobrań. Pliki zablokowane (DLL w użyciu) zostają do następnego razu."""
+    """Starsze wersje i resztki przerwanych pobrań. Folder wersji załadowanej w tym procesie zostaje do restartu:
+    rmtree usuwał z niego niezablokowane zależności DLL (ładowane leniwie) - HIDMaestro załadowany przed aktualizacją
+    sypał się przy następnym podłączeniu pada (brak pliku). Pliki zablokowane zostają do następnego razu."""
+    busy = in_use()
     for n in os.listdir(root()) if os.path.isdir(root()) else ():
         p = os.path.join(root(), n)
-        if os.path.isdir(p) and n != keep and (version_key(n) or n.startswith(".")):
+        if (os.path.isdir(p) and n != keep and (version_key(n) or n.startswith("."))
+                and os.path.normcase(os.path.abspath(p)) != busy):
             shutil.rmtree(p, ignore_errors=True)
 
 

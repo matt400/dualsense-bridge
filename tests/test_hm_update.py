@@ -118,6 +118,18 @@ st = U.check(force=True)
 check("network down" in st.error and st.version == "v1.13.0" and not st.busy, "brak sieci: błąd, wersja zostaje")
 U._get = opener
 
+# ---------- wersja załadowana w procesie zostaje do restartu (CLR wczytuje zależności DLL dopiero przy użyciu) ----------
+import types
+rx_hm._loaded = types.SimpleNamespace(path=os.path.join(ROOT, "v1.13.0", U.DLL))
+RELEASE[0] = release("v1.16.0", make_zip(b"MZ" + b"16" * 1000))
+st = U.check(force=True)
+old = os.path.join(ROOT, "v1.13.0")
+check(st.version == "v1.16.0" and os.path.isdir(old) and sorted(os.listdir(old)) == sorted([U.DLL, *U.DEPS]),
+      f"nowa wersja pobrana, załadowana (v1.13.0) zostaje z zależnościami: {sorted(os.listdir(ROOT))}")
+rx_hm._loaded = None
+U.cleanup(keep="v1.16.0")
+check(not os.path.exists(old) and os.path.isdir(os.path.join(ROOT, "v1.16.0")), "po restarcie stara wersja usunięta")
+
 # ---------- receiver: włączenie / wyłączenie automatu, zmiana backendu po pobraniu ----------
 import rx_ds4, rx_settings
 from dataclasses import replace
