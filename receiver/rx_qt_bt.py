@@ -16,16 +16,23 @@ from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
 
 import rx_bt as BT
-from proto import BT_LIST, BT_SCAN_MAX_S, BTR_NONE, BTR_OK, BTR_RUNNING, BTS_OFF, BTS_OK
+from proto import (BT_ADAPTER, BT_LIST, BT_SCAN_MAX_S, BTA_AUTO, BTA_BUILTIN, BTA_MANUAL, BTR_NONE, BTR_OK,
+                   BTR_RUNNING, BTS_OFF, BTS_OK)
 from rx_i18n import _
 from rx_qt_drawer import SideDrawer
 from rx_qt_icons import pixmap
 from rx_qt_style import ACCENT, BAD, LINE, MUTED, OK, WARN, px, set_prop
-from rx_qt_widgets import ConfirmButton, button, icon_button, icon_label, label
+from rx_qt_widgets import ConfirmButton, Segmented, button, icon_button, icon_label, label
 
 REFRESH_MS = 250
 DOT = {"ok": OK, "scan": ACCENT, "warn": WARN, "bad": BAD, "": MUTED}
 ACTION = {"pair": "Sparuj", "connect": "Połącz", "disconnect": "Rozłącz"}
+ADAPTER_MODES = ((BTA_AUTO, "Auto"), (BTA_BUILTIN, "Wbudowany"), (BTA_MANUAL, "Ręcznie"))
+ADAPTER_TIPS = {
+    BTA_AUTO: "Najlepszy kontroler: dongle USB przed wbudowanym (zwykle mniejsze opóźnienie), pozostałe wyłączone",
+    BTA_BUILTIN: "Wbudowany kontroler, dongle USB wyłączony",
+    BTA_MANUAL: "Nadajnik nie zmienia kontrolerów - ustawiasz je sam (rfkill, bluetoothctl)",
+}
 
 
 @cache
@@ -172,6 +179,20 @@ class BtDrawer(SideDrawer):
         self.rows: dict[str, DeviceRow] = {}
         self.status = label("", wrap=True)
         lay.addWidget(self.status)
+        # wybór kontrolera nadajnika (wbudowany / dongle USB) - tylko nadajnik, który go obsługuje
+        self.adapter_box = QWidget()
+        box = QVBoxLayout(self.adapter_box)
+        box.setContentsMargins(0, 0, 0, 0)
+        box.setSpacing(px(4))
+        box.addWidget(label(_("Kontroler Bluetooth"), "dim"))
+        self.adapter_seg = Segmented([(str(m), _(t)) for m, t in ADAPTER_MODES])
+        for m, _t in ADAPTER_MODES:
+            self.adapter_seg.buttons[str(m)].setToolTip(_(ADAPTER_TIPS[m]))
+        self.adapter_seg.changed.connect(self.set_adapter)
+        box.addWidget(self.adapter_seg)
+        self.adapter_info = label("", "small", wrap=True)
+        box.addWidget(self.adapter_info)
+        lay.addWidget(self.adapter_box)
         self.power_btn = button(_("Włącz Bluetooth"), primary=True)
         self.power_btn.clicked.connect(self.power_on)
         lay.addWidget(self.power_btn)
@@ -216,6 +237,10 @@ class BtDrawer(SideDrawer):
         BT.power(True)
         self.refresh()
 
+    def set_adapter(self, key: str) -> None:
+        BT.adapter(int(key))
+        self.refresh()
+
     def toggle_scan(self) -> None:
         s = BT.status
         BT.scan(not (s is not None and s.scanning))
@@ -246,8 +271,31 @@ class BtDrawer(SideDrawer):
                               _("Skanuj ({s} s)").format(s=BT_SCAN_MAX_S))
         set_prop(self.scan_btn, "primary", not scanning)
         self.scan_btn.setEnabled(state in (BTS_OK, BTS_OFF) and (scanning or not busy))
+        self._adapter(s if ok else None, busy, now)
         self._rows(now, busy, enabled=state == BTS_OK)
         self._result(s)
+
+    def _adapter(self, s: BT.Status | None, busy: bool, now: float) -> None:
+        """Przełącznik kontrolera: stan z nadajnika (nie w trakcie własnej zmiany - bez mignięcia starym trybem)."""
+        shown = s is not None and s.mode != 0
+        self.adapter_box.setVisible(shown)
+        if not shown:
+            return
+        if BT.busy_op("", now) != BT_ADAPTER and str(s.mode) in self.adapter_seg.buttons:
+            self.adapter_seg.set(str(s.mode))
+        for b in self.adapter_seg.buttons.values():
+            b.setEnabled(not busy)
+        if s.mode == BTA_MANUAL:
+            text = _(ADAPTER_TIPS[BTA_MANUAL])
+        elif s.on_usb:
+            text = _("Używany: dongle USB")
+        else:
+            text = _("Używany: wbudowany")
+            if s.mode == BTA_AUTO and not s.has_usb:
+                text += "  ·  " + _("Dongle Bluetooth USB zwykle zmniejsza opóźnienie padów")
+        if s.has_usb and s.has_builtin:
+            text += "  ·  " + _("Po zmianie kontrolera sparuj pady ponownie (każdy ma własny adres)")
+        self.adapter_info.setText(text)
 
     def _result(self, s: BT.Status | None) -> None:
         if s is None or s.op == BT_LIST or s.result == BTR_NONE:
@@ -284,7 +332,7 @@ class BtDrawer(SideDrawer):
 
     def _tab_order(self) -> None:
         """Kolejność fokusu (Tab, D-pad) jak na ekranie: zamknij, zasilanie, skan, wiersze od góry."""
-        chain = [self.close_btn, self.power_btn, self.scan_btn]
+        chain = [self.close_btn, *self.adapter_seg.buttons.values(), self.power_btn, self.scan_btn]
         for k in range(self.list_lay.count()):
             w = self.list_lay.itemAt(k).widget()
             if isinstance(w, DeviceRow):

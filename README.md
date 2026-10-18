@@ -27,6 +27,7 @@ DualSense ──Bluetooth──> nadajnik (sender/) ──sieć, UDP 5005──>
 | Sprzęt | komputer z Windows 10 / 11 | Raspberry Pi, stary telefon z postmarketOS albo inny komputer z Linuksem i Bluetooth |
 | Oprogramowanie | [Python 3.11+](https://www.python.org/downloads/), [Git for Windows](https://git-scm.com/download/win), [.NET 10](https://dotnet.microsoft.com/download/dotnet/10.0) (dla HIDMaestro) | Python 3.11+, `git`, BlueZ, systemd, jądro ze sterownikiem `hid-playstation` |
 | Sieć | ta sama sieć lokalna co nadajnik | najlepiej kabel (Ethernet); Wi-Fi działa, ale daje skoki opóźnienia |
+| Bluetooth | - | wbudowany wystarczy; dongle USB (np. TP-Link UB500) często ma wyraźnie mniejsze opóźnienie - nadajnik wybiera go sam |
 
 ## Instalacja
 

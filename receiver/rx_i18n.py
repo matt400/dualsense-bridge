@@ -770,6 +770,22 @@ EN = {
     "Rozłączanie": "Disconnecting",
     "Usuwanie": "Removing",
     "Zasilanie Bluetooth": "Bluetooth power",
+    "Zmiana kontrolera": "Controller change",
+    "dongle USB": "USB dongle",
+    "Kontroler Bluetooth": "Bluetooth controller",
+    "Auto": "Auto",
+    "Wbudowany": "Built-in",
+    "Ręcznie": "Manual",
+    "Najlepszy kontroler: dongle USB przed wbudowanym (zwykle mniejsze opóźnienie), pozostałe wyłączone":
+        "Best controller: USB dongle before built-in (usually lower latency), the others off",
+    "Wbudowany kontroler, dongle USB wyłączony": "Built-in controller, USB dongle off",
+    "Nadajnik nie zmienia kontrolerów - ustawiasz je sam (rfkill, bluetoothctl)":
+        "The sender leaves controllers alone - set them yourself (rfkill, bluetoothctl)",
+    "Używany: dongle USB": "In use: USB dongle",
+    "Używany: wbudowany": "In use: built-in",
+    "Dongle Bluetooth USB zwykle zmniejsza opóźnienie padów": "A USB Bluetooth dongle usually lowers pad latency",
+    "Po zmianie kontrolera sparuj pady ponownie (każdy ma własny adres)":
+        "After switching controllers pair the pads again (each has its own address)",
     "Skanowanie": "Scanning",
     "Operacja": "Operation",
     "sparowano i połączono": "paired and connected",

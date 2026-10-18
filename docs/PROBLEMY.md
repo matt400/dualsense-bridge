@@ -4,6 +4,8 @@
 |---|---|
 | `WARNING: no reply from receiver` w logu nadajnika | IP komputera, zapora Windows (UDP 5005), czy `key` jest taki sam po obu stronach |
 | Wysoki ping / skoki w oknie receivera | Wi-Fi na nadajniku (najlepiej kabel Ethernet - przy telefonie przez hub USB; potem `nmcli radio wifi off`); nadajnik bez roota - log `Low latency: ... run with doas` (procesor nadajnika usypia się głęboko) |
+| Duże „Bluetooth (ponad minimum)” na karcie pada (kilka ms i więcej) | wbudowane radio nadajnika kolejkuje raporty (np. telefon: ~10 ms, dongle USB: ~1 ms). Wepnij dongle Bluetooth USB - nadajnik sam go wybierze i wyłączy wbudowane (panel Bluetooth → Kontroler: Auto; log `Bluetooth adapter (auto): hciN (USB)`), potem sparuj pady z donglem. Dongle Realtek (np. TP-Link UB500) potrzebuje firmware: Alpine / postmarketOS `apk add linux-firmware-rtl_bt`, Debian / Raspberry Pi OS `apt install firmware-realtek`, Arch `pacman -S linux-firmware-realtek` (starsze: `linux-firmware`) - bez niego w `dmesg` jest `RTL: firmware file ... not found`. Sprawdź też odległość i przeszkody między padem a nadajnikiem |
+| Panel Bluetooth: pady zniknęły po wpięciu / wyjęciu dongla | każdy kontroler ma własny adres - sparuj pady z tym, którego nadajnik używa (panel: „Używany: …”). Nie chcesz zmian: Kontroler → Wbudowany albo Ręcznie (`bt_adapter` w `sender.toml`) |
 | Gyro kręci w złą stronę | edytor → Gyro aim → „Invert horizontal / vertical” |
 | Celownik / kamera powoli „płynie” sama | widok Test → wykres gyro przy leżącym padzie; jeśli nie jest płaski - „Kalibruj żyroskop” |
 | Postać idzie sama / kamera się kręci (gałka) | widok Test → „Zmierz dryf” → „Zastosuj” (korekcja dryfu tego pada) |

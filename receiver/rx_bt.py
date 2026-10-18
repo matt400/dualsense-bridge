@@ -12,14 +12,15 @@ from dataclasses import dataclass, field
 
 import rx_events as ev
 import rx_net
-from proto import (BODY, BT_CONNECT, BT_DISCONNECT, BT_LIST, BT_PAIR, BT_POWER, BT_REMOVE, BT_RSSI_NONE, BT_SCAN_MAX_S,
-                   BT_SCAN_START, BT_SCAN_STOP, BTD_CONNECTED, BTD_PAD, BTD_PAIRED, BTD_TRUSTED, BTF_BUSY, BTF_SCANNING,
+from proto import (BODY, BT_ADAPTER, BT_CONNECT, BT_DISCONNECT, BT_LIST, BT_PAIR, BT_POWER, BT_REMOVE, BT_RSSI_NONE, BT_SCAN_MAX_S,
+                   BT_SCAN_START, BT_SCAN_STOP, BTD_CONNECTED, BTD_PAD, BTD_PAIRED, BTD_TRUSTED, BTF_BUSY, BTF_HAS_BUILTIN,
+                   BTF_HAS_USB, BTF_MODE_SHIFT, BTF_ON_USB, BTF_SCANNING,
                    BTR_AUTH, BTR_BUSY, BTR_DENIED, BTR_FAILED, BTR_NONE, BTR_NOT_FOUND, BTR_OFF, BTR_OK, BTR_RUNNING,
                    BTR_TIMEOUT, BTS_BLOCKED, BTS_DENIED, BTS_ERROR, BTS_NO_ADAPTER, BTS_NO_SERVICE, BTS_NO_TOOL, BTS_OFF,
                    BTS_OK, T_BTCMD, T_BTDEV, T_BTSTATE, cstr, mac_bytes, mac_text)
 from rx_i18n import _
 
-OPS = frozenset({BT_PAIR, BT_CONNECT, BT_DISCONNECT, BT_REMOVE, BT_POWER})   # operacje na urządzeniu / adapterze
+OPS = frozenset({BT_PAIR, BT_CONNECT, BT_DISCONNECT, BT_REMOVE, BT_POWER, BT_ADAPTER})   # operacje na urządzeniu / adapterze
 BTF_LIST = 4                 # flaga btstate: zaraz za nim runda listy (sender_bt.BTF_LIST)
 STALE_S = 12.0               # stan starszy niż tyle (bez panelu nadajnik wysyła go co 5 s) = nieznany
 KEEPALIVE_S = 2.0            # otwarty panel ponawia BT_LIST co tyle (nadajnik wysyła listę przez BT_ACTIVE_S)
@@ -31,9 +32,10 @@ STATE_TEXT = {
     BTS_NO_TOOL: "brak busctl (systemd) na telefonie", BTS_ERROR: "błąd odczytu stanu",
 }
 OP_TEXT = {BT_PAIR: "Parowanie", BT_CONNECT: "Łączenie", BT_DISCONNECT: "Rozłączanie", BT_REMOVE: "Usuwanie",
-           BT_POWER: "Zasilanie Bluetooth", BT_SCAN_START: "Skanowanie"}
+           BT_POWER: "Zasilanie Bluetooth", BT_SCAN_START: "Skanowanie", BT_ADAPTER: "Zmiana kontrolera"}
 DONE_TEXT = {BT_PAIR: "sparowano i połączono", BT_CONNECT: "połączono", BT_DISCONNECT: "rozłączono",
-             BT_REMOVE: "usunięto z telefonu", BT_POWER: "gotowe", BT_SCAN_START: "rozpoczęte"}
+             BT_REMOVE: "usunięto z telefonu", BT_POWER: "gotowe", BT_SCAN_START: "rozpoczęte",
+             BT_ADAPTER: "gotowe"}
 RESULT_TEXT = {
     BTR_FAILED: "nie udało się", BTR_TIMEOUT: "brak odpowiedzi urządzenia",
     BTR_NOT_FOUND: "telefon nie widzi urządzenia - uruchom skanowanie",
@@ -90,6 +92,23 @@ class Status:
     @property
     def busy(self) -> bool:
         return bool(self.flags & BTF_BUSY) or self.result == BTR_RUNNING
+
+    @property
+    def mode(self) -> int:
+        """Tryb wyboru kontrolera BTA_* (0 = nadajnik bez wyboru - przełącznik ukryty)."""
+        return self.flags >> BTF_MODE_SHIFT & 3
+
+    @property
+    def has_usb(self) -> bool:
+        return bool(self.flags & BTF_HAS_USB)
+
+    @property
+    def has_builtin(self) -> bool:
+        return bool(self.flags & BTF_HAS_BUILTIN)
+
+    @property
+    def on_usb(self) -> bool:
+        return bool(self.flags & BTF_ON_USB)
 
 
 @dataclass(slots=True)
@@ -250,6 +269,12 @@ def power(on: bool) -> bool:
     return send(BT_POWER, int(on))
 
 
+def adapter(mode: int) -> bool:
+    """Tryb wyboru kontrolera BTA_* (tylko nadajnik, który go podaje w btstate)."""
+    s = status
+    return s is not None and s.mode != 0 and send(BT_ADAPTER, mode)
+
+
 def indicator(now: float | None = None) -> tuple[str, str]:
     """Kropka stanu Bluetooth w nagłówku: (poziom, opis). Poziom: ok / scan / warn / bad / "" (szary - nieznany)."""
     now = time.monotonic() if now is None else now
@@ -262,6 +287,8 @@ def indicator(now: float | None = None) -> tuple[str, str]:
     if s.state != BTS_OK:
         return ("warn" if s.state == BTS_OFF else "bad"), head
     head += "  ·  " + _("połączone: {n}").format(n=s.connected)
+    if s.on_usb:
+        head += "  ·  " + _("dongle USB")
     if s.scanning:
         return "scan", head + "  ·  " + _("skanowanie {s} s").format(s=s.scan_left)
     return "ok", head

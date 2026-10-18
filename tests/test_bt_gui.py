@@ -14,7 +14,7 @@ C.cfg["tray"] = False
 import rx_bt as RB
 import rx_qt
 from proto import (BODY, BT_CONNECT, BT_DISCONNECT, BT_LIST, BT_PAIR, BT_POWER, BT_REMOVE, BT_SCAN_MAX_S, BT_SCAN_START,
-                   BT_SCAN_STOP, BTD_CONNECTED, BTD_PAD, BTD_PAIRED, BTD_TRUSTED, BTF_BUSY, BTF_SCANNING, BTR_OK,
+                   BT_SCAN_STOP, BT_ADAPTER, BTA_AUTO, BTA_BUILTIN, BTD_CONNECTED, BTD_PAD, BTD_PAIRED, BTD_TRUSTED, BTF_BUSY, BTF_HAS_BUILTIN, BTF_HAS_USB, BTF_MODE_SHIFT, BTF_ON_USB, BTF_SCANNING, BTR_OK,
                    BTR_RUNNING, BTS_NO_TOOL, BTS_OFF, BTS_OK, T_BTCMD, T_BTDEV, T_BTSTATE, mac_bytes)
 from rx_buttons import BIT, BUTTON_CODES
 from rx_qt_bt import DeviceRow, status_icon
@@ -196,6 +196,28 @@ assert not drawer.is_open() and win.fullscreen() and QApplication.focusWidget() 
 press("circle"); pump(100)
 assert not win.fullscreen(), "drugie ○ - jak dotąd: wyjście z pełnego ekranu"
 ok("tryb TV: ✕ na ikonie otwiera, D-pad tylko po panelu (ukryte pominięte), ✕ klika, R1 nie zmienia pada, ○ zamyka")
+
+# ---------- kontroler Bluetooth nadajnika (wbudowany / dongle USB) ----------
+win.bt_btn.click(); pump(260)
+bt_list(DEVS); drawer.refresh()
+assert not drawer.adapter_box.isVisible(), "nadajnik bez wyboru kontrolera - przełącznik ukryty"
+both = BTF_HAS_BUILTIN | BTF_HAS_USB
+bt_list(DEVS, flags=both | BTF_ON_USB | BTA_AUTO << BTF_MODE_SHIFT); drawer.refresh(); win.slow_tick()
+assert drawer.adapter_box.isVisible() and drawer.adapter_seg.value() == str(BTA_AUTO)
+assert "dongle USB" in drawer.adapter_info.text() and "sparuj pady ponownie" in drawer.adapter_info.text()
+assert "dongle USB" in win.bt_btn.toolTip()
+pump(); drawer.grab().save(os.path.join(SHOTS, "bt_drawer_adapter.png"))
+rxenv.sent.clear()
+drawer.adapter_seg.buttons[str(BTA_BUILTIN)].click()
+assert without_list(cmds()) == [(BT_ADAPTER, BTA_BUILTIN, bytes(6))] * 3
+drawer.refresh()
+assert drawer.adapter_seg.value() == str(BTA_BUILTIN), "w trakcie zmiany bez mignięcia starym trybem"
+bt_list(DEVS, flags=both | BTA_BUILTIN << BTF_MODE_SHIFT, op=BT_ADAPTER, res=BTR_OK); drawer.refresh()
+assert "wbudowany" in drawer.adapter_info.text() and "Zmiana kontrolera: gotowe" in drawer.result.text()
+bt_list(DEVS, flags=BTF_HAS_BUILTIN | BTA_AUTO << BTF_MODE_SHIFT); drawer.refresh()
+assert "Dongle Bluetooth USB zwykle zmniejsza" in drawer.adapter_info.text(), "bez dongla: podpowiedź"
+drawer.close_drawer(); pump(260)
+ok("kontroler: przełącznik Auto / Wbudowany / Ręcznie tylko dla nowego nadajnika, BT_ADAPTER (3 pakiety), opis")
 
 # ---------- stary / milczący nadajnik ----------
 RB.reset()

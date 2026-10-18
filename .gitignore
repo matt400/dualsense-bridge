@@ -253,6 +253,8 @@ wol.json.tmp
 # kalibracja żyroskopu z okna receivera zapisana na telefonie (per pad)
 gyro_cal.json
 gyro_cal.json.tmp
+bt.json
+bt.json.tmp
 # korekcja dryfu gałek per pad (receiver)
 padcal.json
 padcal.json.tmp

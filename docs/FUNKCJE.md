@@ -53,6 +53,9 @@
     zaufanie i połączenie), **Połącz**, **Rozłącz**, **Zapomnij**, a przy wyłączonym adapterze **Włącz Bluetooth**.
     W trybie TV: D-pad do ikony, ✕ otwiera, D-pad chodzi tylko po panelu, ✕ klika, ○ zamyka. Tryb parowania
     DualSense: Create + PS, aż lightbar szybko miga. Wymaga nadajnika v10 (systemd: `busctl`, BlueZ: `bluetoothctl`);
+    **Kontroler Bluetooth** (przy kilku: wbudowany + dongle USB): **Auto** - dongle USB przed wbudowanym, pozostałe
+    wyłączone (rfkill), bez trybu SNIFF (pad nie usypia łącza); wpięcie / wyjęcie dongla działa bez restartu;
+    **Wbudowany**; **Ręcznie** - nadajnik nic nie zmienia. Domyślny tryb: `bt_adapter` w `sender.toml`;
   - **widok Test** (trzeci przełącznik pod padem: Wynik / Fizycznie / Test) dla wybranego pada:
     - na rysunku na żywo przyciski, wartości spustów (0-255), gałki, palce i klik touchpada (także w trybie myszy);
     - po prawej wykresy gyro [°/s] i akcelerometru [g] (3 osie, ostatnie 5 s, skala sama się dopasowuje) i

@@ -55,9 +55,12 @@ nieznaną długość, więc wariant idzie tylko do strony, o której wiadomo, ż
 Bluetooth telefonu sterowany z okna (v10+; telefon bez ekranu). Nadajnik ogłasza obsługę sam - pakietem btstate (idx 255)
 do receivera, od którego przyszedł scfg; receiver wysyła btcmd dopiero po btstate (starszy nadajnik odrzuciłby długość):
   btcmd   (typ 10) "BB6s"      PC -> nadajnik (idx 255): operacja BT_*, argument (BT_SCAN_START: sekundy, najwyżej
-                               BT_SCAN_MAX_S; BT_POWER: 1 / 0), MAC urządzenia (zera = bez). BT_LIST = "panel otwarty":
+                               BT_SCAN_MAX_S; BT_POWER: 1 / 0; BT_ADAPTER: tryb BTA_*), MAC urządzenia (zera = bez).
+                               BT_ADAPTER tylko do nadajnika, który podaje tryb w btstate (starszy pomija nieznaną
+                               operację). BT_LIST = "panel otwarty":
                                przez BT_ACTIVE_S nadajnik co sekundę wysyła stan i listę urządzeń, potem tylko stan co 5 s
-  btstate (typ 12) "BBBBBHBB6s" nadajnik -> PC (idx 255): stan adaptera BTS_*, flagi BTF_*, sekundy skanu do końca,
+  btstate (typ 12) "BBBBBHBB6s" nadajnik -> PC (idx 255): stan adaptera BTS_*, flagi BTF_* (bity 6-7: tryb wyboru
+                               adaptera BTA_*, 0 = nadajnik bez wyboru), sekundy skanu do końca,
                                połączone urządzenia, urządzenia na liście, runda listy, ostatnia operacja BT_*, jej wynik
                                BTR_*, jej MAC; zaraz po nim (w aktywnym trybie) urządzenia rundy
   btdev   (typ 9)  "HBB6sbB32s" nadajnik -> PC (idx 255): runda, numer, ile w rundzie, MAC, RSSI [dBm] (BT_RSSI_NONE =
@@ -116,10 +119,14 @@ EV_INFO, EV_WARN, EV_ERROR = range(3)                   # poziom zdarzenia (paki
 (E_START, E_PAD_ON, E_PAD_OFF, E_POWER_OFF, E_WOL, E_WOL_FAIL, E_NO_RECEIVER, E_NET_DOWN, E_ERROR) = range(1, 10)
 WOL_PORTS = (9, 7)                                      # magic packet: discard i echo (karty sieciowe słuchają każdego)
 # Bluetooth telefonu z okna (btcmd / btstate / btdev): operacje, stan adaptera, flagi, wynik operacji, flagi urządzenia
-BT_LIST, BT_SCAN_START, BT_SCAN_STOP, BT_PAIR, BT_CONNECT, BT_DISCONNECT, BT_REMOVE, BT_POWER = range(8)
+BT_LIST, BT_SCAN_START, BT_SCAN_STOP, BT_PAIR, BT_CONNECT, BT_DISCONNECT, BT_REMOVE, BT_POWER, BT_ADAPTER = range(9)
+# wybór kontrolera Bluetooth nadajnika: najlepszy (dongle USB przed wbudowanym), wbudowany, bez zmian (ręcznie / rfkill)
+BTA_AUTO, BTA_BUILTIN, BTA_MANUAL = 1, 2, 3
 # działa, wyłączony, zablokowany (rfkill), brak adaptera, brak bluetoothd, brak uprawnień, brak busctl, inny błąd
 BTS_OK, BTS_OFF, BTS_BLOCKED, BTS_NO_ADAPTER, BTS_NO_SERVICE, BTS_DENIED, BTS_NO_TOOL, BTS_ERROR = range(8)
 BTF_SCANNING, BTF_BUSY = 1, 2                           # flagi btstate: trwa skan, trwa operacja
+# (4 = BTF_LIST nadajnika) jest wbudowany kontroler, jest dongle USB, używany jest dongle; tryb BTA_* w bitach 6-7
+BTF_HAS_BUILTIN, BTF_HAS_USB, BTF_ON_USB, BTF_MODE_SHIFT = 8, 16, 32, 6
 # brak, trwa, udało się, nieudane, przekroczony czas, nieznane urządzenie, odrzucone parowanie, brak uprawnień,
 # adapter wyłączony / zablokowany, adapter zajęty (inna operacja)
 BTR_NONE, BTR_RUNNING, BTR_OK, BTR_FAILED, BTR_TIMEOUT, BTR_NOT_FOUND, BTR_AUTH, BTR_DENIED, BTR_OFF, BTR_BUSY = range(10)
