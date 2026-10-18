@@ -55,14 +55,22 @@ nieznaną długość, więc wariant idzie tylko do strony, o której wiadomo, ż
 Bluetooth telefonu sterowany z okna (v10+; telefon bez ekranu). Nadajnik ogłasza obsługę sam - pakietem btstate (idx 255)
 do receivera, od którego przyszedł scfg; receiver wysyła btcmd dopiero po btstate (starszy nadajnik odrzuciłby długość):
   btcmd   (typ 10) "BB6s"      PC -> nadajnik (idx 255): operacja BT_*, argument (BT_SCAN_START: sekundy, najwyżej
-                               BT_SCAN_MAX_S; BT_POWER: 1 / 0), MAC urządzenia (zera = bez). BT_LIST = "panel otwarty":
+                               BT_SCAN_MAX_S; BT_POWER: 1 / 0; BT_ADAPTER: tryb BTA_AUTO / BTA_MANUAL;
+                               BT_ADAPTER_USE: numer N kontrolera hciN z listy btctrl), MAC urządzenia (zera = bez).
+                               BT_ADAPTER* tylko do nadajnika, który podaje tryb w btstate (starszy pomija nieznaną
+                               operację). BT_LIST = "panel otwarty":
                                przez BT_ACTIVE_S nadajnik co sekundę wysyła stan i listę urządzeń, potem tylko stan co 5 s
-  btstate (typ 12) "BBBBBHBB6s" nadajnik -> PC (idx 255): stan adaptera BTS_*, flagi BTF_*, sekundy skanu do końca,
+  btstate (typ 12) "BBBBBHBB6s" nadajnik -> PC (idx 255): stan adaptera BTS_*, flagi BTF_* (bity 6-7: tryb wyboru
+                               adaptera BTA_*, 0 = nadajnik bez wyboru), sekundy skanu do końca,
                                połączone urządzenia, urządzenia na liście, runda listy, ostatnia operacja BT_*, jej wynik
                                BTR_*, jej MAC; zaraz po nim (w aktywnym trybie) urządzenia rundy
   btdev   (typ 9)  "HBB6sbB32s" nadajnik -> PC (idx 255): runda, numer, ile w rundzie, MAC, RSSI [dBm] (BT_RSSI_NONE =
                                brak - poza skanem), flagi BTD_*, nazwa (UTF-8, ucięta); receiver podmienia listę dopiero,
                                gdy ma całą rundę (zgubiony pakiet = lista z poprzedniej rundy, nie dziurawa)
+  btctrl  (typ 9)  "HBBBB40s"  nadajnik -> PC (idx 255): kontrolery Bluetooth nadajnika (wbudowany, dongle USB) -
+                               runda, numer, ile, flagi BTC_*, N z hciN, nazwa urządzenia (UTF-8); runda idzie przy
+                               liście urządzeń, tylko z nadajnika z wyborem kontrolera (tryb w btstate); starszy receiver
+                               odrzuca nieznaną długość
 
 Na końcu: wspólne funkcje gita (wersja kodu, aktualizacja git pull) - receiver i nadajnik aktualizują się tak samo.
 """
@@ -84,8 +92,9 @@ HDR0 = VER << 4
  T_BUILD, T_UPDMSG, T_TRIG) = range(16)
 T_STATE2, T_PONG2, T_SCFG, T_CALRES, T_BUILD2, T_TRIG2 = 0x101, 0x107, 0x10A, 0x10B, 0x10D, 0x10F   # warianty dłuższe
 T_BTDEV, T_BTSTATE, T_BTCMD = 0x109, 0x10C, 0x20A                                                 # Bluetooth (v10+)
+T_BTCTRL = 0x209                                                    # kontrolery Bluetooth nadajnika (wybór z okna)
 WIRE = {T_STATE2: T_STATE, T_PONG2: T_PONG, T_SCFG: T_CMD, T_CALRES: T_INFO, T_BUILD2: T_BUILD, T_TRIG2: T_TRIG,
-        T_BTDEV: T_IDENT, T_BTSTATE: T_VERSION, T_BTCMD: T_CMD}
+        T_BTDEV: T_IDENT, T_BTSTATE: T_VERSION, T_BTCMD: T_CMD, T_BTCTRL: T_IDENT}
 SENDER_VERSION = 10
 RUMBLE_EVDEV, RUMBLE_HIDRAW, CAP_TRIGGERS = 1, 2, 4     # bity pakietu version (CAP_TRIGGERS: opór spustów działa)
 CAP_TRIG_FX = 8                                         # bit pakietu version: nadajnik zna trig2 (klik, wibracja, z gry)
@@ -116,10 +125,17 @@ EV_INFO, EV_WARN, EV_ERROR = range(3)                   # poziom zdarzenia (paki
 (E_START, E_PAD_ON, E_PAD_OFF, E_POWER_OFF, E_WOL, E_WOL_FAIL, E_NO_RECEIVER, E_NET_DOWN, E_ERROR) = range(1, 10)
 WOL_PORTS = (9, 7)                                      # magic packet: discard i echo (karty sieciowe słuchają każdego)
 # Bluetooth telefonu z okna (btcmd / btstate / btdev): operacje, stan adaptera, flagi, wynik operacji, flagi urządzenia
-BT_LIST, BT_SCAN_START, BT_SCAN_STOP, BT_PAIR, BT_CONNECT, BT_DISCONNECT, BT_REMOVE, BT_POWER = range(8)
+(BT_LIST, BT_SCAN_START, BT_SCAN_STOP, BT_PAIR, BT_CONNECT, BT_DISCONNECT, BT_REMOVE, BT_POWER, BT_ADAPTER,
+ BT_ADAPTER_USE) = range(10)
+# wybór kontrolera Bluetooth nadajnika: najlepszy (dongle USB przed wbudowanym), wybrany w oknie, bez zmian (ręcznie)
+BTA_AUTO, BTA_PICK, BTA_MANUAL = 1, 2, 3
+# flagi btctrl: na USB, USB na stałym porcie (laptop), używany, zablokowany (rfkill), wybrany ręcznie w oknie
+BTC_USB, BTC_FIXED, BTC_ACTIVE, BTC_BLOCKED, BTC_PICKED = 1, 2, 4, 8, 16
 # działa, wyłączony, zablokowany (rfkill), brak adaptera, brak bluetoothd, brak uprawnień, brak busctl, inny błąd
 BTS_OK, BTS_OFF, BTS_BLOCKED, BTS_NO_ADAPTER, BTS_NO_SERVICE, BTS_DENIED, BTS_NO_TOOL, BTS_ERROR = range(8)
 BTF_SCANNING, BTF_BUSY = 1, 2                           # flagi btstate: trwa skan, trwa operacja
+# (4 = BTF_LIST nadajnika) jest wbudowany kontroler, jest dongle USB, używany jest dongle; tryb BTA_* w bitach 6-7
+BTF_HAS_BUILTIN, BTF_HAS_USB, BTF_ON_USB, BTF_MODE_SHIFT = 8, 16, 32, 6
 # brak, trwa, udało się, nieudane, przekroczony czas, nieznane urządzenie, odrzucone parowanie, brak uprawnień,
 # adapter wyłączony / zablokowany, adapter zajęty (inna operacja)
 BTR_NONE, BTR_RUNNING, BTR_OK, BTR_FAILED, BTR_TIMEOUT, BTR_NOT_FOUND, BTR_AUTH, BTR_DENIED, BTR_OFF, BTR_BUSY = range(10)
@@ -156,12 +172,13 @@ BODY = {
     T_BTCMD: struct.Struct("!BB6s"),            # operacja BT_*, argument, MAC
     T_BTSTATE: struct.Struct("!BBBBBHBB6s"),    # BTS_*, BTF_*, skan [s], połączone, na liście, runda, op, BTR_*, MAC
     T_BTDEV: struct.Struct("!HBB6sbB32s"),      # runda, numer, ile, MAC, RSSI, BTD_*, nazwa
+    T_BTCTRL: struct.Struct("!HBBBB40s"),       # runda, numer, ile, BTC_*, N z hciN, nazwa urządzenia
 }
 STATE_FIELDS = 17                               # pola stanu w state / state2 (bez pomiaru opóźnienia)
 BODY_LEN = {t: s.size for t, s in BODY.items()}
 assert BODY_LEN == {0: 62, 1: 36, 2: 12, 3: 1, 4: 5, 5: 8, 6: 5, 7: 8, 8: 0, 9: 17, 10: 2, 11: 6, 12: 3, 13: 12, 14: 120,
                     15: 4, T_STATE2: 44, T_PONG2: 16, T_SCFG: 14, T_CALRES: 30, T_BUILD2: 22, T_TRIG2: 12,
-                    T_BTCMD: 8, T_BTSTATE: 15, T_BTDEV: 44}, BODY_LEN
+                    T_BTCMD: 8, T_BTSTATE: 15, T_BTDEV: 44, T_BTCTRL: 46}, BODY_LEN
 # (typ w nagłówku, długość treści) -> typ w programie
 BY_SIZE = {(WIRE.get(t, t), s.size): t for t, s in BODY.items()}
 assert len(BY_SIZE) == len(BODY), "dwa typy z tą samą długością w jednym typie nagłówka"

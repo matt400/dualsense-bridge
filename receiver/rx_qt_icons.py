@@ -390,6 +390,18 @@ def _bluetooth(p):
     p.drawPath(path)
 
 
+def _usb(p):
+    """Wtyczka USB: obudowa, metalowa końcówka z dwoma otworami - dongle Bluetooth."""
+    p.setPen(_pen(FG, 1.6))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawRoundedRect(QRectF(7.5, 10, 9, 11), 2, 2)
+    p.drawRect(QRectF(9, 3.5, 6, 6.5))
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QColor(FG))
+    p.drawRect(QRectF(10.3, 5.5, 1.4, 1.6))
+    p.drawRect(QRectF(12.3, 5.5, 1.4, 1.6))
+
+
 def _keys(p):
     """Pad w zarysie z przyciskami - lista skrótów pada."""
     p.setPen(_pen(FG, 1.6))
@@ -424,7 +436,7 @@ def _draw(p, name):
          "fullscreen": _fullscreen, "rumble": _rumble, "gear": _gear, "update": _update, "backup": _backup,
          "stopwatch": _stopwatch, "plus": _plus, "press": _press, "reset": _reset, "log": _log, "copy": _copy,
          "trash": _trash, "phone": _phone, "lightbar": _lightbar, "wake": _wake, "target": _target, "gyro": _gyro,
-         "shield": _shield, "pulse": _pulse, "bluetooth": _bluetooth, "keys": _keys}[name](p)
+         "shield": _shield, "pulse": _pulse, "bluetooth": _bluetooth, "keys": _keys, "usb": _usb}[name](p)
 
 
 def pixmap(name, size=24, dim=False):
@@ -453,4 +465,4 @@ def has_icon(name):
     return name in FACE or name in BADGES or name.startswith("dpad_") or name in (
         "ps", "share", "options", "crown", "mouse", "touchpad", "tv", "power", "restart", "window", "fullscreen", "rumble", "gear",
         "update", "backup", "stopwatch", "plus", "press", "reset", "log", "copy", "trash", "phone", "lightbar", "wake",
-        "target", "gyro", "shield", "pulse", "bluetooth", "keys")
+        "target", "gyro", "shield", "pulse", "bluetooth", "keys", "usb")

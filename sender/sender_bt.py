@@ -12,6 +12,8 @@ Bez otwartego panelu w oknie: tylko stan adaptera co IDLE_S (kropka w nagłówku
 (okno ponawia BT_LIST, dopóki panel jest otwarty) i w trakcie skanu / operacji: stan i lista urządzeń co sekundę.
 Operacje idą po jednej (BlueZ odrzuca równoległe); druga w trakcie -> wynik BTR_BUSY. Brak busctl, bluetoothd,
 adaptera albo uprawnień to stan BTS_* w oknie, nie wyjątek - pętla działa dalej.
+Przy kilku kontrolerach (wbudowany + dongle USB) wybór robi sender_btadapter - przy każdym odświeżeniu stanu, więc
+dongle wpięty w trakcie pracy przejmuje pady bez restartu; tryb (auto / wbudowany / ręcznie) można zmienić z okna.
 """
 import asyncio
 import contextlib
@@ -19,17 +21,22 @@ import json
 import time
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
+from pathlib import Path
 from subprocess import DEVNULL, PIPE
 from typing import Any
 
+import sender_btadapter as btadapter
 import sender_net as net
 import sender_state as state
-from proto import (BT_ACTIVE_S, BT_CONNECT, BT_DEV_MAX, BT_DISCONNECT, BT_LIST, BT_PAIR, BT_POWER, BT_REMOVE,
-                   BT_RSSI_NONE, BT_SCAN_MAX_S, BT_SCAN_START, BT_SCAN_STOP, BTD_CONNECTED, BTD_PAD, BTD_PAIRED,
-                   BTD_TRUSTED, BTF_BUSY, BTF_SCANNING, BTR_AUTH, BTR_BUSY, BTR_DENIED, BTR_FAILED, BTR_NONE,
+from proto import (BODY, BTA_MANUAL, BTA_PICK, BTC_ACTIVE, BTC_BLOCKED, BTC_FIXED, BTC_PICKED, BTC_USB,
+                   BTD_CONNECTED, BTD_PAD, BTD_PAIRED, BTD_TRUSTED, BTF_BUSY, BTF_HAS_BUILTIN, BTF_HAS_USB,
+                   BTF_MODE_SHIFT, BTF_ON_USB, BTF_SCANNING, BTR_AUTH, BTR_BUSY, BTR_DENIED, BTR_FAILED, BTR_NONE,
                    BTR_NOT_FOUND, BTR_OFF, BTR_OK, BTR_RUNNING, BTR_TIMEOUT, BTS_BLOCKED, BTS_DENIED, BTS_ERROR,
-                   BTS_NO_ADAPTER, BTS_NO_SERVICE, BTS_NO_TOOL, BTS_OFF, BTS_OK, BODY, T_BTDEV, T_BTSTATE, clamp,
+                   BTS_NO_ADAPTER, BTS_NO_SERVICE, BTS_NO_TOOL, BTS_OFF, BTS_OK, BT_ACTIVE_S, BT_ADAPTER,
+                   BT_ADAPTER_USE, BT_CONNECT, BT_DEV_MAX, BT_DISCONNECT, BT_LIST, BT_PAIR, BT_POWER, BT_REMOVE,
+                   BT_RSSI_NONE, BT_SCAN_MAX_S, BT_SCAN_START, BT_SCAN_STOP, T_BTCTRL, T_BTDEV, T_BTSTATE, clamp,
                    mac_bytes, mac_text, utf8_field)
+from sender_config import C
 
 BTF_LIST = 4                 # flaga btstate (poza proto.BTF_*, bo znaczy tylko "runda listy idzie zaraz za mną")
 BUSCTL, BLUETOOTHCTL = "busctl", "bluetoothctl"
@@ -39,6 +46,7 @@ IDLE_S = 5.0                 # stan adaptera bez otwartego panelu
 TICK_S = 1.0                 # stan i lista przy otwartym panelu / skanie
 DUP_S = 0.5                  # btcmd przychodzi 3x (UDP) - powtórki tej samej operacji w tym czasie pomijane
 NAME_MAX = BODY[T_BTDEV].size - 12
+CTRL_NAME_MAX = BODY[T_BTCTRL].size - 6
 # błąd z busctl (komunikat BlueZ / D-Bus, małe litery) -> wynik operacji / stan adaptera
 RESULTS = (("authentication", BTR_AUTH), ("access denied", BTR_DENIED), ("permission", BTR_DENIED),
            ("not authorized", BTR_DENIED), ("does not exist", BTR_NOT_FOUND), ("unknown object", BTR_NOT_FOUND),
@@ -106,14 +114,15 @@ def is_pad(props: dict[str, Any]) -> bool:
     return _val(props, "Icon") == "input-gaming" or ((cls >> 8) & 0x1F == 0x05 and (cls >> 2) & 0x0F in (1, 2))
 
 
-def parse_objects(text: str) -> tuple[int, str, list[Device]]:
+def parse_objects(text: str, prefer: str = "") -> tuple[int, str, list[Device]]:
     """Wynik `busctl --json=short call ... GetManagedObjects` -> (BTS_*, ścieżka adaptera, urządzenia).
-    Pierwszy adapter (hci0); urządzenia bez nazwy i bez parowania (beacony, telefony w pobliżu) pominięte."""
+    Adapter wybrany przez sender_btadapter (prefer, np. /org/bluez/hci1), inaczej pierwszy włączony, a gdy żaden nie
+    jest włączony - pierwszy (hci0); urządzenia bez nazwy i bez parowania (beacony, telefony w pobliżu) pominięte."""
     objects: dict[str, dict[str, Any]] = json.loads(text)["data"][0]
     adapters = {path: ifaces[ADAPTER] for path, ifaces in objects.items() if ADAPTER in ifaces}
     if not adapters:
         return BTS_NO_ADAPTER, "", []
-    path = min(adapters)
+    path = prefer if prefer in adapters else min(adapters, key=lambda p: (not _val(adapters[p], "Powered", False), p))
     a = adapters[path]
     if _val(a, "Powered", False):
         st = BTS_OK
@@ -137,7 +146,7 @@ def parse_objects(text: str) -> tuple[int, str, list[Device]]:
 class Bluetooth:
     """Stan i operacje Bluetooth nadajnika. run: wykonawca poleceń (testy podstawiają własny)."""
 
-    def __init__(self, run: Runner = run_cmd, emit: Callable[..., None] | None = None):
+    def __init__(self, run: Runner = run_cmd, emit: Callable[..., None] | None = None, sysfs: Path | None = None):
         self.run = run
         self.emit = emit or (lambda *a: net.emit(*a))
         self.state = BTS_ERROR
@@ -156,6 +165,14 @@ class Bluetooth:
         self.gen = 0
         self.dups: dict[tuple[int, int, bytes], float] = {}
         self.wake: asyncio.Event | None = None
+        # wybór kontrolera (sender_btadapter): tryb BTA_*, ostatnio widziane kontrolery, wybrany
+        self.sysfs = sysfs                           # /sys/class/bluetooth; None = bez wyboru kontrolera (testy)
+        self.mode: int | None = None                 # wczytany przy pierwszym użyciu (konfiguracja jest już gotowa)
+        self.key = ""                                # BTA_PICK: identyfikator wybranego kontrolera
+        self.cgen = 0                                # runda listy kontrolerów
+        self.ctrls: tuple[btadapter.Ctrl, ...] | None = None
+        self.pick: btadapter.Ctrl | None = None
+        self.adapter_err = ""
 
     # ---------- polecenia z okna (wątek pętli asyncio, z on_readable) ----------
     def on_command(self, op: int, arg: int, mac: bytes, now: float | None = None) -> None:
@@ -230,6 +247,7 @@ class Bluetooth:
 
     async def refresh(self) -> None:
         """Stan adaptera i lista urządzeń z BlueZ. Błąd = stan BTS_* (okno pokazuje powód), lista bez zmian."""
+        await self.check_adapters()
         try:
             rc, out, err = await self.run((BUSCTL, "--json=short", f"--timeout={CALL_S:g}", "call", BLUEZ, "/",
                                            "org.freedesktop.DBus.ObjectManager", "GetManagedObjects"), CALL_S + 2)
@@ -244,10 +262,91 @@ class Bluetooth:
             self.state = classify(err or out, STATES, BTS_ERROR)
             return
         try:
-            self.state, self.adapter, self.devices = parse_objects(out)
+            self.state, self.adapter, self.devices = parse_objects(out, self.prefer())
         except (ValueError, KeyError, IndexError, TypeError, AttributeError) as e:
             print(f"Bluetooth: unexpected busctl output: {e!r}")
             self.state = BTS_ERROR
+
+    # ---------- wybór kontrolera ----------
+    def get_mode(self) -> int:
+        """Tryb BTA_* (i self.key przy BTA_PICK): bt.json z okna, inaczej bt_adapter z sender.toml."""
+        if self.mode is None:
+            default = btadapter.mode_from(getattr(C, "BT_ADAPTER", "auto"))
+            self.mode, self.key = btadapter.load_mode(getattr(C, "BT_FILE", ""), default)
+        return self.mode
+
+    def prefer(self) -> str:
+        return f"/org/bluez/{self.pick.name}" if self.pick is not None else ""
+
+    async def check_adapters(self, force: bool = False) -> None:
+        """Kontrolery z /sys; przy zmianie zestawu (wpięty / wyjęty dongle) albo trybu - wybór od nowa. Błąd zapisu
+        (nadajnik bez roota) raz w logu, nie wyjątek."""
+        if self.sysfs is None:
+            return
+        try:
+            ctrls = btadapter.scan(self.sysfs)
+        except OSError:
+            ctrls = ()
+        if not force and ctrls == self.ctrls:
+            return
+        self.ctrls, old = ctrls, self.pick
+        mode = self.get_mode()
+        try:
+            self.pick = await asyncio.to_thread(btadapter.apply, ctrls, mode, self.key, self.sysfs)
+            self.adapter_err = ""
+        except OSError as e:
+            self.pick = btadapter.choose(ctrls, mode, self.key)
+            if str(e) != self.adapter_err:
+                self.adapter_err = str(e)
+                print(f"Bluetooth adapter: cannot switch ({e}) - run the sender as root")
+            return
+        if len(ctrls) > 1 or force:
+            print(btadapter.describe(ctrls, self.pick, mode))
+        if self.pick is not None and self.pick != old:
+            # odblokowany kontroler BlueZ zwykle włącza sam (AutoEnable); gdy nie - tu, bez czekania na okno
+            with contextlib.suppress(BtError):
+                await self.set_prop(self.prefer(), ADAPTER, "Powered", True)
+
+    async def set_mode(self, mode: int, key: str = "") -> None:
+        """Z okna: BTA_AUTO / BTA_MANUAL (BT_ADAPTER) albo konkretny kontroler (BT_ADAPTER_USE -> BTA_PICK)."""
+        if self.sysfs is None:
+            raise BtError("adapter choice disabled")
+        if mode not in btadapter.MODE_NAMES or (mode == BTA_PICK) != bool(key):
+            raise BtError(f"unknown adapter mode {mode}")
+        was = self.get_mode()
+        self.mode, self.key = mode, key
+        btadapter.save_mode(getattr(C, "BT_FILE", ""), mode, key)
+        if mode == BTA_MANUAL and was != BTA_MANUAL:
+            await asyncio.to_thread(btadapter.unblock_all, self.ctrls or btadapter.scan(self.sysfs), self.sysfs)
+        await self.check_adapters(force=True)
+
+    async def use_adapter(self, index: int) -> None:
+        """Kontroler hciN z listy w oknie - zapamiętany po identyfikatorze urządzenia, nie po numerze."""
+        await self.check_adapters()
+        c = next((c for c in self.ctrls or () if c.index == index), None)
+        if c is None:
+            raise BtError(f"no controller hci{index}", BTR_NOT_FOUND)
+        await self.set_mode(BTA_PICK, c.key)
+
+    def adapter_flags(self) -> int:
+        """Bity btstate: jakie kontrolery są, czy używany to USB, tryb (0 = bez wyboru - okno chowa przełącznik)."""
+        if self.sysfs is None:
+            return 0
+        ctrls = self.ctrls or ()
+        return ((BTF_HAS_BUILTIN if any(not c.usb for c in ctrls) else 0) | (BTF_HAS_USB if any(c.usb for c in ctrls) else 0)
+                | (BTF_ON_USB if self.pick is not None and self.pick.usb else 0) | self.get_mode() << BTF_MODE_SHIFT)
+
+    def ctrl_rows(self) -> list[tuple[int, int, str]]:
+        """Kontrolery do okna: (BTC_*, N z hciN, nazwa urządzenia)."""
+        picked = self.get_mode() == BTA_PICK
+        rows = []
+        for c in self.ctrls or ():
+            flags = ((BTC_USB if c.usb else 0) | (BTC_FIXED if c.rank == btadapter.USB_FIXED else 0)
+                     | (BTC_ACTIVE if c == self.pick else 0)
+                     | (BTC_BLOCKED if btadapter.is_blocked(c.name, self.sysfs) else 0)
+                     | (BTC_PICKED if picked and c.key == self.key else 0))
+            rows.append((flags, c.index, c.label))
+        return rows
 
     def no_adapter(self) -> BtError:
         """Brak adaptera; przy braku uprawnień (nadajnik nie jako root) okno pokazuje "brak uprawnień", a nie
@@ -376,7 +475,8 @@ class Bluetooth:
         """btstate (+ runda btdev, gdy full): stan, skan, ostatnia operacja, lista urządzeń."""
         now = time.monotonic() if now is None else now
         scanning = self.scanning()
-        flags = (BTF_SCANNING if scanning else 0) | (BTF_BUSY if self.running else 0) | (BTF_LIST if full else 0)
+        flags = ((BTF_SCANNING if scanning else 0) | (BTF_BUSY if self.running else 0) | (BTF_LIST if full else 0)
+                 | self.adapter_flags())
         left = clamp(round(self.scan_end - now), 0, 255) if scanning else 0
         devs = self.devices if full else []
         if full:
@@ -387,6 +487,11 @@ class Bluetooth:
         for k, d in enumerate(devs):
             rssi = BT_RSSI_NONE if d.rssi is None else clamp(d.rssi, BT_RSSI_NONE + 1, 127)
             self.emit(T_BTDEV, 255, self.gen, k, len(devs), mac_bytes(d.mac), rssi, d.flags, utf8_field(d.name, NAME_MAX, "…"))
+        if full and self.sysfs is not None:          # kontrolery nadajnika (panel: lista z nazwami, "Użyj")
+            rows = self.ctrl_rows()
+            self.cgen = (self.cgen + 1) & 0xFFFF
+            for k, (cflags, index, label) in enumerate(rows):
+                self.emit(T_BTCTRL, 255, self.cgen, k, len(rows), cflags, index, utf8_field(label, CTRL_NAME_MAX, "…"))
 
     async def loop(self) -> None:
         """Stan do receivera: co IDLE_S sam stan, przy otwartym panelu / skanie / operacji co TICK_S z listą.
@@ -415,9 +520,12 @@ OPS: dict[int, Callable[[Bluetooth, int, str], Awaitable[None]]] = {
     BT_DISCONNECT: lambda b, _arg, mac: b.disconnect(mac),
     BT_REMOVE: lambda b, _arg, mac: b.remove(mac),
     BT_POWER: lambda b, arg, _mac: b.power(bool(arg)),
+    BT_ADAPTER: lambda b, arg, _mac: b.set_mode(arg),
+    BT_ADAPTER_USE: lambda b, arg, _mac: b.use_adapter(arg),
 }
 OP_NAMES = {BT_LIST: "list", BT_SCAN_START: "scan", BT_SCAN_STOP: "scan stop", BT_PAIR: "pair", BT_CONNECT: "connect",
-            BT_DISCONNECT: "disconnect", BT_REMOVE: "remove", BT_POWER: "power"}
+            BT_DISCONNECT: "disconnect", BT_REMOVE: "remove", BT_POWER: "power", BT_ADAPTER: "adapter",
+            BT_ADAPTER_USE: "use adapter"}
 
 
-bt = Bluetooth()
+bt = Bluetooth(sysfs=btadapter.SYSFS)

@@ -16,16 +16,24 @@ from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
 
 import rx_bt as BT
-from proto import BT_LIST, BT_SCAN_MAX_S, BTR_NONE, BTR_OK, BTR_RUNNING, BTS_OFF, BTS_OK
+from proto import (BT_ADAPTER, BT_ADAPTER_USE, BT_LIST, BT_SCAN_MAX_S, BTA_AUTO, BTA_MANUAL, BTA_PICK, BTR_NONE,
+                   BTR_OK, BTR_RUNNING, BTS_OFF, BTS_OK)
 from rx_i18n import _
 from rx_qt_drawer import SideDrawer
 from rx_qt_icons import pixmap
 from rx_qt_style import ACCENT, BAD, LINE, MUTED, OK, WARN, px, set_prop
-from rx_qt_widgets import ConfirmButton, button, icon_button, icon_label, label
+from rx_qt_widgets import ConfirmButton, Segmented, button, icon_button, icon_label, label
 
 REFRESH_MS = 250
 DOT = {"ok": OK, "scan": ACCENT, "warn": WARN, "bad": BAD, "": MUTED}
 ACTION = {"pair": "Sparuj", "connect": "Połącz", "disconnect": "Rozłącz"}
+ADAPTER_MODES = ((BTA_AUTO, "Auto"), (BTA_PICK, "Wybrany"), (BTA_MANUAL, "Ręcznie"))
+ADAPTER_TIPS = {
+    BTA_AUTO: "Najlepszy kontroler: dongle USB przed wbudowanym (zwykle mniejsze opóźnienie), pozostałe wyłączone",
+    BTA_PICK: "Zawsze kontroler wybrany przyciskiem Użyj (gdy go nie ma - jak Auto)",
+    BTA_MANUAL: "Nadajnik nie zmienia kontrolerów - ustawiasz je sam (rfkill, bluetoothctl)",
+}
+CTRL_KIND = {"usb": "dongle USB", "fixed": "wewnętrzny USB", "builtin": "wbudowany"}
 
 
 @cache
@@ -157,6 +165,48 @@ class DeviceRow(QFrame):
         return [self.btn, self.forget]
 
 
+class ControllerRow(QFrame):
+    """Kontroler Bluetooth nadajnika: ikona, nazwa urządzenia, rodzaj / hciN / stan i przycisk Użyj."""
+
+    use = Signal(int)                # N z hciN
+
+    def __init__(self, c: BT.Controller):
+        super().__init__()
+        self.setObjectName("row")
+        self.index = c.index
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(px(10), px(6), px(8), px(6))
+        lay.setSpacing(px(8))
+        self.icon = icon_label("usb" if c.usb else "bluetooth", px(20))
+        text = QVBoxLayout()
+        text.setSpacing(px(2))
+        self.name = ElidedLabel("name")
+        self.detail = label("", "small")
+        text.addWidget(self.name)
+        text.addWidget(self.detail)
+        self.btn = button(_("Użyj"), primary=True, small=True)
+        self.btn.clicked.connect(lambda: self.use.emit(self.index))
+        lay.addWidget(self.icon)
+        lay.addLayout(text, 1)
+        lay.addWidget(self.btn)
+        self.update_from(c, False)
+
+    def update_from(self, c: BT.Controller, busy: bool) -> None:
+        self.index = c.index
+        self.name.set_full(c.name)
+        kind = "fixed" if c.fixed else "usb" if c.usb else "builtin"
+        state, level = ((_("używany"), "ok") if c.active else (_("wyłączony"), "") if c.blocked
+                        else (_("włączony"), ""))
+        pin = "  ·  " + _("wybrany") if c.picked else ""
+        self.detail.setText(f"{_(CTRL_KIND[kind])}  ·  hci{c.index}  ·  {state}{pin}")
+        set_prop(self.detail, "level", level)
+        self.btn.setVisible(not c.active)
+        self.btn.setEnabled(not busy)
+
+    def focusables(self) -> list[QWidget]:
+        return [self.btn]
+
+
 class BtDrawer(SideDrawer):
     """Wysuwany z prawej panel Bluetooth nadajnika nad oknem `host` (centralny widżet okna)."""
 
@@ -172,6 +222,24 @@ class BtDrawer(SideDrawer):
         self.rows: dict[str, DeviceRow] = {}
         self.status = label("", wrap=True)
         lay.addWidget(self.status)
+        # wybór kontrolera nadajnika (wbudowany / dongle USB) - tylko nadajnik, który go obsługuje
+        self.adapter_box = QWidget()
+        box = QVBoxLayout(self.adapter_box)
+        box.setContentsMargins(0, 0, 0, 0)
+        box.setSpacing(px(4))
+        box.addWidget(label(_("Kontroler Bluetooth"), "dim"))
+        self.adapter_seg = Segmented([(str(m), _(t)) for m, t in ADAPTER_MODES])
+        for m, _t in ADAPTER_MODES:
+            self.adapter_seg.buttons[str(m)].setToolTip(_(ADAPTER_TIPS[m]))
+        self.adapter_seg.changed.connect(self.set_adapter)
+        box.addWidget(self.adapter_seg)
+        self.ctrl_lay = QVBoxLayout()
+        self.ctrl_lay.setSpacing(px(4))
+        self.ctrl_rows: dict[tuple[int, str], ControllerRow] = {}
+        box.addLayout(self.ctrl_lay)
+        self.adapter_info = label("", "small", wrap=True)
+        box.addWidget(self.adapter_info)
+        lay.addWidget(self.adapter_box)
         self.power_btn = button(_("Włącz Bluetooth"), primary=True)
         self.power_btn.clicked.connect(self.power_on)
         lay.addWidget(self.power_btn)
@@ -216,6 +284,20 @@ class BtDrawer(SideDrawer):
         BT.power(True)
         self.refresh()
 
+    def set_adapter(self, key: str) -> None:
+        mode = int(key)
+        if mode == BTA_PICK:                 # "Wybrany": przypnij kontroler, którego nadajnik teraz używa
+            c = BT.active_controller() or next(iter(BT.controllers), None)
+            if c is not None:
+                BT.use_controller(c.index)
+        else:
+            BT.adapter(mode)
+        self.refresh()
+
+    def use_controller(self, index: int) -> None:
+        BT.use_controller(index)
+        self.refresh()
+
     def toggle_scan(self) -> None:
         s = BT.status
         BT.scan(not (s is not None and s.scanning))
@@ -246,8 +328,50 @@ class BtDrawer(SideDrawer):
                               _("Skanuj ({s} s)").format(s=BT_SCAN_MAX_S))
         set_prop(self.scan_btn, "primary", not scanning)
         self.scan_btn.setEnabled(state in (BTS_OK, BTS_OFF) and (scanning or not busy))
+        self._adapter(s if ok else None, busy, now)
         self._rows(now, busy, enabled=state == BTS_OK)
         self._result(s)
+
+    def _adapter(self, s: BT.Status | None, busy: bool, now: float) -> None:
+        """Wybór kontrolera: tryb (nie w trakcie własnej zmiany - bez mignięcia starym trybem), lista kontrolerów
+        z nazwami i przyciskiem Użyj, opis."""
+        shown = s is not None and s.mode != 0
+        self.adapter_box.setVisible(shown)
+        if not shown:
+            return
+        if BT.busy_op("", now) not in (BT_ADAPTER, BT_ADAPTER_USE) and str(s.mode) in self.adapter_seg.buttons:
+            self.adapter_seg.set(str(s.mode))
+        for b in self.adapter_seg.buttons.values():
+            b.setEnabled(not busy)
+        self._controllers(busy)
+        if s.mode == BTA_MANUAL:
+            text = _(ADAPTER_TIPS[BTA_MANUAL])
+        elif s.mode == BTA_AUTO and not s.has_usb:
+            text = _("Dongle Bluetooth USB zwykle zmniejsza opóźnienie padów")
+        else:
+            text = ""
+        if len(BT.controllers) > 1:
+            text += ("  ·  " if text else "") + _("Po zmianie kontrolera sparuj pady ponownie (każdy ma własny adres)")
+        self.adapter_info.setText(text)
+        self.adapter_info.setVisible(bool(text))
+
+    def _controllers(self, busy: bool) -> None:
+        """Wiersze kontrolerów - trwałe (fokus z pada nie skacze), klucz = numer i nazwa."""
+        order = [(c.index, c.name) for c in BT.controllers]
+        for key in [k for k in self.ctrl_rows if k not in order]:
+            row = self.ctrl_rows.pop(key)
+            self.ctrl_lay.removeWidget(row)
+            row.hide()
+            row.deleteLater()
+        for k, c in enumerate(BT.controllers):
+            row = self.ctrl_rows.get((c.index, c.name))
+            if row is None:
+                row = self.ctrl_rows[(c.index, c.name)] = ControllerRow(c)
+                row.use.connect(self.use_controller)
+            if self.ctrl_lay.indexOf(row) != k:
+                self.ctrl_lay.insertWidget(k, row)
+                self._tab_order()
+            row.update_from(c, busy)
 
     def _result(self, s: BT.Status | None) -> None:
         if s is None or s.op == BT_LIST or s.result == BTR_NONE:
@@ -284,7 +408,8 @@ class BtDrawer(SideDrawer):
 
     def _tab_order(self) -> None:
         """Kolejność fokusu (Tab, D-pad) jak na ekranie: zamknij, zasilanie, skan, wiersze od góry."""
-        chain = [self.close_btn, self.power_btn, self.scan_btn]
+        chain = [self.close_btn, *self.adapter_seg.buttons.values(),
+                 *(b for r in self.ctrl_rows.values() for b in r.focusables()), self.power_btn, self.scan_btn]
         for k in range(self.list_lay.count()):
             w = self.list_lay.itemAt(k).widget()
             if isinstance(w, DeviceRow):

@@ -102,7 +102,12 @@ many = {"/org/bluez/hci0": {"org.bluez.Adapter1": {"Powered": var("b", True)}}}
 many |= {SB.dev_path("/org/bluez/hci0", f"aa:00:00:00:00:{k:02x}"): {"org.bluez.Device1": {
     "Address": var("s", f"AA:00:00:00:00:{k:02X}"), "Name": var("s", f"Urządzenie {k:02}")}} for k in range(1, 60)}
 assert len(SB.parse_objects(json.dumps({"data": [many]}))[2]) == proto.BT_DEV_MAX
-ok("BlueZ: pierwszy adapter, włączony / wyłączony / rfkill, pady (klasa, ikona), bez beaconów, kolejność, limit listy")
+two = {"/org/bluez/hci0": {"org.bluez.Adapter1": {"Powered": var("b", False), "PowerState": var("s", "off-blocked")}},
+       "/org/bluez/hci1": {"org.bluez.Adapter1": {"Powered": var("b", True)}}}
+assert SB.parse_objects(json.dumps({"data": [two]}))[:2] == (BTS_OK, "/org/bluez/hci1"), "wbudowany zablokowany -> dongle"
+two["/org/bluez/hci1"]["org.bluez.Adapter1"]["Powered"] = var("b", False)
+assert SB.parse_objects(json.dumps({"data": [two]}))[:2] == (BTS_BLOCKED, "/org/bluez/hci0"), "żaden włączony -> hci0"
+ok("BlueZ: pierwszy włączony adapter (dongle USB), włączony / wyłączony / rfkill, pady (klasa, ikona), bez beaconów, kolejność, limit listy")
 
 import rxenv
 rx_sent = rxenv.sent                           # pakiety receivera do nadajnika (rxenv)

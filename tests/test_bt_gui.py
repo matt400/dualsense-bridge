@@ -14,8 +14,8 @@ C.cfg["tray"] = False
 import rx_bt as RB
 import rx_qt
 from proto import (BODY, BT_CONNECT, BT_DISCONNECT, BT_LIST, BT_PAIR, BT_POWER, BT_REMOVE, BT_SCAN_MAX_S, BT_SCAN_START,
-                   BT_SCAN_STOP, BTD_CONNECTED, BTD_PAD, BTD_PAIRED, BTD_TRUSTED, BTF_BUSY, BTF_SCANNING, BTR_OK,
-                   BTR_RUNNING, BTS_NO_TOOL, BTS_OFF, BTS_OK, T_BTCMD, T_BTDEV, T_BTSTATE, mac_bytes)
+                   BT_SCAN_STOP, BT_ADAPTER, BT_ADAPTER_USE, BTA_AUTO, BTA_PICK, BTC_ACTIVE, BTC_BLOCKED, BTC_PICKED, BTC_USB, BTD_CONNECTED, BTD_PAD, BTD_PAIRED, BTD_TRUSTED, BTF_BUSY, BTF_HAS_BUILTIN, BTF_HAS_USB, BTF_MODE_SHIFT, BTF_ON_USB, BTF_SCANNING, BTR_OK,
+                   BTR_RUNNING, BTS_NO_TOOL, BTS_OFF, BTS_OK, T_BTCMD, T_BTCTRL, T_BTDEV, T_BTSTATE, mac_bytes)
 from rx_buttons import BIT, BUTTON_CODES
 from rx_qt_bt import DeviceRow, status_icon
 ok = lambda msg: print("OK  ", msg)
@@ -196,6 +196,51 @@ assert not drawer.is_open() and win.fullscreen() and QApplication.focusWidget() 
 press("circle"); pump(100)
 assert not win.fullscreen(), "drugie ○ - jak dotąd: wyjście z pełnego ekranu"
 ok("tryb TV: ✕ na ikonie otwiera, D-pad tylko po panelu (ukryte pominięte), ✕ klika, R1 nie zmienia pada, ○ zamyka")
+
+# ---------- kontroler Bluetooth nadajnika (wbudowany / dongle USB) ----------
+cgen = [0]
+
+
+def bt_ctrls(rows):
+    """Runda btctrl jak z nadajnika: (flagi BTC_*, N, nazwa)."""
+    cgen[0] += 1
+    for k, (f, n, name) in enumerate(rows):
+        RB.on_packet(T_BTCTRL, N.codec.pack(T_BTCTRL, 255, cgen[0], k, len(rows), f, n, name.encode()))
+
+
+win.bt_btn.click(); pump(260)
+bt_list(DEVS); drawer.refresh()
+assert not drawer.adapter_box.isVisible(), "nadajnik bez wyboru kontrolera - przełącznik ukryty"
+both = BTF_HAS_BUILTIN | BTF_HAS_USB
+QC, TP = "Qualcomm WCN3990", "Realtek TP-Link UB5A Adapter"
+bt_list(DEVS, flags=both | BTF_ON_USB | BTA_AUTO << BTF_MODE_SHIFT)
+bt_ctrls([(BTC_BLOCKED, 0, QC), (BTC_USB | BTC_ACTIVE, 1, TP)]); drawer.refresh(); win.slow_tick(); pump()
+assert drawer.adapter_box.isVisible() and drawer.adapter_seg.value() == str(BTA_AUTO)
+rows_c = list(drawer.ctrl_rows.values())
+assert [r.name.full for r in rows_c] == [QC, TP], "wszystkie moduły z nazwą urządzenia"
+assert "wbudowany" in rows_c[0].detail.text() and "hci0" in rows_c[0].detail.text() and "wyłączony" in rows_c[0].detail.text()
+assert "dongle USB" in rows_c[1].detail.text() and "używany" in rows_c[1].detail.text()
+assert rows_c[0].btn.isVisible() and not rows_c[1].btn.isVisible(), "Użyj tylko przy nieużywanym"
+assert TP in win.bt_btn.toolTip(), "kropka stanu: nazwa używanego kontrolera"
+assert "sparuj pady ponownie" in drawer.adapter_info.text()
+drawer.grab().save(os.path.join(SHOTS, "bt_drawer_adapter.png"))
+rxenv.sent.clear()
+rows_c[0].btn.click()
+assert without_list(cmds()) == [(BT_ADAPTER_USE, 0, bytes(6))] * 3, "Użyj = BT_ADAPTER_USE z numerem hciN"
+bt_list(DEVS, flags=both | BTA_PICK << BTF_MODE_SHIFT, op=BT_ADAPTER_USE, res=BTR_OK)
+bt_ctrls([(BTC_ACTIVE | BTC_PICKED, 0, QC), (BTC_USB | BTC_BLOCKED, 1, TP)]); drawer.refresh()
+assert drawer.adapter_seg.value() == str(BTA_PICK) and "wybrany" in rows_c[0].detail.text()
+assert not rows_c[0].btn.isVisible() and rows_c[1].btn.isVisible() and "Zmiana kontrolera: gotowe" in drawer.result.text()
+drawer.adapter_seg.buttons[str(BTA_AUTO)].click()
+assert without_list(cmds()) == [(BT_ADAPTER, BTA_AUTO, bytes(6))] * 3
+drawer.refresh()
+assert drawer.adapter_seg.value() == str(BTA_AUTO), "w trakcie zmiany bez mignięcia starym trybem"
+bt_list(DEVS, flags=BTF_HAS_BUILTIN | BTA_AUTO << BTF_MODE_SHIFT)
+bt_ctrls([(BTC_ACTIVE, 0, QC)]); drawer.refresh(); pump()
+assert [r.name.full for r in drawer.ctrl_rows.values()] == [QC], "wyjęty dongle znika z listy"
+assert "Dongle Bluetooth USB zwykle zmniejsza" in drawer.adapter_info.text(), "bez dongla: podpowiedź"
+drawer.close_drawer(); pump(260)
+ok("kontrolery: lista wszystkich z nazwą, rodzajem, hciN i stanem; Użyj (BT_ADAPTER_USE), Auto / Wybrany / Ręcznie")
 
 # ---------- stary / milczący nadajnik ----------
 RB.reset()
