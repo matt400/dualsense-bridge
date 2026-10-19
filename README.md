@@ -114,3 +114,7 @@ Full list: [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
 - [docs/FEATURES.md](docs/FEATURES.md) – all features of the window, console mode, master pad, Wake-on-LAN and the Test view
 - [docs/CONFIGURATION.md](docs/CONFIGURATION.md) – settings files (`sender.toml`, `receiver.toml`, `console.json`) and updating
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) – code structure and tests
+
+## License
+
+[MIT](LICENSE)
