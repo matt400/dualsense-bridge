@@ -17,6 +17,10 @@ Na PC jest okno do sterowania wszystkim, także samym padem:
 - parowanie padów z nadajnikiem bez podchodzenia do niego,
 - pad master, któremu wolno więcej (np. gdy grają dzieci).
 
+![Okno receivera: pady z baterią i opóźnieniem, rysunek pada do remapowania](docs/img/main.png)
+
+Więcej zrzutów: [docs/FUNKCJE.pl.md](docs/FUNKCJE.pl.md#zrzuty-ekranu).
+
 ```
 DualSense ──Bluetooth──> nadajnik (sender/) ──sieć, UDP 5005──> PC (receiver/) ──> wirtualny DualSense / DS4 ──> gry
                                                                        └──> serwer DSU (gyro dla emulatorów)

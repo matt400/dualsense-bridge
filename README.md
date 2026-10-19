@@ -17,6 +17,10 @@ The PC has a window that controls everything, including from the pad itself:
 - pairing pads with the sender without walking over to it,
 - a master pad that is allowed more (e.g. when kids are playing).
 
+![Receiver window: pads with battery and latency, the pad drawing for remapping](docs/img/main.png)
+
+More screenshots: [docs/FEATURES.md](docs/FEATURES.md#screenshots).
+
 ```
 DualSense ──Bluetooth──> sender (sender/) ──network, UDP 5005──> PC (receiver/) ──> virtual DualSense / DS4 ──> games
                                                                         └──> DSU server (gyro for emulators)
