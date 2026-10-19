@@ -3,8 +3,9 @@
 **English** | [Polski](KONFIGURACJA.pl.md)
 
 All settings with their defaults and descriptions are in `sender/sender.example.toml` and
-`receiver/receiver.example.toml`. Copy the file without `.example`, uncomment the lines you need and run with
-`--config sender.toml` / `--config receiver.toml`. `*.toml` files are in `.gitignore` because they may contain the key.
+`receiver/receiver.example.toml`. Copy the file without `.example` and uncomment the lines you need. The receiver
+reads `receiver.toml` next to `receiver_controller.py` by itself; the sender needs `--config sender.toml` (the
+service installer adds it). Another file: `--config other.toml`. `*.toml` files are in `.gitignore` because they may contain the key.
 
 When defaults change, the sender fixes lines with **old default values** in `sender.toml` by itself at startup
 (e.g. `pad_min_dt = 0.004` -> `0.001`); your own settings, comments and file layout stay, a backup goes to

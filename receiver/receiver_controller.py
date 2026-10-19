@@ -30,7 +30,8 @@ z pada samo wraca na monitor; start ustawia startup_mode (extend / internal). Us
 Pad master (rx_master): wybrane funkcje tylko dla jednego pada; PS + przycisk = pauza / zamknij grę / uśpij /
 wyłącz PC; PS + R3 przytrzymane 3 s = ten pad zostaje masterem; połączenie mastera włącza tryb konsoli.
 Ustawienia: okno -> Ustawienia -> Master (settings.json).
-Konfiguracja: --config plik.toml|json (klucze jak w DEFAULTS), flagi CLI nadpisują plik.
+Konfiguracja: receiver.toml obok receivera (bez argumentu) albo --config plik.toml|json (klucze jak w DEFAULTS);
+flagi CLI nadpisują plik.
 Autostart z Windows: --autostart on|off (zadanie Harmonogramu przy logowaniu, bez opóźnienia; pythonw bez konsoli).
 Administrator: na Windows receiver sam uruchamia się od nowa jako administrator (okno UAC; HIDMaestro tworzy pady
 tylko tak), zadanie autostartu dostaje najwyższe uprawnienia (bez UAC przy logowaniu); --no-elevate wyłącza.

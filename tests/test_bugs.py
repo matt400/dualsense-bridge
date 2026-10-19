@@ -88,5 +88,19 @@ finally:
 check("nieudana rotacja logu nie wyłącza logowania do pliku", handle is not None and handle.name == log)
 if handle is not None:
     handle.close()
+# receiver.toml obok receivera wczytuje się bez --config (wcześniej był po cichu ignorowany); --config "" = bez pliku
+cfg_dir = os.path.join(TMP, "rxdir")
+os.makedirs(cfg_dir, exist_ok=True)
+with open(os.path.join(cfg_dir, "receiver.toml"), "w") as f:
+    f.write("pads = 3\n")
+real_here = rx_config.HERE
+rx_config.HERE = cfg_dir
+try:
+    check("receiver.toml obok receivera wczytany bez --config", rx_config.init([]).NUM_PADS == 3)
+    check('--config "" pomija receiver.toml', rx_config.init(["--config", ""]).NUM_PADS == 2)
+    rx_config.HERE = TMP
+    check("bez receiver.toml - wartości domyślne", rx_config.default_config() is None and rx_config.init([]).NUM_PADS == 2)
+finally:
+    rx_config.HERE = real_here
 rx_config.init(["--remap-file", C.REMAP_PATH])           # przywróć konfigurację testów
 print("ALL PASS" if all(results.values()) else f"FAILED: {[k for k, v in results.items() if not v]}")
