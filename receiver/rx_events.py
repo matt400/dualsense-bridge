@@ -9,7 +9,7 @@ import threading
 import time
 from dataclasses import dataclass
 
-from proto import (BODY, E_ERROR, E_NET_DOWN, E_NO_RECEIVER, E_PAD_OFF, E_PAD_ON, E_POWER_OFF, E_START, E_WOL, E_WOL_FAIL,
+from proto import (BODY, E_ERROR, E_NET_DOWN, E_NO_RECEIVER, E_NO_SLOT, E_PAD_OFF, E_PAD_ON, E_POWER_OFF, E_START, E_WOL, E_WOL_FAIL,
                    EV_ERROR, EV_INFO, EV_WARN, T_EVENT, cstr)
 from rx_i18n import _
 
@@ -27,6 +27,7 @@ SENDER_TEXT = {
     E_NO_RECEIVER: "Nadajnik stracił kontakt z receiverem",
     E_NET_DOWN: "Sieć na telefonie niedostępna",
     E_ERROR: "Błąd nadajnika: {arg}",
+    E_NO_SLOT: "Pad {arg} pominięty - wszystkie sloty nadajnika zajęte (max_pads w sender.toml)",
 }
 
 
