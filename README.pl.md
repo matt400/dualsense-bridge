@@ -112,3 +112,7 @@ Pełna lista: [docs/PROBLEMY.pl.md](docs/PROBLEMY.pl.md).
 - [docs/FUNKCJE.pl.md](docs/FUNKCJE.pl.md) – wszystkie funkcje okna, trybu konsoli, pada master, Wake-on-LAN i widoku Test
 - [docs/KONFIGURACJA.pl.md](docs/KONFIGURACJA.pl.md) – pliki ustawień (`sender.toml`, `receiver.toml`, `console.json`) i aktualizacja
 - [docs/ROZWOJ.pl.md](docs/ROZWOJ.pl.md) – struktura kodu i testy
+
+## Licencja
+
+[MIT](LICENSE)
