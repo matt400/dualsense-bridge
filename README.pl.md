@@ -109,12 +109,15 @@ Najczęstsze:
 - **„Nadajnik offline” w oknie:** zły `host` w `sender.toml`, zapora Windows (UDP 5005) albo nadajnik w innej sieci.
 - **Skoki opóźnienia:** nadajnik na Wi-Fi. Podłącz go kablem.
 
+W sieci dzielonej z innymi ustaw ten sam `key` po obu stronach: [docs/BEZPIECZENSTWO.pl.md](docs/BEZPIECZENSTWO.pl.md).
+
 Pełna lista: [docs/PROBLEMY.pl.md](docs/PROBLEMY.pl.md).
 
 ## Więcej
 
 - [docs/FUNKCJE.pl.md](docs/FUNKCJE.pl.md) – wszystkie funkcje okna, trybu konsoli, pada master, Wake-on-LAN i widoku Test
 - [docs/KONFIGURACJA.pl.md](docs/KONFIGURACJA.pl.md) – pliki ustawień (`sender.toml`, `receiver.toml`, `console.json`) i aktualizacja
+- [docs/BEZPIECZENSTWO.pl.md](docs/BEZPIECZENSTWO.pl.md) – klucz HMAC, ochrona przed replay, co działa z jakimi uprawnieniami
 - [docs/ROZWOJ.pl.md](docs/ROZWOJ.pl.md) – struktura kodu i testy
 
 ## Licencja

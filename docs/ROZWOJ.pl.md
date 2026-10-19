@@ -87,7 +87,14 @@ Testy obejmują:
   limit czasu odbioru w jądrze (SO_RCVTIMEO) zamiast select() przed każdym pakietem (`test_rx2.py`);
 - wirtualne pady: backend HIDMaestro / ViGEmBus i ich zmiana w trakcie, pad zastępczy dla stałej kolejności graczy,
   raport DualSense, feedback z raportu wyjściowego DualSense (`test_vpad.py`, zakładka Pady w `test_settings_gui.py`),
-  pobieranie HIDMaestro przez HTTP Range, wersje, błędy zipa / sieci i uruchamianie jako administrator (`test_hm_update.py`).
+  pobieranie HIDMaestro przez HTTP Range, wersje, błędy zipa / sieci i uruchamianie jako administrator (`test_hm_update.py`);
+- bezpieczeństwo: protokół v3 z kluczem - samoczynne przejście (próbny ping), znacznik świeżości, dokładne powtórki,
+  podpisane v2 po przejściu, zapamiętanie w `auth.json`, zegar PC nadajnika po restarcie receivera, powtórzony ping nie
+  cofa zegara nadajnika, koniec do końca przez UDP z ponownie wysłanym nagraniem (`test_security_tx.py`,
+  `test_security.py`, `test_e2e_key.py`); DSU tylko na 127.0.0.1 z limitem klientów, nowe wydanie HIDMaestro czeka,
+  lista w zakładce Bezpieczeństwo, zwykły tekst w etykietach okna (`test_security.py`); parowanie z okna tylko padów,
+  adapter nie zostaje otwarty na parowanie, zaufanie tylko dla padów (`test_bt.py`); klucz w
+  `/etc/dualsense-sender.env` zamiast `ExecStart`, ograniczenia systemd (`test_service_tx.py`).
 
 Działanie z prawdziwym padem, ViGEm, HIDMaestro (pythonnet, sterownik), `DisplaySwitch.exe`, przełączaniem dźwięku (pycaw) i powiadomieniami Windows trzeba
 sprawdzić ręcznie.

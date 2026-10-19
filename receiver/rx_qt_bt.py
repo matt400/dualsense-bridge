@@ -6,6 +6,7 @@ tylko po elementach panelu, ✕ klika, ○ zamyka i fokus wraca na ikonę Blueto
 Wiersze urządzeń są trwałe (klucz = MAC) i aktualizowane w miejscu - fokus z pada nie skacze przy odświeżaniu co
 REFRESH_MS. Kolejność listy ustala nadajnik (połączone, sparowane, pady, nazwa - bez RSSI, które by ją przestawiało).
 """
+import html
 import time
 from collections.abc import Callable
 from functools import cache
@@ -54,10 +55,13 @@ def status_icon(level: str) -> QIcon:
 
 
 class ElidedLabel(QLabel):
-    """Etykieta, która przycina długi tekst wielokropkiem zamiast poszerzać panel (pełny tekst w podpowiedzi)."""
+    """Etykieta, która przycina długi tekst wielokropkiem zamiast poszerzać panel (pełny tekst w podpowiedzi).
+    Zwykły tekst: nazwy urządzeń Bluetooth nadaje każde urządzenie w zasięgu - QLabel w trybie AutoText pokazałby
+    nazwę z tagami HTML jako sformatowaną treść (podszycie się pod elementy okna)."""
 
     def __init__(self, role: str):
         super().__init__()
+        self.setTextFormat(Qt.TextFormat.PlainText)
         self.setProperty("role", role)
         self.full = ""
         self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
@@ -65,7 +69,7 @@ class ElidedLabel(QLabel):
     def set_full(self, text: str) -> None:
         if text != self.full:
             self.full = text
-            self.setToolTip(text)
+            self.setToolTip(f"<qt>{html.escape(text)}</qt>" if text else "")   # podpowiedź też rozpoznaje HTML
             self._elide()
 
     def resizeEvent(self, e):

@@ -255,6 +255,9 @@ gyro_cal.json
 gyro_cal.json.tmp
 bt.json
 bt.json.tmp
+# przejście na protokół v3 z kluczem HMAC (odcisk klucza, oba programy)
+auth.json
+auth.json.tmp
 # korekcja dryfu gałek per pad (receiver)
 padcal.json
 padcal.json.tmp

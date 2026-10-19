@@ -9,7 +9,8 @@
   HTTP Range), and the receiver starts as administrator (UAC; autostart task with highest privileges). The change takes
   effect immediately (pads are recreated). A HIDMaestro error while creating a pad = that pad goes through ViGEmBus
   and a warning in the event log. The pad card (touchpad icon) shows what kind of pad the slot is.
-- **DSU server (Cemuhook)** with motion and touch for emulators (Cemu, Yuzu/Ryujinx, Dolphin).
+- **DSU server (Cemuhook)** with motion and touch for emulators (Cemu, Yuzu/Ryujinx, Dolphin) on this PC; an emulator
+  on another device needs `dsu_bind = "0.0.0.0"`.
 - **Touchpad as mouse:** cursor, tap = left button, two-finger scrolling, two-finger tap = right button.
   Toggle: PS + touchpad click. A physical click doesn't move the cursor: movement from the last ~80 ms before the
   click is undone, the cursor stays still for ~150 ms after pressing and releasing, and dragging with the click held
@@ -162,7 +163,10 @@
     but not during a game (the same program list as in Console mode);
   - **Backups:** backups of `settings.json`, `console.json` and `remap.json` made on update (last 5, in
     `receiver/backups/`) or manually. "Restore" (two clicks) first saves a backup of the current files - so it can be
-    undone too - and then restarts the receiver.
+    undone too - and then restarts the receiver;
+  - **Security:** what to fix (no HMAC key, DSU reachable from the network, receiver or Python folder writable
+    without administrator rights), **Copy a new key** (random key to the clipboard) and **Secure folder**
+    ([SECURITY.md](SECURITY.md)).
 - **Lightbar** (Settings → Lightbar), separately for each pad (MAC) or as the default for all:
   - **the game has priority only in a game** - outside a game (desktop, Steam / Big Picture, launchers - the same
     program list as in Console mode) your own colour always shows, even when Steam sets its own; in a game the game's

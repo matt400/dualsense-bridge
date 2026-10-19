@@ -137,9 +137,11 @@ async def t_ops():
     ops = [c for c in bz.calls if c[-1] != "GetManagedObjects"]
     assert ops == [("set-property", "/org/bluez/hci0", "org.bluez.Adapter1", "Pairable", "b", "true"),
                    ("call", pad, "org.bluez.Device1", "Pair"), ("get-property", pad, "org.bluez.Device1", "Bonded"),
+                   ("set-property", "/org/bluez/hci0", "org.bluez.Adapter1", "Pairable", "b", "false"),
                    ("set-property", pad, "org.bluez.Device1", "Trusted", "b", "true"),
                    ("call", pad, "org.bluez.Device1", "Connect")], ops
-    assert bz.pairable and bz.devs[PAD]["Bonded"], "Pairable przed Pair -> klucz zapisany"
+    assert bz.devs[PAD]["Bonded"], "Pairable przed Pair -> klucz zapisany"
+    assert not bz.pairable, "po parowaniu adapter nie zostaje otwarty na parowanie"
     assert b.last == (BT_PAIR, BTR_OK, mac_bytes(PAD)) and bz.devs[PAD]["Connected"] and bz.devs[PAD]["Trusted"]
     s = states()[-1]
     assert s[:5] == (BTS_OK, SB.BTF_LIST, 0, 2, 3) and s[6:8] == (BT_PAIR, BTR_OK), s
@@ -208,11 +210,19 @@ async def t_ops():
     bz.devs[PHONE] = {"Name": "Telefon", "Paired": True, "Trusted": False}
     await b.refresh()
     assert not bz.devs[PHONE]["Trusted"], "nie-pady bez automatycznego zaufania"
-    b.untrusted.clear(); b.devices = [d for d in b.devices if d.mac != PAD]   # connect bez trust_pads w refresh
+    b.untrusted = {PAD}; b.devices = [d for d in b.devices if d.mac != PAD]   # connect bez trust_pads w refresh
     bz.devs[PAD] |= {"Trusted": False, "Connected": False}; b.dups.clear()
-    bz.devs[PAD]["Icon"] = "phone"; bz.devs[PAD]["Class"] = 0
     b.on_command(BT_CONNECT, 0, mac_bytes(PAD)); await b.busy
     assert bz.devs[PAD]["Trusted"] and bz.devs[PAD]["Connected"], "połączenie też ustawia zaufanie"
+    b.untrusted.clear()
+    bz.devs[PAD] |= {"Trusted": False, "Connected": False, "Icon": "phone", "Class": 0}; b.dups.clear()
+    b.on_command(BT_CONNECT, 0, mac_bytes(PAD)); await b.busy
+    assert not bz.devs[PAD]["Trusted"] and bz.devs[PAD]["Connected"], "nie-pad: połączenie bez zaufania"
+    bz.devs[PAD] |= {"Paired": False, "Connected": False}; bz.calls.clear(); b.dups.clear()
+    b.on_command(BT_PAIR, 0, mac_bytes(PAD)); await b.busy
+    assert b.last[1] == BTR_DENIED and not [c for c in bz.calls if c[0] != "call" or c[-1] != "GetManagedObjects"], \
+        "parowanie z okna tylko dla padów (obca klawiatura BT = wstrzykiwanie klawiszy do nadajnika)"
+    bz.devs[PAD] |= {"Icon": "input-gaming", "Class": 0x002508}
     ok("wiązanie i zaufanie: Pairable, sparowany bez klucza = zapomniany, zaufanie przy odświeżeniu i połączeniu")
 
     bz.powered = False; b.dups.clear()

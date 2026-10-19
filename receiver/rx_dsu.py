@@ -110,6 +110,8 @@ def rx_thread():
             elif event == 0x100002:    # subskrypcja danych
                 with dsu_lock:
                     new = addr not in dsu_clients
+                    if new and len(dsu_clients) >= getattr(C, "DSU_MAX_CLIENTS", 4):
+                        continue            # limit: podrobione adresy nie zamienią serwera w źródło strumieni
                     dsu_clients[addr] = time.monotonic()
                     S.dsu_active = True
                     if new:
@@ -191,7 +193,9 @@ def close():
 
 def start():
     global dsu
-    dsu = bind_udp(C.DSU_PORT, "DSU server")
+    dsu = bind_udp(C.DSU_PORT, "DSU server", host=getattr(C, "DSU_BIND", "127.0.0.1"))
+    if dsu.getsockname()[0] != "127.0.0.1":
+        print(f"DSU server on {C.DSU_BIND}:{C.DSU_PORT} - reachable from the network (dsu_bind)")
     dsu.settimeout(0.25)       # wątek odbioru sprawdza S.stop; zamknięcie gniazda z innego wątku nie przerywa recvfrom na Linuksie
     print(f"DSU server on UDP {C.DSU_PORT} (slots 0..{C.NUM_PADS - 1}).")
     _threads[:] = [S.start_thread("dsu rx", rx_thread), S.start_thread("dsu tx", tx_thread)]

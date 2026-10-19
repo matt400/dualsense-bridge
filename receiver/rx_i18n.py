@@ -24,6 +24,50 @@ EN = {
     "Odrzucono pakiety nadajnika: inny klucz HMAC (key) w nadajniku i w receiverze - ustaw ten sam albo usuń go z obu":
         "Sender packets rejected: the HMAC key differs between the sender and the receiver - set the same key on both "
         "or remove it from both",
+    "Odrzucono podpisane pakiety starego formatu (v2): nadajnik w starej wersji albo powtórzone nagranie "
+    "- zaktualizuj nadajnik":
+        "Signed packets in the old format (v2) rejected: an old sender version or a replayed recording - update the "
+        "sender",
+    "BEZPIECZEŃSTWO": "SECURITY",
+    "Bezpieczeństwo": "Security",
+    "Brak klucza HMAC: każdy w sieci lokalnej może sterować tym komputerem przez receiver (mysz, akcje pada master) i "
+    "wysyłać polecenia do nadajnika. Ustaw ten sam klucz (key) w receiverze i w nadajniku.":
+        "No HMAC key: anyone on the local network can control this PC through the receiver (mouse, master pad actions) "
+        "and send commands to the sender. Set the same key on the receiver and the sender.",
+    "Folder receivera należy do zwykłego użytkownika: dowolny program uruchomiony bez uprawnień może podmienić kod, "
+    "który receiver wykonuje jako administrator. Użyj „Zabezpiecz folder”.":
+        "The receiver folder belongs to a regular user: any program running without privileges can replace code that "
+        "the receiver runs as administrator. Use \u201cSecure folder\u201d.",
+    "Folder zabezpieczony - zapis tylko dla administratorów": "Folder secured - only administrators can write to it",
+    "Kopiuj nowy klucz": "Copy a new key",
+    "Losowy klucz HMAC do schowka - wpisz go jako key w receiver.toml i w sender.toml":
+        "A random HMAC key to the clipboard - put it as key in receiver.toml and in sender.toml",
+    "Nie udało się zabezpieczyć folderu: {err}": "Could not secure the folder: {err}",
+    "Potrzebne uprawnienia administratora": "Administrator rights needed",
+    "Python jest zainstalowany tylko dla tego użytkownika ({dir}) - jego pliki też można podmienić bez uprawnień. "
+    "Zainstaluj Pythona dla wszystkich użytkowników (Program Files).":
+        "Python is installed for this user only ({dir}) - its files can also be replaced without privileges. Install "
+        "Python for all users (Program Files).",
+    "Receiver działa jako administrator i przyjmuje polecenia z sieci. Klucz HMAC (key, ten sam po obu stronach) "
+    "podpisuje pakiety i chroni przed powtórzeniem nagranych; bez niego każdy w sieci lokalnej może sterować myszą "
+    "i akcjami pada master. Szczegóły: docs/SECURITY.md.":
+        "The receiver runs as administrator and accepts commands from the network. The HMAC key (key, the same on both "
+        "sides) signs packets and blocks replayed recordings; without it anyone on the local network can drive the "
+        "mouse and master pad actions. Details: docs/SECURITY.md.",
+    "Serwer DSU jest dostępny z sieci (dsu_bind): każdy w sieci lokalnej widzi ruchy i przyciski padów. Ustaw "
+    "dsu_bind = \"127.0.0.1\", jeśli emulator działa na tym komputerze.":
+        "The DSU server is reachable from the network (dsu_bind): anyone on the local network sees pad motion and "
+        "buttons. Set dsu_bind = \"127.0.0.1\" if the emulator runs on this PC.",
+    "Zabezpiecz folder": "Secure folder",
+    "Zapis w folderze receivera tylko dla administratorów (receiver dalej zapisuje ustawienia i się aktualizuje)":
+        "Only administrators can write to the receiver folder (the receiver still saves settings and updates itself)",
+    "✓ Nie wykryto problemów.": "✓ No problems found.",
+    "✓ Nowy klucz w schowku - wpisz go jako key w receiver.toml i w sender.toml, potem uruchom oba programy ponownie.":
+        "✓ New key in the clipboard - put it as key in receiver.toml and in sender.toml, then restart both programs.",
+    "Wersja {v} zainstaluje się {when} - nowe wydania czekają kilka dni (bezpieczeństwo)":
+        "Version {v} will be installed on {when} - new releases wait a few days (security)",
+    "Odrzucono przeterminowane pakiety nadajnika (powtórzone nagranie albo problem z zegarem)":
+        "Expired sender packets rejected (a replayed recording or a clock problem)",
     # ---------- okno główne ----------
     "Wynik": "Result",
     "Dostępna aktualizacja: {n}": "Update available: {n}",

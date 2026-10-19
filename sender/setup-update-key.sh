@@ -6,7 +6,7 @@
 # osobny klucz wdrożeniowy (deploy key, tylko do odczytu, bez hasła) w .git/ - nigdy nie trafia do repozytorium,
 # a git pull go nie rusza.
 #
-#   ./setup-update-key.sh      (jako zwykły użytkownik - właściciel folderu, BEZ doas)
+#   ./setup-update-key.sh      (jako właściciel folderu - zwykle użytkownik BEZ doas; po --own-root: doas)
 #
 # Uruchom, dodaj wypisany klucz na GitHubie, uruchom ponownie - drugi raz tylko sprawdza dostęp. Można powtarzać.
 set -eu
@@ -19,7 +19,11 @@ if [ ! -d "$REPO/.git" ]; then
 	exit 1
 fi
 if [ "$(id -u)" -ne "$(stat -c %u "$REPO")" ]; then
-	echo "Uruchom jako właściciel folderu $REPO (użytkownik $(stat -c %U "$REPO")), bez doas." >&2
+	if [ "$(stat -c %u "$REPO")" -eq 0 ]; then       # install-service.sh --own-root: repozytorium roota
+		echo "Repozytorium $REPO należy do roota (install-service.sh --own-root) - uruchom: doas $0" >&2
+	else
+		echo "Uruchom jako właściciel folderu $REPO (użytkownik $(stat -c %U "$REPO")), bez doas." >&2
+	fi
 	exit 1
 fi
 for cmd in git ssh ssh-keygen; do

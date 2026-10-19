@@ -19,6 +19,8 @@
 konsoli zapisuje console.json i prosi właściciela okna o restart receivera (sygnał saved) - po restarcie obowiązuje
 startup_mode jak przy autostarcie.
 """
+import time
+
 from rx_i18n import _
 from PySide6.QtCore import QPoint, QRect, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor
@@ -32,6 +34,7 @@ import rx_ds4
 import rx_hm
 import rx_hm_update
 import rx_lightbar
+import rx_security
 import rx_update
 import rx_settings
 import rx_state as S
@@ -93,6 +96,7 @@ class ConsoleSettings(QDialog):
         self.tabs.addTab(_page(self._vpad_tab()), icon("ps"), _("Pady"))
         self.tabs.addTab(_page(self._window_tab()), icon("window"), _("Okno"))
         self.tabs.addTab(_page(self._backup_tab()), icon("backup"), _("Kopie"))
+        self.tabs.addTab(_page(self._security_tab()), icon("shield"), _("Bezpieczeństwo"))
         lay.addWidget(self.tabs, 1)
 
         self.status = label("", wrap=True)      # w wierszu przycisków - osobna linia dawała pusty pas nad Zapisz
@@ -278,6 +282,9 @@ class ConsoleSettings(QDialog):
             newer = st.latest and rx_hm_update.version_key(st.latest) > rx_hm_update.version_key(st.version)
             lines.append(_("HIDMaestro {v} pobrany").format(v=st.version)
                          + (_(" (na GitHubie jest {v})").format(v=st.latest) if newer else ""))
+            if newer and st.held_until > time.time():
+                lines.append(_("Wersja {v} zainstaluje się {when} - nowe wydania czekają kilka dni (bezpieczeństwo)").format(
+                    v=st.latest, when=time.strftime("%d.%m %H:%M", time.localtime(st.held_until))))
         if st.error and not busy:
             lines.append(_("Pobieranie HIDMaestro: {err}").format(err=st.error))
         need_net = backend != "vigem" and rx_hm.need_dotnet()
@@ -317,6 +324,43 @@ class ConsoleSettings(QDialog):
                             "je cofnąć - a potem uruchamia receiver od nowa.").format(n=rx_backup.KEEP), "dim", wrap=True),
                     self.backup_rows, left(now))
         return [box]
+
+    def _security_tab(self):
+        self.sec_now = label("", wrap=True)
+        self.sec_harden = button(_("Zabezpiecz folder"), small=True)
+        self.sec_harden.setIcon(icon("shield"))
+        self.sec_harden.setToolTip(_("Zapis w folderze receivera tylko dla administratorów (receiver dalej zapisuje "
+                                     "ustawienia i się aktualizuje)"))
+        self.sec_harden.clicked.connect(self._sec_harden)
+        key = button(_("Kopiuj nowy klucz"), small=True)
+        key.setIcon(icon("copy"))
+        key.setToolTip(_("Losowy klucz HMAC do schowka - wpisz go jako key w receiver.toml i w sender.toml"))
+        key.clicked.connect(self._sec_key)
+        box = group(_("BEZPIECZEŃSTWO"),
+                    label(_("Receiver działa jako administrator i przyjmuje polecenia z sieci. Klucz HMAC (key, ten sam "
+                            "po obu stronach) podpisuje pakiety i chroni przed powtórzeniem nagranych; bez niego każdy "
+                            "w sieci lokalnej może sterować myszą i akcjami pada master. Szczegóły: docs/SECURITY.md."),
+                          "dim", wrap=True),
+                    self.sec_now, row_of(key, self.sec_harden))
+        self._sec_state()
+        return [box]
+
+    def _sec_state(self):
+        found = rx_security.issues()
+        self.sec_now.setText("\n".join("• " + i.text for i in found) if found else _("✓ Nie wykryto problemów."))
+        set_prop(self.sec_now, "level", "warn" if found else "ok")
+        self.sec_harden.setVisible(any(i.code == "folder" for i in found))
+
+    def _sec_key(self):
+        from proto import generate_key
+        QApplication.clipboard().setText(generate_key())
+        self._status(_("✓ Nowy klucz w schowku - wpisz go jako key w receiver.toml i w sender.toml, potem uruchom "
+                       "oba programy ponownie."), "ok")
+
+    def _sec_harden(self):
+        ok, msg = rx_security.harden()
+        self._status(("✓ " if ok else "") + msg, "ok" if ok else "bad")
+        self._sec_state()
 
     def _load_backups(self):
         """Lista kopii od najnowszej: data, skąd się wzięła, pliki; "Przywróć" wymaga drugiego kliknięcia."""

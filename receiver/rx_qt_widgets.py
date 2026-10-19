@@ -9,7 +9,10 @@ from rx_qt_style import LINE, OK, TRACK, px, set_prop
 
 
 def label(text="", role=None, wrap=False):
+    """Etykieta ze zwykłym tekstem: część treści przychodzi z sieci (nadajnik, nazwy Bluetooth, identyfikator pada) -
+    domyślny AutoText wyświetliłby w niej tagi HTML."""
     lb = QLabel(text)
+    lb.setTextFormat(Qt.TextFormat.PlainText)
     if role:
         lb.setProperty("role", role)
     lb.setWordWrap(wrap)

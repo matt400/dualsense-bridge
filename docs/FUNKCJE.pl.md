@@ -8,7 +8,8 @@
   albo `vigem`. HIDMaestro pobiera się i aktualizuje sam z GitHuba (tylko DLL z zipa wydania, przez HTTP Range), a
   receiver uruchamia się jako administrator (UAC; zadanie autostartu z najwyższymi uprawnieniami). Zmiana działa od razu (pady powstają od nowa). Błąd HIDMaestro przy tworzeniu pada = ten pad przez
   ViGEmBus i ostrzeżenie w dzienniku. Karta pada (ikona touchpada) pokazuje, jakim padem jest slot.
-- **Serwer DSU (Cemuhook)** z ruchem i dotykiem dla emulatorów (Cemu, Yuzu/Ryujinx, Dolphin).
+- **Serwer DSU (Cemuhook)** z ruchem i dotykiem dla emulatorów (Cemu, Yuzu/Ryujinx, Dolphin) na tym komputerze;
+  emulator na innym urządzeniu wymaga `dsu_bind = "0.0.0.0"`.
 - **Touchpad jako mysz:** kursor, tap = lewy przycisk, przewijanie dwoma palcami, tap dwoma palcami = prawy przycisk.
   Przełączanie: PS + klik touchpada. Fizyczny klik nie przesuwa kursora: ruch z ostatnich ~80 ms przed kliknięciem
   jest cofany, przez ~150 ms po wciśnięciu i puszczeniu kursor stoi, a przeciąganie z wciśniętym klikiem zaczyna się
@@ -154,7 +155,10 @@
     lista programów co w Trybie konsoli);
   - **Kopie:** kopie `settings.json`, `console.json` i `remap.json` zrobione przy aktualizacji (5 ostatnich, w
     `receiver/backups/`) albo ręcznie. „Przywróć” (dwa kliknięcia) najpierw zapisuje kopię bieżących plików - więc
-    też da się to cofnąć - a potem uruchamia receiver od nowa.
+    też da się to cofnąć - a potem uruchamia receiver od nowa;
+  - **Bezpieczeństwo:** co poprawić (brak klucza HMAC, DSU dostępne z sieci, folder receivera albo Pythona
+    zapisywalny bez uprawnień administratora), **Kopiuj nowy klucz** (losowy klucz do schowka) i **Zabezpiecz
+    folder** ([BEZPIECZENSTWO.pl.md](BEZPIECZENSTWO.pl.md)).
 - **Lightbar** (Ustawienia → Lightbar), osobno dla każdego pada (MAC) albo domyślnie dla wszystkich:
   - **gra ma pierwszeństwo tylko w grze** - poza grą (pulpit, Steam / Big Picture, launchery - ta sama lista programów
     co w Trybie konsoli) zawsze świeci własny kolor, nawet gdy Steam ustawi swój; w grze kolor gry zastępuje własny.

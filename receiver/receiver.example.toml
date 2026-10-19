@@ -4,6 +4,11 @@
 
 # in_port = 5005
 # dsu_port = 26760
+# dsu_bind = "127.0.0.1"   # serwer DSU tylko dla tego komputera; "0.0.0.0" = emulator na innym urządzeniu w sieci
+#   (wtedy każdy w sieci lokalnej widzi ruchy i przyciski padów, a podrobiony adres zamienia serwer w źródło ruchu)
+# dsu_max_clients = 4   # najwięcej subskrybentów DSU naraz
+# hm_min_age_days = 7   # nowa wersja HIDMaestro instaluje się dopiero tyle dni po publikacji (wydanie bez podpisu
+#   trafia do procesu administratora - podmienione wydania zwykle znikają w ciągu dni); 0 = od razu
 # pads = 2   # liczba slotów (max 4); wirtualne DS4 powstają tylko dla podłączonych
 # mouse_pads = [0]   # które kontrolery startują w trybie myszy (gdy jest pad master: mysz ma master)
 # pad_hz = 1000   # max częstotliwość raportów DS4 (zlewanie serii pakietów, jak pad_min_dt nadajnika = 1 ms); 0 = bez limitu
@@ -20,7 +25,9 @@
 # stale_s = 0.5   # cisza dłuższa niż tyle -> reset stanu (anty "zablokowane przyciski")
 # unplug_s = 10.0   # cisza dłuższa niż tyle -> odłącz wirtualny DS4
 # allow = ""   # np. "192.168.1.50" - tylko pakiety z tego IP
-# key = ""   # wspólny klucz HMAC (lub zmienna środowiskowa PADKEY)
+# key = ""   # wspólny klucz HMAC (lub zmienna środowiskowa PADKEY) - ten sam w nadajniku. Bez niego każdy w sieci
+#   lokalnej może sterować tym komputerem przez receiver (mysz, akcje pada master). Wygeneruj:
+#   python -c "import secrets; print(secrets.token_urlsafe(24))"
 # stats = false   # wypisuj statystyki pakietów co 1 s
 # log_file = ""   # np. "receiver.log" (przydatne z pythonw / autostartem)
 # remap_file = "remap.json"   # profile remapowania (przycisk Save w oknie)

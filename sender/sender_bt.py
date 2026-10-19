@@ -469,31 +469,43 @@ class Bluetooth:
     async def pair(self, mac: str) -> None:
         """Parowanie (BlueZ bez agenta = NoInputNoOutput, jak DualSense) z wiązaniem, zaufanie (pad sam się potem
         łączy) i połączenie. Sparowany bez wiązania -> zapomniany i sparowany od nowa (pad musi być w trybie
-        parowania); sparowany z wiązaniem -> tylko zaufanie i połączenie."""
+        parowania); sparowany z wiązaniem -> tylko zaufanie i połączenie.
+
+        Tylko pady do gier (BTD_PAD): parowanie bez agenta (Just Works) z zaufaniem z polecenia przez sieć
+        pozwoliłoby podpiąć do nadajnika (root) np. obcą klawiaturę Bluetooth. Pairable wraca na false po próbie -
+        adapter nie zostaje otwarty na parowanie."""
         await self.stop_scan()
         path = self.need(mac)
-        with contextlib.suppress(BtError):           # bez Pairable BlueZ paruje bez zapisu klucza
-            await self.set_prop(self.adapter, ADAPTER, "Pairable", True)
-        paired = bool(next(d for d in self.devices if d.mac == mac).flags & BTD_PAIRED)
-        if paired and not await self.bonded(path):
-            print(f"Bluetooth {mac}: paired without bonding - re-pairing")
-            await self.call(self.adapter, ADAPTER, "RemoveDevice", "o", path)
-            raise BtError("paired without a stored key - removed, put the pad in pairing mode and pair again",
-                          BTR_AUTH)
-        if not paired:
-            await self._pair_once(path)
-            if not await self.bonded(path):
-                raise BtError("paired without a stored key (adapter not bondable) - pair again", BTR_AUTH)
+        dev = next(d for d in self.devices if d.mac == mac)
+        if not dev.flags & BTD_PAD:
+            raise BtError("not a game controller - only pads can be paired from the window", BTR_DENIED)
+        try:
+            with contextlib.suppress(BtError):           # bez Pairable BlueZ paruje bez zapisu klucza
+                await self.set_prop(self.adapter, ADAPTER, "Pairable", True)
+            if dev.flags & BTD_PAIRED and not await self.bonded(path):
+                print(f"Bluetooth {mac}: paired without bonding - re-pairing")
+                await self.call(self.adapter, ADAPTER, "RemoveDevice", "o", path)
+                raise BtError("paired without a stored key - removed, put the pad in pairing mode and pair again",
+                              BTR_AUTH)
+            if not dev.flags & BTD_PAIRED:
+                await self._pair_once(path)
+                if not await self.bonded(path):
+                    raise BtError("paired without a stored key (adapter not bondable) - pair again", BTR_AUTH)
+        finally:
+            with contextlib.suppress(BtError):
+                await self.set_prop(self.adapter, ADAPTER, "Pairable", False)
         await self.set_prop(path, DEVICE, "Trusted", True)
         await self.call(path, DEVICE, "Connect", timeout=CONNECT_S)
 
     async def connect(self, mac: str) -> None:
         """Połączenie; zaufanie też tutaj - pad sparowany wcześniej poza oknem (bluetoothctl) bez trust łączyłby
-        się tylko z telefonu, a włączany przyciskiem PS gasł po kilku sekundach."""
+        się tylko z telefonu, a włączany przyciskiem PS gasł po kilku sekundach. Zaufanie tylko dla padów: zaufane
+        urządzenie może się potem łączyć samo (obce urządzenie - bez zgody z okna)."""
         await self.stop_scan()
         path = self.need(mac)
-        with contextlib.suppress(BtError):
-            await self.set_prop(path, DEVICE, "Trusted", True)
+        if next((d.flags for d in self.devices if d.mac == mac), 0) & BTD_PAD:
+            with contextlib.suppress(BtError):
+                await self.set_prop(path, DEVICE, "Trusted", True)
         await self.call(path, DEVICE, "Connect", timeout=CONNECT_S)
 
     async def disconnect(self, mac: str) -> None:
