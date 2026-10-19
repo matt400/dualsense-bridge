@@ -31,7 +31,8 @@ Testy obejmują:
 - kopie ustawień, pomiar opóźnienia (state2 / pong2, zegar PC, Bluetooth) i opór spustów w raporcie HID
   (`test_features.py`, `test_features_tx.py`);
 - efekty spustów: klik, drgania, wibracja z gry, trig2 / trig wg wersji nadajnika, dziedziczenie w profilu gry,
-  tylko master (`test_trigfx.py`, `test_trigfx_tx.py`);
+  tylko master (`test_trigfx.py`, `test_trigfx_tx.py`); efekty spustów z gry (HIDMaestro, trig3): odczyt z raportu
+  wyjściowego, profil wygrywa per spust, zwolnienie po zamknięciu programu (`test_gametrig.py`, `test_gametrig_tx.py`);
 - regresje z przeglądu bugów (`test_review.py`, `test_review_tx.py`, `test_hunt*.py`) - m.in. start / stop skanu
   Bluetooth naraz, palec leżący na touchpadzie przy połączeniu, klik touchpada puszczony w widoku Test, skróty z PS
   w trybie TV, rejestracja wibracji z gry w ViGEm (sygnatura callbacku z vgamepad, kolor lightbara jako struktura),

@@ -4,6 +4,7 @@ sys.path.insert(0, sys.argv[1])
 import sender_config; sender_config.init(["127.0.0.1"])
 import sender_rumble as R
 from evdev import ecodes as ec
+from proto import CAP_TRIG_FX, CAP_TRIG_RAW, CAP_TRIGGERS, RUMBLE_EVDEV, RUMBLE_HIDRAW
 
 TMP = tempfile.mkdtemp()
 ok = lambda m: print("OK  ", m)
@@ -162,7 +163,8 @@ async def main():
     open(path3, "wb").close()
     d = FFDev()
     r = R.Rumble(5, d, "auto", hidraw=(path3, True))
-    assert r.methods == ["evdev", "hidraw"] and r.bits == 15, (r.methods, r.bits)   # 4 = opór, 8 = efekty spustów (HID)
+    assert r.methods == ["evdev", "hidraw"] and r.bits == (RUMBLE_EVDEV | RUMBLE_HIDRAW | CAP_TRIGGERS | CAP_TRIG_FX
+                                                        | CAP_TRIG_RAW), (r.methods, r.bits)   # spusty tylko przez HID
     r.set(70, 140)
     assert ("upload", 140 * 257, 70 * 257) in d.log and frames(path3)[-1][5:7] == bytes([70, 140]), "obie drogi naraz"
     d.fail = True

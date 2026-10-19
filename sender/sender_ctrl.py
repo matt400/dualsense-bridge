@@ -281,8 +281,8 @@ class Ctrl:
         self.apply_feedback(*back, remember=False)
 
     def set_triggers(self, vals):
-        """Efekty spustów z profilu (pakiet trig2 albo stary trig = sam opór). Tylko raport HID - sterownik jądra nie
-        ma takiej funkcji."""
+        """Efekty spustów z PC (pakiet trig3 = profil + efekty gry, trig2 = profil, stary trig = sam opór). Tylko raport
+        HID - sterownik jądra nie ma takiej funkcji."""
         vals = tuple(vals)
         self.triggers = trig2_from_legacy(vals) if len(vals) == 4 else vals
         if self.rumble is not None:

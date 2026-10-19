@@ -129,10 +129,18 @@ check(r[:6] == bytes((10, 20, 30, 40, 200, 0)) and r[7] & 0x20 and r[8] & 0x04, 
 data = bytearray(47)
 data[0], data[1], data[2], data[3] = 0x03, 0x04, 40, 200
 data[44:47] = bytes((1, 2, 3))
-motors, rgb = rx_hm.parse_output(0x02, data)
-check(motors == (200, 40) and rgb == (1, 2, 3), f"parse_output: lewy = duży, prawy = mały, kolor: {motors} {rgb}")
-check(rx_hm.parse_output(0x02, bytearray(47)) == (None, None), "bez flag ważności nic nie zmienia")
-check(rx_hm.parse_output(0x05, data) == (None, None), "inny raport ignorowany")
+motors, rgb, trig = rx_hm.parse_output(0x02, data)
+check(motors == (200, 40) and rgb == (1, 2, 3) and trig is None, f"parse_output: lewy = duży, prawy = mały, kolor: {motors} {rgb}")
+check(rx_hm.parse_output(0x02, bytearray(47)) == (None, None, None), "bez flag ważności nic nie zmienia")
+check(rx_hm.parse_output(0x05, data) == (None, None, None), "inny raport ignorowany")
+tdata = bytearray(47)
+tdata[0] = 0x08                                     # tylko lewy spust (L2)
+tdata[21:32] = bytes([0x25, 0x30, 0, 5] + [0] * 7)
+tdata[10:21] = bytes([0x21] + [9] * 10)             # bez flagi prawego - nie czytany
+check(rx_hm.parse_output(0x02, tdata) == (None, None, (bytes(tdata[21:32]), None)),
+      "parse_output: efekt L2 z flagą 0x08, R2 bez flagi = None")
+tdata[0] = 0x0C
+check(rx_hm.parse_output(0x02, tdata)[2] == (bytes(tdata[21:32]), bytes(tdata[10:21])), "oba spusty (0x04 = R2, 0x08 = L2)")
 class NetArray(list):              # tablica .NET: każdy odczyt elementu to wywołanie przez pythonnet
     reads = 0
     def __getitem__(self, k):
@@ -143,10 +151,15 @@ class OutPkt:
     def __init__(self, raw):
         self.Data = types.SimpleNamespace(ToArray=lambda: NetArray(raw))
 hm_pad, got_fb = object.__new__(rx_hm.Pad), []
-hm_pad.on_fb = lambda m, c: got_fb.append((m, c))
+hm_pad.on_fb = lambda m, c, t: got_fb.append((m, c, t))
 hm_pad._on_output(None, OutPkt(list(data) + [0] * 16))
-check(got_fb == [((200, 40), (1, 2, 3))] and NetArray.reads <= len(rx_hm.OUT_USED),
+check(got_fb == [((200, 40), (1, 2, 3), None)] and NetArray.reads <= len(rx_hm.OUT_BASE) + len(rx_hm.OUT_RGB),
       f"wyjście HIDMaestro: tylko potrzebne bajty ({NetArray.reads} odczytów) - {got_fb}")
+got_fb.clear()
+NetArray.reads = 0
+hm_pad._on_output(None, OutPkt(list(tdata) + [0] * 16))
+check(got_fb == [(None, None, (bytes(tdata[21:32]), bytes(tdata[10:21])))] and NetArray.reads == 4 + 22,
+      f"wyjście HIDMaestro: bajty spustów czytane tylko z flagą ({NetArray.reads} odczytów)")
 got_fb.clear()
 hm_pad._on_output(None, OutPkt(list(data[:10])))
 check(got_fb == [], "za krótki raport wyjściowy - bez feedbacku i bez wyjątku")

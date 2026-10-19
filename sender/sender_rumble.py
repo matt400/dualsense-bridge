@@ -16,6 +16,8 @@ do następnej zmiany; raporty bez flag spustów (wibracja, kolor, sterownik) go 
 Wibracja z gry na spusty (RFX_ON w trig2) liczona jest tutaj, z tych samych pakietów wibracji - bez dodatkowego ruchu
 w sieci: L2 drga wg dużego silnika, R2 wg małego; na czas wibracji zastępuje efekt spustu, a RFX_HOLD_S po ustaniu
 wibracji spust wraca do swojego efektu.
+Efekty ustawione przez grę na wirtualnym DualSense (HIDMaestro, pakiet trig3) idą do pada surowe (11 B, jak je
+wysłała gra) - na spuście, na którym profil nic nie ustawia (profil wygrywa).
 Pad trzyma ostatnią moc silników - receiver odświeża wibrację co 0.5 s, a strażnik tutaj zatrzymuje ją, gdy
 odświeżenia ustaną (zgubione pakiety, zamknięta gra), żeby pad nie wibrował bez końca.
 """
@@ -31,10 +33,10 @@ import zlib
 from evdev import ecodes as ec
 from evdev import ff
 
-from proto import (CAP_TRIG_FX, CAP_TRIGGERS, RFX_GAIN_MAX, RFX_HOLD_S, RFX_ON, TFX_CLICK, TFX_RES, TFX_VIB,
-                   TRIG2_OFF, TRIG_AMP_MAX, TRIG_CLICK_MAX, TRIG_CLICK_MIN, TRIG_FORCE_MAX, TRIG_FREQ_MAX,
-                   TRIG_START_MAX, WHY_ACCESS, WHY_NO_HIDRAW, WHY_NOT_FOUND, WHY_OFF, WHY_OK, WHY_OPEN,
-                   trig2_from_legacy)
+from proto import (CAP_TRIG_FX, CAP_TRIG_RAW, CAP_TRIGGERS, RFX_GAIN_MAX, RFX_HOLD_S, RFX_ON, TFX_CLICK,
+                   TFX_OFF, TFX_RES, TFX_VIB, TRG3_L2, TRG3_R2, TRIG2_OFF, TRIG_AMP_MAX, TRIG_CLICK_MAX,
+                   TRIG_CLICK_MIN, TRIG_FORCE_MAX, TRIG_FREQ_MAX, TRIG_START_MAX, WHY_ACCESS, WHY_NO_HIDRAW,
+                   WHY_NOT_FOUND, WHY_OFF, WHY_OK, WHY_OPEN, trig2_from_legacy)
 
 FLAG0_COMPAT_VIBRATION, FLAG0_HAPTICS_SELECT = 0x01, 0x02
 FLAG0_RIGHT_TRIGGER, FLAG0_LEFT_TRIGGER = 0x04, 0x08    # valid_flag0: efekt prawego / lewego spustu z tego raportu
@@ -141,6 +143,24 @@ def effect(mode, a, b, c):
     if mode == TFX_VIB:
         return vibration_effect(a, b, c)
     return OFF_EFFECT
+
+
+def game_effect(raw):
+    """Efekt spustu ustawiony przez grę (11 B z raportu wyjściowego wirtualnego DualSense) albo None -> 11 B raportu.
+    Tryb 0 (gra nic nie ustawiła w tym bajcie) = Off - pad nie zostaje z efektem sprzed zmiany."""
+    return bytes(raw) if raw is not None and len(raw) == TRIGGER_LEN and raw[0] else OFF_EFFECT
+
+
+def split_triggers(vals):
+    """Pakiet trig (4), trig2 (12) albo trig3 (12 + efekty gry L2, R2 + flagi) -> (wartości trig2, (L2, R2) efekty
+    gry: surowe 11 B albo None)."""
+    vals = tuple(vals)
+    if len(vals) == 4:
+        return trig2_from_legacy(vals), (None, None)
+    if len(vals) == len(TRIG2_OFF):
+        return vals, (None, None)
+    flags = vals[14]
+    return vals[:12], tuple(bytes(raw) if flags & bit else None for raw, bit in ((vals[12], TRG3_L2), (vals[13], TRG3_R2)))
 
 
 def rumble_amp(motor, gain):
@@ -262,6 +282,7 @@ class Rumble:
         self.rgb = None               # kolor lightbara wysyłany razem z wibracją (tylko raport HID)
         self.trig = None              # efekty spustów (L2, R2) wysłane do pada albo None = nigdy nie ruszane
         self.fx = None                # ustawienia spustów z PC (wartości trig2) albo None = nic nie przyszło
+        self.game_fx = (None, None)   # efekty spustów L2 / R2 ustawione przez grę (surowe 11 B) albo None
         self._rv = [None, None]       # wibracja z gry na L2 / R2: efekt albo None
         self._rv_off = [None, None]   # od kiedy silnik tego spustu stoi (po RFX_HOLD_S spust wraca do efektu)
         self._rv_timer = None
@@ -292,9 +313,9 @@ class Rumble:
     @property
     def bits(self):
         """Sposoby jako bity (pakiet wersji do receivera): 1 = sterownik, 2 = raport HID, 4 = opór spustów,
-        8 = efekty spustów z trig2 (klik, wibracja, wibracja z gry)."""
+        8 = efekty spustów z trig2 (klik, wibracja, wibracja z gry), 32 = efekty spustów z gry (trig3)."""
         hid = "hidraw" in self.methods
-        return ("evdev" in self.methods) | hid << 1 | (CAP_TRIGGERS | CAP_TRIG_FX if hid else 0)
+        return ("evdev" in self.methods) | hid << 1 | (CAP_TRIGGERS | CAP_TRIG_FX | CAP_TRIG_RAW if hid else 0)
 
     def describe(self):
         parts = []
@@ -348,17 +369,17 @@ class Rumble:
             self._arm_repeat()
 
     def set_triggers(self, vals):
-        """Efekty spustów z PC: wartości trig2 (12) albo starego trig (4: sam opór). -> True, gdy wysłane do pada
-        (raport HID). Receiver odświeża je co kilka sekund, więc pad po ponownym połączeniu wraca do efektów z profilu."""
-        vals = tuple(vals)
-        if len(vals) == 4:
-            vals = trig2_from_legacy(vals)
-        if vals != self.fx:
-            print(f"Controller {self.idx}: triggers L2 {vals[0:4]} R2 {vals[4:8]} game rumble {vals[8:11]}")
-        self.fx = vals
+        """Efekty spustów z PC: wartości trig3 (trig2 + efekty gry), trig2 (12) albo starego trig (4: sam opór).
+        -> True, gdy wysłane do pada (raport HID). Receiver odświeża je co kilka sekund, więc pad po ponownym połączeniu
+        wraca do efektów z profilu i gry."""
+        vals, game = split_triggers(vals)
+        if (vals, game) != (self.fx, self.game_fx):
+            print(f"Controller {self.idx}: triggers L2 {vals[0:4]} R2 {vals[4:8]} game rumble {vals[8:11]}"
+                  + "".join(f" game {n} {g.hex()}" for n, g in zip(("L2", "R2"), game, strict=True) if g is not None))
+        self.fx, self.game_fx = vals, game
         if not vals[8] & RFX_ON:
             self._rv, self._rv_off = [None, None], [None, None]
-        self._arm_trig_watch(any(vals))
+        self._arm_trig_watch(any(vals) or game != (None, None))
         if "hidraw" not in self.methods:
             return False
         trig = self._want_triggers(*self.cur)
@@ -386,17 +407,19 @@ class Rumble:
 
     def _trig_expired(self):
         self._trig_watch = None
-        if self.fx is not None and any(self.fx):
+        if self.fx is not None and (any(self.fx) or self.game_fx != (None, None)):
             print(f"Controller {self.idx}: no trigger refresh from PC for {TRIG_WATCHDOG_S:g}s - triggers released")
             self.set_triggers(TRIG2_OFF)
 
     def _want_triggers(self, small, large, now=None):
-        """Efekty, które pad powinien mieć teraz: z ustawień, a przy wibracji z gry (i RFX_HOLD_S po niej) - drganie
-        wg silnika (L2 = duży, R2 = mały). None = PC nic nie ustawił (spustów nie ruszamy)."""
+        """Efekty, które pad powinien mieć teraz: z profilu, na spuście bez efektu w profilu - efekt gry, a przy
+        wibracji z gry (i RFX_HOLD_S po niej) - drganie wg silnika (L2 = duży, R2 = mały). None = PC nic nie ustawił
+        (spustów nie ruszamy)."""
         fx = self.fx
         if fx is None:
             return None
-        out = [effect(*fx[0:4]), effect(*fx[4:8])]
+        out = [effect(*fx[k:k + 4]) if fx[k] != TFX_OFF else game_effect(g)
+               for k, g in zip((0, 4), self.game_fx, strict=True)]
         flags, gain, freq = fx[8:11]
         if not flags & RFX_ON:
             return tuple(out)

@@ -277,6 +277,39 @@ def foreground_exe():
     return foreground_window()[1]
 
 
+class PROCESSENTRY32W(ctypes.Structure):
+    _fields_ = [("dwSize", wt.DWORD), ("cntUsage", wt.DWORD), ("th32ProcessID", wt.DWORD),
+                ("th32DefaultHeapID", ctypes.c_size_t), ("th32ModuleID", wt.DWORD), ("cntThreads", wt.DWORD),
+                ("th32ParentProcessID", wt.DWORD), ("pcPriClassBase", wt.LONG), ("dwFlags", wt.DWORD),
+                ("szExeFile", wt.WCHAR * 260)]
+
+
+TH32CS_SNAPPROCESS = 0x2
+INVALID_HANDLE = ctypes.c_void_p(-1).value
+
+
+def running_exes():
+    """Nazwy programów (małe litery, np. "forzahorizon5.exe") wszystkich działających procesów - jeden zrzut
+    Toolhelp (bez otwierania procesów). Błąd -> OSError."""
+    k = ctypes.WinDLL("kernel32", use_last_error=True)
+    k.CreateToolhelp32Snapshot.restype = wt.HANDLE
+    k.CreateToolhelp32Snapshot.argtypes = [wt.DWORD, wt.DWORD]
+    k.Process32FirstW.argtypes = k.Process32NextW.argtypes = [wt.HANDLE, ctypes.POINTER(PROCESSENTRY32W)]
+    k.CloseHandle.argtypes = [wt.HANDLE]
+    snap = k.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+    if not snap or snap == INVALID_HANDLE:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        e = PROCESSENTRY32W(dwSize=ctypes.sizeof(PROCESSENTRY32W))
+        out, ok = set(), k.Process32FirstW(snap, ctypes.byref(e))
+        while ok:
+            out.add(e.szExeFile.lower())
+            ok = k.Process32NextW(snap, ctypes.byref(e))
+        return out
+    finally:
+        k.CloseHandle(snap)
+
+
 def force_foreground(hwnd):
     """Okno na pierwszy plan z procesu w tle. Windows blokuje SetForegroundWindow programom, które nie mają
     aktywnego okna (zamiast tego miga przycisk na pasku zadań), więc: najpierw dołączenie do kolejki wejścia wątku

@@ -16,7 +16,7 @@ import rx_state as S
 import rx_testmode as testmode
 from proto import (BODY, CAL_MOVED, CAL_OK, LAT_NONE, PAD_KEYS, RTT_NONE, SCFG_EVENTS, SCFG_WOL, STATE_FIELDS, WIRE, Codec,
                    T_BTCTRL, T_BTDEV, T_BTSTATE, T_BUILD, T_BUILD2, T_BYE, T_CALRES, T_CLICK, T_CMD, T_EVENT, T_FB, T_IDENT, T_INFO,
-                   T_MOUSE, T_PING, T_PONG, T_PONG2, T_SCFG, T_STATE, T_STATE2, T_TOUCH, T_TRIG, T_TRIG2, T_UPDMSG,
+                   T_MOUSE, T_PING, T_PONG, T_PONG2, T_SCFG, T_STATE, T_STATE2, T_TOUCH, T_TRIG, T_TRIG2, T_TRIG3, T_UPDMSG,
                    T_VERSION, TRIG2_OFF, clamp, cstr, mac_bytes, mac_text)
 from rx_buttons import BUTTON_CODES, MASK_ALL, PS_BIT, TRIG_ON
 
@@ -144,9 +144,9 @@ def send_cmd(i, cmd, arg=0):
 
 
 def send_triggers(i, vals, repeat=1):
-    """Efekty spustów do nadajnika: 12 wartości = trig2, 4 = stary trig (sam opór); zmiana idzie kilka razy
-    (zgubiony pakiet)."""
-    t = T_TRIG2 if len(vals) == len(TRIG2_OFF) else T_TRIG
+    """Efekty spustów do nadajnika: 15 wartości = trig3 (z efektami gry), 12 = trig2, 4 = stary trig (sam opór);
+    zmiana idzie kilka razy (zgubiony pakiet)."""
+    t = T_TRIG3 if len(vals) > len(TRIG2_OFF) else T_TRIG2 if len(vals) == len(TRIG2_OFF) else T_TRIG
     send_repeat(codec.pack(t, i, *vals), repeat)
 
 

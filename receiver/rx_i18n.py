@@ -494,6 +494,12 @@ EN = {
         "Before every update the receiver copies settings.json, console.json, remap.json and padcal.json (the last {n} are kept). "
         "Restoring first backs up the current files - so it can be undone too - and then restarts the receiver.",
     "Zrób kopię teraz": "Back up now",
+    "{pad}: {exe} ustawia efekty spustów - nadajnik w starszej wersji ich nie przekaże (kliknij Aktualizuj)":
+        "{pad}: {exe} sets trigger effects - the older sender cannot pass them on (click Update)",
+    "{pad}: {exe} ustawia efekty spustów - pominięte (efekty spustów tylko dla pada master)":
+        "{pad}: {exe} sets trigger effects - ignored (trigger effects are master pad only)",
+    "{pad}: {exe} ustawia efekty spustów - idą do pada (spust z efektem w profilu zostaje z profilu)":
+        "{pad}: {exe} sets trigger effects - passed to the pad (a trigger with an effect in the profile keeps the profile's)",
     "Nie ma jeszcze żadnej kopii.": "No backups yet.",
     "Przywróć": "Restore",
     "Przywrócić?": "Restore?",

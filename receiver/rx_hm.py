@@ -19,6 +19,7 @@ import os
 import sys
 import threading
 
+from proto import TRIG_RAW_LEN
 from rx_report import build_ds5_report
 
 DLL = "HIDMaestro.Core.dll"
@@ -272,17 +273,29 @@ class Backend:
 
 
 OUT_LEN = 47                                  # część raportu wyjściowego, którą czytamy
-OUT_USED = (0, 1, 2, 3, 44, 45, 46)           # flagi ważności, silniki, kolor lightbara (parse_output)
+OUT_BASE = (0, 1, 2, 3)                       # flagi ważności 0 / 1, silniki - czytane zawsze
+OUT_RGB = (44, 45, 46)                        # kolor lightbara - tylko z flagą 1 bit 2
+R2_AT, L2_AT = 10, 21                         # efekty spustów (po TRIG_RAW_LEN B) - tylko z flagą 0 bit 2 / bit 3
+R2_BYTES, L2_BYTES = range(R2_AT, R2_AT + TRIG_RAW_LEN), range(L2_AT, L2_AT + TRIG_RAW_LEN)
+
+
+def out_used(f0, f1):
+    """Bajty raportu wyjściowego potrzebne parse_output przy tych flagach ważności (reszty nie czytamy)."""
+    return ((*OUT_RGB,) if f1 & 0x04 else ()) + (tuple(R2_BYTES) if f0 & 0x04 else ()) + (tuple(L2_BYTES) if f0 & 0x08 else ())
 
 
 def parse_output(report_id, data):
-    """Raport wyjściowy DualSense (bez bajtu ID) -> ((duży, mały) | None, (r, g, b) | None). Flagi ważności decydują,
-    które części gra ustawia: bit 0/1 flagi 0 = silniki, bit 2 flagi 1 = kolor lightbara."""
-    if report_id != OUT_REPORT or len(data) < 47:
-        return None, None
-    motors = (data[3], data[2]) if data[0] & 0x03 else None      # lewy = duży (niski), prawy = mały (wysoki)
+    """Raport wyjściowy DualSense (bez bajtu ID) -> ((duży, mały) | None, (r, g, b) | None, (L2, R2) | None).
+    Flagi ważności decydują, które części gra ustawia: bit 0/1 flagi 0 = silniki, bit 2 / 3 flagi 0 = efekt prawego /
+    lewego spustu (surowe 11 B; spust bez flagi = None), bit 2 flagi 1 = kolor lightbara."""
+    if report_id != OUT_REPORT or len(data) < OUT_LEN:
+        return None, None, None
+    f0 = data[0]
+    motors = (data[3], data[2]) if f0 & 0x03 else None           # lewy = duży (niski), prawy = mały (wysoki)
     rgb = (data[44], data[45], data[46]) if data[1] & 0x04 else None
-    return motors, rgb
+    trig = ((bytes(data[L2_AT:L2_AT + TRIG_RAW_LEN]) if f0 & 0x08 else None,
+             bytes(data[R2_AT:R2_AT + TRIG_RAW_LEN]) if f0 & 0x04 else None) if f0 & 0x0C else None)
+    return motors, rgb, trig
 
 
 class Pad:
@@ -313,13 +326,16 @@ class Pad:
             n = len(d)
             # tylko bajty, których używa parse_output: każdy odczyt tablicy .NET przez pythonnet to osobne wywołanie
             # (47 na raport, gry wysyłają je co klatkę - z GIL-em, którego potrzebuje wątek sieci)
-            data = [0] * min(n, OUT_LEN)
-            for k in OUT_USED:
-                if k < n:
-                    data[k] = d[k]
-            motors, rgb = parse_output(int(pkt.ReportId), data)
-            if motors is not None or rgb is not None:
-                self.on_fb(motors, rgb)
+            if n < OUT_LEN:
+                return
+            data = [0] * OUT_LEN
+            for k in OUT_BASE:
+                data[k] = d[k]
+            for k in out_used(data[0], data[1]):        # spusty (22 B) tylko, gdy gra je w tym raporcie ustawia
+                data[k] = d[k]
+            motors, rgb, trig = parse_output(int(pkt.ReportId), data)
+            if motors is not None or rgb is not None or trig is not None:
+                self.on_fb(motors, rgb, trig)
         except Exception:
             pass
 

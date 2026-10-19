@@ -5,7 +5,7 @@ import socket
 import time
 
 from proto import (BODY, E_NET_DOWN, E_NO_RECEIVER, RTT_NONE, Codec, SeqFilter, T_BTCMD, T_CMD, T_FB, T_PING, T_PONG,
-                   T_PONG2, T_SCFG, T_TRIG, T_TRIG2)
+                   T_PONG2, T_SCFG, T_TRIG, T_TRIG2, T_TRIG3)
 import sender_events as events
 import sender_state as state
 from sender_config import C
@@ -182,7 +182,7 @@ def on_readable():
         elif t == T_CMD:
             if fb_filter.fresh(("cmd", idx), sq, time.monotonic()) and on_command is not None:
                 on_command(idx, *BODY[T_CMD].unpack_from(data, 4))
-        elif t in (T_TRIG, T_TRIG2):    # trig2: efekty spustów (v8+), trig: sam opór (starszy receiver)
+        elif t in (T_TRIG, T_TRIG2, T_TRIG3):   # trig3: + efekty gry (v11+), trig2: profil (v8+), trig: sam opór
             if fb_filter.fresh(("trig", idx), sq, time.monotonic()) and on_triggers is not None:
                 on_triggers(idx, BODY[t].unpack_from(data, 4))
         elif t == T_BTCMD:              # Bluetooth telefonu z okna receivera (v10+)
