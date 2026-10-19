@@ -94,6 +94,20 @@ check(F.fb[0]["large"] == 180, "raporty płyną - wibracja trwa")
 time.sleep(0.6)
 check(F.fb[0]["large"] == 0 and sent_fb and sent_fb[-1][1][:2] == (0, 0), f"brak raportów > STALE - zatrzymana: {sent_fb[-1:]}")
 S.stop.set(); F.fb_event.set(); th.join(2); S.stop.clear()
+check(sent_fb[-1][0] - t0 < 0.3 + 0.15 + 0.15, f"wygaszenie punktualnie po STALE, nie po kolejnym 0.5 s: {sent_fb[-1][0] - t0:.2f}")
+
+# ---------- 6. gra w menu wysyła raporty bez silników (kolor / spusty) - wibracja gaśnie od razu, bez STALE ----------
+F.GAME_RUMBLE_STALE_S = 10.0
+F.reset(0); F.game(0, 180, 90)
+check(F.rumble_expired(F.fb[0], time.monotonic()) is None, "świeża wibracja trwa")
+F.game(0, rgb=(1, 2, 3))
+check(F.rumble_expired(F.fb[0], time.monotonic()) is None, "pojedynczy raport koloru w trakcie wibracji - bez zmian")
+F.fb[0]["t"] -= 0.3; F.game(0, rgb=(1, 2, 3))
+check(F.rumble_expired(F.fb[0], time.monotonic()) is not None, "raporty bez silników > GAP - wibracja wygasa")
+F.game(0, 50, 60)
+check(F.rumble_expired(F.fb[0], time.monotonic()) is None, "nowy raport silników - wibracja znów działa")
+F.reset(0); F.fb[0]["t"] -= 5; F.game(0, rgb=(1, 2, 3))
+check(F.rumble_expired(F.fb[0], time.monotonic()) is None, "bez wibracji - nic do wygaszania")
 
 print("HUNT12", "OK" if not fails else f"BŁĘDY: {len(fails)}")
 if fails:

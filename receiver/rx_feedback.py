@@ -39,9 +39,12 @@ TRIG_OFF_MODES = (0x00, 0x05)  # pierwszy bajt efektu spustu: brak / Off - gra z
 
 TRIG_REFRESH_S = 2.0   # efekty spustów odświeżane co tyle (pad po ponownym połączeniu / zgubiony pakiet)
 TRIG_REPEAT = 3        # zmiana efektów wysyłana tyle razy (UDP)
-GAME_RUMBLE_STALE_S = 3.0   # wibracja z gry bez nowego raportu silników dłużej niż tyle -> 0. Gry w trakcie wibracji
+GAME_RUMBLE_STALE_S = 1.0   # wibracja z gry bez nowego raportu silników dłużej niż tyle -> 0. Gry w trakcie wibracji
                             # wysyłają raporty co klatkę; ostatni "silniki 0" (wejście do menu, koniec jazdy) bywa
-                            # zgubiony (HIDMaestro nadpisuje stare pakiety) i pad wibrował bez końca
+                            # zgubiony (HIDMaestro nadpisuje stare pakiety) i pad wibrował bez końca. Było 3 s -
+                            # w menu Forza Horizon pad drgał jeszcze tyle po wyjściu z jazdy
+GAME_RUMBLE_GAP_S = 0.25    # gra wciąż wysyła raporty (kolor, spusty), ale bez silników dłużej niż tyle od ostatniego
+                            # raportu silników -> przestała sterować wibracją (menu) -> 0, bez czekania na STALE
 
 # potwierdzenia na padzie: (czas s, mała wibracja, duża wibracja, kolor lightbara | None = bez zmiany koloru)
 PULSES = {
@@ -104,6 +107,8 @@ def game(i, large=None, small=None, rgb=None, trig=None):
     if large is not None:
         f["large"], f["small"] = int(large), int(small or 0)
         f["t"] = time.monotonic()
+    elif rgb is not None or trig is not None:
+        f["t_other"] = time.monotonic()        # raport gry bez silników (GAME_RUMBLE_GAP_S)
     if rgb is not None:
         f["r"], f["g"], f["b"] = (int(c) for c in rgb)
         f["note"] = f["note"] or not f["rgb"]
@@ -142,7 +147,7 @@ def stop_game_rumble(why):
 def init():
     n = C.NUM_PADS
     fb[:] = [{"small": 0, "large": 0, "r": 0, "g": 0, "b": 0, "set": False, "rgb": False, "note": False,
-              "t": 0.0, "trig": NO_GAME_TRIG, "trig_owner": None, "trig_note": False}
+              "t": 0.0, "t_other": 0.0, "trig": NO_GAME_TRIG, "trig_owner": None, "trig_note": False}
              for _ in range(n)]
     fb_sent[:] = [None] * n
     trig_sent[:] = [None] * n
@@ -157,8 +162,8 @@ rx_settings.on_change(lambda _old, _new: fb_event.set())    # nowy kolor / tryb 
 def reset(i):
     """Nowy / odłączony wirtualny DS4 w slocie: gra jeszcze nic nie ustawiła (bez init() - nic do czyszczenia)."""
     if i < len(fb):
-        fb[i].update(set=False, small=0, large=0, rgb=False, note=False, trig=NO_GAME_TRIG, trig_owner=None,
-                     trig_note=False)
+        fb[i].update(set=False, small=0, large=0, t_other=0.0, rgb=False, note=False, trig=NO_GAME_TRIG,
+                     trig_owner=None, trig_note=False)
         fb_sent[i] = None
 
 
@@ -210,6 +215,19 @@ def _note_game_color(i):
             _("{pad}: program na PC ustawił kolor lightbara {hex} - pominięty (zawsze kolor z ustawień)") if not game else
             _("{pad}: program na PC ustawił kolor lightbara {hex} - poza grą świeci kolor z ustawień, w grze ten"))
     ev.info(text.format(pad=ev.pad_name(i), hex=L.rgb_hex(rgb)))
+
+
+def rumble_expired(f, now):
+    """Wibracja z gry trwa, a gra przestała nią sterować -> powód (do dziennika), inaczej None.
+    Gra wysyła już tylko inne raporty (kolor, spusty) - menu; albo żadnych raportów silników od STALE (zgubione
+    "silniki 0", gra zawieszona / zminimalizowana)."""
+    if not (f["large"] or f["small"]):
+        return None
+    if f["t_other"] - f["t"] > GAME_RUMBLE_GAP_S:
+        return f"game reports without motors for {GAME_RUMBLE_GAP_S:g}s"
+    if now - f["t"] > GAME_RUMBLE_STALE_S:
+        return f"no rumble report from the game for {GAME_RUMBLE_STALE_S:g}s"
+    return None
 
 
 def _target(i, now):
@@ -313,6 +331,8 @@ def _loop(send, send_trig=None):
     while not S.stop.is_set():
         now = time.monotonic()
         waits = [0.5] + [e - now for e in (p[0] for p in pulses if p is not None)]   # 0.5 s: też wygasanie
+        # wygaszenie wibracji punktualnie (bez tego STALE + do 0.5 s czekania)
+        waits += [f["t"] + GAME_RUMBLE_STALE_S + 0.001 - now for f in fb if f["large"] or f["small"]]
         if blink:
             waits.append(L.next_edge(now) + 0.002)
         fb_event.wait(max(0.0, min(waits)))
@@ -330,9 +350,9 @@ def _loop(send, send_trig=None):
             if fb[i]["trig_note"]:
                 _note_game_triggers(i)
             f = fb[i]
-            if (f["large"] or f["small"]) and now - f["t"] > GAME_RUMBLE_STALE_S:
+            if why := rumble_expired(f, now):
                 f["large"] = f["small"] = 0
-                print(f"Controller {i}: no rumble report from the game for {GAME_RUMBLE_STALE_S:g}s - rumble stopped")
+                print(f"Controller {i}: {why} - rumble stopped")
             val, ours, b = _target(i, now)
             blink = blink or b
             if not ours:
