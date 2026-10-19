@@ -1,5 +1,7 @@
 # Rozwój
 
+[English](DEVELOPMENT.md) | **Polski**
+
 ## Struktura
 
 ```

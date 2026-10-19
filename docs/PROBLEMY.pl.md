@@ -1,5 +1,7 @@
 # Rozwiązywanie problemów
 
+[English](TROUBLESHOOTING.md) | **Polski**
+
 | Objaw | Co sprawdzić |
 |---|---|
 | `WARNING: no reply from receiver` w logu nadajnika | IP komputera, zapora Windows (UDP 5005), czy `key` jest taki sam po obu stronach |

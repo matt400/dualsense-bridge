@@ -1,5 +1,7 @@
 # Konfiguracja
 
+[English](CONFIGURATION.md) | **Polski**
+
 Wszystkie ustawienia z wartościami domyślnymi i opisem są w `sender/sender.example.toml` i
 `receiver/receiver.example.toml`. Skopiuj plik bez `.example`, odkomentuj potrzebne linie i uruchom z
 `--config sender.toml` / `--config receiver.toml`. Pliki `*.toml` są w `.gitignore`, bo mogą zawierać klucz.
