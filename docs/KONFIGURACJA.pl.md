@@ -3,8 +3,9 @@
 [English](CONFIGURATION.md) | **Polski**
 
 Wszystkie ustawienia z wartościami domyślnymi i opisem są w `sender/sender.example.toml` i
-`receiver/receiver.example.toml`. Skopiuj plik bez `.example`, odkomentuj potrzebne linie i uruchom z
-`--config sender.toml` / `--config receiver.toml`. Pliki `*.toml` są w `.gitignore`, bo mogą zawierać klucz.
+`receiver/receiver.example.toml`. Skopiuj plik bez `.example` i odkomentuj potrzebne linie. Receiver sam wczytuje
+`receiver.toml` leżący obok `receiver_controller.py`; nadajnik potrzebuje `--config sender.toml` (dodaje go instalator
+usługi). Inny plik: `--config inny.toml`. Pliki `*.toml` są w `.gitignore`, bo mogą zawierać klucz.
 
 Po zmianie wartości domyślnych nadajnik przy starcie sam poprawia w `sender.toml` linie ze **starymi wartościami
 domyślnymi** (np. `pad_min_dt = 0.004` -> `0.001`); własne ustawienia, komentarze i układ pliku zostają, kopia w

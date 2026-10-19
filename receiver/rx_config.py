@@ -56,6 +56,15 @@ DEFAULTS = {
 CHOICES = {"ps_hold_action": ("gamebar", "bigpicture", "none"), "ps_share_action": ("screenshot", "capture", "none")}
 
 C = SimpleNamespace()
+HERE = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_CONFIG = "receiver.toml"     # wczytywany bez --config, gdy leży obok receivera
+
+
+def default_config(folder=None):
+    """receiver.toml obok receivera albo None. Bez tego plik działał tylko z --config: wpisy w receiver.toml
+    (np. log_file) były po cichu ignorowane przy zwykłym starcie i z autostartu bez tego argumentu."""
+    path = os.path.join(folder or HERE, DEFAULT_CONFIG)
+    return path if os.path.isfile(path) else None
 
 
 def autostart_command(argv=None):
@@ -104,7 +113,8 @@ def set_autostart(on):
 
 def init(argv=None):
     ap = argparse.ArgumentParser(description="DualSense UDP receiver -> ViGEm DS4 + DSU")
-    ap.add_argument("--config", help="plik konfiguracji .toml / .json")
+    ap.add_argument("--config", help=f"plik konfiguracji .toml / .json (domyślnie {DEFAULT_CONFIG} obok receivera, "
+                                     "jeśli jest; --config \"\" = bez pliku)")
     ap.add_argument("--allow", help="akceptuj pakiety tylko z tego IP")
     ap.add_argument("--key", help="wspólny klucz HMAC (uwierzytelnianie pakietów)")
     ap.add_argument("--pads", type=int, help="liczba slotów padów (1-4)")
@@ -120,7 +130,8 @@ def init(argv=None):
         sys.exit(0)
 
     cfg = dict(DEFAULTS)
-    cfg.update(load_config(args.config, DEFAULTS))
+    config = default_config() if args.config is None else args.config
+    cfg.update(load_config(config, DEFAULTS))
     for k in ("allow", "key", "pads", "stats", "remap_file"):
         v = getattr(args, k)
         if v is not None:
@@ -146,6 +157,7 @@ def init(argv=None):
             sys.stdout = sys.stderr = C.log_handle
         except OSError:
             C.log_handle = None
+    print(f"Config: {config or 'defaults (no config file)'}")
 
     C.cfg = cfg
     C.IN_PORT = int(cfg["in_port"])

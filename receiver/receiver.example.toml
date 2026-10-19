@@ -1,5 +1,5 @@
 # Receiver (Windows). Skopiuj jako receiver.toml, odkomentuj i zmień to, czego potrzebujesz.
-# Uruchomienie: python receiver_controller.py --config receiver.toml
+# receiver.toml obok receiver_controller.py wczytuje się sam; inny plik: python receiver_controller.py --config inny.toml
 # Wartości poniżej to ustawienia domyślne.
 
 # in_port = 5005
