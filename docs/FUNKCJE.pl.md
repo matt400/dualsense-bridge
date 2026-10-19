@@ -1,5 +1,7 @@
 # Funkcje
 
+[English](FEATURES.md) | **Polski**
+
 - **Wirtualny DualSense** (HIDMaestro) albo **DS4** (ViGEmBus) z przyciskami, gałkami, spustami, touchpadem,
   żyroskopem, wibracjami i kolorem lightbara z gry. Ustawienia → Pady: `auto` (HIDMaestro, gdy jest DLL i receiver
   działa jako administrator, inaczej ViGEmBus), `hidmaestro` (to samo, ale brak HIDMaestro to ostrzeżenie w dzienniku)

@@ -1,39 +1,41 @@
 # DualSense bridge
 
-DualSense bridge przesyła dane z pada PS5 (DualSense) do komputera z Windows przez sieć lokalną. Na PC pad działa
-jak zwykły DualSense (z HIDMaestro) albo pad PS4 (z ViGEmBus): przyciski, gałki, żyroskop, touchpad, a w drugą
-stronę wibracje i lightbar.
+**English** | [Polski](README.pl.md)
 
-Pad łączy się przez Bluetooth z **nadajnikiem**, czyli małym urządzeniem z Linuksem w pobliżu, np. Raspberry Pi albo
-starym telefonem z postmarketOS. Nadajnik od razu wysyła do PC każdą zmianę stanu pada. Dzięki temu PC może stać
-w innym pokoju, a grasz z kanapy przed telewizorem.
+DualSense bridge sends input from a PS5 pad (DualSense) to a Windows PC over the local network. On the PC the pad
+shows up as a regular DualSense (with HIDMaestro) or a PS4 pad (with ViGEmBus): buttons, sticks, gyro, touchpad, and
+in the other direction rumble and the lightbar.
 
-Na PC jest okno do sterowania wszystkim, także samym padem:
-- przełączenie obrazu i dźwięku na TV jednym skrótem (tryb konsoli),
-- remapowanie przycisków, gałek i żyroskopu, z profilami per pad i per gra,
-- touchpad jako mysz,
-- parowanie padów z nadajnikiem bez podchodzenia do niego,
-- pad master, któremu wolno więcej (np. gdy grają dzieci).
+The pad connects over Bluetooth to the **sender**, a small Linux device nearby, e.g. a Raspberry Pi or an old phone
+running postmarketOS. The sender forwards every change of the pad's state to the PC immediately. This way the PC can
+sit in another room while you play from the couch in front of the TV.
+
+The PC has a window that controls everything, including from the pad itself:
+- switching picture and sound to the TV with a single shortcut (console mode),
+- remapping buttons, sticks and gyro, with per-pad and per-game profiles,
+- touchpad as a mouse,
+- pairing pads with the sender without walking over to it,
+- a master pad that is allowed more (e.g. when kids are playing).
 
 ```
-DualSense ──Bluetooth──> nadajnik (sender/) ──sieć, UDP 5005──> PC (receiver/) ──> wirtualny DualSense / DS4 ──> gry
-                                                                       └──> serwer DSU (gyro dla emulatorów)
+DualSense ──Bluetooth──> sender (sender/) ──network, UDP 5005──> PC (receiver/) ──> virtual DualSense / DS4 ──> games
+                                                                        └──> DSU server (gyro for emulators)
 ```
 
-## Czego potrzebujesz
+## What you need
 
-| | PC | Nadajnik |
+| | PC | Sender |
 |---|---|---|
-| Sprzęt | komputer z Windows 10 / 11 | Raspberry Pi, stary telefon z postmarketOS albo inny komputer z Linuksem i Bluetooth |
-| Oprogramowanie | [Python 3.11+](https://www.python.org/downloads/), [Git for Windows](https://git-scm.com/download/win), [.NET 10](https://dotnet.microsoft.com/download/dotnet/10.0) (dla HIDMaestro) | Python 3.11+, `git`, BlueZ, systemd, jądro ze sterownikiem `hid-playstation` |
-| Sieć | ta sama sieć lokalna co nadajnik | najlepiej kabel (Ethernet); Wi-Fi działa, ale daje skoki opóźnienia |
-| Bluetooth | - | wbudowany wystarczy; dongle USB (np. TP-Link UB500) często ma wyraźnie mniejsze opóźnienie - nadajnik wybiera go sam |
+| Hardware | a Windows 10 / 11 computer | Raspberry Pi, an old phone with postmarketOS, or another Linux computer with Bluetooth |
+| Software | [Python 3.11+](https://www.python.org/downloads/), [Git for Windows](https://git-scm.com/download/win), [.NET 10](https://dotnet.microsoft.com/download/dotnet/10.0) (for HIDMaestro) | Python 3.11+, `git`, BlueZ, systemd, a kernel with the `hid-playstation` driver |
+| Network | the same local network as the sender | preferably a cable (Ethernet); Wi-Fi works but causes latency spikes |
+| Bluetooth | - | built-in is enough; a USB dongle (e.g. TP-Link UB500) often has noticeably lower latency - the sender picks it automatically |
 
-## Instalacja
+## Installation
 
 ### 1. PC (Windows)
 
-W PowerShellu albo wierszu poleceń:
+In PowerShell or Command Prompt:
 
 ```
 git clone https://github.com/matt400/dualsense-bridge
@@ -43,19 +45,19 @@ python receiver_controller.py --autostart on
 python receiver_controller.py
 ```
 
-- **Wirtualne pady:** [HIDMaestro](https://github.com/hifihedgehog/HIDMaestro) (natywny DualSense, rozwijany) receiver
-  pobiera i aktualizuje sam (~56 MB, chwilę po pierwszym starcie). Receiver uruchamia się **jako administrator**
-  (HIDMaestro tworzy pady tylko tak). Okno UAC pojawia się tylko przy pierwszym starcie: potem receiver startuje przez
-  zadanie Harmonogramu z najwyższymi uprawnieniami (`DualSenseBridgeAdmin`, autostart tak samo). `--no-elevate`
-  wyłącza samo podnoszenie uprawnień.
-- Zapas: instalator `vgamepad` zaproponuje sterownik **ViGEmBus** (pad PS4). Zainstaluj go. Bez HIDMaestro albo bez
-  uprawnień administratora receiver użyje ViGEmBus. Wybór: Ustawienia → Pady.
-- Przy pierwszym starcie zapora Windows zapyta o dostęp do sieci. Zezwól w **sieciach prywatnych** (UDP 5005).
-- `--autostart on` uruchamia receiver zaraz po zalogowaniu do Windows (`--autostart off` wyłącza).
-- Receiver działa w zasobniku. Kliknij jego ikonę, żeby otworzyć okno.
-- Zapisz adres IP komputera (`ipconfig` → „Adres IPv4”, np. `192.168.1.10`). Będzie potrzebny nadajnikowi.
+- **Virtual pads:** the receiver downloads and updates [HIDMaestro](https://github.com/hifihedgehog/HIDMaestro)
+  (native DualSense, actively developed) by itself (~56 MB, shortly after the first start). The receiver runs
+  **as administrator** (HIDMaestro can only create pads that way). The UAC prompt appears only on the first start:
+  after that the receiver starts through a Task Scheduler task with highest privileges (`DualSenseBridgeAdmin`, same
+  for autostart). `--no-elevate` turns off just the elevation.
+- Fallback: the `vgamepad` installer will offer the **ViGEmBus** driver (PS4 pad). Install it. Without HIDMaestro or
+  without administrator rights the receiver uses ViGEmBus. Choice: Settings → Pads.
+- On the first start Windows Firewall asks for network access. Allow it on **private networks** (UDP 5005).
+- `--autostart on` starts the receiver right after you log in to Windows (`--autostart off` turns it off).
+- The receiver lives in the system tray. Click its icon to open the window.
+- Note the PC's IP address (`ipconfig` → "IPv4 Address", e.g. `192.168.1.10`). The sender will need it.
 
-### 2. Nadajnik (Linux)
+### 2. Sender (Linux)
 
 Raspberry Pi OS / Debian / Ubuntu:
 
@@ -64,49 +66,51 @@ sudo apt install python3 python3-evdev bluez git
 git clone https://github.com/matt400/dualsense-bridge
 cd dualsense-bridge/sender
 cp sender.example.toml sender.toml
-nano sender.toml                        # odkomentuj i ustaw: host = "IP komputera"
+nano sender.toml                        # uncomment and set: host = "PC's IP"
 sudo ./install-service.sh
 ```
 
-postmarketOS / Alpine: `doas apk add python3 py3-evdev bluez git`, a w pozostałych poleceniach `doas` zamiast `sudo`.
+postmarketOS / Alpine: `doas apk add python3 py3-evdev bluez git`, and `doas` instead of `sudo` in the other commands.
 
-Nadajnik działa jako usługa systemd i startuje sam po włączeniu urządzenia. Log: `journalctl -u dualsense-sender -f`.
-Usunięcie usługi: `sudo ./install-service.sh --remove`.
+The sender runs as a systemd service and starts by itself when the device boots. Log: `journalctl -u dualsense-sender -f`.
+Removing the service: `sudo ./install-service.sh --remove`.
 
 ### 3. Pad
 
-1. W oknie na PC kliknij ikonę **Bluetooth** w nagłówku, potem **Skanuj**.
-2. Na padzie przytrzymaj **Create + PS**, aż lightbar zacznie szybko migać.
-3. Przy padzie na liście kliknij **Sparuj**.
+1. In the window on the PC click the **Bluetooth** icon in the header, then **Scan**.
+2. On the pad hold **Create + PS** until the lightbar starts blinking fast.
+3. Click **Pair** next to the pad in the list.
 
-Potem wystarczy włączyć pada przyciskiem PS, a połączy się sam. Pojawi się w oknie i w grach jako DualSense (HIDMaestro)
-albo pad PS4 (ViGEmBus). Kolejność graczy jest stała: pad 2 nie zostanie graczem 1, nawet gdy włączysz go pierwszy.
+After that just turn the pad on with the PS button and it connects by itself. It appears in the window and in games
+as a DualSense (HIDMaestro) or a PS4 pad (ViGEmBus). Player order is fixed: pad 2 won't become player 1, even if you
+turn it on first.
 
-## Pierwsze kroki
+## First steps
 
-- **Skróty pada:** ikona pada w nagłówku okna pokazuje wszystkie skróty (np. PS + Share = zrzut ekranu).
-- **Tryb konsoli** (obraz i dźwięk na TV): w Ustawieniach → Tryb konsoli wybierz urządzenia audio TV i PC. Potem
-  dwa naciśnięcia R2 na padzie przełączają ekrany.
-- **Remapowanie:** kliknij przycisk albo gałkę na rysunku pada w oknie. **Zapisz** zapisuje profil.
-- **Pełny ekran** (F11 albo ikona) to tryb TV: większe okno sterowane padem.
+- **Pad shortcuts:** the pad icon in the window header shows all shortcuts (e.g. PS + Share = screenshot).
+- **Console mode** (picture and sound on the TV): in Settings → Console mode pick the TV and PC audio devices. Then
+  pressing R2 twice on the pad switches the screens.
+- **Remapping:** click a button or stick on the pad drawing in the window. **Save** stores the profile.
+- **Full screen** (F11 or the icon) is TV mode: a larger window you control with the pad.
 
-## Aktualizacja
+## Updating
 
-Przycisk **Aktualizuj** w oknie pobiera nową wersję na PC i na nadajniku (`git pull`) i uruchamia obie strony od nowa.
-Ustawienia i profile zostają, a receiver robi ich kopię (Ustawienia → Kopie).
+The **Update** button in the window gets the new version on both the PC and the sender (`git pull`) and restarts
+both sides. Settings and profiles are kept, and the receiver makes a backup of them (Settings → Backups).
 
-## Problemy
+## Problems
 
-Najczęstsze:
-- **Pad nie pojawia się w grach:** Ustawienia → Pady pokazują, czego brakuje (HIDMaestro, uprawnień administratora
-  albo ViGEmBus).
-- **„Nadajnik offline” w oknie:** zły `host` w `sender.toml`, zapora Windows (UDP 5005) albo nadajnik w innej sieci.
-- **Skoki opóźnienia:** nadajnik na Wi-Fi. Podłącz go kablem.
+Most common:
+- **The pad doesn't show up in games:** Settings → Pads shows what is missing (HIDMaestro, administrator rights
+  or ViGEmBus).
+- **"Sender offline" in the window:** wrong `host` in `sender.toml`, Windows Firewall (UDP 5005), or the sender is on
+  a different network.
+- **Latency spikes:** the sender is on Wi-Fi. Connect it with a cable.
 
-Pełna lista: [docs/PROBLEMY.md](docs/PROBLEMY.md).
+Full list: [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
 
-## Więcej
+## More
 
-- [docs/FUNKCJE.md](docs/FUNKCJE.md) – wszystkie funkcje okna, trybu konsoli, pada master, Wake-on-LAN i widoku Test
-- [docs/KONFIGURACJA.md](docs/KONFIGURACJA.md) – pliki ustawień (`sender.toml`, `receiver.toml`, `console.json`) i aktualizacja
-- [docs/ROZWOJ.md](docs/ROZWOJ.md) – struktura kodu i testy
+- [docs/FEATURES.md](docs/FEATURES.md) – all features of the window, console mode, master pad, Wake-on-LAN and the Test view
+- [docs/CONFIGURATION.md](docs/CONFIGURATION.md) – settings files (`sender.toml`, `receiver.toml`, `console.json`) and updating
+- [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) – code structure and tests
