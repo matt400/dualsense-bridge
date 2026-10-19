@@ -205,3 +205,16 @@
   - nadajnik (jako root): procesor bez głębokiego uśpienia (PM QoS), proces na najszybszych rdzeniach i z planistą
     czasu rzeczywistego - wybudzenie procesora z uśpienia (na telefonach ze Snapdragonem 845 do ~6.5 ms) nie
     opóźnia pada ani pingu.
+
+## Zrzuty ekranu
+
+| | |
+|---|---|
+| ![Główne okno](img/main.png) | ![Efekt spustu R2](img/remap_trigger.png) |
+| Karty padów (bateria, opóźnienie pad → gra), klik w część pada = remap | R2: efekt adaptacyjnego spustu (klik) |
+| ![Widok Test](img/test_view.png) | ![Bluetooth nadajnika](img/bt_drawer.png) |
+| Widok Test: wejścia na żywo, żyroskop, dryf gałek z propozycją strefy martwej | Bluetooth nadajnika: skan, parowanie, łączenie z PC |
+| ![Ustawienia: tryb konsoli](img/settings_console.png) | ![Ustawienia: pad master](img/settings_master.png) |
+| Ustawienia → Tryb konsoli | Ustawienia → Master |
+
+Zrzuty są w wersji angielskiej, z danymi-atrapą: `python3 tools/screenshots.py` (patrz [ROZWOJ.pl.md](ROZWOJ.pl.md)).

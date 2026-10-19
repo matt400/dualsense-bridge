@@ -218,3 +218,16 @@
   - thread and process priorities, 1 ms timer on Windows,
   - sender (as root): CPU without deep sleep (PM QoS), process on the fastest cores and with a real-time scheduler -
     waking the CPU from sleep (on phones with a Snapdragon 845 up to ~6.5 ms) doesn't delay the pad or the ping.
+
+## Screenshots
+
+| | |
+|---|---|
+| ![Main window](img/main.png) | ![Trigger effect on R2](img/remap_trigger.png) |
+| Pad cards (battery, pad → game latency), click a part of the pad to remap it | R2: adaptive trigger effect (click) |
+| ![Test view](img/test_view.png) | ![Sender Bluetooth](img/bt_drawer.png) |
+| Test view: live inputs, gyro, stick drift with a proposed deadzone | Sender Bluetooth: scan, pair, connect from the PC |
+| ![Settings: console mode](img/settings_console.png) | ![Settings: master pad](img/settings_master.png) |
+| Settings → Console mode | Settings → Master |
+
+The screenshots are generated with mock data: `python3 tools/screenshots.py` (see [DEVELOPMENT.md](DEVELOPMENT.md)).

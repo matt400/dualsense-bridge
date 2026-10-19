@@ -12,6 +12,17 @@ tests/      tests on Linux with Windows and evdev device stubs
 
 `proto.py` (packet format) must be identical in `receiver/` and `sender/`. The tests check this.
 
+## Screenshots
+
+```
+pip install PySide6-Essentials
+python3 tools/screenshots.py          # -> docs/img/*.png (or: python3 tools/screenshots.py OUT_DIR)
+```
+
+Renders the receiver window offscreen (Qt, no display, no Windows) with the test stubs and mock data: two pads,
+battery, latency, a remapped profile, the Test view, the Bluetooth drawer and two settings tabs. English UI. Run it
+after UI changes and commit the updated PNGs.
+
 ## Tests
 
 ```

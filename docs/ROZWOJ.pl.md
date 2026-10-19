@@ -12,6 +12,17 @@ tests/      testy na Linuksie z zaślepkami Windows i urządzeń evdev
 
 `proto.py` (format pakietów) musi być identyczny w `receiver/` i `sender/`. Testy to sprawdzają.
 
+## Zrzuty ekranu
+
+```
+pip install PySide6-Essentials
+python3 tools/screenshots.py          # -> docs/img/*.png (albo: python3 tools/screenshots.py KATALOG)
+```
+
+Rysuje okno receivera bez ekranu (Qt offscreen, bez Windowsa) na zaślepkach z testów i danych-atrapie: dwa pady,
+bateria, opóźnienie, profil z remapem, widok Test, panel Bluetooth i dwie zakładki ustawień. UI po angielsku.
+Uruchom po zmianach w oknie i dodaj nowe PNG do commita.
+
 ## Testy
 
 ```
