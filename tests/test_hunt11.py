@@ -75,7 +75,7 @@ U.status = U.Status(version="v2.0.0")
 real_load, real_latest = U._load_state, U.latest_release
 U._load_state = lambda: (time.time() + 10 * 24 * 3600, "v2.0.0")   # zegar cofnięty: ostatnie sprawdzenie "w przyszłości"
 asked = []
-U.latest_release = lambda: asked.append(1) or ("v2.0.0", "https://example/zip")
+U.latest_release = lambda: asked.append(1) or ("v2.0.0", "https://example/zip", 0.0)
 try:
     U.check()
     check(asked, "zegar cofnięty: sprawdzenie nie jest wstrzymane do daty z przyszłości")

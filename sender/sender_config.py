@@ -19,6 +19,7 @@ DEFAULTS = {
     "gyro_cal_file": "gyro_cal.json",  # kalibracja żyroskopu z okna receivera per pad (MAC); "" = bez zapisu
     "bt_adapter": "auto",          # kontroler Bluetooth: auto (dongle USB przed wbudowanym) | builtin | manual (bez zmian)
     "bt_file": "bt.json",          # wybór kontrolera z okna receivera (ma pierwszeństwo przed bt_adapter); "" = bez zapisu
+    "auth_file": "auth.json",      # z kluczem: zapamiętane przejście na protokół v3 (ochrona przed replay); "" = bez zapisu
     "grab_pad": True,
     "grab_touch": True,
     "tap_click": True,
@@ -105,6 +106,7 @@ def init(argv=None):
     C.WOL_FILE = _beside(cfg["wol_file"])
     C.GYRO_CAL_FILE = _beside(cfg["gyro_cal_file"])
     C.BT_ADAPTER, C.BT_FILE = str(cfg["bt_adapter"]), _beside(cfg["bt_file"])
+    C.AUTH_FILE = _beside(cfg["auth_file"])
     C.GRAB_PAD, C.GRAB_TOUCH, C.TAP_CLICK = bool(cfg["grab_pad"]), bool(cfg["grab_touch"]), bool(cfg["tap_click"])
     C.TAP_MAX_S, C.TAP_MAX_MOVE = float(cfg["tap_max_s"]), int(cfg["tap_max_move"])
     C.PAD_MIN_DT = max(0.0, float(cfg["pad_min_dt"]))

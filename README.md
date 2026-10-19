@@ -111,12 +111,15 @@ Most common:
   a different network.
 - **Latency spikes:** the sender is on Wi-Fi. Connect it with a cable.
 
+On a network shared with others set the same `key` on both sides: [docs/SECURITY.md](docs/SECURITY.md).
+
 Full list: [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
 
 ## More
 
 - [docs/FEATURES.md](docs/FEATURES.md) – all features of the window, console mode, master pad, Wake-on-LAN and the Test view
 - [docs/CONFIGURATION.md](docs/CONFIGURATION.md) – settings files (`sender.toml`, `receiver.toml`, `console.json`) and updating
+- [docs/SECURITY.md](docs/SECURITY.md) – HMAC key, replay protection, what runs with which rights
 - [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) – code structure and tests
 
 ## License

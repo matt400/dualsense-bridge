@@ -12,6 +12,7 @@
 #   manual (nadajnik nic nie zmienia); wybór z okna (panel Bluetooth: Użyj / Auto / Ręcznie) zapisuje się w bt_file
 #   i ma pierwszeństwo
 # bt_file = "bt.json"
+# auth_file = "auth.json"   # z kluczem: zapamiętane przejście na protokół v3 (ochrona przed powtórzeniem pakietów)
 # grab_pad = true
 # grab_touch = true
 # tap_click = true
@@ -40,5 +41,7 @@
 # rt_priority = 10   # SCHED_FIFO z tym priorytetem (1-99); 0 = zwykły planista; wymaga doas
 # low_latency = true   # procesor bez głębokiego uśpienia + najszybsze rdzenie (sender_rt); wymaga doas
 # cpu_latency_us = 50   # low_latency: max czas wybudzenia procesora [µs] (głębokie stany śpią do ~6.5 ms)
-# key = ""
+# key = ""   # wspólny klucz HMAC (ten sam w receiverze); bez niego każdy w sieci lokalnej może wysyłać polecenia.
+#   Wygeneruj: python3 -c "import secrets; print(secrets.token_urlsafe(24))". Usługa: doas ./install-service.sh
+#   przenosi --key do /etc/dualsense-sender.env (niewidoczny w ps)
 # stats = false

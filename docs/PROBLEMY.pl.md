@@ -12,6 +12,8 @@
 | Celownik / kamera powoli „płynie” sama | widok Test → wykres gyro przy leżącym padzie; jeśli nie jest płaski - „Kalibruj żyroskop” |
 | Postać idzie sama / kamera się kręci (gałka) | widok Test → „Zmierz dryf” → „Zastosuj” (korekcja dryfu tego pada) |
 | Ruch odwrócony w emulatorze (DSU) | `acc_sign` / `gyro_sign` w konfiguracji receivera |
+| Emulator na innym urządzeniu nie widzi serwera DSU | od przeglądu bezpieczeństwa słucha tylko na tym komputerze: `dsu_bind = "0.0.0.0"` w `receiver.toml` |
+| Pady nie działają po powrocie do starszej wersji (z `key`) | usuń `auth.json` obok nowszej strony (tam zapamiętany jest protokół v3) |
 | Profil gry się nie włącza | gry z anti-cheatem mogą blokować odczyt nazwy procesu; przełącz ręcznie PS + d-pad |
 | `virtual pad error ... ViGEmBus` | zainstaluj sterownik ViGEmBus albo HIDMaestro (README) |
 | Ustawienia → Pady: „HIDMaestro nieużywany” | „not found” = HIDMaestro jeszcze się nie pobrał (Ustawienia → Pady → „Sprawdź teraz”; błąd pobierania jest pod nim) albo zła własna ścieżka; „administrator rights required” = odmowa w oknie UAC przy starcie - „Uruchom ponownie jako administrator” (autostart podnosi uprawnienia sam, dziennik: „Autostart ustawiony na uprawnienia administratora”); „pythonnet not installed” = `pip install pythonnet`; „.NET 10 runtime not installed” = przycisk „Zainstaluj .NET 10” (winget) albo ręcznie .NET 10 Runtime; „cannot load its types: …” = brak pliku obok `HIDMaestro.Core.dll` (nazwa w komunikacie) - przy własnej ścieżce DLL skopiuj go z zipa HIDMaestro albo zostaw pustą ścieżkę (pobranie automatyczne); inny błąd przy tworzeniu = ten pad przez ViGEmBus, szczegóły w dzienniku |

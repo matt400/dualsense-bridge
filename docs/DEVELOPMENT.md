@@ -91,7 +91,14 @@ The tests cover:
 - virtual pads: HIDMaestro / ViGEmBus backend and switching between them at runtime, placeholder pad for fixed
   player order, DualSense report, feedback from the DualSense output report (`test_vpad.py`, the Pads tab in
   `test_settings_gui.py`), downloading HIDMaestro via HTTP Range, versions, zip / network errors and running as
-  administrator (`test_hm_update.py`).
+  administrator (`test_hm_update.py`);
+- security: protocol v3 with a key - switching over by itself (trial ping), freshness token, exact replays, signed v2
+  after the switch, remembered in `auth.json`, the sender's PC clock after a receiver restart, a replayed ping can't
+  move the sender clock back, end to end over UDP including a recorded packet sent again (`test_security_tx.py`,
+  `test_security.py`, `test_e2e_key.py`); DSU only on 127.0.0.1 with a client limit, a new HIDMaestro release waits,
+  the Security list, plain text in window labels (`test_security.py`); pairing from the window only for pads, the
+  adapter not left pairable, trust only for pads (`test_bt.py`); the key in `/etc/dualsense-sender.env` instead of
+  `ExecStart`, systemd restrictions (`test_service_tx.py`).
 
 Behaviour with a real pad, ViGEm, HIDMaestro (pythonnet, driver), `DisplaySwitch.exe`, audio switching (pycaw) and
 Windows notifications has to be checked manually.

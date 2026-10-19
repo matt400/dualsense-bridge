@@ -406,14 +406,76 @@ def recv_timeout(sk, seconds):
         sk.settimeout(seconds)
 
 
-def bind_udp(port, what, rcvbuf=0):
+def bind_udp(port, what, rcvbuf=0, host="0.0.0.0"):
     sk = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     if rcvbuf:
         sk.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, rcvbuf)
     try:
-        sk.bind(("0.0.0.0", port))
+        sk.bind((host, port))
     except OSError as e:
         print(f"Cannot bind UDP {port} ({what}): {e}. Is another receiver / DSU server running?")
         sys.exit(1)
     no_connreset(sk)
     return sk
+
+
+# ---------------- Uprawnienia folderu z kodem (receiver działa jako administrator) ----------------
+ADMINS, SYSTEM, USERS = "S-1-5-32-544", "S-1-5-18", "S-1-5-32-545"
+TRUSTED_INSTALLER = "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464"
+ADMIN_OWNERS = frozenset({ADMINS, SYSTEM, TRUSTED_INSTALLER})
+
+
+def owner_sid(path):
+    """SID właściciela pliku / folderu ("S-1-5-...") albo None (błąd, nie Windows). Właściciel zawsze może zmienić
+    uprawnienia, więc folder zwykłego użytkownika = kod, który ten użytkownik (i każdy jego program) podmieni."""
+    try:
+        adv = ctypes.windll.advapi32
+        adv.GetNamedSecurityInfoW.argtypes = [wt.LPCWSTR, ctypes.c_int, wt.DWORD, ctypes.POINTER(ctypes.c_void_p),
+                                              ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p,
+                                              ctypes.POINTER(ctypes.c_void_p)]
+        adv.GetNamedSecurityInfoW.restype = wt.DWORD
+        adv.ConvertSidToStringSidW.argtypes = [ctypes.c_void_p, ctypes.POINTER(wt.LPWSTR)]
+        k32.LocalFree.argtypes = [ctypes.c_void_p]
+        owner, sd = ctypes.c_void_p(), ctypes.c_void_p()
+        # SE_FILE_OBJECT = 1, OWNER_SECURITY_INFORMATION = 1
+        if adv.GetNamedSecurityInfoW(path, 1, 1, ctypes.byref(owner), None, None, None, ctypes.byref(sd)):
+            return None
+        try:
+            text = wt.LPWSTR()
+            if not adv.ConvertSidToStringSidW(owner, ctypes.byref(text)):
+                return None
+            try:
+                return text.value
+            finally:
+                k32.LocalFree(ctypes.cast(text, ctypes.c_void_p))
+        finally:
+            k32.LocalFree(sd)
+    except Exception:
+        return None
+
+
+def admin_owned(path):
+    """True: właścicielem jest Administratorzy / SYSTEM / TrustedInstaller; False: ktoś inny; None: nie wiadomo."""
+    sid = owner_sid(path)
+    return None if sid is None else sid in ADMIN_OWNERS
+
+
+def harden_dir(path):
+    """Folder tylko do zapisu dla administratorów: właściciel Administratorzy, uprawnienia bez dziedziczenia z profilu
+    użytkownika (Administratorzy i SYSTEM - pełne, Użytkownicy - odczyt i uruchamianie), pliki w środku dziedziczą
+    z folderu. Receiver (administrator) dalej zapisuje ustawienia i aktualizuje się; zwykły program już nie podmieni
+    kodu uruchamianego z uprawnieniami. -> (ok, opis błędu)."""
+    icacls = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "icacls.exe")
+    steps = ([path, "/setowner", f"*{ADMINS}", "/T", "/C", "/Q"],
+             [path, "/reset", "/T", "/C", "/Q"],
+             [path, "/inheritance:r", "/grant:r", f"*{ADMINS}:(OI)(CI)F", f"*{SYSTEM}:(OI)(CI)F",
+              f"*{USERS}:(OI)(CI)RX", "/Q"])
+    for args in steps:
+        try:
+            r = subprocess.run([icacls, *args], capture_output=True, text=True, timeout=300,
+                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except (OSError, subprocess.SubprocessError) as e:
+            return False, repr(e)
+        if r.returncode:
+            return False, (r.stderr or r.stdout or f"icacls exit code {r.returncode}").strip().splitlines()[-1]
+    return True, ""

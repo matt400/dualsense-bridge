@@ -6,6 +6,11 @@ pobiera się ~56 MB zamiast 160, każdy wpis jednym zapytaniem (prefetch). Wcze�
 HTTPS (~900 połączeń z TLS), a podpisany link GitHuba do magazynu wygasa po ~5 min - wolne łącze nie zdążało.
 CRC32 każdego wpisu sprawdza zipfile, a cała wersja trafia do folderu atomowo (tmp + rename).
 
+Ochrona przed złośliwym wydaniem (przejęte konto autora): DLL ładuje się do procesu administratora i instaluje
+sterownik, a wydanie nie ma podpisu Authenticode ani sum kontrolnych. Nowa wersja czeka więc MIN_AGE_DAYS od
+publikacji (hm_min_age_days w receiver.toml, 0 = od razu) - podmienione wydania zwykle znikają w ciągu dni. Pierwsza
+instalacja (brak jakiejkolwiek wersji) nie czeka.
+
   receiver/hidmaestro/v1.12.0/HIDMaestro.Core.dll   wersja w swoim folderze: nowsza nie nadpisuje DLL załadowanej
                                                     w działającym procesie (CLR trzyma plik) - działa po restarcie
   receiver/hidmaestro/state.json                    kiedy ostatnio sprawdzano i jaki był wynik
@@ -31,6 +36,7 @@ API = f"https://api.github.com/repos/{REPO}/releases/latest"
 DLL = "HIDMaestro.Core.dll"
 DEPS = ("Microsoft.Windows.SDK.NET.dll", "WinRT.Runtime.dll")   # projekcje Windows SDK (TFM net10.0-windows10.0.26100)
 CHECK_S = 24 * 3600
+MIN_AGE_DAYS = 7                     # nowa wersja instaluje się dopiero tyle dni po publikacji (patrz wyżej)
 START_DELAY_S = 20                   # po starcie receivera: najpierw pady i okno, potem sieć
 TIMEOUT_S = 30
 CHUNK = 1 << 16
@@ -47,6 +53,7 @@ class Status:
     busy: bool = False       # trwa sprawdzanie / pobieranie
     error: str = ""          # ostatni błąd (sieć, zip) - "" = OK
     checked: float = 0.0     # time.time() ostatniego sprawdzenia
+    held_until: float = 0.0  # nowsza wersja (latest) czeka do tej chwili (time.time()) - MIN_AGE_DAYS; 0 = nie czeka
 
 
 status = Status()
@@ -128,16 +135,30 @@ def _get(url, headers=None, timeout=TIMEOUT_S):
     return urllib.request.urlopen(urllib.request.Request(url, headers={**UA, **(headers or {})}), timeout=timeout)
 
 
+def _published(rel):
+    """Czas publikacji wydania (time.time()) albo 0 (brak / nieczytelny)."""
+    from datetime import datetime
+    try:
+        return datetime.fromisoformat(str(rel.get("published_at")).replace("Z", "+00:00")).timestamp()
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def latest_release():
-    """-> (tag, url zipa x64). DLL jest identyczna w zipie x64 i arm64 - bierzemy zwykły."""
+    """-> (tag, url zipa x64, czas publikacji albo 0). DLL jest identyczna w zipie x64 i arm64 - bierzemy zwykły."""
     with _get(API) as r:
         rel = json.load(r)
     tag = rel.get("tag_name", "")
     zips = [a for a in rel.get("assets", ()) if a.get("name", "").lower().endswith(".zip")]
     asset = next((a for a in zips if "arm64" not in a["name"].lower()), zips[0] if zips else None)
-    if not version_key(tag) or asset is None:
+    if not version_key(tag) or asset is None or rel.get("draft") or rel.get("prerelease"):
         raise OSError(f"unexpected release data ({tag!r}, {len(zips)} zip)")
-    return tag, asset["browser_download_url"]
+    return tag, asset["browser_download_url"], _published(rel)
+
+
+def min_age_s():
+    from rx_config import C
+    return max(0.0, float(getattr(C, "HM_MIN_AGE_DAYS", MIN_AGE_DAYS))) * 86400
 
 
 class HttpRange(io.RawIOBase):
@@ -295,11 +316,17 @@ def _check(force):
     if not force and 0 <= time.time() - status.checked < CHECK_S and status.version:
         return
     _set(busy=True, error="")
-    tag, url = latest_release()
+    tag, url, published = latest_release()
     now = time.time()
     _save_state(now, tag)
-    _set(latest=tag, checked=now)
+    _set(latest=tag, checked=now, held_until=0.0)
     if status.version and version_key(status.version) >= version_key(tag):
+        return
+    ready = published + min_age_s()
+    if status.version and published and now < ready:      # świeże wydanie czeka (także przy "Sprawdź teraz")
+        _set(held_until=ready)
+        print(f"HIDMaestro {tag} published {(now - published) / 3600:.0f} h ago - installing it after "
+              f"{time.strftime('%Y-%m-%d %H:%M', time.localtime(ready))} (hm_min_age_days)")
         return
     install(tag, url)
     _set(version=tag)

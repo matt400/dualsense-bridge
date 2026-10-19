@@ -12,6 +12,9 @@ from proto import load_config
 DEFAULTS = {
     "in_port": 5005,
     "dsu_port": 26760,
+    "dsu_bind": "127.0.0.1", # adres serwera DSU: tylko ten komputer; "0.0.0.0" = emulator na innym urządzeniu w sieci
+    "dsu_max_clients": 4,    # najwięcej subskrybentów DSU naraz (każdy dostaje strumień do dsu_hz pakietów/s)
+    "hm_min_age_days": 7,    # nowa wersja HIDMaestro instaluje się dopiero tyle dni po publikacji; 0 = od razu
     "pads": 2,               # liczba slotów (max 4); wirtualne DS4 powstają tylko dla podłączonych
     "mouse_pads": [0],       # które kontrolery startują w trybie myszy (gdy jest pad master: mysz ma master)
     "pad_hz": 1000,          # max częstotliwość raportów DS4 (zlewanie serii pakietów, jak pad_min_dt nadajnika = 1 ms);
@@ -147,6 +150,9 @@ def init(argv=None):
     C.cfg = cfg
     C.IN_PORT = int(cfg["in_port"])
     C.DSU_PORT = int(cfg["dsu_port"])
+    C.DSU_BIND = str(cfg["dsu_bind"] or "127.0.0.1")
+    C.DSU_MAX_CLIENTS = max(1, int(cfg["dsu_max_clients"]))
+    C.HM_MIN_AGE_DAYS = max(0.0, float(cfg["hm_min_age_days"]))
     C.NUM_PADS = max(1, min(4, int(cfg["pads"])))
     C.MOUSE_PADS = {int(p) for p in cfg["mouse_pads"] if 0 <= int(p) < C.NUM_PADS}
     if len(C.MOUSE_PADS) != len(set(cfg["mouse_pads"])):

@@ -5,6 +5,7 @@ sys.path.insert(0, sys.argv[1])
 import sender_config; sender_config.init(["127.0.0.1"])
 import sender_ctrl
 import sender_net as net
+net.clock.base = 0   # pingi i zegar PC w perf_counter (test podaje czasy pong2)
 import sender_rumble as R
 from proto import BODY, CAP_TRIGGERS, LAT_NONE, T_PONG2, T_STATE, T_STATE2, T_TRIG, Codec
 from sender_ctrl import Ctrl

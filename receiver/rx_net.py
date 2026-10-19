@@ -1,4 +1,5 @@
 """Receiver: odbiór pakietów z nadajnika, obsługa zdarzeń, wykrywanie ciszy."""
+import os
 import socket
 import threading
 import time
@@ -15,6 +16,7 @@ import rx_settings
 import rx_state as S
 import rx_testmode as testmode
 from proto import (BODY, CAL_MOVED, CAL_OK, LAT_NONE, PAD_KEYS, RTT_NONE, SCFG_EVENTS, SCFG_WOL, STATE_FIELDS, WIRE, Codec,
+                   EpochClock,
                    T_BTCTRL, T_BTDEV, T_BTSTATE, T_BUILD, T_BUILD2, T_BYE, T_CALRES, T_CLICK, T_CMD, T_EVENT, T_FB, T_IDENT, T_INFO,
                    T_MOUSE, T_PING, T_PONG, T_PONG2, T_SCFG, T_STATE, T_STATE2, T_TOUCH, T_TRIG, T_TRIG2, T_TRIG3, T_UPDMSG,
                    T_VERSION, TRIG2_OFF, clamp, cstr, mac_bytes, mac_text)
@@ -68,16 +70,45 @@ class LinkStats:
         self.t0 = now
 
 codec = None
+clock = EpochClock()     # zegar PC w pong2 i znacznikach v3 (losowe przesunięcie na proces)
 in_sock = None
+_sender_clock = None     # (czas nadajnika z ostatniego pingu [ns], perf_counter_ns odbioru) - znacznik v3 dla nadajnika
 _warned_idx = set()
 _digital = [None] * 4    # ostatni stan przycisków (maska, d-pad, spusty wciśnięte) per slot - zmiana = obsługa skrótów
 _pressed = [None] * 4    # (maska, d-pad, L2 >= TRIG_ON, R2 >= TRIG_ON) per slot - zmiana = próbka "przycisk -> gra"
 _key_warned = [float("-inf")]   # kiedy ostatnio ostrzegliśmy o innym kluczu HMAC
+_auth_warned = {"legacy": float("-inf"), "stale": float("-inf")}
+
+
+def sender_token():
+    """Znacznik v3 dla nadajnika: jego zegar teraz [ms, 32 bity] (ostatni ping + czas od odbioru) albo None."""
+    sc = _sender_clock
+    if sc is None:
+        return None
+    return ((sc[0] + time.perf_counter_ns() - sc[1]) // 1_000_000) & 0xFFFFFFFF
+
+
+def note_ping(t0, arr):
+    """Zegar nadajnika z pingu. Ping v3 nie jest sprawdzany pod kątem świeżości, więc powtórzone stare nagranie
+    nie może cofnąć zegara: przyjmujemy tylko nowszy czas, chyba że nadajnik milczał > 1 s (restart = nowy zegar)."""
+    global _sender_clock
+    sc = _sender_clock
+    if sc is None or arr - sc[1] > 1_000_000_000 or t0 >= sc[0] + (arr - sc[1]) - 500_000_000:
+        _sender_clock = (t0, arr)
+
+
+def make_codec():
+    """Codec z kluczem z konfiguracji; przejście na v3 zapamiętane w auth.json obok remap.json."""
+    return Codec(C.KEY, token=sender_token, now_ms=clock.ms32,
+                 state_path=os.path.join(os.path.dirname(C.REMAP_PATH), "auth.json"))
 
 
 def init():
     global codec, in_sock
-    codec = Codec(C.KEY)
+    codec = make_codec()
+    if not C.KEY:
+        print("WARNING: no HMAC key - anyone on the local network can drive this PC through the receiver "
+              "(mouse, master actions). Set the same key on both sides (docs/SECURITY.md)")
     in_sock = bind_udp(C.IN_PORT, "pad events", 1 << 20)
     recv_timeout(in_sock, 0.1)   # pozwala wykrywać ciszę ze strony nadajnika (limit w jądrze - bez select() na pakiet)
 
@@ -91,7 +122,7 @@ def close():
 
 def send_peer(pkt):
     p = S.peer
-    if p is not None:
+    if p is not None and pkt is not None:     # None: v3 bez zegara nadajnika (przed pierwszym pingiem)
         try:
             in_sock.sendto(pkt, p)
         except OSError:
@@ -115,6 +146,8 @@ def send_repeat(pkt, n):
     """Ten sam pakiet (ten sam numer - nadajnik obsłuży go raz) teraz i n-1 razy później, po REPEAT_DELAYS.
     Kopie wysłane naraz ginęły razem przy jednej serii strat, a każda miała własny numer, więc nadajnik wykonywał
     polecenie kilka razy (chroniły go tylko jego blokady powtórzeń)."""
+    if pkt is None:
+        return
     send_peer(pkt)
     for d in REPEAT_DELAYS[:max(0, n - 1)]:
         timer = threading.Timer(d, _repeat_fire)
@@ -219,7 +252,7 @@ def _latency(lat, arr):
     pc_us, phone, bt = lat
     if not arr or not pc_us or phone == LAT_NONE:
         return None
-    net = (arr // 1000 - pc_us) & 0xFFFFFFFF
+    net = ((arr + clock.base) // 1000 - pc_us) & 0xFFFFFFFF      # pc_us w zegarze z pong2 (z przesunięciem)
     if net >= 0x80000000:          # odebrany "przed" wysłaniem: błąd przesunięcia zegarów (do połowy RTT) - to ~0
         net -= 1 << 32
     if not -MAX_NET_US < net < MAX_NET_US:
@@ -434,6 +467,16 @@ def check_key(now):
         print("Rejecting sender packets: HMAC key differs between sender and receiver (--key / key in config)")
         ev.warn(_("Odrzucono pakiety nadajnika: inny klucz HMAC (key) w nadajniku i w receiverze - ustaw ten sam "
                   "albo usuń go z obu"))
+    if now - codec.legacy_t < 1.0 and now - _auth_warned["legacy"] >= KEY_WARN_S:
+        _auth_warned["legacy"] = now
+        print("Rejecting signed v2 packets: the sender switched to protocol v3 earlier - an old sender version or a "
+              "replayed recording (after a downgrade delete auth.json next to the receiver)")
+        ev.warn(_("Odrzucono podpisane pakiety starego formatu (v2): nadajnik w starej wersji albo powtórzone nagranie "
+                  "- zaktualizuj nadajnik"))
+    if now - codec.stale_t < 1.0 and now - _auth_warned["stale"] >= KEY_WARN_S:
+        _auth_warned["stale"] = now
+        print(f"Rejected sender packets with an expired freshness token ({codec.stale} total): replay or clock problem")
+        ev.warn(_("Odrzucono przeterminowane pakiety nadajnika (powtórzone nagranie albo problem z zegarem)"))
 
 
 class SenderWatch:
@@ -527,7 +570,8 @@ def net_loop():
         if t == T_PING:   # ping -> pong2 (zegar PC dla pomiaru opóźnienia) i pong (RTT; starszy nadajnik zna tylko ten)
             S.peer = addr
             t0 = BODY[T_PING].unpack_from(data, 4)[0]
-            send_peer(codec.pack(T_PONG2, i, t0, time.perf_counter_ns() // 1000))
+            note_ping(t0, arr)
+            send_peer(codec.pack(T_PONG2, i, t0, clock.ns() // 1000))
             send_peer(codec.pack(T_PONG, i, t0))
             continue
         if t not in RX_TYPES:

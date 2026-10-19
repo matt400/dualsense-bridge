@@ -12,6 +12,8 @@
 | Crosshair / camera slowly drifts by itself | Test view → gyro chart with the pad lying still; if it isn't flat - "Calibrate gyro" |
 | Character walks by itself / camera spins (stick) | Test view → "Measure drift" → "Apply" (drift correction for this pad) |
 | Motion inverted in an emulator (DSU) | `acc_sign` / `gyro_sign` in the receiver config |
+| Emulator on another device doesn't see the DSU server | since the security review it listens only on this PC: `dsu_bind = "0.0.0.0"` in `receiver.toml` |
+| Pads stop working after going back to an older version (with `key`) | delete `auth.json` next to the newer side (protocol v3 is remembered there) |
 | A game profile doesn't activate | games with anti-cheat may block reading the process name; switch manually with PS + d-pad |
 | `virtual pad error ... ViGEmBus` | install the ViGEmBus driver or HIDMaestro (README) |
 | Settings → Pads: "HIDMaestro not used" | "not found" = HIDMaestro hasn't downloaded yet (Settings → Pads → "Check now"; the download error is shown below it) or a wrong custom path; "administrator rights required" = UAC prompt declined at start - "Restart as administrator" (autostart elevates by itself, event log: "Autostart set to administrator rights"); "pythonnet not installed" = `pip install pythonnet`; ".NET 10 runtime not installed" = the "Install .NET 10" button (winget) or install .NET 10 Runtime manually; "cannot load its types: …" = a file is missing next to `HIDMaestro.Core.dll` (name in the message) - with a custom DLL path copy it from the HIDMaestro zip, or leave the path empty (automatic download); another error while creating = this pad goes through ViGEmBus, details in the event log |

@@ -77,12 +77,27 @@ do receivera, od którego przyszedł scfg; receiver wysyła btcmd dopiero po bts
                                liście urządzeń, tylko z nadajnika z wyborem kontrolera (tryb w btstate); starszy receiver
                                odrzuca nieznaną długość
 
+Format v3 (tylko z kluczem HMAC) - ochrona przed powtórzeniem nagranego pakietu (replay):
+  nagłówek z wersją 3 zamiast 2, treść jak wyżej, potem znacznik świeżości "!I" i 8 B HMAC-SHA256 (liczony z całości
+  razem ze znacznikiem). Znacznik to czas ODBIORCY w ms (młodsze 32 bity): nadajnik wpisuje czas PC (z PcClock -
+  pong2), receiver czas nadajnika (z ostatniego pingu + czas, który minął). Odbiorca przyjmuje pakiet, gdy znacznik
+  jest najwyżej FRESH_PAST_MS w przeszłości i FRESH_FUTURE_MS w przyszłości, a dokładnie ten sam pakiet (ten sam HMAC)
+  nie przyszedł w tym oknie - nagranie sprzed kilku sekund i z innej sesji jest odrzucane. Zegary obu stron mają
+  losowe przesunięcie na proces (EpochClock), więc znacznik z poprzedniego uruchomienia (albo sprzed restartu
+  systemu) nie trafia w okno. Ping (FRESH_EXEMPT) nie jest sprawdzany - to z niego druga strona poznaje zegar
+  nadawcy; powtórzony ping daje najwyżej pong, który nadajnik odrzuci (RTT > 1 s).
+  Przejście na v3: nadajnik z kluczem wysyła co sekundę dodatkowy ping v3 (starszy receiver go odrzuca jak każdą
+  nieznaną wersję). Strona, która dostanie poprawny pakiet v3, od tej chwili wysyła tylko v3 i odrzuca v2 z kluczem
+  (nagrania sprzed aktualizacji) - na stałe: odcisk klucza zapisuje w pliku stanu (auth.json), więc restart nie
+  otwiera okna na nagrane pakiety v2. Zmiana klucza = nowy odcisk = przejście od nowa.
+
 Na końcu: wspólne funkcje gita (wersja kodu, aktualizacja git pull) - receiver i nadajnik aktualizują się tak samo.
 """
 import hmac
 import json
 import os
 import random
+import secrets
 import shlex
 import shutil
 import struct
@@ -92,6 +107,12 @@ import time
 
 VER = 2
 HDR0 = VER << 4
+VER3 = 3                                                # pakiet z kluczem: znacznik świeżości + HMAC (patrz wyżej)
+HDR3 = VER3 << 4
+FRESH_PAST_MS, FRESH_FUTURE_MS = 3000, 1000             # okno świeżości znacznika v3 (przyszłość: błąd zegara)
+MAC_LEN = 8
+TOKEN = struct.Struct("!I")
+TRAILER3 = TOKEN.size + MAC_LEN
 
 (T_EVENT, T_STATE, T_TOUCH, T_CLICK, T_MOUSE, T_PING, T_FB, T_PONG, T_BYE, T_IDENT, T_CMD, T_INFO, T_VERSION,
  T_BUILD, T_UPDMSG, T_TRIG) = range(16)
@@ -101,7 +122,7 @@ T_BTDEV, T_BTSTATE, T_BTCMD = 0x109, 0x10C, 0x20A                               
 T_BTCTRL = 0x209                                                    # kontrolery Bluetooth nadajnika (wybór z okna)
 WIRE = {T_STATE2: T_STATE, T_PONG2: T_PONG, T_SCFG: T_CMD, T_CALRES: T_INFO, T_BUILD2: T_BUILD, T_TRIG2: T_TRIG,
         T_BTDEV: T_IDENT, T_BTSTATE: T_VERSION, T_BTCMD: T_CMD, T_BTCTRL: T_IDENT, T_TRIG3: T_TRIG}
-SENDER_VERSION = 11
+SENDER_VERSION = 12
 RUMBLE_EVDEV, RUMBLE_HIDRAW, CAP_TRIGGERS = 1, 2, 4     # bity pakietu version (CAP_TRIGGERS: opór spustów działa)
 CAP_TRIG_FX = 8                                         # bit pakietu version: nadajnik zna trig2 (klik, wibracja, z gry)
 CAP_CALIB = 16                                          # bit pakietu version: CMD_GYRO_CAL i CMD_RAW_STICKS (v9+)
@@ -245,6 +266,38 @@ def utf8_field(text, size, more=""):
 
 
 KEY_MISMATCH_S = 5.0          # tyle po pakiecie z innym ustawieniem klucza HMAC odrzucamy też długości niejednoznaczne
+FRESH_EXEMPT = frozenset({T_PING})   # v3 bez sprawdzania znacznika: z pingu odbiorca dopiero poznaje zegar nadawcy
+_MASK32 = 0xFFFFFFFF
+
+
+class EpochClock:
+    """perf_counter z losowym przesunięciem na proces [ns]: znaczniki świeżości v3 (i pingi) z poprzedniego
+    uruchomienia albo sprzed restartu systemu (perf_counter liczy od startu) nie trafiają w okno świeżości."""
+
+    def __init__(self):
+        self.base = secrets.randbits(60)              # ~36 lat w ns - suma mieści się w "Q" pingu
+
+    def ns(self):
+        return time.perf_counter_ns() + self.base
+
+    def ms32(self):
+        return (self.ns() // 1_000_000) & _MASK32
+
+
+def token_fresh(token, now_ms):
+    """Znacznik v3 (ms, 32 bity) w oknie świeżości względem naszego zegara (now_ms, 32 bity); odporne na przekręcenie."""
+    age = (now_ms - token) & _MASK32
+    return age <= FRESH_PAST_MS or age >= (1 << 32) - FRESH_FUTURE_MS
+
+
+def key_fingerprint(key):
+    """Odcisk klucza HMAC do pliku stanu (nie zdradza klucza)."""
+    return hmac.digest(key, b"dualsense-bridge v3", "sha256")[:8].hex()
+
+
+def generate_key():
+    """Losowy klucz HMAC do wpisania po obu stronach (key = ... / --key / PADKEY)."""
+    return secrets.token_urlsafe(24)
 
 
 class Codec:
@@ -256,33 +309,117 @@ class Codec:
     brał stan nadajnika z kluczem za state2 z bajtami HMAC jako pomiarem opóźnienia - pady "pół działały" (bez
     identyfikatora, profilu, wibracji) zamiast jasnego błędu. Nadajnik z kluczem wysyła też pakiety, których długość
     z HMAC nie pasuje do żadnego typu bez niego (ping, ident, info - kilka razy na sekundę); po takim pakiecie przez
-    KEY_MISMATCH_S odrzucamy również te niejednoznaczne."""
+    KEY_MISMATCH_S odrzucamy również te niejednoznaczne.
 
-    def __init__(self, key=b""):
+    Z kluczem: format v3 (znacznik świeżości, opis na górze pliku). token() -> znacznik dla drugiej strony (jej zegar
+    w ms) albo None (jeszcze go nie znamy - pakiet nie wychodzi, pack() zwraca None; ping idzie ze znacznikiem 0);
+    now_ms() -> nasz zegar (EpochClock.ms32) do sprawdzania przychodzących znaczników; state_path - plik, w którym
+    zostaje odcisk klucza po przejściu na v3 (bez niego przejście trzyma się tylko do końca procesu)."""
+
+    def __init__(self, key=b"", token=None, now_ms=None, state_path=None):
         self.key = key
         self._seq = random.getrandbits(16)
         self._lock = threading.Lock()
         self.mismatch_t = float("-inf")
+        self.token, self.now_ms, self.state_path = token, now_ms, state_path
+        self.legacy_t = float("-inf")   # ostatni poprawnie podpisany pakiet v2 odrzucony po przejściu na v3
+        self.stale_t = float("-inf")    # ostatni pakiet v3 z przeterminowanym znacznikiem (nagranie / zegar)
+        self.stale = 0
+        self.upgraded_t = float("-inf")  # przejście na v3 w tym procesie: chwilę potem v2 to jeszcze pakiety w drodze
+        self._seen = {}                 # HMAC przyjętych pakietów v3 -> do kiedy pamiętany (dokładne powtórki)
+        self.v3 = bool(key) and self._stored_fp() == key_fingerprint(key)
 
-    def pack(self, ptype, idx, *vals):
+    # ---- przejście na v3 (zapamiętane w pliku stanu) ----
+    def _stored_fp(self):
+        if not self.state_path:
+            return None
+        try:
+            with open(self.state_path, encoding="utf-8") as f:
+                return json.load(f).get("v3")
+        except (OSError, ValueError, AttributeError):
+            return None
+
+    def _upgrade(self):
+        self.v3 = True
+        self.upgraded_t = time.monotonic()
+        print("Packet authentication: peer speaks protocol v3 - replay protection on, v2 packets with the key rejected")
+        if self.state_path:
+            try:
+                write_json(self.state_path, {"v3": key_fingerprint(self.key)})
+            except OSError as e:
+                print(f"WARNING: cannot save {self.state_path}: {e}")
+
+    def pack(self, ptype, idx, *vals, v3=None):
+        """-> bajty pakietu albo None (v3 bez znacznika dla drugiej strony). v3: wymuś format (próbny ping)."""
         with self._lock:
             self._seq = (self._seq + 1) & 0xFFFF
             sq = self._seq
-        msg = HDR.pack(HDR0 | WIRE.get(ptype, ptype), idx, sq) + BODY[ptype].pack(*vals)
-        if self.key:
-            msg += hmac.digest(self.key, msg, "sha256")[:8]
-        return msg
+        body = BODY[ptype].pack(*vals)
+        if not self.key:
+            return HDR.pack(HDR0 | WIRE.get(ptype, ptype), idx, sq) + body
+        if self.v3 if v3 is None else v3:
+            tok = self.token() if self.token is not None else None
+            if tok is None:
+                if ptype not in FRESH_EXEMPT:
+                    return None
+                tok = 0
+            msg = HDR.pack(HDR3 | WIRE.get(ptype, ptype), idx, sq) + body + TOKEN.pack(tok & _MASK32)
+        else:
+            msg = HDR.pack(HDR0 | WIRE.get(ptype, ptype), idx, sq) + body
+        return msg + hmac.digest(self.key, msg, "sha256")[:MAC_LEN]
+
+    def _sig_ok(self, data, n):
+        return hmac.compare_digest(hmac.digest(self.key, memoryview(data)[:n - MAC_LEN], "sha256")[:MAC_LEN],
+                                   data[n - MAC_LEN:n])
+
+    def _parse_v3(self, data, wire):
+        n = len(data)
+        t = BY_SIZE.get((wire, n - 4 - TRAILER3)) if n >= 4 + TRAILER3 else None
+        if t is None:
+            return None
+        now = time.monotonic()
+        if not self.key or not self._sig_ok(data, n):
+            self.mismatch_t = now                       # nasz pakiet, zły podpis: brak klucza albo inny klucz
+            return None
+        mac = bytes(data[n - MAC_LEN:])
+        seen = self._seen
+        while seen:                                     # wpisy w kolejności dodania = kolejności wygasania
+            k = next(iter(seen))
+            if seen[k] > now:
+                break
+            del seen[k]
+        if mac in seen:
+            return None                                 # dokładna powtórka (nagranie albo celowa kopia pakietu)
+        if t not in FRESH_EXEMPT and self.now_ms is not None:
+            tok = TOKEN.unpack_from(data, n - TRAILER3)[0]
+            if not token_fresh(tok, self.now_ms()):
+                self.stale += 1
+                self.stale_t = now
+                return None
+        seen[mac] = now + (FRESH_PAST_MS + FRESH_FUTURE_MS) / 1000
+        if not self.v3:
+            self._upgrade()
+        return t, data[1], (data[2] << 8) | data[3]
 
     def parse(self, data):
-        """-> (typ, idx, seq) albo None (zły podpis / wersja / typ / długość). Wariant dłuższy -> jego typ (T_STATE2...)."""
+        """-> (typ, idx, seq) albo None (zły podpis / wersja / typ / długość / znacznik). Wariant dłuższy -> jego typ."""
         n = len(data)
-        if n < 4 or data[0] >> 4 != VER:
+        if n < 4:
+            return None
+        if data[0] >> 4 == VER3:
+            return self._parse_v3(data, data[0] & 0x0F)
+        if data[0] >> 4 != VER:
             return None
         wire = data[0] & 0x0F
         if self.key:
-            if n < 12 or not hmac.compare_digest(hmac.digest(self.key, memoryview(data)[:n - 8], "sha256")[:8], data[n - 8:]):
+            if n < 12 or not self._sig_ok(data, n):
                 if (wire, n - 4) in BY_SIZE or (wire, n - 12) in BY_SIZE:
                     self.mismatch_t = time.monotonic()  # nasz pakiet, zły podpis: brak klucza albo inny klucz
+                return None
+            if self.v3:                                 # druga strona zna v3: v2 z kluczem = nagranie / stara wersja
+                now = time.monotonic()
+                if now - self.upgraded_t > KEY_MISMATCH_S:   # nie zaraz po przejściu (pakiety v2 jeszcze w drodze)
+                    self.legacy_t = now
                 return None
             n -= 8
         elif n >= 12 and (wire, n - 12) in BY_SIZE:     # długość pasuje do pakietu z HMAC

@@ -4,13 +4,14 @@ import collections
 import socket
 import time
 
-from proto import (BODY, E_NET_DOWN, E_NO_RECEIVER, RTT_NONE, Codec, SeqFilter, T_BTCMD, T_CMD, T_FB, T_PING, T_PONG,
-                   T_PONG2, T_SCFG, T_TRIG, T_TRIG2, T_TRIG3)
+from proto import (BODY, E_NET_DOWN, E_NO_RECEIVER, RTT_NONE, Codec, EpochClock, SeqFilter, T_BTCMD, T_CMD, T_FB, T_PING,
+                   T_PONG, T_PONG2, T_SCFG, T_TRIG, T_TRIG2, T_TRIG3)
 import sender_events as events
 import sender_state as state
 from sender_config import C
 
 codec = None
+clock = EpochClock()                  # zegar nadajnika w pingach i znacznikach v3 (losowe przesunięcie na proces)
 sock = None
 sock_bad = False
 tx_count = 0
@@ -31,6 +32,7 @@ PING_S = 0.25                         # 4 pingi/s: mediana z 2 s jest stabilna, 
 recent_rtt = collections.deque(maxlen=8)   # ostatnie pomiary - do pakietu info (okno w GUI receivera)
 last_pong = 0.0
 REPEAT_DELAYS = (0.01, 0.03)          # powtórki emit_repeat [s]
+PROBE_EVERY = 4                       # z kluczem, przed przejściem na v3: co tyle pingów dodatkowy ping v3 (1/s)
 
 
 class PcClock:
@@ -40,6 +42,7 @@ class PcClock:
     (starszy receiver, przerwa w sieci) = brak zegara - stan idzie zwykłym pakietem, bez pomiaru."""
 
     SYNC_N, SYNC_MAX_AGE_S = 12, 3.0
+    JUMP_US = 1_000_000               # przesunięcie zmienione o tyle = inny proces receivera (inny zegar PC)
 
     def __init__(self):
         self.samples = collections.deque(maxlen=self.SYNC_N)   # (rtt ns, przesunięcie µs)
@@ -55,7 +58,12 @@ class PcClock:
             # po przerwie stare pomiary nie pasują: restart PC (inny zegar) albo dryf kwarców (50 ppm = 180 ms na godzinę);
             # pomiar o najmniejszym RTT sprzed przerwy wygrywałby z nowymi przez SYNC_N pongów
             self.samples.clear()
-        self.samples.append((rtt, pc_us - (t0_ns + t3_ns) // 2000))
+        off = pc_us - (t0_ns + t3_ns) // 2000
+        if self.offset_us is not None and abs(off - self.offset_us) > self.JUMP_US:
+            # receiver uruchomiony od nowa w ciągu SYNC_MAX_AGE_S: jego zegar ma inne losowe przesunięcie - stare
+            # pomiary (często z mniejszym RTT) wygrywałyby przez SYNC_N pongów, a znaczniki v3 byłyby odrzucane
+            self.samples.clear()
+        self.samples.append((rtt, off))
         self.offset_us = min(self.samples)[1]
         self.t_sync = now
 
@@ -63,7 +71,13 @@ class PcClock:
         """Czas PC teraz [µs, młodsze 32 bity] albo None (brak synchronizacji)."""
         if self.offset_us is None or time.monotonic() - self.t_sync > self.SYNC_MAX_AGE_S:
             return None
-        return (time.perf_counter_ns() // 1000 + self.offset_us) & 0xFFFFFFFF or 1    # 0 zarezerwowane
+        return (clock.ns() // 1000 + self.offset_us) & 0xFFFFFFFF or 1    # 0 zarezerwowane
+
+    def now_ms(self):
+        """Czas PC teraz [ms, młodsze 32 bity] - znacznik świeżości v3 dla receivera - albo None (brak synchronizacji)."""
+        if self.offset_us is None or time.monotonic() - self.t_sync > self.SYNC_MAX_AGE_S:
+            return None
+        return ((clock.ns() // 1000 + self.offset_us) // 1000) & 0xFFFFFFFF
 
 
 pc_clock = PcClock()
@@ -78,7 +92,11 @@ def rtt_x10():
 
 def init():
     global codec
-    codec = Codec(C.KEY)
+    codec = Codec(C.KEY, token=lambda: pc_clock.now_ms(), now_ms=clock.ms32,
+                  state_path=getattr(C, "AUTH_FILE", "") or None)
+    if not C.KEY:
+        print("WARNING: no HMAC key - anyone on the local network can send commands to this sender "
+              "(update, Bluetooth pairing, pad power-off). Set the same key on both sides (docs/SECURITY.md)")
 
 
 def open_sock(loop):
@@ -133,13 +151,17 @@ def send_raw(data):
 
 
 def emit(ptype, idx, *vals):
-    send_raw(codec.pack(ptype, idx, *vals))
+    data = codec.pack(ptype, idx, *vals)
+    if data is not None:              # None: v3 bez zegara PC (przed pierwszym pong2) - receiver i tak by odrzucił
+        send_raw(data)
 
 
 def emit_repeat(ptype, idx, *vals, delays=REPEAT_DELAYS):
     """Pakiet, który nie może zginąć (bye): ten sam (ten sam numer - odbiorca obsłuży go raz) teraz i powtórki po
     delays s. Trzy kopie naraz ginęły razem przy jednej serii strat (zakłócenie, zatkana kolejka)."""
     data = codec.pack(ptype, idx, *vals)
+    if data is None:
+        return
     send_raw(data)
     try:
         loop = asyncio.get_running_loop()
@@ -167,9 +189,9 @@ def on_readable():
         t, idx, sq = p
         if t == T_PONG2:              # zegar PC do pomiaru opóźnienia (RTT liczy zwykły pong zaraz po nim)
             t0, pc_us = BODY[T_PONG2].unpack_from(data, 4)
-            pc_clock.pong(t0, pc_us, time.perf_counter_ns())
+            pc_clock.pong(t0, pc_us, clock.ns())
         elif t == T_PONG:
-            rtt = (time.perf_counter_ns() - BODY[T_PONG].unpack_from(data, 4)[0]) / 1e6
+            rtt = (clock.ns() - BODY[T_PONG].unpack_from(data, 4)[0]) / 1e6
             rtts.append(rtt)
             recent_rtt.append(rtt)
             last_pong = time.monotonic()
@@ -217,7 +239,10 @@ async def pinger():
     last_print = time.monotonic()
     tx_prev = 0
     while True:
-        emit(T_PING, 255, time.perf_counter_ns())
+        t0 = clock.ns()
+        emit(T_PING, 255, t0)
+        if codec.key and not codec.v3 and pings_sent % PROBE_EVERY == 0:
+            send_raw(codec.pack(T_PING, 255, t0, v3=True))   # receiver z v3 odpowie v3 -> przejście (starszy odrzuca)
         pings_sent += 1
         if pings_sent % round(BUILD_S / PING_S) == 1:
             import sender_update                # sender_update importuje sender_net
@@ -231,7 +256,8 @@ async def pinger():
             import sender_wol                   # sender_wol importuje sender_net
             sender_wol.learn()
         if pings_sent >= 4 / PING_S and pongs == 0 and not warned:
-            print("WARNING: no reply from receiver - check IP/port, firewall and --key")
+            print("WARNING: no reply from receiver - check IP/port, firewall and --key (receiver downgraded to a "
+                  "version without protocol v3? delete auth.json next to the sender)")
             warned = True
         if C.STATS and time.monotonic() - last_print >= 5.0:
             now = time.monotonic()

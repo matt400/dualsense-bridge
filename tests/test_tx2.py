@@ -3,6 +3,7 @@ sys.path.insert(0, sys.argv[1])
 import sender_config; sender_config.init(["127.0.0.1"])
 from sender_config import C
 import sender_net as net, sender_ctrl, sender_control as ctl, sender_state as state
+net.clock.base = 0   # pingi w zegarze perf_counter (test podaje czasy pongów)
 from sender_ctrl import Ctrl
 from proto import Codec, T_CMD, T_INFO, T_PONG, CMD_POWER_OFF, RTT_NONE
 out = []

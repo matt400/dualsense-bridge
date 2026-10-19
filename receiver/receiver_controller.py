@@ -58,6 +58,8 @@ def _startup_events(rx_winapi):
     elif (up := rx_winapi.uptime_s()) is not None:
         print(f"Receiver started {up:.0f}s after Windows start")
         ev.info(_("Receiver uruchomiony {s} s po starcie Windows").format(s=round(up)))
+    import rx_security
+    rx_security.log_issues()
     if os.name != "nt":
         return
 
