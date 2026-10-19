@@ -656,6 +656,8 @@ EN = {
     "Nadajnik stracił kontakt z receiverem": "The sender lost contact with the receiver",
     "Sieć na telefonie niedostępna": "Network on the phone unavailable",
     "Błąd nadajnika: {arg}": "Sender error: {arg}",
+    "Pad {arg} pominięty - wszystkie sloty nadajnika zajęte (max_pads w sender.toml)":
+        "Pad {arg} ignored - all sender slots are taken (max_pads in sender.toml)",
     "Zdarzenie nadajnika {code}: {arg}": "Sender event {code}: {arg}",
     # ---------- lightbar ----------
     "Lightbar": "Lightbar",

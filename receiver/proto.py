@@ -152,7 +152,8 @@ RTT_NONE = 0xFFFF
 SCFG_WOL, SCFG_EVENTS = 1, 2                            # flagi pakietu scfg: Wake-on-LAN, zdarzenia do dziennika
 EV_INFO, EV_WARN, EV_ERROR = range(3)                   # poziom zdarzenia (pakiet event)
 # kody zdarzeń nadajnika (pakiet event) - tekst w oknie receivera (rx_events.SENDER_TEXT), argument w {arg}
-(E_START, E_PAD_ON, E_PAD_OFF, E_POWER_OFF, E_WOL, E_WOL_FAIL, E_NO_RECEIVER, E_NET_DOWN, E_ERROR) = range(1, 10)
+(E_START, E_PAD_ON, E_PAD_OFF, E_POWER_OFF, E_WOL, E_WOL_FAIL, E_NO_RECEIVER, E_NET_DOWN, E_ERROR,
+ E_NO_SLOT) = range(1, 11)          # E_NO_SLOT: pad ponad max_pads (starszy receiver pokazuje ogólny tekst)
 WOL_PORTS = (9, 7)                                      # magic packet: discard i echo (karty sieciowe słuchają każdego)
 # Bluetooth telefonu z okna (btcmd / btstate / btdev): operacje, stan adaptera, flagi, wynik operacji, flagi urządzenia
 (BT_LIST, BT_SCAN_START, BT_SCAN_STOP, BT_PAIR, BT_CONNECT, BT_DISCONNECT, BT_REMOVE, BT_POWER, BT_ADAPTER,

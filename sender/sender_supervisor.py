@@ -10,7 +10,7 @@ import evdev
 import sender_events as events
 import sender_state as state
 import sender_streams as streams
-from proto import E_ERROR, E_PAD_OFF, E_PAD_ON, LAT_NONE, T_BYE, TRIG2_OFF, write_json
+from proto import E_ERROR, E_NO_SLOT, E_PAD_OFF, E_PAD_ON, LAT_NONE, T_BYE, TRIG2_OFF, write_json
 from sender_config import C, IDLE_TP, SETTLE_S
 from sender_ctrl import Ctrl
 from sender_rumble import Rumble
@@ -28,6 +28,7 @@ def _node_id(path):
     except OSError:
         return None
 _first_seen = {}     # klucz -> kiedy zobaczyliśmy niekompletną grupę urządzeń
+_no_slot = set()     # pady odrzucone z braku wolnego slotu (max_pads) - komunikat raz na połączenie
 
 
 def event_num(dev):
@@ -196,6 +197,15 @@ async def _run_extra(c, kind, dev, coro):
             print(f"Controller {c.idx}: {kind} device lost - waiting for it to come back")
 
 
+def _reject(key):
+    """Pad bez wolnego slotu: raz w logu i w dzienniku okna (wcześniej znikał bez śladu)."""
+    if key in _no_slot:
+        return
+    _no_slot.add(key)
+    print(f"Controller {key}: ignored - all {C.MAX_PADS} slot(s) taken (max_pads in sender.toml)")
+    events.warn(E_NO_SLOT, 255, key)
+
+
 def incomplete(c):
     return c.motion_dev is None or c.touch_dev is None
 
@@ -298,13 +308,14 @@ class DevWatch:
         self.event.set()
 
     async def wait(self, timeout):
-        """Do zmiany w /dev/input albo timeout s."""
+        """Do zmiany w /dev/input albo timeout s. -> True, gdy była zmiana."""
         try:
             await asyncio.wait_for(self.event.wait(), timeout)
         except TimeoutError:
-            return
+            return False
         await asyncio.sleep(self.DEBOUNCE_S)
         self.event.clear()
+        return True
 
     def close(self):
         if self.fd is not None:
@@ -335,12 +346,15 @@ async def supervisor():
 
 async def _supervise(watch):
     first = True
+    changed = False
     while True:
-        if len(state.active) < C.MAX_PADS or any(incomplete(c) for c in state.active.values()):
+        # pełne sloty: skan tylko po zmianie w /dev/input - nowy pad ponad max_pads dostaje komunikat (_reject)
+        if changed or len(state.active) < C.MAX_PADS or any(incomplete(c) for c in state.active.values()):
             groups = discover()
             now = time.monotonic()
             for k in [k for k in _first_seen if k not in groups]:
                 del _first_seen[k]
+            _no_slot.intersection_update(groups)          # pad odszedł - przy następnym połączeniu znów komunikat
             order = sorted(groups.items(),
                            key=lambda kv: event_num(kv[1]["pad"]) if "pad" in kv[1] else 1 << 30)
             for key, g in order:
@@ -362,14 +376,15 @@ async def _supervise(watch):
                     close_group(g)
                     continue
                 idx = pick_slot(key)
-                if idx is None:
+                _first_seen.pop(key, None)    # bez tego pad bez slotu trzymał next_scan_s na 0,05 s - ~17 wybudzeń/s
+                if idx is None:                # bez końca (przy pełnych slotach discover() go już nie usuwał)
                     close_group(g)
+                    _reject(key)
                     continue
-                _first_seen.pop(key, None)
                 c = Ctrl(idx, key, g["pad"], g.get("motion"), g.get("touch"))
                 state.active[key] = c
                 state.spawn(run_ctrl(c))
             if first and not state.active:
                 print("No DualSense found yet - connect controller (bluetoothctl), waiting...")
             first = False
-        await watch.wait(next_scan_s(time.monotonic()))
+        changed = bool(await watch.wait(next_scan_s(time.monotonic())))

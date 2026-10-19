@@ -149,12 +149,41 @@ def local_ip():
 
 
 def auto_bcast():
-    """Broadcast sieci, przez którą nadajnik wysyła do PC (zapamiętany dla danego lokalnego IP)."""
-    global _bcast_cache
+    """Broadcast sieci, przez którą nadajnik wysyła do PC (zapamiętany dla danego lokalnego IP).
+
+    Wołane z pętli asyncio (pakiet build co 5 s, Wake-on-LAN): `ip addr` uruchamia się w osobnym wątku, a do jego
+    wyniku zostaje poprzednia wartość (None = tylko 255.255.255.255 i IP komputera). Wcześniej subprocess.run
+    zatrzymywał całą pętlę - także odczyt pada - na czas uruchomienia programu (limit 3 s)."""
     ip = local_ip()
-    if ip and ip != _bcast_cache[0]:
-        _bcast_cache = (ip, subnet_broadcast(ip))
-    return _bcast_cache[1] if ip else None
+    if not ip:
+        return None
+    if ip != _bcast_cache[0] and _bcast_pending != ip:
+        _refresh_bcast(ip)
+    return _bcast_cache[1] if ip == _bcast_cache[0] else None
+
+
+_bcast_pending = None         # lokalny IP, dla którego trwa odczyt broadcastu w wątku
+
+
+def _refresh_bcast(ip):
+    global _bcast_cache, _bcast_pending
+
+    def done(fut):
+        global _bcast_cache, _bcast_pending
+        _bcast_pending = None
+        try:
+            _bcast_cache = (ip, fut.result())
+        except Exception as e:                     # wątek nie może zostawić "trwa" na zawsze
+            print(f"WoL: cannot read the broadcast address: {e!r}")
+            _bcast_cache = (ip, None)
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:                           # bez pętli (narzędzia, testy) - od razu
+        _bcast_pending, _bcast_cache = None, (ip, subnet_broadcast(ip))
+        return
+    _bcast_pending = ip
+    loop.run_in_executor(None, subnet_broadcast, ip).add_done_callback(done)
 
 
 def target_mac():

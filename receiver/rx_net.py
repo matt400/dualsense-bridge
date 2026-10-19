@@ -39,31 +39,44 @@ KEY_WARN_S = 60.0               # ostrzeżenie o innym kluczu HMAC w nadajniku n
 
 class LinkStats:
     """Utrata pakietów (z luk w numerach sekwencyjnych - nadajnik numeruje wszystkie pakiety jednym licznikiem)
-    i pakiety stanu na sekundę per slot. Wyniki co sekundę do S.link_loss / S.pps (okno w GUI)."""
+    i pakiety stanu na sekundę per slot. Wyniki co sekundę do S.link_loss / S.pps (okno w GUI).
+
+    Skok numeru to strata, gdy pasuje do ciszy: najwyżej tyle pakietów, ile nadajnik wysłałby w tym czasie (zmierzona
+    częstotliwość z zapasem). Większy skok = restart nadajnika (nowy losowy numer). Wcześniej próg był stały (1000):
+    przerwa w sygnale dłuższa niż ~1-4 s (250-1000 pakietów/s) liczyła się jako restart i wskaźnik pokazywał 0 %
+    strat właśnie przy największych zanikach."""
 
     WINDOW = 1.0
+    MIN_JUMP = 1000                  # mniejszy skok zawsze jest stratą (jak dotąd)
+    RATE_MARGIN, RATE_MIN = 1.5, 50.0
 
     def __init__(self, n):
         self.last = None
+        self.t_last = 0.0
+        self.rate = 0.0              # pakiety/s z ostatniego okna (wszystkie typy)
         self.expected = self.got = 0
         self.states = [0] * n
         self.t0 = time.monotonic()
 
-    def packet(self, sq):
+    def packet(self, sq, now=None):
+        now = time.monotonic() if now is None else now
         if self.last is not None:
             d = (sq - self.last) & 0xFFFF
             if d == 0 or d >= 0x8000:
                 return                       # duplikat albo spóźniony - nie przesuwa licznika
-            if d < 1000:                     # większy skok = restart nadajnika (nowy losowy numer), nie strata
+            limit = max(self.MIN_JUMP, (now - self.t_last) * max(self.rate, self.RATE_MIN) * self.RATE_MARGIN)
+            if d <= limit:
                 self.expected += d
                 self.got += 1
-        self.last = sq
+        self.last, self.t_last = sq, now
 
     def tick(self, now):
         dt = now - self.t0
         if dt < self.WINDOW:
             return
         S.link_loss = max(0.0, 100.0 * (1 - self.got / self.expected)) if self.expected >= 10 else None
+        if self.got:
+            self.rate = self.got / dt
         S.pps[:] = [n / dt for n in self.states]
         self.expected = self.got = 0
         self.states = [0] * len(self.states)
@@ -78,6 +91,8 @@ _digital = [None] * 4    # ostatni stan przycisków (maska, d-pad, spusty wciśn
 _pressed = [None] * 4    # (maska, d-pad, L2 >= TRIG_ON, R2 >= TRIG_ON) per slot - zmiana = próbka "przycisk -> gra"
 _key_warned = [float("-inf")]   # kiedy ostatnio ostrzegliśmy o innym kluczu HMAC
 _auth_warned = {"legacy": float("-inf"), "stale": float("-inf")}
+_first_ping = [None]     # kiedy (monotonic) ten proces dostał pierwszy ping nadajnika
+CLOCK_SYNC_S = 1.0       # tyle po pierwszym pingu nadajnik może jeszcze stemplować pakiety zegarem poprzedniego procesu
 
 
 def sender_token():
@@ -92,6 +107,8 @@ def note_ping(t0, arr):
     """Zegar nadajnika z pingu. Ping v3 nie jest sprawdzany pod kątem świeżości, więc powtórzone stare nagranie
     nie może cofnąć zegara: przyjmujemy tylko nowszy czas, chyba że nadajnik milczał > 1 s (restart = nowy zegar)."""
     global _sender_clock
+    if _first_ping[0] is None:
+        _first_ping[0] = time.monotonic()
     sc = _sender_clock
     if sc is None or arr - sc[1] > 1_000_000_000 or t0 >= sc[0] + (arr - sc[1]) - 500_000_000:
         _sender_clock = (t0, arr)
@@ -473,7 +490,10 @@ def check_key(now):
               "replayed recording (after a downgrade delete auth.json next to the receiver)")
         ev.warn(_("Odrzucono podpisane pakiety starego formatu (v2): nadajnik w starej wersji albo powtórzone nagranie "
                   "- zaktualizuj nadajnik"))
-    if now - codec.stale_t < 1.0 and now - _auth_warned["stale"] >= KEY_WARN_S:
+    if (now - codec.stale_t < 1.0 and now - _auth_warned["stale"] >= KEY_WARN_S
+            and _first_ping[0] is not None and codec.stale_t - _first_ping[0] > CLOCK_SYNC_S):
+        # bez warunku pingu: szybki restart receivera (< 3 s) dawał fałszywy alarm - nadajnik do pierwszego pong2 od
+        # nowego procesu stempluje pakiety v3 zegarem starego (inne losowe przesunięcie), a to nie nagranie
         _auth_warned["stale"] = now
         print(f"Rejected sender packets with an expired freshness token ({codec.stale} total): replay or clock problem")
         ev.warn(_("Odrzucono przeterminowane pakiety nadajnika (powtórzone nagranie albo problem z zegarem)"))
@@ -539,7 +559,7 @@ def net_loop():
             continue
         t, i, sq = p
         S.last_pkt = now
-        link.packet(sq)
+        link.packet(sq, now)
         if t in STATES and i < C.NUM_PADS:
             link.states[i] += 1
 
