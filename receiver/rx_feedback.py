@@ -332,7 +332,9 @@ def _loop(send, send_trig=None):
         now = time.monotonic()
         waits = [0.5] + [e - now for e in (p[0] for p in pulses if p is not None)]   # 0.5 s: też wygasanie
         # wygaszenie wibracji punktualnie (bez tego STALE + do 0.5 s czekania)
-        waits += [f["t"] + GAME_RUMBLE_STALE_S + 0.001 - now for f in fb if f["large"] or f["small"]]
+        # tylko pady z sygnałem: wygaszeniem zajmuje się pętla niżej wyłącznie dla S.alive - dla pada bez sygnału
+        # (wirtualny DS4 jeszcze podłączony, wibracja z gry niezerowa) termin był w przeszłości i pętla kręciła się bez snu
+        waits += [f["t"] + GAME_RUMBLE_STALE_S + 0.001 - now for i, f in enumerate(fb) if S.alive[i] and (f["large"] or f["small"])]
         if blink:
             waits.append(L.next_edge(now) + 0.002)
         fb_event.wait(max(0.0, min(waits)))
