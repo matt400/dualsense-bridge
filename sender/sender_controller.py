@@ -79,10 +79,15 @@ async def main():
             ("pinger", net.pinger), ("info", control.info_loop), ("bluetooth", sender_bt.bt.loop))))
     finally:
         # najpierw pady: ich sprzątanie wysyła neutralny stan i "bye" - gniazdo musi jeszcze działać
-        for t in list(state.bg_tasks):
-            t.cancel()
-        await asyncio.gather(*state.bg_tasks, return_exceptions=True)
-        net.close_sock()
+        try:
+            for t in list(state.bg_tasks):
+                t.cancel()
+            await asyncio.gather(*state.bg_tasks, return_exceptions=True)
+            # powtórki "bye" (emit_repeat) to call_later: bez chwili czekania ginęły razem z pętlą, a po zamknięciu gniazda
+            # i tak by nie wyszły - przy restarcie po aktualizacji / SIGTERM zostawał jeden pakiet, który mógł zginąć
+            await asyncio.sleep(max(net.REPEAT_DELAYS) + 0.01)
+        finally:
+            net.close_sock()
 
 
 LOCK_NAME = b"\0dualsense-bridge-sender"

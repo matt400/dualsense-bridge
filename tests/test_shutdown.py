@@ -39,4 +39,4 @@ try:
         if p: types.append(p[0])
 except TimeoutError:
     pass
-print("PASS" if T_BYE in types else "FAIL", "bye wysłany przy zamykaniu nadajnika; gniazdo zamknięte:", net.sock is None)
+print("PASS" if types.count(T_BYE) == 1 + len(net.REPEAT_DELAYS) else "FAIL", "bye z powtórkami przy zamykaniu nadajnika:", types.count(T_BYE), "; gniazdo zamknięte:", net.sock is None)
