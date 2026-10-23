@@ -1,20 +1,21 @@
-"""Sender: Bluetooth telefonu sterowany z okna receivera - skan, parowanie, łączenie i rozłączanie padów bez ekranu
-na telefonie (proto: btcmd -> btstate + btdev).
+"""Sender: the phone's Bluetooth driven from the receiver window - scan, pair, connect and disconnect pads without a
+screen on the phone (proto: btcmd -> btstate + btdev).
 
-BlueZ przez D-Bus: `busctl --json=short` (systemd, bez dodatkowych pakietów) - stan adaptera i urządzeń
-(ObjectManager.GetManagedObjects), Pair / Connect / Disconnect / RemoveDevice, Powered / Trusted. Wyszukiwanie BlueZ
-kończy, gdy rozłączy się klient D-Bus, który je zaczął - jednorazowe `busctl call StartDiscovery` nic by nie dało.
-Skan to więc proces `bluetoothctl --timeout N scan on`: trzyma sesję przez N s i sam ją kończy (auto-stop), a
-zatrzymanie z okna to zakończenie procesu. Skan zabiera radio połączonym padom (skoki opóźnienia), dlatego zawsze ma
-limit BT_SCAN_MAX_S, a parowanie i łączenie go przerywają (BlueZ łączy pewniej bez wyszukiwania).
+BlueZ over D-Bus: `busctl --json=short` (systemd, no extra packages) - adapter and device state
+(ObjectManager.GetManagedObjects), Pair / Connect / Disconnect / RemoveDevice, Powered / Trusted. BlueZ ends a
+discovery when the D-Bus client that started it disconnects - a one-off `busctl call StartDiscovery` would do nothing.
+So a scan is a `bluetoothctl --timeout N scan on` process: it holds the session for N s and ends it by itself
+(auto-stop), and stopping from the window means ending the process. A scan takes the radio away from connected pads
+(delay spikes), so it always has the BT_SCAN_MAX_S limit, and pairing and connecting interrupt it (BlueZ connects more
+reliably without discovery).
 
-Bez otwartego panelu w oknie: tylko stan adaptera co IDLE_S (kropka w nagłówku). Po każdym btcmd przez BT_ACTIVE_S
-(okno ponawia BT_LIST, dopóki panel jest otwarty) i w trakcie skanu / operacji: stan i lista urządzeń co sekundę.
-Operacje idą po jednej (BlueZ odrzuca równoległe); druga w trakcie -> wynik BTR_BUSY. Brak busctl, bluetoothd,
-adaptera albo uprawnień to stan BTS_* w oknie, nie wyjątek - pętla działa dalej.
-Przy kilku kontrolerach (wbudowany + dongle USB) wybór robi sender_btadapter - przy każdym odświeżeniu stanu, a bez
-receivera co IDLE_S, więc dongle wpięty w trakcie pracy przejmuje pady bez restartu (także przy wyłączonym PC); tryb
-(auto / wbudowany / ręcznie) można zmienić z okna.
+With no panel open in the window: only the adapter state every IDLE_S (the dot in the header). For BT_ACTIVE_S after every
+btcmd (the window repeats BT_LIST while the panel is open) and during a scan / operation: the state and the device list
+every second. Operations run one at a time (BlueZ rejects parallel ones); a second one in progress -> the result BTR_BUSY.
+A missing busctl, bluetoothd, adapter or permissions is a BTS_* state in the window, not an exception - the loop keeps going.
+With several controllers (built-in + USB dongle) the choice is made by sender_btadapter - on every state refresh, and without
+a receiver every IDLE_S, so a dongle plugged in while running takes over the pads without a restart (also with the PC off); the mode
+(auto / built-in / manual) can be changed from the window.
 """
 import asyncio
 import contextlib
@@ -39,16 +40,16 @@ from proto import (BODY, BTA_MANUAL, BTA_PICK, BTC_ACTIVE, BTC_BLOCKED, BTC_FIXE
                    mac_bytes, mac_text, utf8_field)
 from sender_config import C
 
-BTF_LIST = 4                 # flaga btstate (poza proto.BTF_*, bo znaczy tylko "runda listy idzie zaraz za mną")
+BTF_LIST = 4                 # btstate flag (outside proto.BTF_*, since it only means "a list round follows me")
 BUSCTL, BLUETOOTHCTL = "busctl", "bluetoothctl"
 BLUEZ, ADAPTER, DEVICE = "org.bluez", "org.bluez.Adapter1", "org.bluez.Device1"
-CALL_S, CONNECT_S, PAIR_S = 5.0, 25.0, 40.0   # limity wywołań D-Bus [s] (parowanie czeka na pada)
-IDLE_S = 5.0                 # stan adaptera bez otwartego panelu
-TICK_S = 1.0                 # stan i lista przy otwartym panelu / skanie
-DUP_S = 0.5                  # btcmd przychodzi 3x (UDP) - powtórki tej samej operacji w tym czasie pomijane
+CALL_S, CONNECT_S, PAIR_S = 5.0, 25.0, 40.0   # limits of D-Bus calls [s] (pairing waits for the pad)
+IDLE_S = 5.0                 # the adapter state with no panel open
+TICK_S = 1.0                 # the state and the list with the panel open / during a scan
+DUP_S = 0.5                  # btcmd arrives 3x (UDP) - repeats of the same operation within this time are skipped
 NAME_MAX = BODY[T_BTDEV].size - 12
 CTRL_NAME_MAX = BODY[T_BTCTRL].size - 6
-# błąd z busctl (komunikat BlueZ / D-Bus, małe litery) -> wynik operacji / stan adaptera
+# an error from busctl (a BlueZ / D-Bus message, lower case) -> an operation result / an adapter state
 RESULTS = (("authentication", BTR_AUTH), ("access denied", BTR_DENIED), ("permission", BTR_DENIED),
            ("not authorized", BTR_DENIED), ("does not exist", BTR_NOT_FOUND), ("unknown object", BTR_NOT_FOUND),
            ("not ready", BTR_OFF), ("rfkill", BTR_OFF), ("in progress", BTR_BUSY), ("busy", BTR_BUSY),
@@ -62,6 +63,7 @@ Runner = Callable[[Iterable[str], float], Awaitable[tuple[int, str, str]]]
 
 @dataclass(frozen=True, slots=True)
 class Device:
+    """A Bluetooth device as shown in the window: address, display name, signal strength and BTD_* flags."""
     mac: str
     name: str
     rssi: int | None
@@ -69,13 +71,13 @@ class Device:
 
     @property
     def sort_key(self) -> tuple:
-        """Połączone, sparowane, pady, potem nazwa - bez RSSI, które skacze i przestawiałoby listę w oknie."""
+        """Connected, paired, pads, then name - without RSSI, which jumps around and would reorder the list in the window."""
         f = self.flags
         return not f & BTD_CONNECTED, not f & BTD_PAIRED, not f & BTD_PAD, self.name.lower(), self.mac
 
 
 class BtError(Exception):
-    """Nieudane wywołanie busctl: komunikat i wynik BTR_* do okna."""
+    """A failed busctl call: a message and a BTR_* result for the window."""
 
     def __init__(self, msg: str, result: int = BTR_FAILED):
         super().__init__(msg)
@@ -83,43 +85,49 @@ class BtError(Exception):
 
 
 async def run_cmd(argv: Iterable[str], timeout: float) -> tuple[int, str, str]:
-    """Program bez powłoki -> (kod, stdout, stderr); przekroczony czas = zabity proces i kod -1."""
+    """Run a program without a shell -> (code, stdout, stderr); exceeding the time = the process is killed and the code is -1."""
     proc = await asyncio.create_subprocess_exec(*argv, stdin=DEVNULL, stdout=PIPE, stderr=PIPE)
     try:
         out, err = await asyncio.wait_for(proc.communicate(), timeout)
     except TimeoutError:
         proc.kill()
-        await proc.wait()              # bez tego zostaje proces-zombie
+        await proc.wait()              # without this a zombie process is left behind
         return -1, "", "timed out"
     return proc.returncode, out.decode(errors="replace"), err.decode(errors="replace")
 
 
 def classify(msg: str, table: tuple[tuple[str, int], ...], default: int) -> int:
+    """Map an error message to a result code: the first table entry whose key occurs in the lower-cased message, else `default`."""
     low = (msg or "").lower()
     return next((code for key, code in table if key in low), default)
 
 
 def dev_path(adapter: str, mac: str) -> str:
+    """The D-Bus object path of a device: <adapter path>/dev_AA_BB_CC_DD_EE_FF."""
     return f"{adapter}/dev_{mac.upper().replace(':', '_')}"
 
 
 def _val(props: dict[str, Any], key: str, default: Any = None) -> Any:
-    """Wartość właściwości z JSON busctl ({"type": "b", "data": true}) albo default."""
+    """The value of a property from busctl JSON ({"type": "b", "data": true}) or `default`."""
     v = props.get(key)
     return v.get("data", default) if isinstance(v, dict) else default
 
 
 def is_pad(props: dict[str, Any]) -> bool:
-    """Pad do gier: ikona BlueZ albo klasa urządzenia peryferia / joystick-gamepad (DualSense: 0x002508)."""
+    """A game controller: the BlueZ icon, or a peripheral / joystick-gamepad device class (DualSense: 0x002508).
+
+    In the Bluetooth class-of-device value, bits 8-12 hold the major class (5 = peripheral) and bits 2-5 the minor
+    class (1 = joystick, 2 = gamepad).
+    """
     cls = _val(props, "Class", 0) or 0
     return _val(props, "Icon") == "input-gaming" or ((cls >> 8) & 0x1F == 0x05 and (cls >> 2) & 0x0F in (1, 2))
 
 
 def parse_objects(text: str, prefer: str = "", info: dict[str, Any] | None = None) -> tuple[int, str, list[Device]]:
-    """Wynik `busctl --json=short call ... GetManagedObjects` -> (BTS_*, ścieżka adaptera, urządzenia).
-    Adapter wybrany przez sender_btadapter (prefer, np. /org/bluez/hci1), inaczej pierwszy włączony, a gdy żaden nie
-    jest włączony - pierwszy (hci0); urządzenia bez nazwy i bez parowania (beacony, telefony w pobliżu) pominięte.
-    info (słownik) dostaje "address" wybranego adaptera i "count" - ile adapterów widzi BlueZ (skan: select)."""
+    """The result of `busctl --json=short call ... GetManagedObjects` -> (BTS_*, adapter path, devices).
+    The adapter chosen by sender_btadapter (prefer, e.g. /org/bluez/hci1), otherwise the first powered one, and when none
+    is powered - the first (hci0); devices without a name and without pairing (beacons, phones nearby) are skipped.
+    info (a dict) receives the "address" of the chosen adapter and "count" - how many adapters BlueZ sees (scan: select)."""
     objects: dict[str, dict[str, Any]] = json.loads(text)["data"][0]
     adapters = {path: ifaces[ADAPTER] for path, ifaces in objects.items() if ADAPTER in ifaces}
     if info is not None:
@@ -150,9 +158,10 @@ def parse_objects(text: str, prefer: str = "", info: dict[str, Any] | None = Non
 
 
 async def _scan_feed(proc: asyncio.subprocess.Process, address: str, wait_s: float = 3.0) -> None:
-    """Skan na wybranym kontrolerze: polecenia do bluetoothctl dopiero, gdy wypisze ten kontroler (BlueZ podaje
-    kontrolery asynchronicznie po starcie - wcześniejsze "select" kończyło się "Controller ... not available"), najdłużej
-    wait_s. Potem czyta wyjście do końca procesu: pełny potok zatrzymałby bluetoothctl w trakcie skanu."""
+    """A scan on the chosen controller: the commands go to bluetoothctl only once it prints that controller (BlueZ lists
+    the controllers asynchronously after start - an earlier "select" ended with "Controller ... not available"), waiting
+    at most wait_s. Afterwards it reads the output until the process ends: a full pipe would stall bluetoothctl in the middle of the
+    scan."""
     loop = asyncio.get_running_loop()
     end, seen, sent = loop.time() + wait_s, "", False
     try:
@@ -171,46 +180,57 @@ async def _scan_feed(proc: asyncio.subprocess.Process, address: str, wait_s: flo
                     continue
             if not chunk:
                 return
-    except (OSError, ValueError):            # proces zakończony (zatrzymanie skanu) - potok zamknięty
+    except (OSError, ValueError):            # the process ended (the scan was stopped) - the pipe is closed
         return
 
 
 class Bluetooth:
-    """Stan i operacje Bluetooth nadajnika. run: wykonawca poleceń (testy podstawiają własny)."""
+    """The Bluetooth state and operations of the sender. run: the command executor (tests substitute their own).
+
+    One instance (`bt`) lives for the whole process. It keeps a cached picture of the adapter and its devices, runs
+    the pair / connect / disconnect / remove / power operations one at a time, manages the scan subprocess, chooses
+    the controller through sender_btadapter, and periodically reports everything to the receiver window (loop()).
+    """
 
     def __init__(self, run: Runner = run_cmd, emit: Callable[..., None] | None = None, sysfs: Path | None = None):
         self.run = run
         self.emit = emit or (lambda *a: net.emit(*a))
         self.state = BTS_ERROR
         self.adapter = ""
-        self.adapter_addr = ""                       # adres (MAC) adaptera self.adapter
-        self.adapter_count = 0                       # ile adapterów widzi BlueZ
+        self.adapter_addr = ""                       # the address (MAC) of the adapter self.adapter
+        self.adapter_count = 0                       # how many adapters BlueZ sees
         self.devices: list[Device] = []
-        self.last = (BTR_NONE, BTR_NONE, b"")       # ostatnia operacja: (BT_*, BTR_*, MAC 6 B)
-        self.busy: asyncio.Task | None = None       # zadanie operacji (testy czekają na nie)
-        self.running = False                         # operacja trwa (do jej końca, przed wysłaniem wyniku)
+        self.last = (BTR_NONE, BTR_NONE, b"")       # the last operation: (BT_*, BTR_*, MAC 6 B)
+        self.busy: asyncio.Task | None = None       # the operation's task (tests wait for it)
+        self.running = False                         # an operation is in progress (until its end, before the result is sent)
         self.scan: asyncio.subprocess.Process | None = None
-        # start / stop skanu po kolei: start to kilka wywołań (refresh, zasilanie, uruchomienie bluetoothctl) - drugi
-        # start albo stop w trakcie widział jeszcze self.scan = None, więc pierwszy proces zostawał osierocony (skan
-        # zabierał radio padom do BT_SCAN_MAX_S i "Zatrzymaj" w oknie go nie zatrzymywał)
+        # scan start / stop one after another: a start is several calls (refresh, power, starting bluetoothctl) - a second
+        # start or stop in the meantime still saw self.scan = None, so the first process was left orphaned
+        # (the scan took the radio from the pads for up to BT_SCAN_MAX_S and "Stop" in the window did not stop it)
         self.scan_lock = asyncio.Lock()
         self.scan_end = 0.0
         self.active_until = 0.0
         self.gen = 0
         self.dups: dict[tuple[int, int, bytes], float] = {}
         self.wake: asyncio.Event | None = None
-        # wybór kontrolera (sender_btadapter): tryb BTA_*, ostatnio widziane kontrolery, wybrany
-        self.sysfs = sysfs                           # /sys/class/bluetooth; None = bez wyboru kontrolera (testy)
-        self.mode: int | None = None                 # wczytany przy pierwszym użyciu (konfiguracja jest już gotowa)
-        self.key = ""                                # BTA_PICK: identyfikator wybranego kontrolera
-        self.cgen = 0                                # runda listy kontrolerów
+        # controller choice (sender_btadapter): the BTA_* mode, the controllers seen last, the chosen one
+        self.sysfs = sysfs                           # /sys/class/bluetooth; None = no controller choice (tests)
+        self.mode: int | None = None                 # loaded on first use (the configuration is ready by then)
+        self.key = ""                                # BTA_PICK: the identifier of the chosen controller
+        self.cgen = 0                                # the round of the controller list
         self.ctrls: tuple[btadapter.Ctrl, ...] | None = None
         self.pick: btadapter.Ctrl | None = None
         self.adapter_err = ""
-        self.untrusted: set[str] = set()             # pady, którym nie dało się ustawić Trusted (trust_pads)
+        self.untrusted: set[str] = set()             # pads for which Trusted could not be set (trust_pads)
 
-    # ---------- polecenia z okna (wątek pętli asyncio, z on_readable) ----------
+    # ---------- commands from the window (the asyncio loop thread, from on_readable) ----------
     def on_command(self, op: int, arg: int, mac: bytes, now: float | None = None) -> None:
+        """Handle a btcmd packet from the receiver window.
+
+        Every command (also a plain BT_LIST poll) keeps the "active" period alive, which makes loop() report the
+        full device list every second. Other commands are de-duplicated (UDP repeats within DUP_S are ignored), then
+        dispatched: scan start / stop run as background tasks; pair / connect / ... go through start_op.
+        """
         now = time.monotonic() if now is None else now
         self.active_until = now + BT_ACTIVE_S
         if op != BT_LIST:
@@ -228,10 +248,13 @@ class Bluetooth:
         self.poke()
 
     def poke(self) -> None:
+        """Wake the reporting loop so that a state change reaches the window without waiting for the next tick."""
         if self.wake is not None:
             self.wake.set()
 
     def start_op(self, op: int, arg: int, mac: bytes) -> None:
+        """Start an operation as a background task; if another one is still running, answer BTR_BUSY instead (BlueZ rejects parallel
+        ones)."""
         if self.running:
             self.last = (op, BTR_BUSY, mac)
             return
@@ -239,6 +262,13 @@ class Bluetooth:
         self.busy = state.spawn(self._op(op, arg, mac))
 
     async def _op(self, op: int, arg: int, mac: bytes) -> None:
+        """Run one operation: refresh the state, call the operation from OPS, refresh again, and send the result to the window.
+
+        BtError carries a result code for the window; any other exception is only logged, so a bad operation can never
+        stop the sender. The `finally` always clears `running` - an exception after the operation (e.g. in the refresh)
+        used to leave it set, and every following operation from the window answered "another operation is running"
+        until the sender was restarted.
+        """
         what = " ".join(filter(None, (OP_NAMES[op], mac_text(mac), "on" if op == BT_POWER and arg else "")))
         res = BTR_FAILED
         try:
@@ -249,25 +279,30 @@ class Bluetooth:
             except BtError as e:
                 res = e.result
                 print(f"Bluetooth {what} failed: {e}")
-            except Exception as e:                   # operacja nie może zatrzymać nadajnika
+            except Exception as e:                   # an operation must not stop the sender
                 print(f"Bluetooth {what} error: {e!r}")
             else:
                 print(f"Bluetooth {what}: OK")
             await self.refresh()
         finally:
-            # zawsze: wyjątek po operacji (np. w odświeżeniu) zostawiał running = True - każda następna operacja
-            # z okna dostawała "trwa inna operacja" aż do restartu nadajnika
+            # always: an exception after the operation (e.g. in the refresh) left running = True - every following operation
+            # from the window got "another operation is running" until the sender was restarted
             self.running, self.last = False, (op, res, mac)
         self.send(full=True)
         self.poke()
 
     # ---------- D-Bus ----------
     async def busctl(self, *args: str, timeout: float = CALL_S) -> str:
+        """Run busctl with the given arguments and return its JSON output; failures become BtError with a mapped result code.
+
+        A missing busctl or an OS-level error (no execute permission, fork out of memory) and a non-zero exit code are
+        all translated, so callers only ever have to catch BtError.
+        """
         try:
             rc, out, err = await self.run((BUSCTL, "--json=short", f"--timeout={timeout:g}", *args), timeout + 2)
         except FileNotFoundError:
             raise BtError("busctl not found (systemd)", BTR_FAILED) from None
-        except OSError as e:                         # brak prawa wykonania, fork bez pamięci (EAGAIN / ENOMEM)
+        except OSError as e:                         # no execute permission, fork out of memory (EAGAIN / ENOMEM)
             raise BtError(f"cannot run busctl: {e}", BTR_DENIED if isinstance(e, PermissionError) else BTR_FAILED) from None
         if rc:
             msg = (err or out).strip() or f"exit {rc}"
@@ -275,13 +310,20 @@ class Bluetooth:
         return out
 
     async def call(self, path: str, iface: str, method: str, *args: str, timeout: float = CALL_S) -> str:
+        """Call a method of a BlueZ D-Bus object (a thin wrapper over busctl call)."""
         return await self.busctl("call", BLUEZ, path, iface, method, *args, timeout=timeout)
 
     async def set_prop(self, path: str, iface: str, name: str, value: bool) -> None:
+        """Set a boolean property of a BlueZ D-Bus object (e.g. Powered, Trusted, Pairable)."""
         await self.busctl("set-property", BLUEZ, path, iface, name, "b", "true" if value else "false")
 
     async def refresh(self) -> None:
-        """Stan adaptera i lista urządzeń z BlueZ. Błąd = stan BTS_* (okno pokazuje powód), lista bez zmian."""
+        """The adapter state and the device list from BlueZ. An error = a BTS_* state (the window shows the reason), the list unchanged.
+
+        First the controller choice is checked, then one GetManagedObjects call returns everything BlueZ knows; the
+        JSON is parsed into the adapter path, its state and the devices. Finally paired pads that are not trusted yet
+        are trusted.
+        """
         await self.check_adapters()
         try:
             rc, out, err = await self.run((BUSCTL, "--json=short", f"--timeout={CALL_S:g}", "call", BLUEZ, "/",
@@ -289,7 +331,7 @@ class Bluetooth:
         except FileNotFoundError:
             self.state, self.adapter, self.devices = BTS_NO_TOOL, "", []
             return
-        except OSError as e:                         # inny błąd uruchomienia busctl - stan w oknie, nie wyjątek w pętli
+        except OSError as e:                         # another busctl start failure - a state in the window, not an exception in the loop
             self.state = BTS_DENIED if isinstance(e, PermissionError) else BTS_ERROR
             print(f"Bluetooth: cannot run busctl: {e}")
             return
@@ -307,33 +349,40 @@ class Bluetooth:
         await self.trust_pads()
 
     async def trust_pads(self) -> None:
-        """Sparowane pady bez zaufania (sparowane poza oknem albo starszą wersją) - zaufane od razu: inaczej BlueZ
-        odrzuca połączenie, które zaczyna pad (włączenie przyciskiem PS), i pad gaśnie po kilku sekundach mrugania."""
+        """Paired pads without trust (paired outside the window or by an older version) are trusted at once: otherwise BlueZ
+        rejects a connection that the pad starts (switching on with the PS button), and the pad goes dark after a few seconds of
+        blinking."""
         want = BTD_PAD | BTD_PAIRED
         for d in [d for d in self.devices if d.flags & (want | BTD_TRUSTED) == want and d.mac not in self.untrusted]:
             try:
                 await self.set_prop(dev_path(self.adapter, d.mac), DEVICE, "Trusted", True)
             except BtError as e:
-                self.untrusted.add(d.mac)            # raz w logu, nie przy każdym odświeżeniu (co IDLE_S)
+                self.untrusted.add(d.mac)            # once in the log, not on every refresh (every IDLE_S)
                 print(f"Bluetooth {d.mac}: cannot set trusted: {e}")
                 continue
             print(f"Bluetooth {d.mac}: paired pad was not trusted - trusted now")
             self.devices[self.devices.index(d)] = Device(d.mac, d.name, d.rssi, d.flags | BTD_TRUSTED)
 
-    # ---------- wybór kontrolera ----------
+    # ---------- controller choice ----------
     def get_mode(self) -> int:
-        """Tryb BTA_* (i self.key przy BTA_PICK): bt.json z okna, inaczej bt_adapter z sender.toml."""
+        """The BTA_* mode (and self.key for BTA_PICK): bt.json from the window, otherwise bt_adapter from sender.toml."""
         if self.mode is None:
             default = btadapter.mode_from(getattr(C, "BT_ADAPTER", "auto"))
             self.mode, self.key = btadapter.load_mode(getattr(C, "BT_FILE", ""), default)
         return self.mode
 
     def prefer(self) -> str:
+        """The D-Bus path of the chosen controller (e.g. /org/bluez/hci1), or "" when no choice has been made."""
         return f"/org/bluez/{self.pick.name}" if self.pick is not None else ""
 
     async def check_adapters(self, force: bool = False) -> None:
-        """Kontrolery z /sys; przy zmianie zestawu (wpięty / wyjęty dongle) albo trybu - wybór od nowa. Błąd zapisu
-        (nadajnik bez roota) raz w logu, nie wyjątek."""
+        """The controllers from /sys; when the set changes (a dongle plugged in / unplugged) or the mode does - choose anew.
+        A write error (a sender without root) goes once to the log, not as an exception.
+
+        The actual blocking / unblocking runs in a worker thread (it writes sysfs files). When nothing changed, the only
+        upkeep is making sure SNIFF is still off. After a controller was switched to, it is powered on (BlueZ usually
+        does it itself, but we do not wait for it) and its link policy is fixed.
+        """
         if self.sysfs is None:
             return
         try:
@@ -341,8 +390,8 @@ class Bluetooth:
         except OSError:
             ctrls = ()
         if not force and ctrls == self.ctrls and not self.adapter_err:
-            await self.keep_no_sniff()               # jądro przywraca SNIFF przy każdym włączeniu kontrolera
-            return                                   # po błędzie: ponowienie przy każdym odświeżeniu, aż się uda
+            await self.keep_no_sniff()               # the kernel restores SNIFF every time a controller is switched on
+            return                                   # after an error: a retry on every refresh until it succeeds
         self.ctrls, old = ctrls, self.pick
         mode = self.get_mode()
         try:
@@ -353,33 +402,37 @@ class Bluetooth:
                 print(f"Bluetooth adapter: cannot switch ({e}) - run the sender as root")
             self.adapter_err = str(e) or repr(e)
             return
-        recovered = bool(self.adapter_err)           # wcześniej nieudane: wybrany dopiero teraz odblokowany
+        recovered = bool(self.adapter_err)           # an earlier failure: the chosen one has only now been unblocked
         if recovered:
             print("Bluetooth adapter: switched after an earlier error")
             self.adapter_err = ""
         if len(ctrls) > 1 or force:
             print(btadapter.describe(ctrls, self.pick, mode))
         if self.pick is not None and (self.pick != old or recovered):
-            # odblokowany kontroler BlueZ zwykle włącza sam (AutoEnable); gdy nie - tu, bez czekania na okno
+            # BlueZ usually powers on an unblocked controller itself (AutoEnable); when it does not - here, without waiting for the window
             with contextlib.suppress(BtError):
                 await self.set_prop(self.prefer(), ADAPTER, "Powered", True)
-            await self.keep_no_sniff()               # włączenie przed chwilą przywróciło SNIFF
+            await self.keep_no_sniff()               # powering on a moment ago restored SNIFF
 
     async def keep_no_sniff(self) -> None:
-        """Wybrany kontroler bez SNIFF - ponownie, gdy jądro ją przywróciło (włączenie kontrolera). Bez tego pad
-        połączony po włączeniu (start telefonu, odblokowanie dongla) miał SNIFF przez całe połączenie: skoki opóźnienia
-        pierwszego naciśnięcia po bezruchu."""
+        """Keep the chosen controller without SNIFF - again when the kernel restored it (a controller power-on). Without this a pad
+        connected after the power-on (phone start, a dongle unblocked) had SNIFF for the whole connection: delay spikes
+        of the first press after a pause."""
         if self.pick is None or self.sysfs is None:
             return
         name = self.pick.name
         st = await asyncio.to_thread(btadapter.dev_info, name)
-        if st is None:                               # stanu nie da się odczytać - zostaje ustawienie z wyboru kontrolera
+        if st is None:                               # the state cannot be read - the setting from the controller choice stays
             return
         if await asyncio.to_thread(btadapter.ensure_no_sniff, name, None, lambda _name: st):
             print(f"Bluetooth adapter: sniff mode disabled on {name} (controller was powered on)")
 
     async def set_mode(self, mode: int, key: str = "") -> None:
-        """Z okna: BTA_AUTO / BTA_MANUAL (BT_ADAPTER) albo konkretny kontroler (BT_ADAPTER_USE -> BTA_PICK)."""
+        """From the window: BTA_AUTO / BTA_MANUAL (BT_ADAPTER) or a specific controller (BT_ADAPTER_USE -> BTA_PICK).
+
+        The choice is validated, remembered in bt.json, and applied at once. Entering manual mode first unblocks every
+        controller, so that nothing stays blocked by us.
+        """
         if self.sysfs is None:
             raise BtError("adapter choice disabled")
         if mode not in btadapter.MODE_NAMES or (mode == BTA_PICK) != bool(key):
@@ -392,7 +445,7 @@ class Bluetooth:
         await self.check_adapters(force=True)
 
     async def use_adapter(self, index: int) -> None:
-        """Kontroler hciN z listy w oknie - zapamiętany po identyfikatorze urządzenia, nie po numerze."""
+        """The controller hciN from the list in the window - remembered by the device identifier, not by the number."""
         await self.check_adapters()
         c = next((c for c in self.ctrls or () if c.index == index), None)
         if c is None:
@@ -400,7 +453,8 @@ class Bluetooth:
         await self.set_mode(BTA_PICK, c.key)
 
     def adapter_flags(self) -> int:
-        """Bity btstate: jakie kontrolery są, czy używany to USB, tryb (0 = bez wyboru - okno chowa przełącznik)."""
+        """The btstate bits: which controllers there are, whether the one in use is USB, the mode (0 = no choice - the window hides the
+        switch)."""
         if self.sysfs is None:
             return 0
         ctrls = self.ctrls or ()
@@ -408,7 +462,7 @@ class Bluetooth:
                 | (BTF_ON_USB if self.pick is not None and self.pick.usb else 0) | self.get_mode() << BTF_MODE_SHIFT)
 
     def ctrl_rows(self) -> list[tuple[int, int, str]]:
-        """Kontrolery do okna: (BTC_*, N z hciN, nazwa urządzenia)."""
+        """The controllers for the window: (BTC_*, N of hciN, device name)."""
         picked = self.get_mode() == BTA_PICK
         rows = []
         for c in self.ctrls or ():
@@ -420,12 +474,12 @@ class Bluetooth:
         return rows
 
     def no_adapter(self) -> BtError:
-        """Brak adaptera; przy braku uprawnień (nadajnik nie jako root) okno pokazuje "brak uprawnień", a nie
-        ogólne "nie udało się"."""
+        """No adapter; with missing permissions (the sender not running as root) the window shows "no permission", not
+        the generic "failed"."""
         return BtError(f"no adapter (state {self.state})", BTR_DENIED if self.state == BTS_DENIED else BTR_FAILED)
 
     def need(self, mac: str, *, known: bool = True) -> str:
-        """Ścieżka D-Bus urządzenia; known: musi być na liście BlueZ (wykryte skanem albo sparowane)."""
+        """The D-Bus path of a device; known: it must be in BlueZ's list (found by a scan or paired)."""
         if self.state in (BTS_OFF, BTS_BLOCKED):
             raise BtError("adapter powered off", BTR_OFF)
         if not self.adapter:
@@ -435,6 +489,7 @@ class Bluetooth:
         return dev_path(self.adapter, mac)
 
     async def power(self, on: bool) -> None:
+        """Switch the adapter's radio on or off (Powered); an rfkill-blocked adapter cannot be powered on from here."""
         if self.state == BTS_BLOCKED and on:
             raise BtError("adapter blocked (rfkill)", BTR_OFF)
         if not self.adapter:
@@ -443,23 +498,25 @@ class Bluetooth:
         self.state = BTS_OK if on else BTS_OFF
 
     async def ensure_on(self) -> None:
+        """Power the adapter on if it is currently off or blocked."""
         if self.state in (BTS_OFF, BTS_BLOCKED):
             await self.power(True)
 
     async def get_bool(self, path: str, iface: str, name: str) -> bool | None:
-        """Właściwość logiczna BlueZ; None = brak (starszy BlueZ bez "Bonded") albo nieczytelna."""
+        """A BlueZ boolean property; None = absent (an older BlueZ without "Bonded") or unreadable."""
         try:
             return bool(json.loads(await self.busctl("get-property", BLUEZ, path, iface, name))["data"])
         except (BtError, ValueError, KeyError, TypeError):
             return None
 
     async def bonded(self, path: str) -> bool:
-        """Klucz łącza zapisany. Sparowany bez wiązania (adapter z Pairable=false, np. świeżo wpięty dongle) działa
-        tylko do rozłączenia: BlueZ (input, ClassicBondedOnly) odrzuca HID - brak /dev/input, a pad włączany PS
-        mruga kilka sekund i gaśnie. Starszy BlueZ bez właściwości "Bonded" - Paired znaczy to samo."""
+        """The link key is stored. Paired without bonding (an adapter with Pairable=false, e.g. a freshly plugged-in dongle) works
+        only until disconnection: BlueZ (input, ClassicBondedOnly) rejects HID - no /dev/input, and a pad switched on with PS
+        blinks for a few seconds and goes dark. An older BlueZ without the "Bonded" property - Paired means the same."""
         return await self.get_bool(path, DEVICE, "Bonded") is not False
 
     async def _pair_once(self, path: str) -> None:
+        """Call Pair on the device; "already exists" is not an error (it was paired in the meantime)."""
         try:
             await self.call(path, DEVICE, "Pair", timeout=PAIR_S)
         except BtError as e:
@@ -467,20 +524,20 @@ class Bluetooth:
                 raise
 
     async def pair(self, mac: str) -> None:
-        """Parowanie (BlueZ bez agenta = NoInputNoOutput, jak DualSense) z wiązaniem, zaufanie (pad sam się potem
-        łączy) i połączenie. Sparowany bez wiązania -> zapomniany i sparowany od nowa (pad musi być w trybie
-        parowania); sparowany z wiązaniem -> tylko zaufanie i połączenie.
+        """Pairing (BlueZ without an agent = NoInputNoOutput, like the DualSense) with bonding, trusting (the pad then connects
+        by itself) and connecting. Paired without bonding -> forgotten and paired anew (the pad must be in pairing mode);
+        paired with bonding -> only trusting and connecting.
 
-        Tylko pady do gier (BTD_PAD): parowanie bez agenta (Just Works) z zaufaniem z polecenia przez sieć
-        pozwoliłoby podpiąć do nadajnika (root) np. obcą klawiaturę Bluetooth. Pairable wraca na false po próbie -
-        adapter nie zostaje otwarty na parowanie."""
+        Only game controllers (BTD_PAD): pairing without an agent (Just Works) with trust, ordered over the network,
+        would let someone attach e.g. a foreign Bluetooth keyboard to the sender (root). Pairable goes back to false after
+        the attempt - the adapter is not left open for pairing."""
         await self.stop_scan()
         path = self.need(mac)
         dev = next(d for d in self.devices if d.mac == mac)
         if not dev.flags & BTD_PAD:
             raise BtError("not a game controller - only pads can be paired from the window", BTR_DENIED)
         try:
-            with contextlib.suppress(BtError):           # bez Pairable BlueZ paruje bez zapisu klucza
+            with contextlib.suppress(BtError):           # without Pairable BlueZ pairs without storing the key
                 await self.set_prop(self.adapter, ADAPTER, "Pairable", True)
             if dev.flags & BTD_PAIRED and not await self.bonded(path):
                 print(f"Bluetooth {mac}: paired without bonding - re-pairing")
@@ -498,9 +555,9 @@ class Bluetooth:
         await self.call(path, DEVICE, "Connect", timeout=CONNECT_S)
 
     async def connect(self, mac: str) -> None:
-        """Połączenie; zaufanie też tutaj - pad sparowany wcześniej poza oknem (bluetoothctl) bez trust łączyłby
-        się tylko z telefonu, a włączany przyciskiem PS gasł po kilku sekundach. Zaufanie tylko dla padów: zaufane
-        urządzenie może się potem łączyć samo (obce urządzenie - bez zgody z okna)."""
+        """Connect; trust here too - a pad paired earlier outside the window (bluetoothctl) without trust would connect
+        only from the phone, and when switched on with the PS button it went dark after a few seconds. Trust only for pads: a trusted
+        device can later connect by itself (a foreign device - not without consent from the window)."""
         await self.stop_scan()
         path = self.need(mac)
         if next((d.flags for d in self.devices if d.mac == mac), 0) & BTD_PAD:
@@ -509,18 +566,19 @@ class Bluetooth:
         await self.call(path, DEVICE, "Connect", timeout=CONNECT_S)
 
     async def disconnect(self, mac: str) -> None:
+        """Disconnect a device (D-Bus Disconnect)."""
         await self.call(self.need(mac), DEVICE, "Disconnect", timeout=CONNECT_S)
 
     async def remove(self, mac: str) -> None:
-        """Zapomnij urządzenie (np. pad sparowany potem z konsolą - stare klucze i tak nie działają)."""
+        """Forget a device (e.g. a pad later paired with a console - the old keys do not work anyway)."""
         path = self.need(mac)
         await self.call(self.adapter, ADAPTER, "RemoveDevice", "o", path)
 
     async def disconnect_pad(self, mac: str) -> bool:
-        """Wyłączenie pada (okno / bezczynność): Disconnect przez D-Bus na kontrolerze, z którym pad jest połączony.
-        `bluetoothctl disconnect` szuka urządzenia tylko na domyślnym kontrolerze bluetoothctl (hci0) - przy padzie
-        na donglu (hci1) kończył się "Device ... not available" i pad się nie wyłączał. -> False, gdy D-Bus nie
-        pomógł (brak busctl / BlueZ, pad nieznany) - wtedy zostaje bluetoothctl."""
+        """Switching a pad off (window / idle): a D-Bus Disconnect on the controller the pad is connected to.
+        `bluetoothctl disconnect` looks for the device only on bluetoothctl's default controller (hci0) - for a pad on a
+        dongle (hci1) it ended with "Device ... not available" and the pad did not switch off. Returns False when D-Bus did
+        not help (no busctl / BlueZ, an unknown pad) - then bluetoothctl remains as the fallback."""
         try:
             out = await self.busctl("call", BLUEZ, "/", "org.freedesktop.DBus.ObjectManager", "GetManagedObjects")
             objects: dict[str, dict[str, Any]] = json.loads(out)["data"][0]
@@ -539,16 +597,23 @@ class Bluetooth:
             return False
         return True
 
-    # ---------- skan ----------
+    # ---------- scan ----------
     def scanning(self) -> bool:
+        """True while the scan subprocess is alive."""
         return self.scan is not None and self.scan.returncode is None
 
     async def start_scan(self, secs: int) -> None:
-        """Skan przez secs s (proces bluetoothctl kończy sesję wyszukiwania sam); trwający - nowy limit."""
+        """A scan for secs s (the bluetoothctl process ends the discovery session by itself); one in progress - a new limit."""
         async with self.scan_lock:
             await self._start_scan(secs)
 
     async def _start_scan(self, secs: int) -> None:
+        """Start the scan subprocess (the caller holds scan_lock).
+
+        With one controller, `bluetoothctl --timeout N scan on` is enough. With several, bluetoothctl would scan on its
+        own default controller, so it is started in interactive mode and told over stdin which controller to select; a
+        separate watcher then enforces the time limit. Errors become a result for the window instead of exceptions.
+        """
         await self._stop_scan()
         await self.refresh()
         try:
@@ -556,22 +621,22 @@ class Bluetooth:
             if not self.adapter:
                 raise self.no_adapter()
             if self.adapter_count > 1 and self.adapter_addr:
-                # kilka kontrolerów (wbudowany zablokowany + dongle): `bluetoothctl scan on` skanuje domyślnym
-                # kontrolerem bluetoothctl - pierwszym znanym BlueZ (hci0, zwykle zablokowany wbudowany), a nie wybranym.
-                # Skan kończył się od razu błędem "NotReady" i nowego pada nie dało się sparować z okna.
-                # Tryb interaktywny: "select <adres>" i "scan on" przez stdin (--timeout działa tylko bez trybu
-                # interaktywnego - limit pilnuje _scan_watch).
+                # several controllers (built-in blocked + dongle): `bluetoothctl scan on` scans with bluetoothctl's default
+                # controller - the first one BlueZ knows (hci0, usually the blocked built-in one), not the chosen one.
+                # The scan ended at once with a "NotReady" error and a new pad could not be paired from the window.
+                # Interactive mode: "select <address>" and "scan on" through stdin (--timeout works only without
+                # interactive mode - the limit is watched by _scan_watch).
                 self.scan = await asyncio.create_subprocess_exec(BLUETOOTHCTL, stdin=PIPE, stdout=PIPE, stderr=DEVNULL)
                 state.spawn(_scan_feed(self.scan, self.adapter_addr))
                 limit = secs
             else:
                 self.scan = await asyncio.create_subprocess_exec(BLUETOOTHCTL, "--timeout", str(secs), "scan", "on",
                                                                  stdin=DEVNULL, stdout=DEVNULL, stderr=DEVNULL)
-                limit = secs + 1                     # zapas: bluetoothctl kończy sam
+                limit = secs + 1                     # a margin: bluetoothctl ends by itself
         except FileNotFoundError:
             self.last = (BT_SCAN_START, BTR_FAILED, b"")
             print("Bluetooth scan failed: bluetoothctl not found (install bluez)")
-        except OSError as e:                         # bez tego wyjątek kończył zadanie skanu bez wyniku dla okna
+        except OSError as e:                         # without this the exception ended the scan task with no result for the window
             self.last = (BT_SCAN_START, BTR_DENIED if isinstance(e, PermissionError) else BTR_FAILED, b"")
             print(f"Bluetooth scan failed: cannot run bluetoothctl: {e}")
         except BtError as e:
@@ -585,8 +650,8 @@ class Bluetooth:
         self.poke()
 
     async def _scan_watch(self, proc: asyncio.subprocess.Process, limit: float) -> None:
-        """Koniec skanu: proces sam się kończy (--timeout); bez tego (tryb interaktywny, bluetoothctl bez --timeout)
-        zatrzymanie po limit s - skan zabiera radio padom, nie może trwać dłużej niż obiecany limit."""
+        """The end of a scan: the process ends by itself (--timeout); without that (interactive mode, bluetoothctl without
+        --timeout) it is stopped after limit s - a scan takes the radio from the pads and must not last longer than the promised limit."""
         try:
             await asyncio.wait_for(asyncio.shield(proc.wait()), limit)
         except TimeoutError:
@@ -601,11 +666,12 @@ class Bluetooth:
             self.poke()
 
     async def stop_scan(self) -> None:
-        """Zatrzymanie skanu - także takiego, który właśnie się uruchamia (czeka na koniec startu)."""
+        """Stop the scan - also one that is just starting (it waits for the end of the start)."""
         async with self.scan_lock:
             await self._stop_scan()
 
     async def _stop_scan(self) -> None:
+        """Terminate the scan subprocess (SIGTERM, then SIGKILL after 3 s); the caller holds scan_lock."""
         proc, self.scan = self.scan, None
         if proc is None or proc.returncode is not None:
             return
@@ -620,17 +686,22 @@ class Bluetooth:
         print("Bluetooth scan stopped")
 
     def kill_scan(self) -> None:
-        """Zamykanie nadajnika (bez pętli): skan nie może zostać po nim."""
+        """When the sender shuts down (without a loop): the scan must not outlive it."""
         if self.scan is not None and self.scan.returncode is None:
             with contextlib.suppress(ProcessLookupError):
                 self.scan.kill()
 
-    # ---------- do okna ----------
+    # ---------- to the window ----------
     def active(self, now: float) -> bool:
+        """True while the window is (recently) interested: a command arrived lately, a scan runs, or an operation is in progress."""
         return now < self.active_until or self.scanning() or self.running
 
     def send(self, full: bool, now: float | None = None) -> None:
-        """btstate (+ runda btdev, gdy full): stan, skan, ostatnia operacja, lista urządzeń."""
+        """btstate (+ a btdev round when full): the state, the scan, the last operation, the device list.
+
+        The btstate packet always goes; with full=True it is followed by one btdev packet per device (index / total, so
+        the window can assemble the list and detect a missing one) and by the controller rows. `gen` numbers the rounds.
+        """
         now = time.monotonic() if now is None else now
         scanning = self.scanning()
         flags = ((BTF_SCANNING if scanning else 0) | (BTF_BUSY if self.running else 0) | (BTF_LIST if full else 0)
@@ -645,15 +716,19 @@ class Bluetooth:
         for k, d in enumerate(devs):
             rssi = BT_RSSI_NONE if d.rssi is None else clamp(d.rssi, BT_RSSI_NONE + 1, 127)
             self.emit(T_BTDEV, 255, self.gen, k, len(devs), mac_bytes(d.mac), rssi, d.flags, utf8_field(d.name, NAME_MAX, "…"))
-        if full and self.sysfs is not None:          # kontrolery nadajnika (panel: lista z nazwami, "Użyj")
+        if full and self.sysfs is not None:          # the sender's controllers (panel: a list with names, "Use")
             rows = self.ctrl_rows()
             self.cgen = (self.cgen + 1) & 0xFFFF
             for k, (cflags, index, label) in enumerate(rows):
                 self.emit(T_BTCTRL, 255, self.cgen, k, len(rows), cflags, index, utf8_field(label, CTRL_NAME_MAX, "…"))
 
     async def loop(self) -> None:
-        """Stan do receivera: co IDLE_S sam stan, przy otwartym panelu / skanie / operacji co TICK_S z listą.
-        Tylko do receivera, który zna nowe pakiety (przysłał scfg) - starszy odrzuca nieznane długości."""
+        """The state for the receiver: every IDLE_S just the state, with the panel open / during a scan / operation every TICK_S with the
+        list.
+        Only to a receiver that knows the new packets (it sent scfg) - an older one rejects unknown lengths.
+
+        When no receiver is present, the loop still runs the controller choice every IDLE_S. It sleeps on an Event, so a
+        command (poke) wakes it immediately instead of waiting for the next tick."""
         self.wake = asyncio.Event()
         t_sent = t_adapter = float("-inf")
         try:
@@ -663,11 +738,12 @@ class Bluetooth:
                 if net.new_receiver(now) and (active or now - t_sent >= IDLE_S):
                     t_sent = t_adapter = now
                     if not self.running:
-                        await self.refresh()          # w trakcie operacji odświeża ją sama (BlueZ zajęty)
+                        await self.refresh()          # during an operation it refreshes itself (BlueZ is busy)
                     self.send(full=active)
                 elif now - t_adapter >= IDLE_S and not self.running:
-                    # wybór kontrolera i link policy bez receivera: telefon startuje przy wyłączonym PC (pad budzi go
-                    # przez Wake-on-LAN), receiver nie działa - wcześniej dongle i brak SNIFF czekały na okno na PC
+                    # controller choice and link policy without a receiver: the phone starts while the PC is off (a pad wakes it
+                    # through Wake-on-LAN), the receiver is not running - earlier the dongle and the lack of SNIFF waited for the window on
+                    # the PC
                     t_adapter = now
                     await self.check_adapters()
                 self.wake.clear()

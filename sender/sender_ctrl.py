@@ -1,4 +1,4 @@
-"""Sender: stan jednego pada (klasa Ctrl) - budowanie i wysyłanie pakietów, rumble, lightbar."""
+"""Sender: state of a single pad (the Ctrl class) - building and sending packets, rumble, lightbar."""
 import asyncio
 import glob
 import os
@@ -11,12 +11,18 @@ from proto import (CAP_CALIB, KEY_BIT, LAT_NONE, RAW_STICKS_MAX_S, SENDER_VERSIO
 from sender_config import BURST_DELAYS, C, IDLE_TP, NEUTRAL_PAD, PAD_ABS, STICK_AXES
 
 
-# lokalne potwierdzenia nadajnika: (mała wibracja, duża, kolor, czas s)
-LOCAL_PULSES = {"wol": (0, 200, (255, 255, 255), 0.5),     # wysłano Wake-on-LAN - biały błysk
-                "fail": (0, 120, (255, 0, 0), 0.6)}        # nie wysłano (brak MAC / sieci) - czerwony
+# local confirmations by the sender: (small rumble, large rumble, colour, duration s)
+LOCAL_PULSES = {"wol": (0, 200, (255, 255, 255), 0.5),     # Wake-on-LAN was sent - white flash
+                "fail": (0, 120, (255, 0, 0), 0.6)}        # not sent (no MAC / network) - red
 
 
 def find_led(pad_dev):
+    """Find the sysfs lightbar (RGB indicator LED) that belongs to the same HID device as the pad's evdev node.
+
+    The pad's /sys/class/input/eventN path is compared against the parent HID device of every
+    `*:rgb:indicator` LED: the LED whose HID device is a prefix of the input path is the pad's own lightbar.
+    Returns the LED directory or None (no kernel lightbar driver / no permission).
+    """
     try:
         ev = os.path.realpath(f"/sys/class/input/{os.path.basename(pad_dev.path)}")
         for led in glob.glob("/sys/class/leds/*:rgb:indicator"):
@@ -29,13 +35,23 @@ def find_led(pad_dev):
 
 
 def pad_ident(key):
-    """Stały identyfikator pada (max 17 B): MAC z uniq; dla długich kluczy skrót."""
+    """Stable pad identifier (max 17 B): the MAC from uniq; a hash for long keys.
+
+    The receiver uses it to select the per-pad profile, so it must stay the same across reconnects and restarts.
+    """
     if len(key) <= 17:
         return key
     return "h" + format(zlib.crc32(key.encode()) & 0xFFFFFFFF, "08x")
 
 
 class Ctrl:
+    """Everything the sender knows about one pad: its evdev devices, the current input state and the send machinery.
+
+    The input streams (sender_streams) write into the state fields (pad axes, hat, button mask, motion, touch); the
+    send_* methods turn that state into packets for slot `idx`. Sending is rate-limited by timers kept on the object,
+    and feedback from the PC (rumble, lightbar, adaptive triggers) flows back through apply_feedback / set_triggers.
+    """
+
     def __init__(self, idx, key, pad, motion, touch):
         self.idx, self.key = idx, key
         self.pad_dev, self.motion_dev, self.touch_dev = pad, motion, touch
@@ -45,60 +61,71 @@ class Ctrl:
         self.motion = [0] * 6
         self.batt, self.flags = 255, 0
         self.touch = IDLE_TP
-        self.tp = 0                   # 0 / 1 / 2 (klik z dwoma palcami)
+        self.tp = 0                   # 0 / 1 / 2 (click with two fingers)
         self.tap_id = 0
         self.t_state = 0.0
         self.last_key = None
         self.pending = False
-        self.rumble = None            # sender_rumble.Rumble (ustawiane w run_ctrl)
+        self.rumble = None            # sender_rumble.Rumble (set in run_ctrl)
         self.led = None
         self.led_color = None
-        self.reports = {"pad": 0, "motion": 0}   # liczniki raportów urządzeń (Hz w pakiecie info)
-        self.last_input = time.monotonic()        # ostatnie świadome użycie pada (do wyłączania po bezczynności)
+        self.reports = {"pad": 0, "motion": 0}   # device report counters (Hz in the info packet)
+        self.last_input = time.monotonic()        # the last deliberate use of the pad (for idle power-off)
         self.powering_off = 0.0
-        self.closing = False          # run_ctrl sprząta - nie dołączaj już nowych urządzeń
-        self.extra = set()            # zadania strumieni ruchu / touchpada (dołączane i odłączane niezależnie od pada)
-        self.meters = {}              # RateMeter per urządzenie (tylko przy --stats)
+        self.closing = False          # run_ctrl is cleaning up - do not attach any new devices
+        self.extra = set()            # tasks of the motion / touchpad streams (attached and detached independently of the pad)
+        self.meters = {}              # RateMeter per device (only with --stats)
         self._state_timer = None
         self.last_touch_send = 0.0
         self._touch_timer = None
-        # pomiar opóźnienia (pakiet state2): czas w jądrze [µs, zegar zdarzeń evdev] najstarszej niewysłanej zmiany,
-        # opóźnienie Bluetooth ponad minimum w tamtej chwili i bieżące (z sender_streams.BtDelay)
+        # latency measurement (state2 packet): kernel time [µs, evdev event clock] of the oldest unsent change,
+        # the Bluetooth delay above the minimum at that moment, and the current one (from sender_streams.BtDelay)
         self.t_event = None
         self.ev_bt = self.bt_us = LAT_NONE
-        self.triggers = TRIG2_OFF     # efekty spustów z PC (wartości trig2: L2, R2, wibracja z gry)
-        self.fb = None                # ostatni feedback z PC (mała, duża, r, g, b) - powrót po lokalnym błysku
-        self.wol_timer = None         # odliczanie przytrzymania kombinacji Wake-on-LAN (sender_wol)
+        self.triggers = TRIG2_OFF     # trigger effects from the PC (trig2 values: L2, R2, rumble from the game)
+        self.fb = None                # the last feedback from the PC (small, large, r, g, b) - restored after a local flash
+        self.wol_timer = None         # countdown of holding the Wake-on-LAN combination (sender_wol)
         self._pulse_timer = None
-        self._pulse_back = None       # (0, 0, r, g, b) - stan po trwającym błysku
-        self.stick_dz = C.STICK_DZ    # strefa martwa gałek; 0 na czas pomiaru dryfu z okna (CMD_RAW_STICKS)
+        self._pulse_back = None       # (0, 0, r, g, b) - the state after a running flash
+        self.stick_dz = C.STICK_DZ    # stick deadzone; 0 while the drift measurement from the window runs (CMD_RAW_STICKS)
         self._raw_timer = None
-        self.gyro_bias = [0.0, 0.0, 0.0]   # bias żyroskopu odejmowany przed wysłaniem (kalibracja / autobias)
-        self.cal_request = 0          # kalibracja z okna: tyle sekund (stream_motion ją zaczyna), 0 = brak
-        self.cal_cmd_t = -1.0         # kiedy przyszło ostatnie polecenie kalibracji (powtórki UDP)
+        self.gyro_bias = [0.0, 0.0, 0.0]   # gyro bias subtracted before sending (calibration / autobias)
+        self.cal_request = 0          # calibration from the window: this many seconds (stream_motion starts it), 0 = none
+        self.cal_cmd_t = -1.0         # when the last calibration command arrived (UDP repeats)
 
     def devices(self):
+        """The evdev devices currently attached to this pad (pad, motion, touchpad - whichever exist)."""
         return [d for d in (self.pad_dev, self.motion_dev, self.touch_dev) if d]
 
     def set_abs(self, code, value):
+        """Store an absolute-axis value: clamp it to 0..255 and snap sticks within the deadzone to the centre (128)."""
         v = 0 if value < 0 else 255 if value > 255 else value
         if self.stick_dz and code in STICK_AXES and abs(v - 128) <= self.stick_dz:
             v = 128
         self.pad[code] = v
 
     def init_state(self):
+        """Read the initial pad state from the device and locate the lightbar."""
         self.resync()
         self.led = find_led(self.pad_dev)
 
     def note_input(self, now):
-        """Zapamiętuje czas użycia, jeśli stan to świadome użycie, a nie szum gałek ani leżący pad."""
+        """Remember the time of use if the state is deliberate use, not stick noise or a pad lying still.
+
+        "Deliberate" means any button / D-pad pressed, a trigger pulled beyond 30, or a stick moved more than 40 units
+        from the centre. The timestamp feeds the idle power-off.
+        """
         p = self.pad
         if (self.mask or self.hat[0] or self.hat[1] or p[2] > 30 or p[5] > 30
                 or any(abs(p[k] - 128) > 40 for k in STICK_AXES)):
             self.last_input = now
 
     def resync(self):
-        """Odczytuje pełny stan pada z urządzenia (start oraz po SYN_DROPPED, gdy bufor evdev się przepełnił)."""
+        """Read the complete pad state from the device (at start, and after SYN_DROPPED when the evdev buffer overflowed).
+
+        Axes and the hat come from the current absinfo values, the button mask from the list of keys that are down.
+        Individual read errors are ignored: whatever cannot be read keeps its previous value.
+        """
         for c in PAD_ABS:
             try:
                 self.set_abs(c, self.pad_dev.absinfo(c).value)
@@ -116,27 +143,38 @@ class Ctrl:
         except OSError:
             pass
 
-    # ---- wysyłanie ----
+    # ---- sending ----
     def send_ident(self):
+        """Tell the receiver which pad this is (identifier) and what the sender can do (version, capability bits, rumble mode)."""
         net.emit(T_IDENT, self.idx, pad_ident(self.key).encode("ascii", "replace")[:17])
         r = self.rumble
         net.emit(T_VERSION, self.idx, SENDER_VERSION, (r.bits if r is not None else 0) | CAP_CALIB,
                  r.why if r is not None else WHY_OFF)
 
     def mark_event(self, e):
-        """Zdarzenie z jądra zmieniło stan (przycisk, gałka, ruch): zapamiętaj czas najstarszej niewysłanej zmiany."""
+        """A kernel event changed the state (button, stick, motion): remember the time of the oldest unsent change.
+
+        The kernel timestamp of the event (evdev clock) is later subtracted from the send time to measure how long the
+        change sat on the phone; the Bluetooth delay seen at that moment is saved with it.
+        """
         if self.t_event is None:
-            sec = getattr(e, "sec", None)            # zdarzenia w testach nie mają czasu
+            sec = getattr(e, "sec", None)            # events in tests have no time
             if sec is not None:
                 self.t_event = sec * 1_000_000 + e.usec
                 self.ev_bt = self.bt_us
 
     def send_state(self, force=False):
+        """Pack and send the full pad state, unless nothing changed since the last packet (force=True sends anyway).
+
+        The state key is a tuple of everything that goes into the packet. A repeat of an identical state (heartbeat,
+        burst) carries no latency measurement. When the PC clock is synchronised, a state2 packet is sent that also
+        carries the PC time and the measured phone / Bluetooth delay of the change; otherwise a plain state packet.
+        """
         key = (*self.pad, *self.hat, self.mask, self.batt, self.flags, *self.motion)
         self.pending = False
         if not force and key == self.last_key:
-            # zmiana bez skutku (szum gałki w strefie martwej, ta sama wartość): jej czas nie może zostać jako "najstarsza
-            # niewysłana zmiana" - następne prawdziwe naciśnięcie dostałoby opóźnienie liczone od tego szumu (do ~100 ms)
+            # a change with no effect (stick noise inside the deadzone, the same value): its time must not stay as the "oldest
+            # unsent change" - the next real press would get a delay measured from that noise (up to ~100 ms)
             self.t_event = None
             return
         fresh = key != self.last_key
@@ -144,37 +182,38 @@ class Ctrl:
         self.t_state = time.monotonic()
         ev, self.t_event = self.t_event, None
         pc = net.pc_clock.now_us()
-        if pc is None:                                   # receiver bez pong2 (starszy) albo brak synchronizacji
+        if pc is None:                                   # a receiver without pong2 (older) or no synchronisation
             net.emit(T_STATE, self.idx, *key)
             return
-        phone = bt = LAT_NONE                            # powtórka (heartbeat, seria) - bez pomiaru
+        phone = bt = LAT_NONE                            # a repeat (heartbeat, burst) - no measurement
         if fresh and ev is not None:
-            age = time.time_ns() // 1000 - ev            # zegar zdarzeń evdev = CLOCK_REALTIME
+            age = time.time_ns() // 1000 - ev            # the evdev event clock = CLOCK_REALTIME
             if 0 <= age < LAT_NONE:
                 phone, bt = age, self.ev_bt
         net.emit(T_STATE2, self.idx, *key, pc, phone, bt)
 
     def request_send(self):
-        """Wyślij zmieniony stan z limitem pad_min_dt: pierwsza zmiana po ciszy idzie jeszcze w tej iteracji pętli
-        (call_soon - dziesiątki µs), kolejne w oknie zlewają się w jeden pakiet na jego końcu - nic nie ginie.
-        call_soon zamiast wysłania od razu: jeden raport pada trafia do trzech urządzeń evdev (przyciski / gałki,
-        ruch, touchpad), ich zdarzenia przychodzą w tej samej iteracji pętli - zmiany gałek i ruchu z jednego raportu
-        idą jednym pakietem, a nie dwoma (drugi dopiero po pad_min_dt)."""
+        """Send the changed state, limited by pad_min_dt: the first change after silence goes out in this very loop
+        iteration (call_soon - tens of µs), later ones inside the window merge into one packet at its end - nothing is lost.
+        call_soon instead of sending at once: one pad report lands in three evdev devices (buttons / sticks, motion,
+        touchpad), and their events arrive in the same loop iteration - stick and motion changes from one report go
+        out in one packet, not two (the second only after pad_min_dt)."""
         self.pending = True
         if self._state_timer is not None:
-            return                     # wysłanie zaplanowane - zabierze też tę zmianę
+            return                     # a send is scheduled - it will take this change as well
         wait = C.PAD_MIN_DT - (time.monotonic() - self.t_state)
         loop = asyncio.get_running_loop()
         self._state_timer = loop.call_soon(self._state_flush) if wait <= 0 else loop.call_later(wait, self._state_flush)
 
     def _state_flush(self):
+        """Timer callback of request_send: send the pending state, if it is still pending."""
         self._state_timer = None
         if self.pending:
             self.send_state()
 
     def send_touch(self, force=False):
-        """Dotyk jest zlewany co touch_coalesce_ms; zmiana odrzucona przez okno nie ginie -
-        zostaje wysłana z opóźnieniem (trailing flush), więc np. puszczenie palca nie czeka na heartbeat."""
+        """Touch is merged every touch_coalesce_ms; a change rejected by the window is not lost -
+        it is sent late (trailing flush), so e.g. lifting a finger does not wait for the heartbeat."""
         now = time.monotonic()
         wait = C.TOUCH_COALESCE_S - (now - self.last_touch_send)
         if not force and wait > 0:
@@ -188,15 +227,17 @@ class Ctrl:
         net.emit(T_TOUCH, self.idx, *self.touch[0], *self.touch[1])
 
     def _touch_flush(self):
+        """Timer callback of send_touch: the trailing flush of a touch change that the coalescing window held back."""
         self._touch_timer = None
         self.send_touch(force=True)
 
     def send_click(self):
+        """Send the touchpad click state (0 = none, 1 = click, 2 = click with two fingers)."""
         net.emit(T_CLICK, self.idx, int(self.tp))
 
     def send_tap(self, flags):
-        """Tap (bit0 LPM / bit2 PPM) z numerem w bitach 4-7, wysyłany 3x: zgubiony pakiet nie gubi kliknięcia,
-        a odbiornik po numerze wykonuje klik tylko raz."""
+        """A tap (bit0 left button / bit2 right button) with a sequence number in bits 4-7, sent 3 times: a lost packet
+        does not lose the click, and the receiver performs the click only once, going by the number."""
         self.tap_id = self.tap_id % 15 + 1
         f = flags | (self.tap_id << 4)
         self.send_mouse(0, 0, f)
@@ -205,9 +246,11 @@ class Ctrl:
             loop.call_later(d, self.send_mouse, 0, 0, f)
 
     def send_mouse(self, dx, dy, flags):
+        """Send a mouse movement / button packet; dx and dy are clamped to the signed 16-bit packet fields."""
         net.emit(T_MOUSE, self.idx, clamp(dx, -32768, 32767), clamp(dy, -32768, 32767), flags)
 
     def send_neutral(self):
+        """Reset all inputs to neutral and send that, so the receiver releases everything (used when the pad goes away)."""
         self.pad = list(NEUTRAL_PAD)
         self.hat = [0, 0]
         self.mask = 0
@@ -218,15 +261,22 @@ class Ctrl:
         self.send_touch(force=True)
         self.send_click()
 
-    # ---- feedback z PC ----
+    # ---- feedback from the PC ----
     def apply_feedback(self, small, large, r, g, b, remember=True):
+        """Apply rumble (small and large motor) and the lightbar colour sent by the PC.
+
+        With remember=True the values are stored as the "last PC state" (and cancel a running local flash, so the flash
+        cannot restore something stale). When the HID rumble backend owns the lightbar, colour and rumble go out in one
+        HID report; otherwise rumble goes through the driver and the colour is written to the sysfs LED (multi_intensity
+        and brightness). If that write fails, the lightbar is considered unavailable.
+        """
         if remember:
             self.fb = (small, large, r, g, b)
-            if self._pulse_timer is not None:      # PC ustawił coś nowego - lokalny błysk nie przywróci starego
+            if self._pulse_timer is not None:      # the PC set something new - the local flash will not restore the old state
                 self._pulse_timer.cancel()
                 self._pulse_timer = None
         if self.rumble is not None and self.rumble.owns_lightbar:
-            self.rumble.set(small, large, (r, g, b))     # wibracja i kolor w jednym raporcie HID
+            self.rumble.set(small, large, (r, g, b))     # rumble and colour in one HID report
             return
         if self.rumble is not None:
             self.rumble.set(small, large)
@@ -247,7 +297,7 @@ class Ctrl:
                 self.led = None
 
     def led_rgb(self):
-        """Bieżący kolor lightbara (raport HID albo sysfs) albo None."""
+        """The current lightbar colour (HID report or sysfs), or None."""
         if self.rumble is not None and self.rumble.rgb is not None:
             return self.rumble.rgb
         if self.led:
@@ -259,10 +309,10 @@ class Ctrl:
         return None
 
     def local_pulse(self, kind):
-        """Potwierdzenie na padzie bez receivera (Wake-on-LAN): wibracja i kolor na chwilę, potem poprzedni kolor.
-        Powrót bez wibracji: receiver milczy, a ostatni feedback z PC (np. wibracja gry sprzed wyłączenia komputera,
-        już zatrzymana przez strażnika) nie może jej włączyć od nowa. Błysk w trakcie błysku wraca do koloru sprzed
-        pierwszego, a nie do koloru błysku."""
+        """Confirmation on the pad without the receiver (Wake-on-LAN): rumble and colour for a moment, then the previous colour.
+        The return is without rumble: the receiver is silent, and the last feedback from the PC (e.g. game rumble from before
+        the PC was switched off, already stopped by the watchdog) must not switch it on again. A flash during a flash returns
+        to the colour from before the first one, not to the flash colour."""
         small, large, rgb, dur = LOCAL_PULSES[kind]
         if self._pulse_timer is not None:
             self._pulse_timer.cancel()
@@ -277,21 +327,22 @@ class Ctrl:
             self._pulse_timer = None
 
     def _pulse_end(self, back):
+        """Timer callback of local_pulse: restore the state saved before the flash (without remembering it as PC feedback)."""
         self._pulse_timer = None
         self.apply_feedback(*back, remember=False)
 
     def set_triggers(self, vals):
-        """Efekty spustów z PC (pakiet trig3 = profil + efekty gry, trig2 = profil, stary trig = sam opór). Tylko raport
-        HID - sterownik jądra nie ma takiej funkcji."""
+        """Trigger effects from the PC (trig3 packet = profile + game effects, trig2 = profile, old trig = resistance only).
+        Only the HID report can do this - the kernel driver has no such function."""
         vals = tuple(vals)
         self.triggers = trig2_from_legacy(vals) if len(vals) == 4 else vals
         if self.rumble is not None:
             self.rumble.set_triggers(self.triggers)
 
     def set_raw_sticks(self, secs):
-        """Pomiar dryfu z okna: gałki bez strefy martwej nadajnika przez secs sekund (0 = od razu z powrotem).
-        Wraca sama po czasie - receiver, który zniknie w trakcie pomiaru, nie zostawi pada bez strefy martwej.
-        Stan jest odczytany od nowa: gałka przycięta do 128 musi pokazać prawdziwe położenie (i odwrotnie)."""
+        """Drift measurement from the window: sticks without the sender's deadzone for secs seconds (0 = back at once).
+        It returns by itself after the time - a receiver that disappears during the measurement will not leave the pad
+        without a deadzone. The state is read again: a stick that was clipped to 128 must show its real position (and vice versa)."""
         if self._raw_timer is not None:
             self._raw_timer.cancel()
             self._raw_timer = None
@@ -309,6 +360,7 @@ class Ctrl:
                 self.request_send()
 
     def cancel_timers(self):
+        """Cancel every pending timer of this pad (state / touch flush, Wake-on-LAN hold, flash, raw-stick window)."""
         for name in ("_state_timer", "_touch_timer", "wol_timer", "_pulse_timer", "_raw_timer"):
             t = getattr(self, name)
             if t is not None:
@@ -316,6 +368,7 @@ class Ctrl:
                 setattr(self, name, None)
 
     def stop_feedback(self):
+        """Close the rumble backend (which also stops the motors) and drop it."""
         if self.rumble is not None:
             self.rumble.close()
             self.rumble = None

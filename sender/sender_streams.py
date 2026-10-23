@@ -1,4 +1,4 @@
-"""Sender: pętle odczytu urządzeń evdev (pad, ruch, touchpad, bateria) i heartbeat."""
+"""Sender: read loops of the evdev devices (pad, motion, touchpad, battery) and the heartbeat."""
 import array
 import asyncio
 import collections
@@ -15,13 +15,17 @@ from proto import CAL_RUNNING, KEY_BIT, LAT_NONE, clamp
 
 
 def _eviocgmtslots(nslots):
-    """ioctl EVIOCGMTSLOTS: _IOC(_IOC_READ, 'E', 0x0a, rozmiar) dla bufora (kod + wartość na slot) po 4 B."""
+    """Build the EVIOCGMTSLOTS ioctl number: _IOC(_IOC_READ, 'E', 0x0a, size) for a buffer of (code + one value per slot) 4-byte ints."""
     return (2 << 30) | ((4 * (nslots + 1)) << 16) | (ord("E") << 8) | 0x0A
 
 
 def read_mt(dev, nslots=2):
-    """Aktualny stan palców prosto z jądra: [(tracking_id, x, y), ...] dla slotów 0..nslots-1.
-    Potrzebne po SYN_DROPPED - zdarzenia przepadły, ale jądro wie, które palce leżą i gdzie."""
+    """Read the current finger state straight from the kernel: [(tracking_id, x, y), ...] for slots 0..nslots-1.
+
+    Needed after SYN_DROPPED - the events were lost, but the kernel still knows which fingers are down and where.
+    EVIOCGMTSLOTS returns, for one axis code at a time, the value of that axis in every multitouch slot, so the ioctl
+    is issued once per axis (tracking id, X, Y) and the results are zipped per slot.
+    """
     try:
         total = max(nslots, dev.absinfo(ec.ABS_MT_SLOT).max + 1)
     except Exception:
@@ -36,18 +40,20 @@ def read_mt(dev, nslots=2):
 
 
 class RateMeter:
-    """Realna częstotliwość raportów urządzenia i przerwy między nimi (tylko przy --stats)."""
+    """The real report rate of a device and the gaps between reports (only with --stats)."""
 
     def __init__(self):
         self.t_prev = 0.0
         self.gaps = []
 
     def tick(self, now):
+        """Record one report at time `now`; the gap since the previous report is stored (capped at 4096 entries)."""
         if self.t_prev and len(self.gaps) < 4096:
             self.gaps.append(now - self.t_prev)
         self.t_prev = now
 
     def report(self):
+        """Return (Hz, p99 gap ms, max gap ms) for the reports since the last call, or None if there are too few; resets the gaps."""
         g, self.gaps = sorted(self.gaps), []
         if len(g) < 10:
             return None
@@ -55,19 +61,27 @@ class RateMeter:
 
 
 class BtDelay:
-    """Opóźnienie Bluetooth ponad minimum: pad stempluje każdy raport własnym zegarem (MSC_TIMESTAMP z urządzenia
-    ruchu, µs), jądro - czasem odbioru. Różnica = stała nieznana (zegary) + opóźnienie radia; jej minimum z ostatnich
-    WINDOW_US to najlepszy przypadek, a nadwyżka nad nim - kolejka / retransmisje BT. Krótkie okno: dryf kwarców
-    pada i telefonu (50 ppm = 0.1 ms na 2 s) nie udaje opóźnienia. Minimum w oknie: kolejka monotoniczna, O(1)."""
+    """Bluetooth delay above the minimum. The pad stamps every report with its own clock (MSC_TIMESTAMP from the motion
+    device, µs) and the kernel stamps the time of reception. The difference = an unknown constant (the clocks) + the radio
+    delay; its minimum over the last WINDOW_US is the best case, and the excess over it is BT queueing / retransmissions.
+    A short window: the crystal drift of the pad and the phone (50 ppm = 0.1 ms per 2 s) does not pass for delay. The
+    minimum over the window uses a monotonic queue, O(1)."""
 
     WINDOW_US = 2_000_000
 
     def __init__(self):
         self.epoch, self.last = 0, None
-        self.win = collections.deque()        # (czas jądra, różnica), różnice rosnące
+        self.win = collections.deque()        # (kernel time, difference), differences increasing
 
     def sample(self, kernel_us, pad_us):
-        pad_us &= 0xFFFFFFFF                  # licznik pada ma 32 bity (przepełnienie co ~71 min)
+        """Feed one (kernel receive time, pad timestamp) pair; returns the delay above the window minimum in µs.
+
+        The pad counter is 32-bit, so a wrap-around (every ~71 min) is detected as a big backwards jump and added to
+        `epoch`. The deque holds candidates for the window minimum in increasing order: a new sample pops all larger
+        ones from the back, and samples older than the window are dropped from the front, so the front is always the
+        current minimum.
+        """
+        pad_us &= 0xFFFFFFFF                  # the pad counter is 32-bit (overflow every ~71 min)
         if self.last is not None and pad_us < self.last - 0x80000000:
             self.epoch += 1 << 32
         self.last = pad_us
@@ -82,6 +96,13 @@ class BtDelay:
 
 
 async def stream_pad(c):
+    """Read the pad's buttons, sticks, triggers and D-pad and turn them into state packets.
+
+    Events are accumulated until SYN_REPORT, which marks a complete pad report. If the report changed a button, the
+    state goes out at once, followed by two delayed repeats (BURST_DELAYS) as protection against a lost packet; pure
+    axis changes go through request_send, which merges them under the pad_min_dt limit. After SYN_DROPPED (the kernel
+    buffer overflowed) the half-finished events are skipped until the next SYN_REPORT and the whole state is re-read.
+    """
     loop = asyncio.get_running_loop()
     dirty = burst = False
     dropping = False
@@ -93,15 +114,15 @@ async def stream_pad(c):
             if meter is not None:
                 meter.tick(time.monotonic())
         if dropping:
-            # bufor jądra się przepełnił (np. seria raportów po zacięciu BT): zdarzenia do najbliższego
-            # SYN_REPORT są niepełne, więc je pomijamy i czytamy cały stan z urządzenia
+            # the kernel buffer overflowed (e.g. a series of reports after a BT stall): events up to the nearest
+            # SYN_REPORT are incomplete, so we skip them and read the whole state from the device
             if et == ec.EV_SYN and e.code == ec.SYN_REPORT:
                 dropping = dirty = burst = False
                 c.resync()
                 c.send_state()
                 for d in BURST_DELAYS:
                     loop.call_later(d, c.send_state, True)
-                wol.on_mask(c)            # kombinacja puszczona w zgubionych zdarzeniach nie może odpalić Wake-on-LAN
+                wol.on_mask(c)            # a combination released inside the lost events must not fire Wake-on-LAN
             continue
         if et == ec.EV_ABS:
             code = e.code
@@ -130,12 +151,18 @@ async def stream_pad(c):
                 c.send_state()
                 for d in BURST_DELAYS:
                     loop.call_later(d, c.send_state, True)
-                wol.on_mask(c)            # PS + przycisk przytrzymane przy milczącym receiverze = Wake-on-LAN
+                wol.on_mask(c)            # PS + a button held while the receiver is silent = Wake-on-LAN
             else:
                 c.request_send()
 
 
 async def heartbeat():
+    """Periodic refresh so a lost packet never leaves the receiver with a stale state for long.
+
+    Every HEARTBEAT_S, each pad that has not sent anything for twice that time resends its full state. Every fifth tick
+    additionally resends the pad identification, the click state and the touch state (the "finger lifted" packet of a
+    pad without activity would otherwise never be repeated).
+    """
     n = 0
     while True:
         now = time.monotonic()
@@ -146,13 +173,16 @@ async def heartbeat():
             if slow:
                 c.send_ident()
                 c.send_click()
-                c.send_touch(force=True)      # także bez touchpada: zgubiony pakiet "puszczenia" palca dojdzie
+                c.send_touch(force=True)      # also without a touchpad: a lost "finger lifted" packet will get through
         n += 1
         await asyncio.sleep(C.HEARTBEAT_S)
 
 
 def _start_cal(c, now):
-    """Kalibracja przy starcie: pad z zapisaną kalibracją (z okna receivera) używa jej od razu, bez czekania."""
+    """Startup calibration: a pad with a saved calibration (from the receiver window) uses it at once, without waiting.
+
+    Returns a GyroCal collecting samples, or None when a saved bias was applied or startup calibration is disabled.
+    """
     st = calib.stored(c.key)
     if st is not None:
         c.gyro_bias = list(st["bias"])
@@ -165,12 +195,20 @@ def _start_cal(c, now):
 
 
 async def stream_motion(c):
+    """Read the motion sensor (gyro + accelerometer), correct the gyro bias and send the averaged motion.
+
+    Per SYN_REPORT it (1) feeds the Bluetooth delay estimator from the pad's own timestamp, (2) runs a calibration if
+    one is active or requested from the window, (3) runs autobias - while the pad is quiet (small spread over a
+    window) the bias is nudged half-way towards the window mean, (4) averages all samples since the last packet and
+    sends only if the value moved past the deadband (or a send is already pending). Averaging, not taking the last
+    sample, keeps the output smooth when samples arrive faster than MOTION_MIN_DT.
+    """
     v = [0] * 6
     last = 0.0
     cal = _start_cal(c, time.monotonic())
     win_t0, win_n, win_sum = time.monotonic(), 0, [0, 0, 0]
     win_min, win_max = [1 << 60] * 3, [-(1 << 60)] * 3
-    msum, mn = [0] * 6, 0       # suma próbek od ostatniego pakietu: wysyłamy ŚREDNIĄ, nie przypadkową ostatnią próbkę
+    msum, mn = [0] * 6, 0       # sum of samples since the last packet: we send the AVERAGE, not an arbitrary last sample
     meter = c.meters.setdefault("motion", RateMeter()) if C.STATS else None
     bt = BtDelay()
     dropping = False
@@ -182,7 +220,7 @@ async def stream_motion(c):
             if e.type != ec.EV_SYN or e.code != ec.SYN_REPORT:
                 continue
             dropping = False
-            for k in range(6):        # oś, której zmiana przepadła, nie może zostać ze starą wartością
+            for k in range(6):        # an axis whose change was lost must not keep its old value
                 try:
                     v[k] = c.motion_dev.absinfo(k).value
                 except Exception:
@@ -196,12 +234,12 @@ async def stream_motion(c):
             c.reports["motion"] += 1
             if meter is not None:
                 meter.tick(now)
-            if c.cal_request:                 # kalibracja z okna receivera (pad leży nieruchomo)
+            if c.cal_request:                 # calibration from the receiver window (the pad lies still)
                 cal = calib.GyroCal(now, c.cal_request, user=True)
                 c.cal_request = 0
                 calib.report(c, CAL_RUNNING)
-                # okno autobiasu od nowa: próbki sprzed kalibracji (pad jeszcze w ręce) w pierwszym oknie po niej
-                # przesuwały świeżo zmierzony bias o połowę w stronę ich średniej - kamera "płynęła" zaraz po kalibracji
+                # the autobias window starts over: samples from before the calibration (pad still in the hand) in the first
+                # window after it moved the freshly measured bias half-way to their mean - the camera "drifted" right after calibrating
                 win_t0, win_n, win_sum = now, 0, [0, 0, 0]
                 win_min, win_max = [1 << 60] * 3, [-(1 << 60)] * 3
             if cal is not None and (r := cal.feed(now, v[3:6])) is not None:
@@ -226,12 +264,12 @@ async def stream_motion(c):
                     win_t0, win_n, win_sum = now, 0, [0, 0, 0]
                     win_min, win_max = [1 << 60] * 3, [-(1 << 60)] * 3
             if cal is not None and not cal.user:
-                continue                      # kalibracja startowa: ruchu jeszcze nie wysyłamy
+                continue                      # startup calibration: motion is not sent yet
             for k in range(6):
                 msum[k] += v[k]
             mn += 1
             if now - last < C.MOTION_MIN_DT:
-                continue        # próbki wpadają szybciej niż limit - zostają uśrednione do następnego pakietu
+                continue        # samples arrive faster than the limit - they stay averaged until the next packet
             last = now
             m = c.motion
             a = [x / mn for x in msum]
@@ -245,7 +283,7 @@ async def stream_motion(c):
 
 
 def _same_finger(a, b):
-    """Czy palec (on, id, x, y) nie zmienił się w stopniu wartym wysłania (deadzone)."""
+    """Whether a finger (on, id, x, y) has not changed enough to be worth sending (deadzone)."""
     if a[0] != b[0]:
         return False
     if not a[0]:
@@ -254,22 +292,27 @@ def _same_finger(a, b):
 
 
 class _Session:
-    """Jeden kontakt z touchpadem: od położenia pierwszego palca do podniesienia ostatniego."""
+    """One contact with the touchpad: from the placing of the first finger to the lifting of the last one."""
     __slots__ = ("t0", "moved", "max_n", "started", "scrolled", "clicked", "kind", "pend")
 
     def __init__(self, now):
         self.t0, self.moved, self.max_n = now, 0, 0
         self.started = self.scrolled = self.clicked = False
-        self.kind = 0                 # 0 = nic, 1 = kursor, 2 = przewijanie (pend dotyczy tego rodzaju)
-        self.pend = [0, 0]            # ruch wstrzymany do przekroczenia touch_start_move
+        self.kind = 0                 # 0 = nothing, 1 = cursor, 2 = scrolling (pend applies to this kind)
+        self.pend = [0, 0]            # movement held back until touch_start_move is exceeded
 
 
 async def stream_touch(c):
-    """Touchpad -> (a) pakiety dotyku DS4/DSU, (b) pakiety myszy (kursor, tap, przewijanie 2 palcami).
+    """Touchpad -> (a) DS4/DSU touch packets, (b) mouse packets (cursor, tap, 2-finger scrolling).
 
-    Zasady myszy: 1 palec = kursor (rusza dopiero po touch_start_move, więc tap nie szarpie kursorem),
-    2 palce = przewijanie, a do podniesienia wszystkich palców kursor stoi (puszczanie palców po kolei
-    nie odpala kliknięcia ani skoku). Krótki tap 1 palcem = LPM, 2 palcami = PPM."""
+    Mouse rules: 1 finger = cursor (it only starts moving after touch_start_move, so a tap does not jerk the cursor),
+    2 fingers = scrolling, and until all fingers are lifted the cursor stays put (lifting fingers one by one does
+    not fire a click or a jump). A short tap with 1 finger = left button, with 2 fingers = right button.
+
+    How it works: the kernel sends multitouch events (slot selection, tracking id, X, Y); they update a small
+    per-finger table, and on every SYN_REPORT the frame is processed - deltas from the previous known position drive
+    the mouse, the same table drives the DS4 touch packet (with a per-finger deadzone) and the end of the contact
+    decides whether it was a tap. After SYN_DROPPED the table is rebuilt from the kernel state."""
     try:
         maxx = c.touch_dev.absinfo(ec.ABS_MT_POSITION_X).max or 1919
         maxy = c.touch_dev.absinfo(ec.ABS_MT_POSITION_Y).max or 1079
@@ -277,15 +320,15 @@ async def stream_touch(c):
         maxx, maxy = 1919, 1079
     loop = asyncio.get_running_loop()
     slot = 0
-    # x / y = pozycja zapamiętana w slocie jądra (None = nieznana). Jądro pomija zdarzenie osi, gdy wartość w slocie
-    # się nie zmieniła - także dla NOWEGO palca. Pozycja przeżywa więc podniesienie palca, a nowy palec przyłożony
-    # w tym samym x albo y (np. przy krawędzi: 0 / max) bierze ją stąd; wyzerowana gubiła taki dotyk i tap.
-    # Palec, który już leży (pad połączony z dłonią na touchpadzie, touchpad dołączony później), też jest "on":
-    # jądro nie wyśle mu ABS_MT_TRACKING_ID, dopóki go nie podniesie - bez tego jego ruch nie dawał ani kursora,
-    # ani dotyku DS4. Taki kontakt nie kończy się tapem (jak po SYN_DROPPED).
+    # x / y = the position remembered in the kernel slot (None = unknown). The kernel skips an axis event when the value in the slot
+    # did not change - also for a NEW finger. So the position survives lifting the finger, and a new finger placed
+    # at the same x or y (e.g. at an edge: 0 / max) takes it from here; reset to zero it lost such a touch and tap.
+    # A finger that is already down (a pad connected with a palm on the touchpad, a touchpad attached later) is also "on":
+    # the kernel will not send it ABS_MT_TRACKING_ID until it is lifted - without this its movement gave neither a cursor
+    # nor DS4 touch. Such a contact does not end with a tap (as after SYN_DROPPED).
     fingers = [{"on": tid >= 0, "id": tid & 0x7F if tid >= 0 else 0, "x": x, "y": y}
                for tid, x, y in _kernel_slots(c.touch_dev, 2)]
-    prev = [None, None]            # poprzednia pozycja palca (x, y); None = świeży palec, brak delty
+    prev = [None, None]            # previous finger position (x, y); None = a fresh finger, no delta
     sess = None
     last_tp = IDLE_TP
     dropping = False
@@ -294,7 +337,7 @@ async def stream_touch(c):
         et = e.type
         if dropping:
             if et != ec.EV_SYN or e.code != ec.SYN_REPORT:
-                continue              # niepełna ramka po przepełnieniu bufora - pomijamy
+                continue              # an incomplete frame after a buffer overflow - skipped
             dropping = False
             _resync_touch(c, fingers, prev)
             try:
@@ -302,16 +345,16 @@ async def stream_touch(c):
             except Exception:
                 slot = 0
             if sess is not None:
-                sess.clicked = True   # ten kontakt nie może już skończyć się tapem
+                sess.clicked = True   # this contact can no longer end with a tap
             resynced = True
-            # dalej: zwykła obsługa SYN_REPORT z odtworzonym stanem palców
+            # then: the usual SYN_REPORT handling with the restored finger state
         if et == ec.EV_ABS:
             if e.code == ec.ABS_MT_SLOT:
                 slot = e.value
             elif slot in (0, 1):
                 f = fingers[slot]
                 if e.code == ec.ABS_MT_TRACKING_ID:
-                    prev[slot] = None              # nowy / podniesiony palec: bez delty, pozycja zostaje (jak w jądrze)
+                    prev[slot] = None              # a new / lifted finger: no delta, the position stays (as in the kernel)
                     if e.value >= 0:
                         f.update(on=True, id=e.value & 0x7F)
                     else:
@@ -324,10 +367,10 @@ async def stream_touch(c):
             dropping = True
             continue
         elif et == ec.EV_KEY and e.code == ec.BTN_LEFT:
-            # klik z dwoma palcami na touchpadzie = 2 (w trybie myszy prawy przycisk); wartość trzymana do puszczenia
+            # a click with two fingers on the touchpad = 2 (in mouse mode the right button); the value is held until release
             c.tp = (2 if C.GESTURES and fingers[0]["on"] and fingers[1]["on"] else 1) if e.value else 0
             if e.value and sess is not None:
-                sess.clicked = True      # fizyczny klik w trakcie dotyku unieważnia tap do podniesienia palców
+                sess.clicked = True      # a physical click during the touch cancels the tap until the fingers are lifted
             c.send_click()
             for d in BURST_DELAYS:
                 loop.call_later(d, c.send_click)
@@ -341,10 +384,10 @@ async def stream_touch(c):
                     continue
                 sess = _Session(now)
                 if resynced:
-                    sess.clicked = True   # palec położony w trakcie zgubionych zdarzeń - bez tapu
+                    sess.clicked = True   # a finger placed during lost events - no tap
             resynced = False
 
-            # --- mysz: delty palców z pozycji znanych w tej ramce ---
+            # --- mouse: finger deltas from the positions known in this frame ---
             deltas = []
             for k, f in enumerate(fingers):
                 if f["on"] and f["x"] is not None and f["y"] is not None:
@@ -372,7 +415,7 @@ async def stream_touch(c):
                     c.send_mouse(sess.pend[0], sess.pend[1], 2 if kind == 2 else 0)
                     sess.pend = [0, 0]
 
-            # --- dotyk DS4/DSU: deadzone sprawdza OBA palce (drugi nie może zostać połknięty przez pierwszy) ---
+            # --- DS4/DSU touch: the deadzone checks BOTH fingers (the second must not be swallowed by the first) ---
             tp = []
             for f in fingers:
                 if f["on"] and f["x"] is not None and f["y"] is not None:
@@ -386,7 +429,7 @@ async def stream_touch(c):
                 last_tp = c.touch = tp
                 c.send_touch()
 
-            # --- koniec kontaktu: tap ---
+            # --- end of the contact: tap ---
             if not on:
                 if (C.TAP_CLICK and not sess.clicked and now - sess.t0 < C.TAP_MAX_S
                         and sess.moved < C.TAP_MAX_MOVE):
@@ -399,8 +442,8 @@ async def stream_touch(c):
 
 
 def _kernel_slots(dev, n):
-    """Stan slotów MT z jądra [(tracking_id, x, y)]; bez ioctl (inna platforma, testy) - palce podniesione, pozycja
-    nieznana (None)."""
+    """The multitouch slot state from the kernel [(tracking_id, x, y)]; without the ioctl (another platform, tests) the
+    fingers are lifted and the position is unknown (None)."""
     try:
         return read_mt(dev, n)
     except (OSError, AttributeError, TypeError, ValueError):
@@ -408,12 +451,12 @@ def _kernel_slots(dev, n):
 
 
 def _resync_touch(c, fingers, prev):
-    """Odtwarza palce i przycisk touchpada ze stanu jądra; bez ioctl (inna platforma) - podnosi wszystkie palce."""
+    """Rebuild the fingers and the touchpad button from the kernel state; without the ioctl (another platform) all fingers are lifted."""
     for k, (tid, x, y) in enumerate(_kernel_slots(c.touch_dev, len(fingers))):
-        fingers[k].update(on=tid >= 0, x=x, y=y)       # pozycja także podniesionego palca (patrz stream_touch)
+        fingers[k].update(on=tid >= 0, x=x, y=y)       # the position of a lifted finger too (see stream_touch)
         if tid >= 0:
             fingers[k]["id"] = tid & 0x7F
-        prev[k] = None                # brak delty w pierwszej ramce - kursor nie skoczy
+        prev[k] = None                # no delta in the first frame - the cursor will not jump
     try:
         tp = ec.BTN_LEFT in c.touch_dev.active_keys()
     except (OSError, AttributeError):
@@ -424,6 +467,11 @@ def _resync_touch(c, fingers, prev):
 
 
 async def stream_battery(c):
+    """Poll the kernel power-supply entry of the pad every BATT_POLL_S: battery percentage and charging flag.
+
+    The sysfs name contains the pad's MAC. When the entry cannot be read (USB pad, no driver support) the level is
+    reported as 255 = unknown.
+    """
     path = f"/sys/class/power_supply/ps-controller-battery-{(c.key or '').lower()}"
     while True:
         try:

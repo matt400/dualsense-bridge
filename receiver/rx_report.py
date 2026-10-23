@@ -1,4 +1,4 @@
-"""Receiver: raport wirtualnego pada z surowego stanu: DS4 (63 B, ViGEm) i DualSense (63 B bez ID, HIDMaestro)."""
+"""Receiver: build the virtual pad report from the raw state: DS4 (63 B, ViGEm) and DualSense (63 B without the ID byte, HIDMaestro)."""
 import struct
 import time
 
@@ -15,6 +15,7 @@ _cache = {}
 
 
 def ds4_bits(mask):
+    """Button mask -> (face-button byte, shoulder byte) of the DS4 report, memoised per mask (the hot path reuses the cache)."""
     r = _cache.get(mask)
     if r is None:
         r = _cache[mask] = bits_from(mask, FACE, SHOULDER)
@@ -22,6 +23,8 @@ def ds4_bits(mask):
 
 
 def put_touch(b, off, f):
+    """Write one finger f = (active, id, x, y) at offset `off` in the DS4 touch format: byte 0 = id with an inverted "active"
+    bit, then x and y packed as two 12-bit values over three bytes."""
     on, tid, x, y = f
     b[off] = (0 if on else 0x80) | (tid & 0x7F)
     b[off + 1] = x & 0xFF
@@ -30,8 +33,8 @@ def put_touch(b, off, f):
 
 
 def build_report(s, counter, mmode, b=None):
-    """Wypełnia (i zwraca) 63-bajtowy raport; podany bufor jest używany ponownie bez alokacji.
-    Każdy zmienny bajt jest nadpisywany przy każdym wywołaniu."""
+    """Fill (and return) the 63-byte DS4 report; a supplied buffer is reused without allocation.
+    Every variable byte is overwritten on every call, so a reused buffer never keeps stale data."""
     if b is None:
         b = bytearray(63)
     b[0] = s["lx"]
@@ -43,8 +46,8 @@ def build_report(s, counter, mmode, b=None):
     b[5] = sh | (0x04 if s["lt"] else 0) | (0x08 if s["rt"] else 0)
     b[6] = ((counter & 0x3F) << 2) | (1 if s["mask"] & PS_BIT else 0) | (2 if (s["tp"] and not mmode) else 0)
     b[7], b[8] = s["lt"], s["rt"]
-    # timestamp DS4 = jednostki 5.33 us (187.5 kHz) rzeczywistego czasu; raporty idą na zdarzenia,
-    # więc stała przyrostowa (counter * 750) zakłócała całkowanie gyro w aplikacjach liczących dt
+    # DS4 timestamp = units of 5.33 us (187.5 kHz) of real time; reports are sent on events,
+    # so a fixed increment (counter * 750) disturbed the gyro integration in apps that compute dt
     struct.pack_into("<H", b, 9, int(time.perf_counter() * 187500) & 0xFFFF)
     gx, gy, gz = s["gyro"]
     ax, ay, az = s["acc"]
@@ -64,30 +67,32 @@ def build_report(s, counter, mmode, b=None):
 
 
 # ---------------- DualSense (HIDMaestro) ----------------
-DS5_TOUCH_H = 1079        # dotyk w stanie jest w skali DS4 (1920x943) - DualSense ma 1920x1080
-_DS5_BATT = {0: 0x00, 1: 0x10, 2: 0x20}    # stan baterii w górnej połówce bajtu: rozładowanie / ładowanie / pełna
+DS5_TOUCH_H = 1079        # touch in the state uses the DS4 scale (1920x943) - the DualSense has 1920x1080
+_DS5_BATT = {0: 0x00, 1: 0x10, 2: 0x20}    # battery state in the upper nibble: discharging / charging / full
 
 
-DS4_BATT_MAX = 8          # bajt baterii DS4 bez kabla: poziom 0..8 (rx_net.batt_codes), z kablem 0..10 (11 = pełna)
+DS4_BATT_MAX = 8          # DS4 battery byte without a cable: level 0..8 (rx_net.batt_codes), with a cable 0..10 (11 = full)
 
 
 def ds5_battery(b4):
-    """Bajt baterii DS4 (bez kabla poziom 0..8, z kablem 0..11, 0x10 = kabel) -> bajt DualSense (poziom 0..10, stan
-    w bitach 4..7). Bez kabla skala 0..8 -> 0..10: przepisana wprost dawała pełnemu padowi poziom 8, czyli 85 %
-    w grach i Steam (hid-playstation: poziom * 10 + 5)."""
+    """DS4 battery byte (level 0..8 without a cable, 0..11 with a cable, 0x10 = cable) -> DualSense byte (level 0..10, state
+    in bits 4..7). Without a cable the 0..8 scale is stretched to 0..10: copied as is, a full pad would report level 8,
+    i.e. 85 % in games and Steam (hid-playstation: level * 10 + 5)."""
     level, cable = b4 & 0x0F, b4 & 0x10
     level = min(level, 10) if cable else min(10, round(level * 10 / DS4_BATT_MAX))
     return level | _DS5_BATT[(2 if level >= 10 else 1) if cable else 0]
 
 
 def put_touch_ds5(b, off, f):
+    """Like put_touch, but with y rescaled from the DS4 height (943 lines) to the DualSense height (1080)."""
     on, tid, x, y = f
     put_touch(b, off, (on, tid, x, y * DS5_TOUCH_H // 942))
 
 
 def build_ds5_report(s, counter, mmode, b=None):
-    """Raport wejściowy USB DualSense 0x01 bez bajtu ID (63 B, jak hid-playstation dualsense_input_report): przyciski
-    w tych samych bitach co DS4, ale PS / touchpad osobno, a licznik w osobnym bajcie. Każdy zmienny bajt nadpisywany."""
+    """DualSense USB input report 0x01 without the ID byte (63 B, like hid-playstation's dualsense_input_report): the buttons
+    use the same bits as on the DS4, but PS / touchpad sit in a separate byte and the counter has a byte of its own.
+    Every variable byte is overwritten."""
     if b is None:
         b = bytearray(63)
     b[0] = s["lx"]
@@ -102,8 +107,8 @@ def build_ds5_report(s, counter, mmode, b=None):
     b[9] = (1 if s["mask"] & PS_BIT else 0) | (2 if (s["tp"] and not mmode) else 0)
     gx, gy, gz = s["gyro"]
     ax, ay, az = s["acc"]
-    k = C.GYRO_TO_DS4                       # DualSense i DS4 mają te same jednostki gyro i akcelerometru
-    # timestamp czujników w jednostkach 1/3 us rzeczywistego czasu (jak w padzie - aplikacje liczą z niego dt)
+    k = C.GYRO_TO_DS4                       # the DualSense and the DS4 use the same gyro and accelerometer units
+    # sensor timestamp in units of 1/3 us of real time (like on the real pad - apps compute dt from it)
     struct.pack_into("<hhhhhhI", b, 15,
                      clamp(int(gx * k), -32768, 32767),
                      clamp(int(gy * k), -32768, 32767),

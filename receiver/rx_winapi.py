@@ -1,4 +1,4 @@
-"""Receiver: funkcje Windows (timer, priorytet, jedna instancja, SendInput, gniazda UDP)."""
+"""Receiver: Windows functions (timer, priority, a single instance, SendInput, UDP sockets)."""
 import ctypes
 import ctypes.wintypes as wt
 import ntpath
@@ -14,7 +14,7 @@ _mutex = None
 
 
 def init_process():
-    """Timer 1 ms, wysoki priorytet, wyłączony QuickEdit (zaznaczenie w konsoli zamrażało program)."""
+    """A 1 ms timer, high priority, QuickEdit switched off (selecting text in the console froze the program)."""
     try:
         ctypes.windll.winmm.timeBeginPeriod(1)
         k32.GetCurrentProcess.restype = k32.GetStdHandle.restype = wt.HANDLE
@@ -35,8 +35,8 @@ APP_ID = "DualSenseBridge.Receiver"
 
 
 def set_app_id():
-    """Własny AppUserModelID: Windows traktuje okno jako osobną aplikację, więc pasek zadań pokazuje ikonę okna
-    (pad), a nie ikonę python.exe / pythonw.exe. Wołać przed utworzeniem pierwszego okna."""
+    """A dedicated AppUserModelID: Windows treats the window as a separate application, so the taskbar shows the window's icon
+    (the pad), not the python.exe / pythonw.exe icon. Call before creating the first window."""
     try:
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_ID)
     except Exception:
@@ -44,21 +44,21 @@ def set_app_id():
 
 
 def _no_power_throttling():
-    """Windows 10/11: proces z ukrytym oknem (zasobnik) bywa przenoszony w tryb efektywności (EcoQoS) i traci
-    rozdzielczość timera - to dawało losowe skoki opóźnień. Wyłączamy oba mechanizmy (ignoruj błędy na starszych
-    Windowsach)."""
+    """Windows 10/11: a process with a hidden window (the tray) may be moved into the efficiency mode (EcoQoS) and lose
+    timer resolution - that caused random latency spikes. Both mechanisms are switched off (errors ignored on older
+    Windows versions)."""
     class PPT(ctypes.Structure):
         _fields_ = [("Version", wt.DWORD), ("ControlMask", wt.DWORD), ("StateMask", wt.DWORD)]
     try:
         k32.SetProcessInformation.argtypes = [wt.HANDLE, ctypes.c_int, ctypes.c_void_p, wt.DWORD]
-        st = PPT(1, 0x1 | 0x4, 0)   # sterujemy EXECUTION_SPEED i IGNORE_TIMER_RESOLUTION; StateMask 0 = wyłączone
+        st = PPT(1, 0x1 | 0x4, 0)   # we control EXECUTION_SPEED and IGNORE_TIMER_RESOLUTION; StateMask 0 = switched off
         k32.SetProcessInformation(k32.GetCurrentProcess(), 4, ctypes.byref(st), ctypes.sizeof(st))  # 4 = ProcessPowerThrottling
     except Exception:
         pass
 
 
 def boost_thread():
-    """Podnosi priorytet wątku wołającego (sieć, raporty DS4, DSU) - mniej czekania na procesor."""
+    """Raise the priority of the calling thread (network, DS4 reports, DSU) - less waiting for the processor."""
     try:
         k32.GetCurrentThread.restype = wt.HANDLE
         k32.SetThreadPriority.argtypes = [wt.HANDLE, ctypes.c_int]
@@ -68,6 +68,7 @@ def boost_thread():
 
 
 def end_timer():
+    """Give back the 1 ms timer resolution requested by init_process."""
     try:
         ctypes.windll.winmm.timeEndPeriod(1)
     except Exception:
@@ -75,7 +76,7 @@ def end_timer():
 
 
 def uptime_s():
-    """Sekundy od startu Windows (GetTickCount64) albo None."""
+    """Seconds since Windows started (GetTickCount64), or None."""
     try:
         k32.GetTickCount64.restype = ctypes.c_uint64
         return k32.GetTickCount64() / 1000
@@ -95,9 +96,9 @@ WTS_CURRENT_SESSION, WTS_SESSION_INFO = 0xFFFFFFFF, 24
 
 
 def since_logon_s():
-    """Sekundy od zalogowania do bieżącej sesji Windows albo None. Czas od startu Windows (uptime_s) myli: przy
-    szybkim uruchamianiu (Fast Startup) "Zamknij" nie restartuje jądra, a uśpienie też się wlicza - wychodziła
-    godzina, choć receiver ruszył zaraz po zalogowaniu."""
+    """Seconds since logon to the current Windows session, or None. The time since Windows started (uptime_s) misleads: with
+    Fast Startup "Shut down" does not restart the kernel, and sleep counts too - it gave an hour even though the receiver
+    started right after logon."""
     try:
         wts = ctypes.windll.wtsapi32
         buf, size = ctypes.c_void_p(), wt.DWORD()
@@ -108,7 +109,7 @@ def since_logon_s():
             if not buf.value or size.value < ctypes.sizeof(_WTSINFOW):
                 return None
             info = _WTSINFOW.from_address(buf.value)
-            logon, now = info.LogonTime, info.CurrentTime        # FILETIME, jednostki 100 ns
+            logon, now = info.LogonTime, info.CurrentTime        # FILETIME, 100 ns units
         finally:
             wts.WTSFreeMemory(buf)
         return (now - logon) / 1e7 if 0 < logon <= now else None
@@ -122,10 +123,10 @@ SYNCHRONIZE = 0x00100000
 
 
 def ensure_single_instance():
-    """Druga kopia receivera (np. autostart + ręczne uruchomienie) kończy się czytelnym komunikatem.
-    ERROR_ACCESS_DENIED też znaczy "już działa": blokadę ma receiver uruchomiony jako administrator, a proces bez
-    uprawnień nie dostaje do niej pełnego dostępu (CreateMutex zwraca wtedy NULL zamiast ERROR_ALREADY_EXISTS) -
-    druga kopia startowała i padała dopiero na zajętym porcie UDP z mylącym komunikatem."""
+    """A second receiver copy (e.g. autostart + a manual launch) exits with a readable message.
+    ERROR_ACCESS_DENIED also means "already running": the lock is held by a receiver started as administrator, and an unprivileged
+    process does not get full access to it (CreateMutex then returns NULL instead of ERROR_ALREADY_EXISTS) -
+    the second copy used to start and fail only on the busy UDP port with a misleading message."""
     global _mutex
     try:
         k = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -141,8 +142,8 @@ def ensure_single_instance():
 
 
 def instance_running():
-    """Czy działa już receiver (blokada jednej instancji istnieje) - bez jej tworzenia. Przed podniesieniem uprawnień:
-    druga kopia nie może pokazywać okna UAC tylko po to, żeby zaraz wyjść."""
+    """Whether a receiver is already running (the single-instance lock exists) - without creating it. Before elevating:
+    a second copy must not show a UAC prompt just to exit right after."""
     try:
         k = ctypes.WinDLL("kernel32", use_last_error=True)
         k.OpenMutexW.argtypes = [wt.DWORD, wt.BOOL, wt.LPCWSTR]
@@ -151,13 +152,13 @@ def instance_running():
         if h:
             k32.CloseHandle(h)
             return True
-        return ctypes.get_last_error() == ERROR_ACCESS_DENIED     # blokada administratora: istnieje, brak dostępu
+        return ctypes.get_last_error() == ERROR_ACCESS_DENIED     # an administrator's lock: it exists, no access
     except (AttributeError, OSError):
         return False
 
 
 def release_single_instance():
-    """Zwalnia blokadę jednej instancji - bez tego nowy proces po restarcie zobaczyłby "już działa" i by wyszedł."""
+    """Release the single-instance lock - without this a new process after a restart would see "already running" and exit."""
     global _mutex
     if _mutex:
         try:
@@ -168,6 +169,7 @@ def release_single_instance():
 
 
 def is_admin():
+    """Whether the process runs as administrator."""
     try:
         return bool(ctypes.windll.shell32.IsUserAnAdmin())
     except Exception:
@@ -175,21 +177,21 @@ def is_admin():
 
 
 def relaunch_admin(cmd):
-    """cmd jako administrator (ShellExecute "runas" = okno UAC). -> True, gdy wystartował; odmowa w UAC -> False.
-    Zmienne środowiska nie przechodzą przez UAC (nowy proces ma środowisko użytkownika)."""
+    """Run cmd as administrator (ShellExecute "runas" = a UAC prompt). -> True when it started; a refusal in UAC -> False.
+    Environment variables do not pass through UAC (the new process gets the user's environment)."""
     sh = ctypes.windll.shell32
     sh.ShellExecuteW.argtypes = [wt.HWND, wt.LPCWSTR, wt.LPCWSTR, wt.LPCWSTR, wt.LPCWSTR, ctypes.c_int]
     sh.ShellExecuteW.restype = ctypes.c_void_p
-    # zawsze SW_SHOWNORMAL: Windows stosuje tę wartość do pierwszego ShowWindow nowego procesu - SW_HIDE (pythonw) sprawiał,
-    # że okno receivera nie pojawiało się po kliknięciu ikony w zasobniku; pythonw i tak nie ma konsoli do pokazania
+    # always SW_SHOWNORMAL: Windows applies this value to the new process's first ShowWindow - SW_HIDE (pythonw) made
+    # the receiver window not appear after clicking the tray icon; pythonw has no console to show anyway
     r = sh.ShellExecuteW(None, "runas", cmd[0], subprocess.list2cmdline(cmd[1:]), os.getcwd(), 1)
     return (r or 0) > 32
 
 
 def relaunch(env=None, admin=False):
-    """Nowy proces receivera z tymi samymi argumentami (jak autostart). Wołać po zwolnieniu portów i blokady instancji.
-    env: dodatkowe zmienne środowiska dla nowego procesu (np. stan trybu konsoli). admin: przez UAC; odmowa = zwykły
-    restart (receiver nie może zniknąć)."""
+    """A new receiver process with the same arguments (as autostart). Call after releasing the ports and the instance lock.
+    env: extra environment variables for the new process (e.g. the console mode state). admin: through UAC; a refusal = an ordinary
+    restart (the receiver must not vanish)."""
     cmd = [sys.executable, os.path.abspath(sys.argv[0]), *sys.argv[1:]]
     if admin:
         if relaunch_admin(cmd):
@@ -197,14 +199,14 @@ def relaunch(env=None, admin=False):
             return
         print("Administrator restart declined - restarting normally")
     kw = {"cwd": os.getcwd(), "close_fds": True, "env": {**os.environ, **(env or {})}}
-    if os.path.basename(sys.executable).lower().startswith("pythonw"):      # autostart: bez konsoli, niezależny od starego
+    if os.path.basename(sys.executable).lower().startswith("pythonw"):      # autostart: no console, independent of the old one
         kw.update(creationflags=0x00000008 | 0x00000200,                    # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
                   stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     subprocess.Popen(cmd, **kw)
     print("Restarting:", subprocess.list2cmdline(cmd))
 
 
-# ---------------- Mysz (SendInput) ----------------
+# ---------------- Mouse (SendInput) ----------------
 ULONG_PTR = ctypes.c_size_t
 
 
@@ -231,7 +233,8 @@ INPUT_SIZE = ctypes.sizeof(INPUT)
 
 
 def send_mouse(flags, dx=0, dy=0, data=0):
-    # mouseData to DWORD: ujemny skok kółka trzeba podać w kodzie uzupełnieniowym do 2
+    # mouseData is a DWORD: a negative wheel delta must be passed in two's complement
+    """Send one mouse event through SendInput: flags (move / button / wheel), a relative move dx, dy and the wheel data."""
     inp = INPUT(0, _INPUT_U(MOUSEINPUT(dx, dy, data & 0xFFFFFFFF, flags, 0, 0)))  # 0 = INPUT_MOUSE
     user32.SendInput(1, ctypes.byref(inp), INPUT_SIZE)
 
@@ -242,7 +245,7 @@ _EXTENDED = {VK_LWIN, VK_SNAPSHOT}
 
 
 def send_keys(*vks):
-    """Skrót klawiszowy (np. Win+G): wciśnięcie po kolei, puszczenie w odwrotnej kolejności, jednym SendInput."""
+    """A key shortcut (e.g. Win+G): pressed in order, released in reverse order, in a single SendInput."""
     def key(vk, up):
         flags = (KEYEVENTF_EXTENDEDKEY if vk in _EXTENDED else 0) | (KEYEVENTF_KEYUP if up else 0)
         inp = INPUT(1)                                   # 1 = INPUT_KEYBOARD
@@ -253,7 +256,7 @@ def send_keys(*vks):
 
 
 def foreground_window():
-    """(uchwyt, nazwa programu małymi literami) aktywnego okna; (0, None) bez okna, (hwnd, None) bez dostępu."""
+    """(handle, lower-case program name) of the active window; (0, None) without a window, (hwnd, None) without access."""
     hwnd = user32.GetForegroundWindow()
     if not hwnd:
         return 0, None
@@ -273,7 +276,7 @@ def foreground_window():
 
 
 def foreground_exe():
-    """Nazwa programu (np. "eldenring.exe", małe litery) aktywnego okna albo None."""
+    """The program name (e.g. "eldenring.exe", lower case) of the active window, or None."""
     return foreground_window()[1]
 
 
@@ -289,8 +292,8 @@ INVALID_HANDLE = ctypes.c_void_p(-1).value
 
 
 def running_exes():
-    """Nazwy programów (małe litery, np. "forzahorizon5.exe") wszystkich działających procesów - jeden zrzut
-    Toolhelp (bez otwierania procesów). Błąd -> OSError."""
+    """Program names (lower case, e.g. "forzahorizon5.exe") of all running processes - one Toolhelp
+    snapshot (without opening the processes). An error -> OSError."""
     k = ctypes.WinDLL("kernel32", use_last_error=True)
     k.CreateToolhelp32Snapshot.restype = wt.HANDLE
     k.CreateToolhelp32Snapshot.argtypes = [wt.DWORD, wt.DWORD]
@@ -311,10 +314,10 @@ def running_exes():
 
 
 def force_foreground(hwnd):
-    """Okno na pierwszy plan z procesu w tle. Windows blokuje SetForegroundWindow programom, które nie mają
-    aktywnego okna (zamiast tego miga przycisk na pasku zadań), więc: najpierw dołączenie do kolejki wejścia wątku
-    aktywnego okna (AttachThreadInput), a gdy to nie wystarczy - stuknięcie Alt (ostatnie wejście z klawiatury
-    "należy" do nas). -> True, gdy okno jest na pierwszym planie."""
+    """Bring a window to the foreground from a background process. Windows blocks SetForegroundWindow for programs that have
+    no active window (the taskbar button flashes instead), so: first attach to the input queue of the active window's thread
+    (AttachThreadInput), and when that is not enough - tap Alt (the last keyboard input
+    "belongs" to us). -> True when the window is in the foreground."""
     fg = user32.GetForegroundWindow()
     if not hwnd or fg == hwnd:
         return bool(hwnd)
@@ -334,6 +337,7 @@ def force_foreground(hwnd):
 
 
 def _declare_foreground_api():
+    """Declare argument and return types of the window APIs used above (without them ctypes truncates handles on x64)."""
     try:
         user32.GetForegroundWindow.restype = wt.HWND
         user32.GetWindowThreadProcessId.argtypes = [wt.HWND, ctypes.POINTER(wt.DWORD)]
@@ -358,33 +362,32 @@ _declare_foreground_api()
 
 
 def close_window(hwnd):
-    """WM_CLOSE do okna (to samo, co krzyżyk / Alt+F4, ale bez klawiatury - działa też z grą jako admin
-    nie przez SendInput). -> True, gdy wysłano."""
+    """WM_CLOSE to the window (the same as the X button / Alt+F4, but without the keyboard). -> True when sent."""
     return bool(hwnd) and bool(user32.PostMessageW(hwnd, 0x0010, 0, 0))     # WM_CLOSE
 
 
 def sleep_pc():
-    """Uśpienie (S3 / nowoczesne wstrzymanie); hibernacja tylko, jeśli tak ustawiono w Windows."""
+    """Sleep (S3 / modern standby); hibernation only if Windows is set up that way."""
     ctypes.windll.powrprof.SetSuspendState(False, False, False)
 
 
 def shutdown_pc(delay_s=10):
-    """Wyłączenie z opóźnieniem - do tego czasu "shutdown /a" w konsoli przerywa."""
+    """A delayed shutdown - until then "shutdown /a" in a console aborts it."""
     exe = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "shutdown.exe")
     subprocess.run([exe, "/s", "/t", str(int(delay_s))], timeout=15, check=False,
                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
 
 def send_click(down_flag, up_flag):
-    """Wciśnięcie i puszczenie jednym wywołaniem SendInput (atomowo: nic nie wpadnie między DOWN i UP)."""
+    """Press and release in one SendInput call (atomic: nothing slips in between DOWN and UP)."""
     arr = (INPUT * 2)(INPUT(0, _INPUT_U(MOUSEINPUT(0, 0, 0, down_flag, 0, 0))),
                       INPUT(0, _INPUT_U(MOUSEINPUT(0, 0, 0, up_flag, 0, 0))))
     user32.SendInput(2, arr, INPUT_SIZE)
 
 
-# ---------------- Gniazda UDP ----------------
+# ---------------- UDP sockets ----------------
 def no_connreset(sk):
-    """Windows: ICMP 'port unreachable' nie może wywalać recvfrom (WSAECONNRESET)."""
+    """Windows: an ICMP 'port unreachable' must not break recvfrom (WSAECONNRESET)."""
     try:
         sk.ioctl(socket.SIO_UDP_CONNRESET, False)
     except Exception:
@@ -392,9 +395,9 @@ def no_connreset(sk):
 
 
 def recv_timeout(sk, seconds):
-    """Gniazdo blokujące z limitem czasu odbioru w jądrze (SO_RCVTIMEO): recvfrom to jedno wywołanie systemowe.
-    settimeout() w Pythonie robi przed każdym odbiorem dodatkowe select() (gniazdo nieblokujące + czekanie).
-    Upłynięcie limitu: TimeoutError (Windows, WSAETIMEDOUT) albo BlockingIOError (Linux, EAGAIN)."""
+    """A blocking socket with a receive timeout in the kernel (SO_RCVTIMEO): recvfrom is a single system call.
+    Python's settimeout() does an extra select() before every receive (a non-blocking socket + waiting).
+    On timeout: TimeoutError (Windows, WSAETIMEDOUT) or BlockingIOError (Linux, EAGAIN)."""
     try:
         sk.settimeout(None)
         if os.name == "nt":
@@ -407,6 +410,7 @@ def recv_timeout(sk, seconds):
 
 
 def bind_udp(port, what, rcvbuf=0, host="0.0.0.0"):
+    """Bind a UDP socket (optionally with a bigger receive buffer); on failure print which port (`what`) is taken and exit."""
     sk = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     if rcvbuf:
         sk.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, rcvbuf)
@@ -419,15 +423,15 @@ def bind_udp(port, what, rcvbuf=0, host="0.0.0.0"):
     return sk
 
 
-# ---------------- Uprawnienia folderu z kodem (receiver działa jako administrator) ----------------
+# ---------------- Permissions of the code folder (the receiver runs as administrator) ----------------
 ADMINS, SYSTEM, USERS = "S-1-5-32-544", "S-1-5-18", "S-1-5-32-545"
 TRUSTED_INSTALLER = "S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464"
 ADMIN_OWNERS = frozenset({ADMINS, SYSTEM, TRUSTED_INSTALLER})
 
 
 def owner_sid(path):
-    """SID właściciela pliku / folderu ("S-1-5-...") albo None (błąd, nie Windows). Właściciel zawsze może zmienić
-    uprawnienia, więc folder zwykłego użytkownika = kod, który ten użytkownik (i każdy jego program) podmieni."""
+    """The SID of a file / folder owner ("S-1-5-...") or None (an error, not Windows). The owner can always change
+    permissions, so an ordinary user's folder = code that this user (and any of their programs) can replace."""
     try:
         adv = ctypes.windll.advapi32
         adv.GetNamedSecurityInfoW.argtypes = [wt.LPCWSTR, ctypes.c_int, wt.DWORD, ctypes.POINTER(ctypes.c_void_p),
@@ -455,16 +459,16 @@ def owner_sid(path):
 
 
 def admin_owned(path):
-    """True: właścicielem jest Administratorzy / SYSTEM / TrustedInstaller; False: ktoś inny; None: nie wiadomo."""
+    """True: the owner is Administrators / SYSTEM / TrustedInstaller; False: someone else; None: unknown."""
     sid = owner_sid(path)
     return None if sid is None else sid in ADMIN_OWNERS
 
 
 def harden_dir(path):
-    """Folder tylko do zapisu dla administratorów: właściciel Administratorzy, uprawnienia bez dziedziczenia z profilu
-    użytkownika (Administratorzy i SYSTEM - pełne, Użytkownicy - odczyt i uruchamianie), pliki w środku dziedziczą
-    z folderu. Receiver (administrator) dalej zapisuje ustawienia i aktualizuje się; zwykły program już nie podmieni
-    kodu uruchamianego z uprawnieniami. -> (ok, opis błędu)."""
+    """Make a folder writable only by administrators: the owner is Administrators, permissions without inheritance from the user
+    profile (Administrators and SYSTEM - full, Users - read and execute), files inside inherit
+    from the folder. The receiver (administrator) can still save settings and update itself; an ordinary program can no longer replace
+    the code that runs with elevated rights. -> (ok, error description)."""
     icacls = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "icacls.exe")
     steps = ([path, "/setowner", f"*{ADMINS}", "/T", "/C", "/Q"],
              [path, "/reset", "/T", "/C", "/Q"],

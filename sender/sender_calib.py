@@ -1,8 +1,9 @@
-"""Sender: kalibracja żyroskopu (przy starcie i na żądanie z okna receivera) i zapis biasu per pad (MAC).
+"""Sender: gyro calibration (at startup and on request from the receiver window) and saving the bias per pad (MAC).
 
-Pad z zapisaną kalibracją (gyro_cal_file) nie kalibruje się przy starcie - od razu używa zapisanego biasu, więc
-nie trzeba go odkładać po włączeniu. Autobias (sender_streams) dalej dostraja bias w pamięci, zapis się nie zmienia.
-Kalibracja z okna (CMD_GYRO_CAL): pad leży nieruchomo przez arg sekund; wynik (pakiet calres) wraca do receivera.
+A pad with a saved calibration (gyro_cal_file) does not calibrate at startup - it uses the stored bias right away, so
+it does not have to be put down after switching on. Autobias (sender_streams) keeps fine-tuning the bias in memory;
+the saved value does not change.
+Calibration from the window (CMD_GYRO_CAL): the pad lies still for arg seconds; the result (calres packet) goes back to the receiver.
 """
 import asyncio
 import json
@@ -14,12 +15,17 @@ from proto import CAL_FEW, CAL_MAX_S, CAL_MOVED, CAL_OK, CALF_STORED, T_CALRES, 
 from sender_config import BURST_DELAYS, C
 
 MIN_SAMPLES = 20
-DUP_S = 0.3              # polecenie przychodzi 3x (UDP) - powtórki w tym czasie nie zaczynają kalibracji od nowa
+DUP_S = 0.3              # the command arrives 3x (UDP) - repeats within this time do not restart the calibration
 _MAC = re.compile(r"[0-9a-f]{2}(?::[0-9a-f]{2}){5}", re.IGNORECASE)
-_saved = None            # MAC -> {"bias": [x, y, z], "t": czas zapisu (unix)}
+_saved = None            # MAC -> {"bias": [x, y, z], "t": save time (unix)}
 
 
 def _load():
+    """Return the saved-calibration table, reading gyro_cal_file lazily on first use and caching it.
+
+    Entries are normalised (lower-case MAC, three float bias values, integer timestamp); malformed entries or an
+    unreadable file are reported and ignored, so a damaged file can never prevent the sender from starting.
+    """
     global _saved
     if _saved is None:
         _saved = {}
@@ -37,12 +43,16 @@ def _load():
 
 
 def stored(key):
-    """Zapisana kalibracja pada -> {"bias", "t"} albo None (brak / pad bez MAC)."""
+    """Saved calibration of a pad -> {"bias", "t"} or None (none saved / pad without a MAC)."""
     return _load().get((key or "").lower())
 
 
 def save(key, bias):
-    """Zapisuje bias pada (tylko pady z MAC - USB bez uniq ma zmienny klucz). -> True, gdy zapisano."""
+    """Save a pad's bias (only pads with a MAC - a USB pad without uniq has a changing key). Returns True if saved.
+
+    The table is updated in memory first (so the new value is used even if the file cannot be written), then written
+    atomically with proto.write_json.
+    """
     if not _MAC.fullmatch(key or ""):
         return False
     data = _load()
@@ -58,13 +68,18 @@ def save(key, bias):
 
 
 class GyroCal:
-    """Zbieranie próbek gyro przez `secs` sekund; feed() -> None (trwa) albo (CAL_*, bias | None)."""
+    """Collect gyro samples for `secs` seconds; feed() returns None (still collecting) or (CAL_*, bias | None).
+
+    The pad must lie still: when the time is up, too few samples give CAL_FEW, a spread of any axis larger than
+    CAL_MAX_RANGE gives CAL_MOVED, otherwise the bias is the per-axis mean of all samples (CAL_OK).
+    """
     __slots__ = ("end", "samples", "user")
 
     def __init__(self, now, secs, user):
         self.end, self.samples, self.user = now + secs, [], user
 
     def feed(self, now, gyro):
+        """Add one gyro sample (x, y, z); once the window has ended, evaluate and return the result."""
         if now < self.end:
             self.samples.append(tuple(gyro))
             return None
@@ -77,9 +92,12 @@ class GyroCal:
 
 
 def report(c, status, repeat=False):
-    """Pakiet calres do receivera: stan, zapisany bias i ten, którego nadajnik teraz używa. repeat: wynik kalibracji
-    idzie jeszcze dwa razy (BURST_DELAYS) z tymi samymi wartościami - zgubiony pakiet nie zostawi okna z "brak
-    odpowiedzi" przy kalibracji, która się udała i jest zapisana; receiver odrzuca powtórki."""
+    """Send a calres packet to the receiver: status, the saved bias and the bias the sender is using right now.
+
+    With repeat=True a calibration result is sent two more times (BURST_DELAYS) with the same values - a lost packet
+    then cannot leave the window showing "no response" for a calibration that succeeded and is saved; the receiver
+    drops the repeats.
+    """
     st = stored(c.key)
     sb = [round(x) for x in st["bias"]] if st else [0, 0, 0]
     vals = (status, CALF_STORED if st else 0, *sb, *(round(x) for x in c.gyro_bias), st["t"] if st else 0)
@@ -95,20 +113,24 @@ def report(c, status, repeat=False):
 
 
 def request(c, secs, now=None):
-    """Polecenie z okna: kalibracja przez secs sekund (stream_motion zacznie ją przy następnej próbce)."""
+    """Command from the window: calibrate for `secs` seconds (stream_motion starts it on the next sample).
+
+    The duration is clamped; a duplicate arriving within DUP_S is ignored. A pad that has no motion sensor yet (e.g.
+    still connecting) cannot be calibrated, so a failure status is reported straight away.
+    """
     now = time.monotonic() if now is None else now
     secs = clamp(secs, 1, CAL_MAX_S)
     if now - c.cal_cmd_t < DUP_S:
         return
     c.cal_cmd_t = now
-    if c.motion_dev is None:            # pad bez czujnika ruchu (np. jeszcze się łączy) - nie ma czego kalibrować
+    if c.motion_dev is None:            # a pad without a motion sensor (e.g. still connecting) - nothing to calibrate
         report(c, CAL_FEW, repeat=True)
         return
     c.cal_request = secs
 
 
 def startup_done(c, result):
-    """Wynik kalibracji przy starcie (bez zapisu - zapisuje tylko kalibracja z okna)."""
+    """Result of the startup calibration (not saved - only a calibration from the window is saved)."""
     status, bias = result
     if status == CAL_OK:
         c.gyro_bias = bias
@@ -118,7 +140,11 @@ def startup_done(c, result):
 
 
 def finish(c, result):
-    """Wynik kalibracji z okna: zapis + odpowiedź; ruch / za mało próbek - bias bez zmian."""
+    """Result of a calibration requested from the window: save it and answer the receiver.
+
+    On success the new bias becomes active and is persisted; if the pad moved or too few samples arrived, the bias
+    stays unchanged. In every case the receiver is told the outcome (with repeats against packet loss).
+    """
     status, bias = result
     if status == CAL_OK:
         c.gyro_bias = bias

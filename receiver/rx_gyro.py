@@ -1,7 +1,8 @@
-"""Receiver: gyro jako mysz - płynny ruch kursora z prędkości obrotu pada.
+"""Receiver: gyro as a mouse - smooth cursor movement driven by the pad's rotation speed.
 
-Prędkość [px/s] liczy rx_state.recompute (przy każdym pakiecie stanu, w stanie "gyro_vel"); ten wątek całkuje ją
-co ~2 ms niezależnie od rytmu pakietów, więc kursor sunie płynnie, a nie skacze o paczki ruchu co 4 ms."""
+rx_state.recompute computes the velocity [px/s] on every state packet and stores it in the pad state as "gyro_vel".
+This thread integrates that velocity every ~2 ms, independently of the packet rhythm, so the cursor glides
+instead of jumping in 4 ms batches of movement."""
 import time
 
 import rx_state as S
@@ -10,12 +11,18 @@ from rx_mouse import MOVE
 from rx_winapi import boost_thread
 
 STEP_S = 0.002
-MAX_DT = 0.02          # dłuższa przerwa (uśpienie wątku, zator) nie może dać skoku kursora
+MAX_DT = 0.02          # a longer gap (thread sleep, stall) must not turn into a cursor jump
 
 
 def mouse_thread():
+    """Integrate each pad's gyro velocity into whole-pixel mouse moves.
+
+    Sleeps on S.gyro_wake while no pad has a velocity. Otherwise, every STEP_S it multiplies the velocity by the elapsed
+    time (capped at MAX_DT) and adds the fractional remainder left from the previous step. Only the integer part is
+    sent as a relative mouse move; the fraction is carried over, so slow movements are not lost to rounding.
+    """
     boost_thread()
-    rem = [[0.0, 0.0] for _ in S.states]
+    rem = [[0.0, 0.0] for _ in S.states]       # sub-pixel remainder per pad
     last = time.perf_counter()
     while not S.stop.is_set():
         if not any(s["gyro_vel"] for s in S.states):

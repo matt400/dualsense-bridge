@@ -1,12 +1,12 @@
-"""Sender: migracja sender.toml po zmianie wartości domyślnych - zmienia tylko STARE wartości domyślne, własne zostają.
+"""Sender: migrate sender.toml after default values change - only OLD default values are changed, custom ones stay.
 
-Uruchamiana sama przy starcie nadajnika (sender_config.init, przed wczytaniem pliku), więc po aktualizacji przyciskiem
-w oknie na PC nic nie trzeba robić ręcznie. Ręcznie:
+Runs by itself at sender startup (sender_config.init, before the file is loaded), so after an update with the button
+in the PC window nothing has to be done by hand. Manually:
 
-  python3 sender_migrate.py [sender.toml]      (bez argumentu: sender.toml obok skryptu)
+  python3 sender_migrate.py [sender.toml]      (no argument: sender.toml next to the script)
 
-Plik jest zmieniany linia po linii (komentarze i układ zostają), przed zmianą kopia sender.toml.bak; właściciel
-pliku się nie zmienia (usługa działa jako root).
+The file is rewritten line by line (comments and layout are kept), a copy sender.toml.bak is made first; the file
+owner is not changed (the service runs as root).
 """
 import os
 import re
@@ -14,7 +14,7 @@ import sys
 
 from proto import write_file
 
-# klucz -> (stare wartości domyślne, nowa wartość domyślna, powód)
+# key -> (old default values, new default value, reason)
 CHANGES = {
     "pad_min_dt": ((0.004,), 0.001, "limiter 4 ms -> 1 ms (szybsze gałki)"),
     "motion_min_dt": ((0.004,), 0.001, "limiter ruchu 4 ms -> 1 ms (szybsze gyro)"),
@@ -24,6 +24,7 @@ _LINE = re.compile(r"^(?P<lead>\s*)(?P<key>[A-Za-z_]+)(?P<eq>\s*=\s*)(?P<val>[-+
 
 
 def _num(text):
+    """Parse a number from config text; None if it is not numeric."""
     try:
         return float(text)
     except ValueError:
@@ -31,12 +32,18 @@ def _num(text):
 
 
 def _fmt(v):
+    """Format a default value for the file: integers without a decimal point, floats via repr."""
     return str(int(v)) if float(v).is_integer() and not isinstance(v, float) else repr(v)
 
 
 def migrate_text(text):
-    """-> (nowy tekst, [(klucz, stara, nowa, powód)]). Zmienia tylko aktywne (niezakomentowane) linie ze starą
-    wartością domyślną."""
+    """Return (new text, [(key, old, new, reason)]).
+
+    Walks the file line by line and matches "key = number # comment" lines with a regex that captures the leading
+    whitespace, separators and trailing comment separately, so only the number is replaced and everything else
+    (including the original line ending) is preserved. Only active (not commented-out) lines that still hold an
+    OLD default value are touched; anything the user changed to another value is left alone.
+    """
     out, done = [], []
     for line in text.splitlines(keepends=True):
         body = line.rstrip("\r\n")
@@ -52,7 +59,12 @@ def migrate_text(text):
 
 
 def migrate(path, log=print):
-    """Migruje plik; -> lista zmian (pusta = nic do zrobienia, brak pliku albo błąd zapisu - wtedy komunikat)."""
+    """Migrate the file in place; returns the list of changes (empty = nothing to do, no file, or a write error - logged).
+
+    Order of operations: read the file, compute the new text, save the old text as <path>.bak, write the new text
+    atomically (proto.write_file), then restore the original owner - the service runs as root and must not take over
+    a file that belongs to the user. If writing fails, the old defaults simply stay in use.
+    """
     try:
         with open(path, encoding="utf-8") as f:
             text = f.read()
@@ -72,7 +84,7 @@ def migrate(path, log=print):
         if hasattr(os, "chown"):
             for p in (path, path + ".bak"):
                 try:
-                    os.chown(p, st.st_uid, st.st_gid)       # root (usługa) nie przejmuje pliku użytkownika
+                    os.chown(p, st.st_uid, st.st_gid)       # root (the service) does not take over the user's file
                 except OSError:
                     pass
     except OSError as e:

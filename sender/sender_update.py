@@ -1,9 +1,9 @@
-"""Sender: aktualizacja na polecenie receivera (przycisk "Aktualizuj" w oknie na PC).
+"""Sender: update on a command from the receiver (the "Update" button in the PC window).
 
-CMD_UPDATE -> git pull --ff-only w folderze repozytorium (nadrzędnym dla sender/), jako właściciel repozytorium,
-gdy nadajnik działa jako root (usługa) -> pakiet build ze stanem (UPD_*) -> po pobraniu nowego kodu restart nadajnika
-(os.execv: ten sam PID, więc systemd nic nie zauważa; ręcznie uruchomiony też wraca).
-Pakiet build (commit, czas commita, stan) idzie co 5 s - okno receivera pokazuje wersję nadajnika.
+CMD_UPDATE -> git pull --ff-only in the repository folder (the parent of sender/), as the repository owner when the
+sender runs as root (the service) -> build packet carrying the state (UPD_*) -> once new code is pulled the sender
+restarts (os.execv: same PID, so systemd notices nothing; a manually started sender comes back too).
+The build packet (commit, commit time, state) is sent every 5 s - the receiver window shows the sender's version.
 """
 import asyncio
 import os
@@ -18,18 +18,19 @@ from proto import T_BUILD, T_BUILD2, T_UPDMSG, UPD_DONE, UPD_NONE, UPD_RUNNING, 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REQUIREMENTS = "sender/requirements.txt"
 T_UPDMSG_MAX = proto.BODY[T_UPDMSG].size
-REPEAT_GUARD_S = 30.0          # polecenie przychodzi 3x (UDP) - kolejne w tym czasie są ignorowane
+REPEAT_GUARD_S = 30.0          # the command arrives 3x (UDP) - further ones within this time are ignored
 TEXT = {proto.UPD_NO_CHANGE: "already up to date", UPD_DONE: "updated - restarting",
         proto.UPD_NOT_GIT: "folder is not a git clone (git clone https://github.com/matt400/dualsense-bridge)",
         proto.UPD_NO_GIT: "git not installed (doas apk add git)", proto.UPD_FAILED: "git pull failed"}
 
-version = ("", 0, "")          # (commit, czas commita, tytuł) - ustawiane w init()
+version = ("", 0, "")          # (commit, commit time, title) - set in init()
 status = UPD_NONE
-fail_msg = ""                  # powód ostatniego błędu git pull - idzie z każdym pakietem build, póki stan to błąd
+fail_msg = ""                  # reason of the last git pull failure - sent with every build packet while the state is a failure
 _last = 0.0
 
 
 def init():
+    """Read the current git version of the sender's checkout once at startup and log it."""
     global version
     version = proto.git_version(ROOT)
     if version[0]:
@@ -37,12 +38,17 @@ def init():
 
 
 def send_build():
-    """Pakiet build; przy błędzie aktualizacji najpierw powód (updmsg) - okno pokaże go także po zgubionym pakiecie
-    i po ponownym kliknięciu Aktualizuj w ciągu REPEAT_GUARD_S (wtedy nadajnik nie próbuje drugi raz)."""
+    """Send the build packet (commit, commit time, update status) to the receiver.
+
+    After a failed update the failure reason (updmsg) goes first - the window shows it even if the build packet is
+    lost, and also after the user clicks Update again within REPEAT_GUARD_S (the sender then does not try twice).
+    A receiver that understands the extended packet (new_receiver) additionally gets the Wake-on-LAN target MAC and
+    broadcast address, so the window can show the detected MAC; an older receiver gets the plain build packet.
+    """
     if status == proto.UPD_FAILED and fail_msg:
-        net.emit(T_UPDMSG, 255, utf8_field(fail_msg, T_UPDMSG_MAX, "…"))   # git po polsku: bez pół litery
+        net.emit(T_UPDMSG, 255, utf8_field(fail_msg, T_UPDMSG_MAX, "…"))   # git speaks Polish here: no half letters
     commit = version[0].encode("ascii", "replace")[:7]
-    if net.new_receiver():            # nowy receiver: razem z adresami Wake-on-LAN (okno pokazuje wykryty MAC)
+    if net.new_receiver():            # new receiver: together with the Wake-on-LAN addresses (the window shows the detected MAC)
         import sender_wol
         mac = sender_wol.target_mac() or bytes(6)
         bcast = sender_wol.cfg.bcast or sender_wol.auto_bcast()
@@ -52,7 +58,14 @@ def send_build():
 
 
 async def run():
-    """Polecenie aktualizacji z receivera."""
+    """Perform an update requested by the receiver.
+
+    The command arrives several times (UDP redundancy), so a call is ignored while an update is running or within
+    REPEAT_GUARD_S of the previous one. Steps: mark the state as running and tell the receiver, run the blocking
+    `git pull` in a worker thread (so the event loop keeps serving the pads), log the outcome, warn if the
+    requirements file changed or the repository needs credentials, then send the final state three times (UDP) so it
+    reaches the receiver before a possible restart. If new code was pulled, the sender restarts.
+    """
     global status, _last, fail_msg
     now = time.monotonic()
     if status == UPD_RUNNING or now - _last < REPEAT_GUARD_S:
@@ -69,7 +82,7 @@ async def run():
               f"{os.path.join(ROOT, 'sender', 'setup-update-key.sh')}")
     if st == UPD_DONE and REQUIREMENTS in files:
         print(f"Update: {REQUIREMENTS} changed - install new packages (doas apk add ... / pip install -r)")
-    for _ in range(3):                       # wynik musi dotrzeć do receivera przed restartem (powód błędu: send_build)
+    for _ in range(3):                       # the result must reach the receiver before the restart (failure reason: send_build)
         send_build()
         await asyncio.sleep(0.05)
     if st == UPD_DONE:
@@ -77,7 +90,10 @@ async def run():
 
 
 def restart():
-    """Zakończ main() (sprzątanie padów jak przy SIGTERM), potem __main__ robi os.execv."""
+    """End main() (pads are cleaned up as on SIGTERM); afterwards the __main__ block performs os.execv.
+
+    Cancelling the main task is enough: state.restart tells the entry point to re-exec the process instead of exiting.
+    """
     state.restart = True
     if state.main_task is not None:
         state.main_task.cancel()

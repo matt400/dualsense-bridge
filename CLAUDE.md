@@ -29,7 +29,7 @@ tools/     screenshots.py (zrzuty okna offscreen -> docs/img)
 
 ## Styl kodu
 - Pliki: `sender_<obszar>.py`, `rx_<obszar>.py`, okno `rx_qt_<obszar>.py`; snake_case.
-- Komentarze i docstringi po polsku; docstring modułu opisuje jego rolę (i w plikach wejściowych listę modułów).
+- Komentarze i docstringi po angielsku, językiem wyjaśniającym zasadę działania (nie tylko co, ale jak i dlaczego); docstring modułu opisuje jego rolę (i w plikach wejściowych listę modułów). Teksty widoczne w oknie zostają kluczami `_("...")` (po polsku, tłumaczenie w `rx_i18n`).
 - Receiver: współdzielony stan w `rx_state` (`S.xxx`, `S.lock`); długie pętle w wątkach przez `rx_state` (run_forever).
 - Sender: asyncio; pętle owinięte w `forever()` (restart po wyjątku, nie zabijają procesu).
 - Konfiguracja: `DEFAULTS` w `sender_config` / `rx_config`, plik TOML/JSON, flagi CLI nadpisują plik.
@@ -54,5 +54,5 @@ pip install evdev ruff PySide6-Essentials
 
 ## Git
 - Gałęzie: `fix/…`, `feat/…`, `docs/…`, `security/…`; zmiany przez PR z merge commitem do `main`.
-- Commity: krótki opis po polsku z prefiksem obszaru (`Receiver: …`, `Sender BT: …`, `Bug hunt N: …`, `docs: …`).
+- Commity i opisy PR po angielsku: krótki opis z prefiksem obszaru (`Receiver: …`, `Sender BT: …`, `Bug hunt N: …`, `docs: …`).
 - Dokumentacja: zmiana w EN (`docs/*.md`) wymaga odpowiednika w PL (`docs/*.pl.md`) i odwrotnie.
