@@ -1,21 +1,21 @@
-"""Receiver: gyro -> gałka analogowa - przechył pada (akcelerometr) zamienia się na wychylenie gałki.
+"""Receiver: gyro -> analog stick - the pad tilt (accelerometer) becomes a stick deflection.
 
-Czysta logika, bez Qt i bez rx_state (testy na Linuksie, wątek 250 Hz w rx_gstick_io, okno w rx_qt_gstick):
+Pure logic, no Qt and no rx_state (tested on Linux, the 250 Hz thread is in rx_gstick_io, the window in rx_qt_gstick):
   Config     ustawienia jednego pada (zapis per MAC: rx_gstick_io, gyrostick.json obok remap.json)
-  tilt_basis, angles   wektor grawitacji -> (pitch, roll) w stopniach względem środka neutralnego
-  Engine     maszyna stanów: sprzęgło, uśpienie, strefa martwa ze "snap-back", filtr EMA, krzywa, sprint, próg delta
-  Sink       warstwa abstrakcji wirtualnego pada (StateSink w rx_gstick_io; ViGEm / vJoy / uinput = kolejne ujścia)
+  tilt_basis, angles   gravity vector -> (pitch, roll) in degrees relative to the neutral center
+  Engine     state machine: clutch, auto-sleep, deadzone with "snap-back", EMA filter, curve, sprint, delta threshold
+  Sink       virtual pad abstraction layer (StateSink in rx_gstick_io; ViGEm / vJoy / uinput = further sinks)
 
-Układ osi pada jak w raportach DS4 / DualSense: X w prawo, Y w górę (z płaszczyzny pada leżącego płasko), Z do gracza;
-leżący pad czyta ay = +1 g. Pochylenie PRZODU w dół = pitch dodatni = gałka w górę / do przodu (Y +); przechył w prawo
-(prawa strona w dół) = roll dodatni = gałka w prawo (X +). Gdyby czujniki miały inny znak (inny firmware), odwracają
-to przełączniki "Odwróć pitch / roll" w oknie.
+Pad axes as in the DS4 / DualSense reports: X to the right, Y up (out of the plane of a pad lying flat), Z towards the player;
+a pad lying flat reads ay = +1 g. Tilting the FRONT down = positive pitch = stick up / forward (Y +); tilting right
+(right side down) = positive roll = stick right (X +). If the sensors have the opposite sign (other firmware), the
+"Invert pitch / roll" switches in the window flip it.
 
-Potok jednej próbki (Engine.step, ~250 razy na sekundę):
-  acc -> pitch / roll [°] względem środka -> inwersje i ratio X/Y -> wektor w stopniach (raw)
-  raw w martwej strefie -> wyjście 0 od razu, filtr przejmuje raw (snap-back: żadnego śladu po filtrze)
-  inaczej: EMA (wygładzanie) -> strefa martwa i zasięg (promieniowo) -> krzywa -> wyjście -1..1
-Wyjście idzie do ujścia tylko, gdy zmiana przekracza próg delta (albo to zero, skraj zakresu, sprint, zmiana stanu).
+One-sample pipeline (Engine.step, ~250 times per second):
+  acc -> pitch / roll [°] relative to the center -> inversions and X/Y ratio -> vector in degrees (raw)
+  raw inside the deadzone -> output 0 at once, the filter takes over raw (snap-back: no filter trail)
+  otherwise: EMA (smoothing) -> deadzone and range (radially) -> curve -> output -1..1
+The output goes to the sink only when the change exceeds the delta threshold (or it is zero, the edge of the range, sprint, a state change).
 """
 import math
 from dataclasses import dataclass, fields, replace
@@ -26,20 +26,20 @@ from rx_buttons import BIT, BUTTON_CODES, INPUTS
 TARGETS = {"left": "Lewa gałka", "right": "Prawa gałka", "dpad": "D-pad", "none": "Brak (tylko podgląd)"}
 CURVES = {"linear": "Liniowa", "cubic": "Wykładnicza (sześcienna)", "aggressive": "Agresywna"}
 FEEDBACKS = {"off": "Wyłączony", "haptic": "Wibracja", "led": "Kolor lightbara", "both": "Wibracja i kolor"}
-CLUTCHES = ("always", *INPUTS)                          # wejście, które trzeba trzymać ("always" = bez sprzęgła)
+CLUTCHES = ("always", *INPUTS)                          # the input that has to be held ("always" = no clutch)
 SPRINTS = ("none", *(n for n in BUTTON_CODES if n != "ps"))   # wirtualny przycisk wciskany na skraju zakresu
-# zakresy wspólne dla walidacji pliku i suwaków w oknie: nazwa -> (min, max)
+# ranges shared by file validation and the window sliders: name -> (min, max)
 LIMITS = {"deadzone": (0.0, 20.0),      # martwa strefa [°]
-          "outer": (10.0, 80.0),        # przechył dający pełne wychylenie [°]
-          "smoothing": (0.0, 100.0),    # wygładzanie EMA [%]: 0 = brak, 100 = stała czasowa SMOOTH_MAX_S
-          "ratio": (0.5, 2.0),          # czułość pionowa względem poziomej (nadgarstki nie przechylają się tak samo)
-          "idle_s": (0.0, 10.0),        # uśpienie po bezruchu [s], 0 = wyłączone
-          "delta": (0.0, 5.0),          # najmniejsza zmiana wysyłana do gry [% pełnego zakresu]
-          "sprint_at": (50.0, 100.0)}   # sprint od tylu % zasięgu
-MIN_SPAN = 5.0                          # zasięg zawsze o tyle stopni większy niż martwa strefa
-DPAD_AT = 0.5                           # tryb D-pad: kierunek od połowy wychylenia
+          "outer": (10.0, 80.0),        # tilt giving full deflection [°]
+          "smoothing": (0.0, 100.0),    # EMA smoothing [%]: 0 = none, 100 = time constant SMOOTH_MAX_S
+          "ratio": (0.5, 2.0),          # vertical sensitivity relative to horizontal (wrists don't tilt equally)
+          "idle_s": (0.0, 10.0),        # auto-sleep after stillness [s], 0 = off
+          "delta": (0.0, 5.0),          # smallest change sent to the game [% of full range]
+          "sprint_at": (50.0, 100.0)}   # sprint from this % of the range
+MIN_SPAN = 5.0                          # range is always this many degrees larger than the deadzone
+DPAD_AT = 0.5                           # d-pad mode: a direction from half deflection
 SMOOTH_MAX_S = 0.150
-I16_MAX = 32767                         # pełny zakres wyjścia -32768..+32767 (raport DS4 ma 8 bitów - ujście skaluje)
+I16_MAX = 32767                         # full output range -32768..+32767 (the DS4 report has 8 bits - the sink scales)
 
 
 def _clamp(v, name):
@@ -50,7 +50,7 @@ def _clamp(v, name):
 @dataclass(frozen=True, slots=True)
 class Config:
     enabled: bool = False
-    target: str = "left"            # które wirtualne wejście przejmuje gyro (fizyczne jest wtedy pomijane)
+    target: str = "left"            # which virtual input the gyro takes over (the physical one is then ignored)
     invert_pitch: bool = False
     invert_roll: bool = False
     deadzone: float = 3.0
@@ -64,12 +64,12 @@ class Config:
     sprint: str = "none"
     sprint_at: float = 95.0
     feedback: str = "off"
-    focus_release: bool = True      # utrata fokusu / zmiana programu zeruje gałkę
-    center: tuple = None            # środek neutralny: wektor grawitacji [g] z kalibracji; None = pad leży płasko
+    focus_release: bool = True      # losing focus / changing the program zeroes the stick
+    center: tuple = None            # neutral center: gravity vector [g] from calibration; None = pad lies flat
 
 
 def normalize(raw):
-    """Słownik z pliku -> Config; zła wartość = domyślna (komunikat w logu), nieznane klucze pomijane."""
+    """Dict from the file -> Config; a bad value = the default (message in the log), unknown keys are skipped."""
     raw = raw if isinstance(raw, dict) else {}
     base = Config()
     values = {}
@@ -101,7 +101,7 @@ def normalize(raw):
 
 
 def _center(v):
-    """[x, y, z] w g (długość około 1) albo None."""
+    """[x, y, z] in g (length about 1) or None."""
     if v is None:
         return None
     if not isinstance(v, (list, tuple)) or len(v) != 3 or any(isinstance(c, bool) or not isinstance(c, (int, float)) for c in v):
@@ -113,7 +113,7 @@ def _center(v):
 
 
 def to_raw(cfg):
-    """Config -> słownik do pliku JSON (środek tylko, gdy skalibrowany)."""
+    """Config -> dict for the JSON file (the center only when calibrated)."""
     out = {f.name: getattr(cfg, f.name) for f in fields(Config)}
     if cfg.center is None:
         del out["center"]
@@ -123,17 +123,17 @@ def to_raw(cfg):
 
 
 def to_i16(v):
-    """-1..1 -> -32768..32767 (zakres z opisu funkcji; raport DS4 / DualSense ma 8 bitów, XInput / vJoy 16)."""
+    """-1..1 -> -32768..32767 (the range from the feature spec; the DS4 / DualSense report has 8 bits, XInput / vJoy 16)."""
     return max(-32768, min(I16_MAX, round(v * (32768 if v < 0 else I16_MAX))))
 
 
 # ---------------- geometria ----------------
 def tilt_basis(center):
-    """Środek neutralny (wektor grawitacji w g albo None = pad płasko) -> (uy, uz, pitch0, roll0).
-    (uy, uz) to kierunek "w górę" w płaszczyźnie prostopadłej do osi X pada, pitch0 / roll0 - kąty środka."""
+    """Neutral center (gravity vector in g or None = pad flat) -> (uy, uz, pitch0, roll0).
+    (uy, uz) is the "up" direction in the plane perpendicular to the pad's X axis, pitch0 / roll0 are the center angles."""
     cy, cz = (center[1], center[2]) if center else (1.0, 0.0)
     n = math.hypot(cy, cz)
-    if n < 0.35:                         # środek zapisany przy padzie na sztorc - kąty nie mają sensu: pad płasko
+    if n < 0.35:                         # center saved with the pad on its edge - the angles make no sense: treat as flat
         cy, cz, n, center = 1.0, 0.0, 1.0, None
     uy, uz = cy / n, cz / n
     p0, r0 = angles(*center, uy, uz) if center else (0.0, 0.0)
@@ -141,15 +141,15 @@ def tilt_basis(center):
 
 
 def angles(ax, ay, az, uy, uz):
-    """Wektor grawitacji [g] -> (pitch, roll) w stopniach w układzie wyznaczonym przez (uy, uz): pitch dodatni = przód
-    w dół, roll dodatni = prawa strona w dół. pitch to obrót wokół osi X, roll liczony od kierunku "w górę"."""
-    gu = ay * uy + az * uz                       # składowa "w górę" (kierunek neutralny w płaszczyźnie YZ)
-    gf = az * uy - ay * uz                       # składowa "do tyłu"; przód w dół = więcej "do tyłu" wskazuje w górę
+    """Gravity vector [g] -> (pitch, roll) in degrees in the frame given by (uy, uz): positive pitch = front
+    down, positive roll = right side down. Pitch is a rotation about the X axis, roll is measured from the "up" direction."""
+    gu = ay * uy + az * uz                       # the "up" component (the neutral direction in the YZ plane)
+    gf = az * uy - ay * uz                       # the "back" component; front down = more "back" points up
     return math.degrees(math.atan2(gf, math.hypot(ax, gu))), math.degrees(math.atan2(-ax, gu))
 
 
 def curve(m, name):
-    """Krzywa odpowiedzi 0..1 -> 0..1: linear, cubic (precyzja przy małych przechyłach), aggressive (szybki start)."""
+    """Response curve 0..1 -> 0..1: linear, cubic (precision at small tilts), aggressive (fast start)."""
     if name == "cubic":
         return m * m * m
     if name == "aggressive":
@@ -158,13 +158,13 @@ def curve(m, name):
 
 
 def to_u8(v):
-    """-1..1 -> bajt gałki raportu DS4 (128 = środek)."""
+    """-1..1 -> DS4 report stick byte (128 = center)."""
     return max(0, min(255, 128 + round(v * 127)))
 
 
 def drive_state(s, gs):
-    """Nakłada wyjście gyro `gs` = (cel, x, y, maska) na stan wyjściowy `s` (słownik rx_state; wołać pod lock).
-    Cel przejęty przez gyro ignoruje fizyczne wejście; D-pad: kierunek od połowy wychylenia (DPAD_AT); y > 0 = góra."""
+    """Applies the gyro output `gs` = (target, x, y, mask) to the output state `s` (an rx_state dict; call under the lock).
+    A target taken by the gyro ignores the physical input; D-pad: a direction from half deflection (DPAD_AT); y > 0 = up."""
     target, x, y, mask = gs
     if target == "left":
         s["lx"], s["ly"] = to_u8(x), to_u8(-y)
@@ -178,16 +178,16 @@ def drive_state(s, gs):
 
 
 def sprint_mask(name):
-    """Nazwa wirtualnego przycisku sprintu -> maska bitowa raportu (0 = brak)."""
+    """Virtual sprint button name -> report bit mask (0 = none)."""
     code = BUTTON_CODES.get(name)
     return BIT[code] if code else 0
 
 
-# ---------------- ujście ----------------
+# ---------------- sink ----------------
 class Sink:
     """Warstwa abstrakcji wirtualnego pada: silnik zna tylko ten interfejs, nie ViGEm / HIDMaestro / uinput.
-    drive(): gyro przejmuje wejście `target` ("left" | "right" | "dpad") wartościami x, y z -1..1 (y > 0 = góra) i trzyma
-    przycisk `button` (maska bitowa, 0 = brak); release(): gyro oddaje wejście (fizyczne znów działa)."""
+    drive(): the gyro takes over the `target` input ("left" | "right" | "dpad") with x, y in -1..1 (y > 0 = up) and holds
+    the `button` (bit mask, 0 = none); release(): the gyro gives the input back (the physical one works again)."""
 
     def drive(self, slot, target, x, y, button):
         raise NotImplementedError
@@ -196,35 +196,35 @@ class Sink:
         raise NotImplementedError
 
 
-# ---------------- maszyna stanów ----------------
-ST_OFF, ST_HOLD, ST_SAFE, ST_IDLE, ST_CAL, ST_RUN = range(6)   # wyłączone / sprzęgło puszczone / czeka na wyzerowanie /
-#                                                                 uśpione / kalibracja / steruje
-Z_DEAD, Z_ACTIVE, Z_OUTER = range(3)                            # strefa wychylenia
-EV_NONE, EV_DEAD_OUT, EV_DEAD_IN, EV_OUTER_IN, EV_OUTER_OUT = range(5)   # przejścia przez progi stref (sygnalizacja)
+# ---------------- state machine ----------------
+ST_OFF, ST_HOLD, ST_SAFE, ST_IDLE, ST_CAL, ST_RUN = range(6)   # off / clutch released / waiting for a return to zero /
+#                                                                 asleep / calibrating / driving
+Z_DEAD, Z_ACTIVE, Z_OUTER = range(3)                            # deflection zone
+EV_NONE, EV_DEAD_OUT, EV_DEAD_IN, EV_OUTER_IN, EV_OUTER_OUT = range(5)   # crossings of zone thresholds (signalling)
 
-HYST_DEG = 0.4            # wyjście z martwej strefy dopiero o tyle poza jej brzegiem (szum czujnika na granicy)
-OUTER_LEAVE = 0.9         # strefa skrajna kończy się poniżej 90 % zasięgu
+HYST_DEG = 0.4            # leaving the deadzone only this far past its edge (sensor noise at the boundary)
+OUTER_LEAVE = 0.9         # the outer zone ends below 90 % of the range
 SPRINT_HYST = 0.05
-REARM_DEG = 2.0           # po zerowaniu (fokus, profil, uśpienie) gałka rusza dopiero, gdy pad wróci poniżej max(martwa, 2°)
-STILL_DPS, STILL_G = 0.5, 0.004   # "nieruchomy": obrót poniżej 0,5 °/s i akcelerometr w granicach 0,004 g (pad na stole;
-#                                   trzymany w dłoni drży mocniej, więc nie zasypia z utrzymanym przechyłem)
-WAKE_DPS, WAKE_G = 2.0, 0.02      # uśpiony pad budzi dopiero wyraźny ruch
-CAL_S, CAL_MIN_SAMPLES, CAL_MAX_DPS = 0.4, 20, 12.0   # kalibracja środka: czas uśredniania, minimum próbek, najwyższy obrót
+REARM_DEG = 2.0           # after zeroing (focus, profile, sleep) the stick moves again only when the pad is back below max(deadzone, 2°)
+STILL_DPS, STILL_G = 0.5, 0.004   # "still": rotation below 0.5 °/s and the accelerometer within 0.004 g (a pad on a table;
+#                                   held in a hand it shakes more, so it doesn't fall asleep with a held tilt)
+WAKE_DPS, WAKE_G = 2.0, 0.02      # a sleeping pad is woken only by clear movement
+CAL_S, CAL_MIN_SAMPLES, CAL_MAX_DPS = 0.4, 20, 12.0   # center calibration: averaging time, minimum samples, highest rotation
 MAX_DT = 0.05
-FORCE = ("force",)        # znacznik: następne wyjście trzeba wysłać niezależnie od progu delta (zmiana celu itp.)
+FORCE = ("force",)        # marker: the next output must be sent regardless of the delta threshold (target change etc.)
 
 
 class Engine:
-    """Stan jednego pada. step() raz na próbkę (wątek 250 Hz): -> True, gdy trzeba wysłać `out` do ujścia.
-    out = None (gyro nie steruje - fizyczne wejście działa) albo (x, y, sprint) z x, y w -1..1 (y > 0 = góra).
-    Pola do podglądu: state, zone, raw / filt [°], xy (z krzywą), mag (0..1 przed krzywą), event (przejście przez próg)."""
+    """State of one pad. step() once per sample (250 Hz thread): -> True when `out` has to be sent to the sink.
+    out = None (the gyro doesn't drive - the physical input works) or (x, y, sprint) with x, y in -1..1 (y > 0 = up).
+    Preview fields: state, zone, raw / filt [°], xy (with the curve), mag (0..1 before the curve), event (threshold crossing)."""
 
     def __init__(self, cfg=None):
         self.cfg = cfg or Config()
-        self._cfg = None                 # konfiguracja, dla której policzono cache (_apply)
+        self._cfg = None                 # the config the cache was computed for (_apply)
         self._basis = tilt_basis(None)
         self.t = 0.0
-        self.armed = False               # bez wyzerowania pada nie ma skoku gałki po włączeniu / powrocie do okna
+        self.armed = False               # without a return to zero there is no stick jump after enabling / returning to the window
         self.asleep = False
         self.dead = True
         self.filt = None
@@ -237,36 +237,36 @@ class Engine:
         self.sent = None
         self.send = False
         self.event = EV_NONE
-        self._ref = None                 # próbka odniesienia do wykrywania bezruchu
+        self._ref = None                 # reference sample for stillness detection
         self._since = 0.0
-        self._cal = None                 # [koniec, sx, sy, sz, n, max_dps] w trakcie kalibracji środka
-        self.cal_result = None           # (ok, środek | None) po kalibracji - odbiera rx_gstick_io
+        self._cal = None                 # [end, sx, sy, sz, n, max_dps] during center calibration
+        self.cal_result = None           # (ok, center | None) after calibration - collected by rx_gstick_io
 
-    # ---------- sterowanie z zewnątrz ----------
+    # ---------- control from outside ----------
     @property
     def calibrating(self):
         return self._cal is not None
 
     def start_center(self, now, secs=CAL_S):
-        """Kalibracja środka: przez `secs` s uśrednia pozycję pada (wynik: cal_result)."""
+        """Center calibration: averages the pad position for `secs` s (result: cal_result)."""
         self.cal_result = None
         self._cal = [now + secs, 0.0, 0.0, 0.0, 0, 0.0]
 
     def release(self, rearm=True):
-        """Twarde czyszczenie: gyro oddaje wejście, filtr i stany wyzerowane; rearm - gałka rusza znów dopiero po
-        powrocie pada w okolice środka (bez skoku po zmianie okna / profilu)."""
+        """Hard clear: the gyro gives the input back, the filter and states are zeroed; rearm - the stick moves again only after
+        the pad returns near the center (no jump after a window / profile change)."""
         if rearm:
             self.armed = False
         self.sent = None
         self._neutral(ST_SAFE)
 
     def snapshot(self):
-        """Krotka dla podglądu w oknie: (stan, strefa, raw °, po filtrze °, wyjście -1..1, mag 0..1, sprint, steruje)."""
+        """Tuple for the window preview: (state, zone, raw °, filtered °, output -1..1, mag 0..1, sprint, driving)."""
         return (self.state, self.zone, self.raw, self.filt_xy, self.xy, self.mag, self.sprint, self.out is not None)
 
-    # ---------- wnętrze ----------
+    # ---------- internals ----------
     def _apply(self, cfg):
-        """Nowa konfiguracja: przelicz środek neutralny; zmiana celu / włączenia / sprintu - pełne wyzerowanie."""
+        """New config: recompute the neutral center; a change of target / enabled / sprint = a full reset."""
         old, self._cfg = self._cfg, cfg
         if old is None or old.center != cfg.center:
             self._basis = tilt_basis(cfg.center)
@@ -276,7 +276,7 @@ class Engine:
             self.sent = FORCE
 
     def _neutral(self, state):
-        """Gyro nie steruje: wejście fizyczne działa, podgląd zerowy."""
+        """The gyro doesn't drive: the physical input works, the preview is zero."""
         self.state, self.out = state, None
         self.filt = None
         self.dead, self.zone, self.sprint, self.mag = True, Z_DEAD, False, 0.0
@@ -284,8 +284,8 @@ class Engine:
         return self._decide()
 
     def _decide(self):
-        """Czy wysłać `out`: zmiana wyjścia ponad próg delta; zawsze zero (snap-back), skraj zakresu, zmiana przycisku,
-        przejęcie i oddanie wejścia."""
+        """Whether to send `out`: a change above the delta threshold; always zero (snap-back), the edge of the range, a button
+        change, taking and giving back the input."""
         out, sent = self.out, self.sent
         if sent is FORCE:
             send = True
@@ -319,11 +319,11 @@ class Engine:
                     self.cal_result = (False, None)
             else:
                 self.cal_result = (False, None)
-            self.armed = False           # nowy środek: gałka rusza od zera, nie od skoku
+            self.armed = False           # new center: the stick starts from zero, not from a jump
         return self._neutral(ST_CAL)
 
     def _still(self, now, ax, ay, az, gdps, idle_s):
-        """Uśpienie: pad nieruchomy (leży) dłużej niż idle_s -> True (zero na gałce), budzi go wyraźny ruch."""
+        """Auto-sleep: a pad that stays still (lies) longer than idle_s -> True (zero on the stick); clear movement wakes it."""
         ref = self._ref
         dev = 1e9 if ref is None else max(abs(ax - ref[0]), abs(ay - ref[1]), abs(az - ref[2]))
         if not idle_s:
@@ -331,7 +331,7 @@ class Engine:
         if self.asleep:
             if gdps > WAKE_DPS or dev > WAKE_G:
                 self.asleep, self._ref, self._since = False, (ax, ay, az), now
-                self.armed = False       # podniesiony przechylony pad nie wysyła skoku gałki
+                self.armed = False       # a picked-up tilted pad doesn't send a stick jump
             return self.asleep
         if not idle_s or gdps > STILL_DPS or dev > STILL_G:
             self._ref, self._since = (ax, ay, az), now
@@ -340,8 +340,8 @@ class Engine:
         return self.asleep
 
     def step(self, now, ax, ay, az, gdps, held, alive=True):
-        """Jedna próbka: now [s, zegar monotoniczny], acc [g], gdps = wartość obrotu [°/s], held = sprzęgło trzymane,
-        alive = pad podłączony. -> True, gdy trzeba wysłać `out` (sam `sent` jest już zaktualizowany)."""
+        """One sample: now [s, monotonic clock], acc [g], gdps = rotation magnitude [°/s], held = clutch held,
+        alive = pad connected. -> True when `out` has to be sent (`sent` itself is already updated)."""
         cfg = self.cfg
         if cfg is not self._cfg:
             self._apply(cfg)
@@ -353,7 +353,7 @@ class Engine:
         if not (cfg.enabled and alive):
             return self._neutral(ST_OFF)
         g2 = ax * ax + ay * ay + az * az
-        if not 0.09 < g2 < 9.0:          # swobodny spadek / uderzenie: akcelerometr nie mierzy przechyłu - bez zmian
+        if not 0.09 < g2 < 9.0:          # free fall / impact: the accelerometer doesn't measure tilt - no change
             self.send = False
             return False
         uy, uz, p0, r0 = self._basis
@@ -363,8 +363,8 @@ class Engine:
         vy = (-pitch if cfg.invert_pitch else pitch) * cfg.ratio
         if not held:
             send = self._neutral(ST_HOLD)
-            self.raw = (vx, vy)          # podgląd pokazuje przechył także przy puszczonym sprzęgle
-            self._ref = None             # po wciśnięciu sprzęgła odliczanie uśpienia rusza od nowa
+            self.raw = (vx, vy)          # the preview shows the tilt also with the clutch released
+            self._ref = None             # after the clutch is pressed the auto-sleep countdown starts over
             return send
         if self._still(now, ax, ay, az, gdps, cfg.idle_s):
             return self._neutral(ST_IDLE)
@@ -378,7 +378,7 @@ class Engine:
             self.armed = True
         self.state = ST_RUN
         self.raw = (vx, vy)
-        # snap-back: w martwej strefie wyjście jest zerem od razu, a filtr podąża za pozycją (nie ma śladu po nim)
+        # snap-back: inside the deadzone the output is zero at once and the filter follows the position (no trail)
         if self.dead:
             if raw_r > dz + HYST_DEG:
                 self.dead = False
@@ -403,7 +403,7 @@ class Engine:
         return self._decide()
 
     def _zones(self, m, cfg):
-        """Strefa wychylenia (z histerezą skraju), zdarzenie przejścia i stan sprintu."""
+        """Deflection zone (with edge hysteresis), the crossing event and the sprint state."""
         prev = self.zone
         zone = Z_DEAD if m <= 0 else Z_OUTER if m >= 1.0 or (prev == Z_OUTER and m >= OUTER_LEAVE) else Z_ACTIVE
         self.zone = zone

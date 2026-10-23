@@ -1,10 +1,10 @@
-"""Receiver: karta "Przechył" - przechył pada jako gałka analogowa (ustawienia per pad, podgląd 2D na żywo).
+"""Receiver: the "Tilt" tab - pad tilt as an analog stick (per-pad settings, a live 2D preview).
 
-  TiltView         rysunek: okręgi martwej strefy i zasięgu, surowy przechył (szary), po filtrze (niebieski), wyjście (kropka)
-  GyroStickPage    ustawienia (suwaki, listy, przełączniki), kalibracja środka, liczby raw / filtered output
+  TiltView         drawing: deadzone and range circles, raw tilt (grey), filtered (blue), output (crosshair)
+  GyroStickPage    settings (sliders, lists, switches), center calibration, raw / filtered output numbers
 
-Zmiany ustawień idą sygnałem `changed(Config)` do rx_gstick_io.runner (slot w oknie); wątek 250 Hz nie dotyka Qt,
-a podgląd odświeża timer okna (tick) z migawki silnika."""
+Setting changes go through the `changed(Config)` signal to rx_gstick_io.runner (a slot in the window); the 250 Hz thread never
+touches Qt, and the preview is refreshed by the window timer (tick) from an engine snapshot."""
 import time
 from dataclasses import replace
 
@@ -27,7 +27,7 @@ CAL_TEXT = {True: "Środek ustawiony.", False: "Kalibracja nie wyszła - trzymaj
 
 
 class TiltView(QWidget):
-    """Podgląd 2D: oś X = przechył w bok, Y = przód w dół (do góry na rysunku). Skala: 1.0 = zasięg (outer)."""
+    """2D preview: X axis = sideways tilt, Y = front down (up in the drawing). Scale: 1.0 = range (outer)."""
 
     def __init__(self):
         super().__init__()
@@ -50,10 +50,10 @@ class TiltView(QWidget):
         r = side / 2
         p.setBrush(QColor(CARD))
         p.setPen(QPen(QColor(LINE), 1))
-        p.drawEllipse(c, r, r)                                       # zasięg (outer)
+        p.drawEllipse(c, r, r)                                       # range (outer)
         dz = r * cfg.deadzone / cfg.outer
         p.setBrush(QColor(LINE))
-        p.drawEllipse(c, dz, dz)                                     # martwa strefa
+        p.drawEllipse(c, dz, dz)                                     # deadzone
         p.setPen(QPen(QColor(LINE), 1, Qt.PenStyle.DotLine))
         p.drawLine(QPointF(c.x() - r, c.y()), QPointF(c.x() + r, c.y()))
         p.drawLine(QPointF(c.x(), c.y() - r), QPointF(c.x(), c.y() + r))
@@ -61,7 +61,7 @@ class TiltView(QWidget):
         p.setPen(QPen(QColor(BAD if zone == G.Z_OUTER else LINE), 2))
         p.drawEllipse(c, r, r)
 
-        def at(v):                                                   # stopnie -> piksele (y w górę), obcięte do ramki
+        def at(v):                                                   # degrees -> pixels (y up), clipped to the frame
             x, y = v[0] / cfg.outer * r, -v[1] / cfg.outer * r
             k = max(1.0, (x * x + y * y) ** 0.5 / r)
             return QPointF(c.x() + x / k, c.y() + y / k)
@@ -70,7 +70,7 @@ class TiltView(QWidget):
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(QColor(col))
             p.drawEllipse(pos, rad, rad)
-        out = QPointF(c.x() + xy[0] * r, c.y() - xy[1] * r)           # wyjście: pełny zakres okręgu
+        out = QPointF(c.x() + xy[0] * r, c.y() - xy[1] * r)           # output: the full circle range
         p.setPen(QPen(QColor(OK if driving else "#8e96ab"), 2))
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawEllipse(out, 7, 7)
@@ -166,7 +166,7 @@ class GyroStickPage(QWidget):
         runner.calibrate(self.slot)
 
     def refresh(self, cfg=None, reload=True):
-        """Ustawienia pada z pliku (zmiana pada / karty) albo po edycji w tym oknie (reload=False)."""
+        """Pad settings from the file (pad / tab change) or after an edit in this window (reload=False)."""
         if reload:
             self.cfg = cfg = runner.config(self.slot)
         cfg = cfg or self.cfg
@@ -183,7 +183,7 @@ class GyroStickPage(QWidget):
         self.cal_reset.setEnabled(cfg.center is not None)
 
     def tick(self):
-        """Podgląd na żywo (30 Hz z timera okna, tylko gdy karta widoczna)."""
+        """Live preview (30 Hz from the window timer, only while the tab is visible)."""
         snap = runner.snapshot(self.slot)
         self.view.set_data(self.cfg, snap)
         state, _zone, raw, _filt, xy, _mag, sprint, _driving = snap
@@ -191,8 +191,8 @@ class GyroStickPage(QWidget):
             p=raw[1], r=raw[0], x=xy[0] * 100, y=xy[1] * 100, s="  [sprint]" if sprint else ""))
         msg, now = runner.cal_msg[self.slot], time.monotonic()
         if msg is not None and not self._msg_until:
-            self._msg_until = now + MSG_S                    # wynik kalibracji widać chwilę, potem znów stan
-            self.refresh()                                   # nowy środek zapisany przez wątek
+            self._msg_until = now + MSG_S                    # the calibration result shows for a moment, then the state again
+            self.refresh()                                   # the new center was saved by the thread
         elif msg is not None and now > self._msg_until:
             runner.cal_msg[self.slot], self._msg_until, msg = None, 0.0, None
         self.status.setText(_(STATE_TEXT[state]) if msg is None else _(CAL_TEXT[msg]))

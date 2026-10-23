@@ -162,7 +162,7 @@ def recompute(s, prof):
         else:
             s["gyro_vel"] = gyro_mouse_velocity(rates, g)
     s["lx"], s["ly"], s["rx"], s["ry"] = lx, ly, rx, ry
-    if s["gs"] is not None:          # przechył pada przejmuje wybrane wejście (po remapie i kształtowaniu)
+    if s["gs"] is not None:          # pad tilt takes over the chosen input (after the remap and shaping)
         drive_state(s, s["gs"])
 
 

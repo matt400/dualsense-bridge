@@ -1,12 +1,12 @@
-"""Receiver: gyro -> gałka analogowa, część wykonawcza - wątek 250 Hz, ujście do wirtualnego pada, zapis per pad (MAC).
+"""Receiver: gyro -> analog stick, the runtime part - a 250 Hz thread, the sink to the virtual pad, per-pad (MAC) storage.
 
   Store        gyrostick.json obok remap.json: {"version": 1, "pads": {"<mac albo slotN>": {...Config...}}}
-  StateSink    ujście: wpisuje wyjście silnika do stanu slotu (s["gs"]), rx_state.recompute nakłada je po remapie
-  Runner       jeden Engine na slot; wątek czyta acc z rx_state, krokuje silnik i woła ujście tylko przy zmianie
-  runner       instancja używana przez okno (rx_qt_gstick) i receiver_controller (start wątku)
+  StateSink    sink: writes the engine output into the slot state (s["gs"]); rx_state.recompute applies it after the remap
+  Runner       one Engine per slot; the thread reads acc from rx_state, steps the engine and calls the sink only on a change
+  runner       the instance used by the window (rx_qt_gstick) and receiver_controller (starts the thread)
 
-Wątek nie zna Qt: okno odpytuje snapshot() timerem, a zmiany ustawień przekazuje przez set_config() (sygnał -> slot).
-Twarde zerowanie (force release): wyłączenie funkcji, zmiana profilu / gry na pierwszym planie, utrata pada, zatrzymanie."""
+The thread knows nothing about Qt: the window polls snapshot() with a timer and passes setting changes via set_config() (signal -> slot).
+Force release: disabling the feature, a profile / foreground game change, losing the pad, stopping."""
 import json
 import os
 import threading
@@ -20,17 +20,17 @@ from rx_config import C
 from rx_gstick import ST_OFF, Config, Engine, Sink, normalize, sprint_mask, to_raw
 
 STEP_S = 0.004                 # 250 Hz
-IDLE_WAIT_S = 0.25             # nic nie włączone: wątek śpi i budzi się przy zmianie ustawień
+IDLE_WAIT_S = 0.25             # nothing enabled: the thread sleeps and wakes on a settings change
 FILE_VERSION = 1
 
 
 def path():
-    """Obok remap.json (remap_file da się zmienić w konfiguracji - gyrostick.json idzie za nim)."""
+    """Next to remap.json (remap_file can be changed in the config - gyrostick.json follows it)."""
     return os.path.join(os.path.dirname(C.REMAP_PATH), "gyrostick.json")
 
 
 class Store:
-    """Ustawienia gyro-gałki każdego pada. Klucz: identyfikator pada (MAC) albo "slotN"."""
+    """Gyro-stick settings of each pad. Key: the pad identifier (MAC) or "slotN"."""
 
     def __init__(self, file=None):
         self.file = file
@@ -41,7 +41,7 @@ class Store:
         return self.file or path()
 
     def _load(self):
-        """Wołać pod _lock."""
+        """Call under _lock."""
         if self._cfgs is None:
             self._cfgs = {}
             try:
@@ -60,7 +60,7 @@ class Store:
             return self._load().get(key.lower()) or Config()
 
     def set(self, key, cfg):
-        """Zapamiętuje i zapisuje atomowo (proto.write_json)."""
+        """Remembers and saves atomically (proto.write_json)."""
         with self._lock:
             cfgs = self._load()
             cfgs[key.lower()] = cfg
@@ -74,8 +74,8 @@ class Store:
 
 
 class StateSink(Sink):
-    """Ujście dla wirtualnego pada receivera (ViGEm DS4 / HIDMaestro DualSense czytają stan slotu). Inne ujścia
-    (vJoy, uinput) = kolejne podklasy Sink; Runner zna tylko ten interfejs."""
+    """Sink for the receiver's virtual pad (ViGEm DS4 / HIDMaestro DualSense read the slot state). Other sinks
+    (vJoy, uinput) = further Sink subclasses; Runner knows only this interface."""
 
     def drive(self, slot, target, x, y, button):
         self._set(slot, (target, x, y, button))
@@ -103,8 +103,8 @@ class Runner:
         self.engines = []
         self.wake = threading.Event()
         self.cal_msg = []                   # ostatni wynik kalibracji slotu: None / True / False (okno)
-        self._driving = []                  # ujście ma teraz od nas wyjście
-        self._keys = []                     # klucz pada, dla którego silnik ma ustawienia
+        self._driving = []                  # the sink currently holds our output
+        self._keys = []                     # the pad key the engine's settings belong to
         self._game = None
 
     def init(self):
@@ -122,14 +122,14 @@ class Runner:
         return self.store.get(self.key(slot))
 
     def set_config(self, slot, cfg, save=True):
-        """Nowe ustawienia pada (okno). Silnik przejmuje je w następnej próbce (Config jest niezmienny)."""
+        """New pad settings (from the window). The engine picks them up on the next sample (Config is immutable)."""
         if save:
             self.store.set(self.key(slot), cfg)
         self.engines[slot].cfg = cfg
         self.wake.set()
 
     def calibrate(self, slot):
-        """Ustaw bieżące położenie pada jako środek (0, 0): uśrednia ~0,4 s, wynik w cal_msg i w ustawieniach."""
+        """Sets the current pad position as the center (0, 0): averages ~0.4 s, the result goes to cal_msg and the settings."""
         self.cal_msg[slot] = None
         self.engines[slot].start_center(time.monotonic())
         self.wake.set()
@@ -141,14 +141,14 @@ class Runner:
         return self.engines[slot].snapshot()
 
     def force_release_all(self):
-        """Wszystkie sloty: gałki z powrotem w rękach fizycznego pada, silniki wyzerowane."""
+        """All slots: the sticks go back to the physical pad, the engines are zeroed."""
         for i, e in enumerate(self.engines):
             e.release()
             self._push(i, e)
 
-    # ---------- wątek ----------
+    # ---------- thread ----------
     def _push(self, i, e):
-        """Przekazuje wyjście silnika do ujścia (wołać, gdy e.send)."""
+        """Passes the engine output to the sink (call when e.send)."""
         out = e.out
         if out is None:
             if self._driving[i]:
@@ -162,7 +162,7 @@ class Runner:
     def _step_slot(self, i, now):
         e = self.engines[i]
         key = self.key(i)
-        if key != self._keys[i]:                     # pad dostał identyfikator (MAC) albo zmienił się: jego ustawienia
+        if key != self._keys[i]:                     # the pad got an identifier (MAC) or it changed: load its settings
             self._keys[i] = key
             e.cfg = self.store.get(key)
             e.release()
@@ -192,7 +192,7 @@ class Runner:
             self.set_config(i, replace(self.config(i), center=center))
 
     def loop(self):
-        """Pętla 250 Hz; bez włączonej funkcji (i bez kalibracji) wątek tylko czeka."""
+        """The 250 Hz loop; with nothing enabled (and no calibration) the thread just waits."""
         from rx_winapi import boost_thread
         boost_thread()
         nxt = time.perf_counter()
