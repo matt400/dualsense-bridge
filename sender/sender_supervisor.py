@@ -249,7 +249,7 @@ async def _run_extra(c: Ctrl, kind: Kind, dev: InputDevice, coro: Coroutine[Any,
         raise
     except OSError:
         pass                              # the device disappeared: the normal way for the stream to end
-    except Exception as e:  # a task boundary: any bug must end this stream, not the pad
+    except Exception as e:  # noqa: BLE001 - a task boundary: any bug must end this stream, not the pad
         print(f"Controller {c.idx} {kind} error: {e!r}")
     finally:
         if getattr(c, KIND_ATTR[kind]) is dev:
