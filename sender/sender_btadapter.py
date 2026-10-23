@@ -18,6 +18,8 @@ checked and corrected on every check. The set of controllers is checked every fe
 a receiver - PC off, Wake-on-LAN), so plugging in / unplugging a dongle while running switches without a restart; an
 unplugged dongle unblocks the built-in one. Pads must be paired once with each controller (its own address).
 """
+from __future__ import annotations
+
 import contextlib
 import fcntl
 import json
@@ -25,24 +27,29 @@ import shutil
 import socket
 import struct
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Final
 
 from proto import BTA_AUTO, BTA_MANUAL, BTA_PICK, write_json
 
-SYSFS = Path("/sys/class/bluetooth")
-MODES = {"auto": BTA_AUTO, "pick": BTA_PICK, "manual": BTA_MANUAL}
-MODE_NAMES = {v: k for k, v in MODES.items()}
-RULE_BUILTIN = "builtin"            # rule key from sender.toml: built-in before USB
-AF_BLUETOOTH = getattr(socket, "AF_BLUETOOTH", 31)
-BTPROTO_HCI = 1
-HCISETLINKPOL = 0x400448CD          # _IOW('H', 205, int)
-HCIGETDEVINFO = 0x800448D3          # _IOR('H', 211, int) -> struct hci_dev_info
+SYSFS: Final = Path("/sys/class/bluetooth")
+MODES: Final = {"auto": BTA_AUTO, "pick": BTA_PICK, "manual": BTA_MANUAL}
+MODE_NAMES: Final = {v: k for k, v in MODES.items()}
+RULE_BUILTIN: Final = "builtin"     # rule key from sender.toml: built-in before USB
+AF_BLUETOOTH: Final = getattr(socket, "AF_BLUETOOTH", 31)   # 31 on Linux; the constant is missing in some Python builds
+BTPROTO_HCI: Final = 1
+HCISETLINKPOL: Final = 0x400448CD   # _IOW('H', 205, int)
+HCIGETDEVINFO: Final = 0x800448D3   # _IOR('H', 211, int) -> struct hci_dev_info
 DEV_INFO_SIZE, DEV_FLAGS_AT, DEV_POLICY_AT = 92, 16, 36   # size of hci_dev_info, offsets of the flags and link_policy fields
-HCI_UP = 0x0001                     # flags bit: the controller is switched on
+HCI_UP: Final = 0x0001              # flags bit: the controller is switched on
 HCI_LP_RSWITCH, HCI_LP_SNIFF = 0x0001, 0x0004   # link policy: role switch (without HOLD / SNIFF / PARK); SNIFF
+HCI_PREFIX_LEN: Final = len("hci")     # "hci0" -> "0"
 BUILTIN, USB_FIXED, USB = 0, 1, 2   # controller rank (auto takes the highest)
-KIND_TEXT = {BUILTIN: "built-in", USB_FIXED: "internal USB", USB: "USB"}
+KIND_TEXT: Final = {BUILTIN: "built-in", USB_FIXED: "internal USB", USB: "USB"}
+SniffFn = Callable[[str], bool]
+InfoFn = Callable[[str], "tuple[bool, int] | None"]
 # device-tree compatible prefix -> manufacturer (built-in radios of phones and boards)
 VENDORS = {"qcom": "Qualcomm", "brcm": "Broadcom", "infineon": "Infineon", "cypress": "Cypress", "realtek": "Realtek",
            "mediatek": "MediaTek", "ti": "Texas Instruments", "marvell": "Marvell", "nxp": "NXP", "intel": "Intel",
@@ -60,12 +67,17 @@ class Ctrl:
     @property
     def index(self) -> int:
         """The numeric part of the hciN name."""
-        return int(self.name[3:])
+        return hci_index(self.name)
 
     @property
     def usb(self) -> bool:
         """True for any USB-attached controller (a dongle or an internal USB one)."""
         return self.rank != BUILTIN
+
+
+def hci_index(name: str) -> int:
+    """Return the number of a controller name (hci1 -> 1)."""
+    return int(name[HCI_PREFIX_LEN:])
 
 
 def _read(path: Path) -> str:
@@ -76,12 +88,12 @@ def _read(path: Path) -> str:
 
 
 def _usb_info(dev: Path) -> tuple[int, str, str]:
-    """Return (rank, name, key) of a USB controller: the name comes from the descriptor (product / manufacturer), the key is
-    vid:pid[:serial].
+    """Return (rank, name, key) of a USB controller.
 
-    Walks up from the Bluetooth device to the USB device node (the one with idVendor). The manufacturer is prepended
-    to the product name unless it is already part of it or is a placeholder like "Generic". A port the firmware marks
-    as "fixed" (not removable) ranks as an internal USB controller.
+    The name comes from the descriptor (product / manufacturer), the key is vid:pid[:serial]. The function walks up
+    from the Bluetooth device to the USB device node (the one with idVendor). The manufacturer is prepended to the
+    product name unless it is already part of it or is a placeholder like "Generic". A port the firmware marks as
+    "fixed" (not removable) ranks as an internal USB controller.
     """
     usb = next((p for p in dev.parents if (p / "idVendor").is_file()), None)
     if usb is None:
@@ -128,7 +140,7 @@ def _ctrl(link: Path) -> Ctrl:
 
 def scan(sysfs: Path = SYSFS) -> tuple[Ctrl, ...]:
     """Controllers from /sys/class/bluetooth (without the hciN:handle connection entries), ordered by number."""
-    found = [_ctrl(p) for p in sysfs.glob("hci*") if p.name[3:].isdigit()]
+    found = [_ctrl(p) for p in sysfs.glob("hci*") if p.name[HCI_PREFIX_LEN:].isdigit()]
     return tuple(sorted(found, key=lambda c: c.index))
 
 
@@ -161,11 +173,14 @@ def set_blocked(name: str, block: bool, sysfs: Path = SYSFS) -> None:
 
 
 def no_sniff(name: str) -> bool:
-    """Set the controller's default link policy without SNIFF - the same ioctl as `hciconfig hciN lp RSWITCH` (the
-    kernel remembers it for new connections), so the deprecated hciconfig is not required; it is only a fallback."""
+    """Set the controller's default link policy without SNIFF.
+
+    It is the same ioctl as `hciconfig hciN lp RSWITCH` (the kernel remembers it for new connections), so the
+    deprecated hciconfig is not required; it is only a fallback.
+    """
     try:
         with socket.socket(AF_BLUETOOTH, socket.SOCK_RAW, BTPROTO_HCI) as s:
-            fcntl.ioctl(s.fileno(), HCISETLINKPOL, struct.pack("@HI", int(name[3:]), HCI_LP_RSWITCH))
+            fcntl.ioctl(s.fileno(), HCISETLINKPOL, struct.pack("@HI", hci_index(name), HCI_LP_RSWITCH))
         return True
     except OSError:
         pass
@@ -176,12 +191,12 @@ def no_sniff(name: str) -> bool:
 
 
 def dev_info(name: str) -> tuple[bool, int] | None:
-    """(controller is up, link policy) read from the kernel (HCIGETDEVINFO ioctl), or None (no AF_BLUETOOTH / permissions).
+    """Return (controller is up, link policy) read from the kernel (HCIGETDEVINFO ioctl), or None (no AF_BLUETOOTH / permissions).
 
     The ioctl fills a struct hci_dev_info; only two 32-bit fields are decoded from it, at fixed offsets.
     """
     buf = bytearray(DEV_INFO_SIZE)
-    struct.pack_into("@H", buf, 0, int(name[3:]))
+    struct.pack_into("@H", buf, 0, hci_index(name))
     try:
         with socket.socket(AF_BLUETOOTH, socket.SOCK_RAW, BTPROTO_HCI) as s:
             fcntl.ioctl(s.fileno(), HCIGETDEVINFO, buf, True)
@@ -191,23 +206,39 @@ def dev_info(name: str) -> tuple[bool, int] | None:
     return bool(flags & HCI_UP), policy
 
 
-def ensure_no_sniff(name: str, sniff=None, info=None) -> bool | None:
-    """Keep the controller's link policy free of SNIFF. The kernel resets it EVERY time the controller is switched on
-    (Write Default Link Policy from its capabilities - SNIFF comes back), so a one-time setting made when the
-    controller was chosen vanished when BlueZ powered it on a moment later (rfkill unblock, Powered, a bluetoothd
-    restart, plugging the dongle in again).
-    Returns None: nothing to do (already without SNIFF, or the controller is off - it will be done at the next check
-    after it is switched on), True: set now, False: failed. Without HCIGETDEVINFO it always sets (as it used to)."""
+def ensure_no_sniff(name: str, sniff: SniffFn | None = None, info: InfoFn | None = None) -> bool | None:
+    """Keep the controller's link policy free of SNIFF.
+
+    The kernel resets it EVERY time the controller is switched on (Write Default Link Policy from its capabilities -
+    SNIFF comes back), so a one-time setting made when the controller was chosen vanished when BlueZ powered it on a
+    moment later (rfkill unblock, Powered, a bluetoothd restart, plugging the dongle in again). Without HCIGETDEVINFO
+    it always sets.
+
+    Args:
+        name: The controller (hciN).
+        sniff: Replacement for no_sniff (tests).
+        info: Replacement for dev_info (tests).
+
+    Returns:
+        None: nothing to do (already without SNIFF, or the controller is off - it will be done at the next check after
+        it is switched on); True: set now; False: failed.
+    """
     st = (info or dev_info)(name)
     if st is not None and (not st[0] or not st[1] & HCI_LP_SNIFF):
         return None
     return (sniff or no_sniff)(name)
 
 
-def apply(ctrls: tuple[Ctrl, ...], mode: int, key: str = "", sysfs: Path = SYSFS, sniff=None, info=None) -> Ctrl | None:
-    """Make the chosen controller unblocked and SNIFF-free and block the rest. Manual mode: nothing. Returns the chosen one.
+def apply(ctrls: tuple[Ctrl, ...], mode: int, key: str = "", sysfs: Path = SYSFS, sniff: SniffFn | None = None,
+          info: InfoFn | None = None) -> Ctrl | None:
+    """Make the chosen controller unblocked and SNIFF-free and block the rest; manual mode changes nothing.
+
     The chosen one is unblocked first and the rest are blocked afterwards: a write error in the middle (e.g. EIO from
-    rfkill) leaves at most two radios on - in the reverse order a phone with no screen was left without any Bluetooth."""
+    rfkill) leaves at most two radios on - in the reverse order a phone with no screen was left without any Bluetooth.
+
+    Returns:
+        The chosen controller, or None.
+    """
     pick = choose(ctrls, mode, key)
     if pick is None:
         return None
@@ -228,7 +259,7 @@ def unblock_all(ctrls: tuple[Ctrl, ...], sysfs: Path = SYSFS) -> None:
 
 def describe(ctrls: tuple[Ctrl, ...], pick: Ctrl | None, mode: int) -> str:
     """One-line log description: the mode, the chosen controller and the blocked ones."""
-    def text(c) -> str:
+    def text(c: Ctrl) -> str:
         return f"{c.name} {c.label} ({KIND_TEXT[c.rank]})"
     rest = ", ".join(text(c) for c in ctrls if c != pick)
     if pick is None:
@@ -246,7 +277,7 @@ def mode_from(text: str) -> tuple[int, str]:
 
 
 def load_mode(path: str, default: tuple[int, str]) -> tuple[int, str]:
-    """(mode, key) saved from the window, or the default from the configuration.
+    """Return the (mode, key) saved from the window, or the default from the configuration.
 
     A missing, unreadable or invalid file falls back to the default; a `pick` entry without a device key is invalid too.
     """
