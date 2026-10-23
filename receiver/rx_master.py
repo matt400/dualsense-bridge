@@ -15,9 +15,12 @@ Settings -> Master) or on the pad: PS + R3 held for CLAIM_S seconds (claim_hold;
 It works on RAW inputs (before remapping), like the PS shortcuts. The network thread calls only on_state() and filter_inputs();
 system actions run in a separate thread.
 """
-from rx_i18n import _
+from __future__ import annotations
+
 import threading
+from collections.abc import Callable
 from dataclasses import replace
+from typing import Any, Final
 
 import rx_events as ev
 import rx_feedback as F
@@ -27,13 +30,15 @@ import rx_state as S
 import rx_winapi as W
 from rx_buttons import BIT, BUTTON_CODES, DIRS, pressed_inputs
 from rx_config import C
+from rx_i18n import _
+from rx_settings import Settings
 
-MOD = "ps"             # the master action modifier
-CLAIM_BUTTON = "r3"    # PS + R3 held CLAIM_S = this pad becomes the master
-CLAIM_S = 3.0
-HOLD_S = 1.2           # this long PS + button has to be held for "dangerous" actions (close game, sleep, shut down)
+MOD: Final = "ps"             # the master action modifier
+CLAIM_BUTTON: Final = "r3"    # PS + R3 held CLAIM_S = this pad becomes the master
+CLAIM_S: Final = 3.0
+HOLD_S: Final = 1.2           # this long PS + button has to be held for "dangerous" actions (close game, sleep, shut down)
 # programs that "close game" does not close (desktop, Steam, this receiver)
-NO_CLOSE = frozenset({"explorer.exe", "steam.exe", "steamwebhelper.exe", "python.exe", "pythonw.exe",
+NO_CLOSE: Final = frozenset({"explorer.exe", "steam.exe", "steamwebhelper.exe", "python.exe", "pythonw.exe",
                       "shellexperiencehost.exe", "startmenuexperiencehost.exe", "searchhost.exe", "lockapp.exe"})
 
 
@@ -42,27 +47,28 @@ class Slot:
     __slots__ = ("mod", "gen", "prev", "sup", "combo", "timer", "fresh")
 
     def __init__(self) -> None:
+        """Start as after a pad connects: nothing held, the first state is "fresh"."""
         self.mod = False          # PS held
         self.fresh = True         # first state after connecting: inputs already held are not new presses
         self.gen = 0              # PS press / combination number - a late timer does nothing
-        self.prev = frozenset()   # inputs pressed in the previous state
-        self.sup = frozenset()    # inputs consumed in a combination (they do not reach the game until released)
-        self.combo = None         # the button of a held combination waiting for HOLD_S / CLAIM_S
-        self.timer = None
+        self.prev: frozenset[str] = frozenset()   # inputs pressed in the previous state
+        self.sup: frozenset[str] = frozenset()    # inputs consumed in a combination (they do not reach the game until released)
+        self.combo: str | None = None         # the button of a held combination waiting for HOLD_S / CLAIM_S
+        self.timer: threading.Timer | None = None
 
 
-slots = []
+slots: list[Slot] = []
 
 
-def init(n) -> None:
+def init(n: int) -> None:
     """Create `n` fresh slots."""
     slots[:] = [Slot() for _ in range(n)]
 
 
-def reset(i, keep: bool = False) -> None:
-    """End the combinations and timers of a slot. keep.
+def reset(i: int, keep: bool = False) -> None:
+    """End the combinations and timers of a slot.
 
-    The pad stays connected (Test view boundary, block) - inputs held right now are the "previous state" (they will not
+    With keep the pad stays connected (Test view boundary, block) - inputs held right now are the "previous state" (they will not
     fire an action), and a new press after the boundary works at once (like rx_hotkeys.reset); without keep - as after
     the pad connects (the first state is the initial state).
     """
@@ -76,22 +82,22 @@ def reset(i, keep: bool = False) -> None:
 
 
 # ---------------- who is the master ----------------
-def master_slot():
-    """The slot of the connected master, or None (no master in the settings or it is not connected)."""
+def master_slot() -> int | None:
+    """Return the slot of the connected master, or None (no master in the settings or it is not connected)."""
     pad = rx_settings.cur.master.pad
     if not pad:
         return None
     return next((i for i in range(len(slots)) if (S.alive[i] or S.want[i].is_set()) and S.profile_key(i) == pad), None)
 
 
-def is_master(i):
-    """Whether the pad in slot i is the configured master."""
+def is_master(i: int) -> bool:
+    """Tell whether the pad in slot i is the configured master."""
     pad = rx_settings.cur.master.pad
     return bool(pad) and S.profile_key(i) == pad
 
 
-def allowed(i, feature):
-    """Whether pad i may use `feature`.
+def allowed(i: int, feature: str) -> bool:
+    """Tell whether pad i may use `feature`.
 
     Always when it is not restricted or there is no master; otherwise only the master (or all / nobody when the master
     is absent, per when_absent).
@@ -103,8 +109,8 @@ def allowed(i, feature):
     return m.when_absent == "all" if ms is None else i == ms
 
 
-def check(i, feature) -> bool:
-    """allowed() + a red flash on the pad when it is not allowed (a child knows it is not a malfunction)."""
+def check(i: int, feature: str) -> bool:
+    """Run allowed() and flash the pad red when it is not allowed (a child knows it is not a malfunction)."""
     if allowed(i, feature):
         return True
     print(f"Controller {i}: {feature} - only the master pad can do that")
@@ -128,15 +134,15 @@ def mouse_follows_master(force: bool = False) -> None:
             print(f"Controller {i}: touchpad -> {'MOUSE' if on else 'DS4 touch'} mode (follows the master pad)")
 
 
-def master_label(pad):
-    """"Pad 2 (aa:bb:...)" for a connected master, just the key for a disconnected one, "none" without a master."""
+def master_label(pad: str) -> str:
+    """Label the master: "Pad 2 (aa:bb:...)" when connected, just the key when disconnected, "none" without a master."""
     if not pad:
         return _("brak")
     i = next((i for i in range(len(slots)) if S.pad_id[i] and S.profile_key(i) == pad), None)
     return f"{ev.pad_name(i)} ({pad})" if i is not None else pad
 
 
-def _master_changed(old, new) -> None:
+def _master_changed(old: Settings, new: Settings) -> None:
     """Settings listener: when the master changes, re-apply mouse mode and log the change."""
     if old.master.pad != new.master.pad:
         mouse_follows_master(force=True)
@@ -147,8 +153,8 @@ def _master_changed(old, new) -> None:
 rx_settings.on_change(_master_changed)
 
 
-def set_master(i, save: bool = True):
-    """The pad in slot i becomes the master (i = None: no master). -> (ok, message)."""
+def set_master(i: int | None, save: bool = True) -> tuple[bool, str]:
+    """Make the pad in slot i the master (i = None: no master); returns (ok, message)."""
     if i is not None and S.pad_id[i] is None:
         return False, _("Pad {n} nie przysłał jeszcze identyfikatora (MAC) - spróbuj za chwilę").format(n=i + 1)
     pad = "" if i is None else S.profile_key(i)
@@ -163,13 +169,13 @@ def set_master(i, save: bool = True):
 
 
 # ---------------- network thread ----------------
-def _action_for(button):
-    """The master action assigned to a button, or None."""
+def _action_for(button: str) -> str | None:
+    """Return the master action assigned to a button, or None."""
     return next((a for a, b in rx_settings.cur.master.actions.items() if b == button), None)
 
 
-def on_state(i, mask, hx, hy, lt, rt) -> None:
-    """Every change of the raw button state of a pad, before the output is recomputed (like rx_hotkeys.on_state)."""
+def on_state(i: int, mask: int, hx: int, hy: int, lt: int, rt: int) -> None:
+    """Track the master combinations on every change of the raw button state, before the output is recomputed (like rx_hotkeys.on_state)."""
     h = slots[i]
     now = frozenset(pressed_inputs(mask, hx, hy, lt, rt))
     if h.fresh:
@@ -182,21 +188,7 @@ def on_state(i, mask, hx, hy, lt, rt) -> None:
         h.combo = None
     if h.mod:
         for b in sorted(now - h.prev - {MOD}):
-            if b == CLAIM_BUTTON and rx_settings.cur.master.claim_hold:
-                _consume(i, h, b)
-                _timer(h, CLAIM_S, _claim, i, h.gen, b)
-                continue
-            action = _action_for(b)
-            if action is None:
-                continue
-            _consume(i, h, b)
-            if not check(i, "actions"):
-                continue
-            if rx_settings.MASTER_ACTIONS[action][1]:
-                F.pulse(i, "hold")          # "keep holding"
-                _timer(h, HOLD_S, _held, i, h.gen, b, action)
-            else:
-                _run(_do, i, action)
+            _pressed_with_ps(i, h, b)
     if h.combo and h.combo not in now:
         h.combo = None                      # released too early - no action
         h.gen += 1
@@ -204,7 +196,26 @@ def on_state(i, mask, hx, hy, lt, rt) -> None:
     h.prev = now
 
 
-def _consume(i, h, b) -> None:
+def _pressed_with_ps(i: int, h: Slot, b: str) -> None:
+    """A button newly pressed while PS is held: start the master claim, a dangerous action's hold timer, or run the action."""
+    if b == CLAIM_BUTTON and rx_settings.cur.master.claim_hold:
+        _consume(i, h, b)
+        _timer(h, CLAIM_S, _claim, i, h.gen, b)
+        return
+    action = _action_for(b)
+    if action is None:
+        return
+    _consume(i, h, b)
+    if not check(i, "actions"):
+        return
+    if rx_settings.MASTER_ACTIONS[action][1]:
+        F.pulse(i, "hold")          # "keep holding"
+        _timer(h, HOLD_S, _held, i, h.gen, b, action)
+    else:
+        _run(_do, i, action)
+
+
+def _consume(i: int, h: Slot, b: str) -> None:
     """A button consumed in a combination.
 
     It does not go to the game, and PS does not either after release (and there is no Game Bar from a long PS).
@@ -216,8 +227,8 @@ def _consume(i, h, b) -> None:
     h.combo = b
 
 
-def filter_inputs(i, mask, hx, hy):
-    """Inputs for the game without those consumed in master combinations and without PS when this pad is not allowed to have it."""
+def filter_inputs(i: int, mask: int, hx: int, hy: int) -> tuple[int, int, int]:
+    """Return the inputs for the game without those consumed in master combinations and without PS if this pad may not have it."""
     h = slots[i]
     for b in h.sup:
         if b in BUTTON_CODES:
@@ -233,7 +244,7 @@ def filter_inputs(i, mask, hx, hy):
     return mask, hx, hy
 
 
-def _timer(h, delay, fn, *args) -> None:
+def _timer(h: Slot, delay: float, fn: Callable[..., None], *args: Any) -> None:
     """(Re)start the slot's timer: any running one is cancelled."""
     if h.timer is not None:
         h.timer.cancel()
@@ -242,12 +253,12 @@ def _timer(h, delay, fn, *args) -> None:
     h.timer.start()
 
 
-def _run(fn, *args) -> None:
+def _run(fn: Callable[..., None], *args: Any) -> None:
     """Run an action in a separate thread so the network thread is never blocked."""
     threading.Thread(target=fn, args=args, daemon=True).start()
 
 
-def _claim(i, gen, button) -> None:
+def _claim(i: int, gen: int, button: str) -> None:
     """The claim timer fired: if PS + R3 are still held, this pad becomes the master (or confirm with a flash when it already is)."""
     h = slots[i]
     if h.gen != gen or h.combo != button or not h.mod or not rx_settings.cur.master.claim_hold:
@@ -260,7 +271,7 @@ def _claim(i, gen, button) -> None:
         F.pulse(i, "master")
 
 
-def _held(i, gen, button, action) -> None:
+def _held(i: int, gen: int, button: str, action: str) -> None:
     """The hold timer of a dangerous action fired: run it if the combination is still held."""
     h = slots[i]
     if h.gen != gen or h.combo != button or not h.mod:
@@ -270,7 +281,20 @@ def _held(i, gen, button, action) -> None:
 
 
 # ---------------- actions ----------------
-def _do(i, action) -> None:
+def _closable_window(i: int) -> int | None:
+    """Return the foreground window to close, or None (with a "denied" flash) when it is the desktop, Steam or this receiver."""
+    # the window that is checked and the window that is closed are THE SAME window: S.game can be half a second old (rx_games), and
+    # the "active window" at the moment of closing could already be the desktop or Steam (alt-tab during the hold)
+    hwnd, exe = W.foreground_window()
+    if not hwnd or not exe or exe in NO_CLOSE:
+        print(f"Controller {i}: close game - foreground is {exe or 'nothing'}, not closing")
+        F.pulse(i, "denied")
+        return None
+    print(f"Controller {i}: close game ({exe})")
+    return hwnd
+
+
+def _do(i: int, action: str) -> None:
     """Perform a master action.
 
     Pause (Esc), close the foreground game window (never the desktop, Steam or this receiver), sleep or shut down the PC
@@ -279,15 +303,10 @@ def _do(i, action) -> None:
     try:
         hwnd = 0
         if action == "close_game":
-            # the window that is checked and the window that is closed are THE SAME window: S.game can be half a second old (rx_games), and
-            # the "active window"
-            # at the moment of closing could already be the desktop or Steam (alt-tab during the hold)
-            hwnd, exe = W.foreground_window()
-            if not hwnd or not exe or exe in NO_CLOSE:
-                print(f"Controller {i}: close game - foreground is {exe or 'nothing'}, not closing")
-                F.pulse(i, "denied")
+            closable = _closable_window(i)
+            if closable is None:
                 return
-            print(f"Controller {i}: close game ({exe})")
+            hwnd = closable
         print(f"Controller {i}: master action {action}")
         F.pulse(i, "action")                 # before sleep / shut down - afterwards the pad may no longer get the packet
         if action == "pause":
@@ -297,7 +316,10 @@ def _do(i, action) -> None:
         elif action in ("sleep", "shutdown"):
             import rx_console                # rx_console imports rx_master - import here
             rx_console.power_off(_("wyłączanie komputera") if action == "shutdown" else _("usypianie komputera"))
-            W.sleep_pc() if action == "sleep" else W.shutdown_pc()
-    except Exception as e:
+            if action == "sleep":
+                W.sleep_pc()
+            else:
+                W.shutdown_pc()
+    except Exception as e:  # noqa: BLE001 - a failing action (WinAPI, console mode) must never kill the network thread's helper
         print(f"Controller {i}: master action {action} failed: {e!r}")
         ev.error(_("{pad}: akcja mastera {action} nieudana: {err}").format(pad=ev.pad_name(i), action=action, err=repr(e)))
