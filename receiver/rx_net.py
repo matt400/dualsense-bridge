@@ -41,8 +41,10 @@ KEY_WARN_S = 60.0               # a warning about a different HMAC key in the se
 
 
 class LinkStats:
-    """Packet loss (from gaps in the sequence numbers - the sender numbers all packets with one counter)
-    and state packets per second per slot. Results go every second to S.link_loss / S.pps (the GUI window).
+    """Packet loss (from gaps in the sequence numbers.
+
+    The sender numbers all packets with one counter) and state packets per second per slot. Results go every second to
+    S.link_loss / S.pps (the GUI window).
 
     A jump in the number is a loss when it fits the silence: at most as many packets as the sender would send in that time (the measured
     rate with a margin). A bigger jump = a sender restart (a new random number). Before, the threshold was fixed (1000):
@@ -64,8 +66,10 @@ class LinkStats:
         self.t0 = time.monotonic()
 
     def packet(self, sq, now=None) -> None:
-        """Account for one packet by its sequence number: a gap within the plausible limit counts as lost packets, a duplicate or late one
-        is ignored, a bigger jump is taken as a sender restart.
+        """Account for one packet by its sequence number.
+
+        A gap within the plausible limit counts as lost packets, a duplicate or late one is ignored, a bigger jump is taken
+        as a sender restart.
         """
         now = time.monotonic() if now is None else now
         if self.last is not None:
@@ -79,8 +83,9 @@ class LinkStats:
         self.last, self.t_last = sq, now
 
     def tick(self, now) -> None:
-        """Once per WINDOW: publish the loss percentage and the state packets per second, update the measured rate and reset the
-        counters.
+        """Once per WINDOW.
+
+        Publish the loss percentage and the state packets per second, update the measured rate and reset the counters.
         """
         dt = now - self.t0
         if dt < self.WINDOW:
@@ -115,8 +120,10 @@ def sender_token():
 
 
 def note_ping(t0, arr) -> None:
-    """The sender's clock from a ping. A v3 ping is not checked for freshness, so a replayed old recording
-    must not turn the clock back: only a newer time is accepted, unless the sender was silent for > 1 s (a restart = a new clock).
+    """The sender's clock from a ping.
+
+    A v3 ping is not checked for freshness, so a replayed old recording must not turn the clock back: only a newer time
+    is accepted, unless the sender was silent for > 1 s (a restart = a new clock).
     """
     global _sender_clock
     if _first_ping[0] is None:
@@ -178,6 +185,7 @@ def _repeat_fire(pkt, timer) -> None:
 
 def send_repeat(pkt, n) -> None:
     """The same packet (the same number - the sender handles it once) now and n-1 times later, after REPEAT_DELAYS.
+
     Copies sent at once got lost together in one burst of losses, and each had its own number, so the sender ran the
     command several times (only its repeat locks protected it).
     """
@@ -213,8 +221,10 @@ def send_cmd(i, cmd, arg: int = 0) -> None:
 
 
 def send_triggers(i, vals, repeat: int = 1) -> None:
-    """Trigger effects to the sender: 15 values = trig3 (with the game's effects), 12 = trig2, 4 = the old trig (resistance only);
-    a change goes several times (a lost packet).
+    """Trigger effects to the sender.
+
+    15 values = trig3 (with the game's effects), 12 = trig2, 4 = the old trig (resistance only); a change goes several
+    times (a lost packet).
     """
     t = T_TRIG3 if len(vals) > len(TRIG2_OFF) else T_TRIG2 if len(vals) == len(TRIG2_OFF) else T_TRIG
     send_repeat(codec.pack(t, i, *vals), repeat)
@@ -257,8 +267,9 @@ def batt_codes(pct, flags):
 
 
 def clear_slot(i, forget_id: bool = False) -> None:
-    """Reset everything known about the pad in slot i (state, profile effects, shortcuts, latency, mouse); forget_id also forgets the pad
-    identity - for a pad that really left.
+    """Reset everything known about the pad in slot i (state, profile effects, shortcuts, latency, mouse).
+
+    Forget_id also forgets the pad identity - for a pad that really left.
     """
     S.alive[i] = False
     S.tp_down[i] = 0
@@ -328,6 +339,7 @@ def _mark_alive(i) -> None:
 
 def _on_state(t, i, data, arr) -> None:
     """A state / state2 packet (the hot path, up to ~1 kHz per pad): sticks, triggers, buttons, battery and motion.
+
     Shortcuts run only on a button change, the latency measurement only when state2 carries one.
     """
     v = BODY[t].unpack_from(data, 4)
@@ -508,8 +520,10 @@ def on_calres(i, data) -> None:
 
 
 def on_build(data, now, t=T_BUILD) -> None:
-    """A build / build2 packet: (the sender's commit, the commit time, the update state UPD_*) -> S.sender_build;
-    build2 also the addresses the sender's Wake-on-LAN will use -> S.sender_wol.
+    """A build / build2 packet.
+
+    (the sender's commit, the commit time, the update state UPD_*) -> S.sender_build; build2 also the addresses the
+    sender's Wake-on-LAN will use -> S.sender_wol.
     """
     v = BODY[t].unpack_from(data, 4)
     b = (cstr(v[0]), v[1], v[2])
@@ -546,8 +560,10 @@ def check_stale(now) -> None:
 
 
 def check_key(now) -> None:
-    """Sender packets rejected because of a different HMAC key setting (proto.Codec.mismatch_t) -> a warning in the log,
-    at most every KEY_WARN_S. Without it the pads simply did not work, and the only hint was the sender's log.
+    """Sender packets rejected because of a different HMAC key setting (proto.Codec.mismatch_t).
+
+    A warning in the log, at most every KEY_WARN_S. Without it the pads simply did not work, and the only hint was the
+    sender's log.
     """
     if now - codec.mismatch_t < 1.0 and now - _key_warned[0] >= KEY_WARN_S:
         _key_warned[0] = now
@@ -592,8 +608,10 @@ class SenderWatch:
 
 
 def net_loop() -> None:
-    """The network thread: receive a datagram (a timeout is the idle tick), run the periodic checks every 0.1 s, then authenticate / parse
-    the packet and dispatch it by type; per-pad packets go to handle() after the freshness and slot checks.
+    """The network thread.
+
+    Receive a datagram (a timeout is the idle tick), run the periodic checks every 0.1 s, then authenticate / parse the
+    packet and dispatch it by type; per-pad packets go to handle() after the freshness and slot checks.
     """
     boost_thread()
     link = LinkStats(C.NUM_PADS)

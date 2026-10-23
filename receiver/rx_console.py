@@ -1,5 +1,6 @@
-"""Receiver: the console mode - a single double click of a pad button (R2 by default) switches the screen and sound
-between the monitor and the TV.
+"""Receiver: the console mode.
+
+A single double click of a pad button (R2 by default) switches the screen and sound between the monitor and the TV.
 
   auto-ON   after the master pad connects (auto_on_master) the mode switches on by itself; you switch it off by hand with a double R2
             and it stays off until the master connects next time
@@ -232,9 +233,11 @@ def _step(what, fn, *args) -> None:
 
 
 def auto_pad(i):
-    """A pad connected in slot i switches the console mode on: the master pad, and without a set master (any pad may do
-    everything) - the first connected pad. Before, without a master auto-ON never worked (after the PC started the mode
-    stayed off); a second pad arriving later does not switch on a mode that was switched off by hand.
+    """A pad connected in slot i switches the console mode on.
+
+    The master pad, and without a set master (any pad may do everything) - the first connected pad. Before, without a
+    master auto-ON never worked (after the PC started the mode stayed off); a second pad arriving later does not switch
+    on a mode that was switched off by hand.
     """
     if rx_settings.cur.master.pad:
         return master.is_master(i)
@@ -243,8 +246,9 @@ def auto_pad(i):
 
 class Console:
     def __init__(self, cfg) -> None:
-        """Set up the state: job queue, double-click tracking per pad, the pending auto-ON and the restart flags read from the
-        environment.
+        """Set up the state.
+
+        Job queue, double-click tracking per pad, the pending auto-ON and the restart flags read from the environment.
         """
         self.cfg = cfg
         self.on = False
@@ -300,8 +304,9 @@ class Console:
 
     def pad_connected(self, i, ident: bool = False) -> None:
         """The pad in slot i has just connected (the first packet after silence) or sent a new identifier (ident).
-        Without a master in the settings the connection alone decides: the identifier arrives right after the first packet and
-        set auto-ON a second time - after a receiver restart with the mode off the first one used up the skip
+
+        Without a master in the settings the connection alone decides: the identifier arrives right after the first packet
+        and set auto-ON a second time - after a receiver restart with the mode off the first one used up the skip
         (_skip_auto) and the second switched the mode on anyway; with a game in the foreground the warning went out twice.
         """
         if not self.cfg.auto_on_master:
@@ -323,8 +328,10 @@ class Console:
         self._jobs.put(lambda: self._auto_on(i))
 
     def blocked_by(self):
-        """The foreground program that blocks switching (a game), or None. An empty allowed_apps = no
-        blocking (otherwise a cleared field in Settings blocked switching everywhere, the desktop too).
+        """The foreground program that blocks switching (a game), or None.
+
+        An empty allowed_apps = no blocking (otherwise a cleared field in Settings blocked switching everywhere, the desktop
+        too).
         """
         if not self.cfg.allowed_apps:
             return None
@@ -344,9 +351,11 @@ class Console:
         self._apply(True, why=_("połączono pad master (pad {n})").format(n=i + 1))
 
     def resync(self, i) -> None:
-        """A boundary of the Test view (the network thread, before on_state): during the test on_state is not called, so the mode
-        button's state was from before the test - R2 held on entering and released during the test "stayed held" and the first click after
-        the test was lost. The state is taken from the pad's current inputs, the click series starts over.
+        """A boundary of the Test view (the network thread, before on_state).
+
+        During the test on_state is not called, so the mode button's state was from before the test - R2 held on entering
+        and released during the test "stayed held" and the first click after the test was lost. The state is taken from the
+        pad's current inputs, the click series starts over.
         """
         mask, hx, hy, lt, rt = S.states[i]["raw"]
         if self._trigger:
@@ -356,8 +365,10 @@ class Console:
         self._last_click[i] = 0.0
 
     def combo(self, i) -> None:
-        """The mode button used together with another input (also the touchpad click, which is not in the mask): this press
-        does not count as a click and breaks the series - two shortcuts from PS in a row do not switch the screen.
+        """The mode button used together with another input (also the touchpad click, which is not in the mask).
+
+        This press does not count as a click and breaks the series - two shortcuts from PS in a row do not switch the
+        screen.
         """
         if self._down[i]:
             self._last_click[i] = 0.0
@@ -437,8 +448,10 @@ class Console:
         self._apply(not self.on)
 
     def _apply(self, on, cfg=None, why: str = "", toast: bool = True) -> None:
-        """Switch the mode on / off: the screen topology, the TV resolution, the audio device, the log / event and the toast (each step
-        isolated by _step).
+        """Switch the mode on / off.
+
+        The screen topology, the TV resolution, the audio device, the log / event and the toast (each step isolated by
+        _step).
         """
         cfg = cfg or self.cfg
         self.on, self._since, self._revert = on, time.monotonic(), None
@@ -472,9 +485,11 @@ class Console:
         self._revert = (time.monotonic() + TEST_S, cfg)
 
     def power_off(self, why) -> bool:
-        """Before a PC shutdown / sleep (a Windows session end too): the console mode on -> OFF, and we wait for it to
-        finish (POWER_WAIT_S at most). Windows remembers the screen layout, so without this the picture would be on the TV only after
-        the computer starts. Callable from any thread; -> True when the mode was on.
+        """Before a PC shutdown / sleep (a Windows session end too).
+
+        The console mode on -> OFF, and we wait for it to finish (POWER_WAIT_S at most). Windows remembers the screen
+        layout, so without this the picture would be on the TV only after the computer starts. Callable from any thread; ->
+        True when the mode was on.
         """
         if not self.on:
             return False
@@ -498,8 +513,10 @@ class Console:
         self._jobs.put(lambda: self._test(cfg))
 
     def close(self, restart: bool = False) -> None:
-        """Closing the receiver. On a plain exit with the console mode on we return to extend (after a restart
-        the start itself sets the screen by startup_mode, so we do not switch twice).
+        """Closing the receiver.
+
+        On a plain exit with the console mode on we return to extend (after a restart the start itself sets the screen by
+        startup_mode, so we do not switch twice).
         """
         if self.on and not restart:
             self._jobs.put(lambda: self._apply(False, why=_("zamknięcie receivera"), toast=False))
@@ -539,8 +556,10 @@ def resync(i) -> None:
 
 
 def is_on():
-    """The console mode is on permanently - without a running "Test" (the test returns to OFF by itself, so a restart during it,
-    e.g. Save in Settings, must not leave the mode on forever).
+    """The console mode is on permanently.
+
+    Without a running "Test" (the test returns to OFF by itself, so a restart during it, e.g. Save in Settings, must not
+    leave the mode on forever).
     """
     return ctl is not None and ctl.on and ctl._revert is None
 

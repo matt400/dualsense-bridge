@@ -82,9 +82,11 @@ def describe(commit, ts):
 
 
 def sender_state(build, old_commit: str = ""):
-    """The sender update state from the build packet. After downloading code the sender restarts (os.execv) and the new process
-    reports UPD_NONE - when the receiver updated for longer (e.g. pip install), the window saw only that state and wrote
-    "the sender did not answer". A commit different from the one before the update (old_commit) = updated.
+    """The sender update state from the build packet.
+
+    After downloading code the sender restarts (os.execv) and the new process reports UPD_NONE - when the receiver
+    updated for longer (e.g. pip install), the window saw only that state and wrote "the sender did not answer". A
+    commit different from the one before the update (old_commit) = updated.
     """
     if build is None:
         return None
@@ -94,8 +96,9 @@ def sender_state(build, old_commit: str = ""):
 
 
 def sender_text(build, msg: str = "", old_commit: str = ""):
-    """The sender update result from the build packet (None = a sender older than this feature); msg = the failure reason (updmsg);
-    old_commit = the sender commit before the update (see sender_state).
+    """The sender update result from the build packet (None = a sender older than this feature).
+
+    Msg = the failure reason (updmsg); old_commit = the sender commit before the update (see sender_state).
     """
     if build is None:
         return _("nadajnik w starej wersji - zaktualizuj go raz ręcznie (git pull na telefonie)")
@@ -131,8 +134,9 @@ _git_lock = threading.Lock()
 
 
 def check_available(root=ROOT, git=None):
-    """Git fetch (no file changes) and a comparison with the branch on GitHub. -> Available or None (no git / network /
-    tracking branch - the window then simply shows nothing).
+    """Git fetch (no file changes) and a comparison with the branch on GitHub..
+
+    Available or None (no git / network / tracking branch - the window then simply shows nothing).
     """
     git = git or find_git()
     if git is None or not os.path.isdir(os.path.join(root, ".git")):
@@ -146,8 +150,9 @@ def check_available(root=ROOT, git=None):
 
 
 def _check(root, git):
-    """Fetch the upstream and count the commits between the running version and the upstream tip; Available(0) when up to date, None on
-    any failure.
+    """Fetch the upstream and count the commits between the running version and the upstream tip.
+
+    Available(0) when up to date, None on any failure.
     """
     try:
         if proto.git(root, "fetch", "--quiet", git_exe=git, timeout=60, env=QUIET_ENV).returncode:
@@ -167,8 +172,9 @@ def _check(root, git):
 
 
 def _checker(stop) -> None:
-    """Thread body: wait CHECK_FIRST_S, then check every CHECK_EVERY_S, store the result in `available` and log a newly found update
-    once.
+    """Thread body: wait CHECK_FIRST_S, then check every CHECK_EVERY_S.
+
+    Store the result in `available` and log a newly found update once.
     """
     global available
     if stop.wait(CHECK_FIRST_S):

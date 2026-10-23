@@ -89,9 +89,11 @@ def test_live(i):
 
 # ---------- Test view: output block, stick drift, gyro calibration ----------
 def block(slot, on) -> bool:
-    """Block (on) or unblock the slot's output: while blocked, games get a neutral state and the touchpad / gyro mouse and
-    the pad shortcuts do nothing; off restores everything. Shortcuts and master start from a clean state - a PS button
-    held from before the block will not fire a combination after it.
+    """Block (on) or unblock the slot's output.
+
+    While blocked, games get a neutral state and the touchpad / gyro mouse and the pad shortcuts do nothing; off
+    restores everything. Shortcuts and master start from a clean state - a PS button held from before the block will not
+    fire a combination after it.
     """
     if not S.set_blocked(slot, on):
         return False
@@ -115,8 +117,9 @@ def raw_sticks(slot, secs) -> None:
 
 
 def calibrate_gyro(slot, secs) -> bool:
-    """Ask the sender to calibrate the gyro of a pad lying still (the result arrives in S.gyro_cal) -> False when the pad / sender
-    cannot.
+    """Ask the sender to calibrate the gyro of a pad lying still (the result arrives in S.gyro_cal).
+
+    False when the pad / sender cannot.
     """
     if not (S.alive[slot] and sender_calib(slot)):
         return False

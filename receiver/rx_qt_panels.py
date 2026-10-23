@@ -184,8 +184,9 @@ class PartPage(QWidget):
         return scrolled(w)
 
     def _button_page(self):
-        """The page for a button or trigger: the target combo and reset; for L2 / R2 also the trigger effect, game rumble and the response
-        tuning.
+        """The page for a button or trigger.
+
+        The target combo and reset; for L2 / R2 also the trigger effect, game rumble and the response tuning.
         """
         w = QWidget()
         lay = _vbox(w)

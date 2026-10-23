@@ -1,5 +1,7 @@
-"""Receiver: pad tilt as an analog stick - the section at the bottom of the "Gyro" tab (per-pad settings, a live 2D preview).
-It lives next to the pad drawing on purpose: while the tilt drives a stick, the drawing shows the stick that the game gets.
+"""Receiver: pad tilt as an analog stick.
+
+The section at the bottom of the "Gyro" tab (per-pad settings, a live 2D preview). It lives next to the pad drawing
+on purpose: while the tilt drives a stick, the drawing shows the stick that the game gets.
 
   TiltView         drawing: deadzone and range circles, raw tilt (grey), filtered (blue), output (crosshair)
   TiltSection      settings (sliders, lists, switches), center calibration, raw / filtered output numbers
@@ -210,9 +212,11 @@ class TiltSection(QWidget):
 
 
 class TiltPreview(QFrame):
-    """The live preview, floating over the top-right corner of the pad drawing while a tilt category is expanded: the 2D view,
-    raw / filtered numbers and the engine state. While it is shown the engine follows the pad even if the feature is off, so the
-    tilt can be seen before it is switched on.
+    """The live preview.
+
+    Floating over the top-right corner of the pad drawing while a tilt category is expanded: the 2D view, raw / filtered
+    numbers and the engine state. While it is shown the engine follows the pad even if the feature is off, so the tilt
+    can be seen before it is switched on.
     """
 
     def __init__(self, pad) -> None:

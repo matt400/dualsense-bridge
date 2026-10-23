@@ -1,6 +1,8 @@
-"""Receiver: one window for everything (PySide6): pads with the battery and latency on the left, the pad drawing in the centre
-(a click = remapping), profiles / gyro / changes on the right, an icon in the tray. Full screen = the TV mode: a bigger interface
-(readable from a couch) and controlling the window with the pad (rx_qt_tv).
+"""Receiver: one window for everything (PySide6).
+
+Pads with the battery and latency on the left, the pad drawing in the centre (a click = remapping), profiles / gyro
+/ changes on the right, an icon in the tray. Full screen = the TV mode: a bigger interface (readable from a couch)
+and controlling the window with the pad (rx_qt_tv).
 
 Speed: the pad drawing refreshes 30 times a second only while the window is visible and only when the pad state
 changed; the rest (cards, tray) every 400 ms, with a hidden window too (the tray tooltip, a low battery).
@@ -90,18 +92,21 @@ STATS_HELP = "zwykle = 95 na 100 pomiarów było tak szybkich albo szybszych, ma
 
 
 class PadCard(QFrame):
-    """The pad card on the left - only what matters at first glance: the battery, the pad -> game latency (with a bar of
-    segments), the profile and the touchpad mode; details (the latency breakdown, ping, loss, Hz) in a tooltip. A problem
-    (no signal, rumble unavailable) shows as one warning line. A disconnected pad = the name only.
-    A click = edit this pad; a click on the crown = this pad becomes the master (a second click - no master).
+    """The pad card on the left - only what matters at first glance.
+
+    The battery, the pad -> game latency (with a bar of segments), the profile and the touchpad mode; details (the
+    latency breakdown, ping, loss, Hz) in a tooltip. A problem (no signal, rumble unavailable) shows as one warning
+    line. A disconnected pad = the name only. A click = edit this pad; a click on the crown = this pad becomes the
+    master (a second click - no master).
     """
 
     clicked = Signal(int)
     master_changed = Signal()
 
     def __init__(self, slot) -> None:
-        """Build the card: the header (state dot, crown, rumble test, power off), the status line and the body with the battery, latency,
-        button latency and the profile line.
+        """Build the card: the header (state dot, crown, rumble test, power off).
+
+        The status line and the body with the battery, latency, button latency and the profile line.
         """
         super().__init__()
         self.slot, self._key, self._lat = slot, None, None
@@ -342,15 +347,18 @@ class PadCard(QFrame):
 
 
 class MainWindow(ScreenPlacement):
-    """The main window: the pad cards, the pad drawing, the profile editor, the Test view, the drawers (Bluetooth, shortcuts), the log and
+    """The main window.
+
+    The pad cards, the pad drawing, the profile editor, the Test view, the drawers (Bluetooth, shortcuts), the log and
     the tray icon.
     """
     update_done = Signal(object)          # rx_update.Result from the update thread
     test_escaped = Signal()               # Options + Create on the pad ended the Test view (the network thread, rx_testmode)
 
     def __init__(self, settings) -> None:
-        """Restore the saved state (pad, view, geometry), create the timers, build the UI and the tray, then fit the window to its screen
-        and start the slow refresh.
+        """Restore the saved state (pad, view, geometry), create the timers, build the UI and the tray.
+
+        Then fit the window to its screen and start the slow refresh.
         """
         super().__init__()
         self.settings = settings
@@ -418,8 +426,10 @@ class MainWindow(ScreenPlacement):
 
     # ---------- building ----------
     def _build(self) -> None:
-        """Build the layout: the header, the update banner, the three columns (pads, drawing, editor), the log under a splitter and the
-        drawers over the window.
+        """Build the layout.
+
+        The header, the update banner, the three columns (pads, drawing, editor), the log under a splitter and the drawers
+        over the window.
         """
         root = QWidget()
         root.setObjectName("root")
@@ -504,8 +514,10 @@ class MainWindow(ScreenPlacement):
         return bar
 
     def _banner(self):
-        """A bar under the header, visible only when there is something to do: a new version on GitHub and / or a sender
-        on a different version than the receiver. A text with a description (not colour alone) and an Update button.
+        """A bar under the header, visible only when there is something to do.
+
+        A new version on GitHub and / or a sender on a different version than the receiver. A text with a description (not
+        colour alone) and an Update button.
         """
         bar = QFrame()
         bar.setObjectName("banner")
@@ -680,8 +692,9 @@ class MainWindow(ScreenPlacement):
 
     def _pads_connected(self) -> None:
         """A newly connected pad -> the window to the front, but not during a game (the same program list as the console mode).
-        A connection = S.want (like the "connected" log entry and the console mode auto-ON), not S.alive: alive fades
-        after stale_s (0.5 s) of silence - a momentary signal gap pulled the window to the front, e.g. over Steam Big Picture.
+
+        A connection = S.want (like the "connected" log entry and the console mode auto-ON), not S.alive: alive fades after
+        stale_s (0.5 s) of silence - a momentary signal gap pulled the window to the front, e.g. over Steam Big Picture.
         """
         conn = tuple(w.is_set() for w in S.want)
         new = [i for i, (now, before) in enumerate(zip(conn, self._connected, strict=False)) if now and not before]
@@ -801,8 +814,10 @@ class MainWindow(ScreenPlacement):
         set_prop(self.sender, "level", "warn" if stale else "ok")
 
     def start_update(self) -> None:
-        """Update both sides: a command to the sender (git pull on the phone, it restarts itself) and the receiver's git pull
-        in a separate thread; the result returns by a signal to the window thread, then we wait for the sender's result.
+        """Update both sides.
+
+        A command to the sender (git pull on the phone, it restarts itself) and the receiver's git pull in a separate
+        thread; the result returns by a signal to the window thread, then we wait for the sender's result.
         """
         if not self.update_btn.isEnabled():
             return
@@ -831,8 +846,9 @@ class MainWindow(ScreenPlacement):
         self.update_done.emit(r)
 
     def _update_stuck(self, run) -> None:
-        """The update thread did not finish (git hung) - the button must not hang on "Updating…" until the receiver
-        restarts. A late result still works (a restart after the code is fetched).
+        """The update thread did not finish (git hung) - the button must not hang on "Updating…" until the receiver restarts.
+
+        A late result still works (a restart after the code is fetched).
         """
         if run != self._upd_run or self._upd_result is not None:
             return
@@ -850,8 +866,9 @@ class MainWindow(ScreenPlacement):
         self._update_poll()
 
     def _update_poll(self) -> None:
-        """Wait (polling every 250 ms) for the sender to finish updating, then show the combined result, notify the log and restart when
-        the code changed.
+        """Wait (polling every 250 ms) for the sender to finish updating, then show the combined result.
+
+        Notify the log and restart when the code changed.
         """
         r = self._upd_result
         if r is None:
@@ -879,8 +896,10 @@ class MainWindow(ScreenPlacement):
             QTimer.singleShot(UPDATE_RESTART_MS, self.restart)
 
     def restart(self, admin: bool = False) -> None:
-        """A restart (the button, the tray, saved settings): an ordinary window close, and the receiver starts again by itself
-        after releasing the ports and virtual pads. admin: the new process as administrator (UAC, HIDMaestro).
+        """A restart (the button, the tray, saved settings).
+
+        An ordinary window close, and the receiver starts again by itself after releasing the ports and virtual pads. admin:
+        the new process as administrator (UAC, HIDMaestro).
         """
         print("Restart requested from the window" + (" (as administrator)" if admin else ""))
         S.restart = "admin" if admin else True
@@ -942,8 +961,10 @@ class MainWindow(ScreenPlacement):
         self.pad_hint.setText(hint)
 
     def sync_block(self) -> None:
-        """The output lock to the game: only the pad under test, only in the Test view, with the option on and the window active -
-        going to a game (another window in front), minimising or hiding gives the pad back at once.
+        """The output lock to the game.
+
+        Only the pad under test, only in the Test view, with the option on and the window active - going to a game (another
+        window in front), minimising or hiding gives the pad back at once.
         """
         test = (self.view == "test" and not rx_testmode.escaped and self.isVisible() and not self.isMinimized()
                 and self.isActiveWindow())
@@ -953,8 +974,9 @@ class MainWindow(ScreenPlacement):
             P.block(i, on and i == self.ed.slot)
 
     def _test_escaped(self) -> None:
-        """Options + Create from the pad (rx_testmode): the lock is already lifted on the network thread - the window returns to the
-        previous view.
+        """Options + Create from the pad (rx_testmode).
+
+        The lock is already lifted on the network thread - the window returns to the previous view.
         """
         if self.view == "test":
             self.set_view(self.edit_view)
@@ -1130,7 +1152,9 @@ class MainWindow(ScreenPlacement):
             print(f"GUI refresh error: {e!r}")
 
     def _slow(self) -> None:
-        """The 400 ms pass: place the window after a game, bring it forward for a new pad, refresh the sender label, banner, Bluetooth
+        """The 400 ms pass.
+
+        Place the window after a game, bring it forward for a new pad, refresh the sender label, banner, Bluetooth
         indicator, pad cards, low battery notices, the window title, the editor sync and the tray tooltip / icon.
         """
         now = time.monotonic()
@@ -1191,8 +1215,9 @@ WM_QUERYENDSESSION = 0x0011
 
 
 def session_end(*_args) -> None:
-    """Windows is shutting down / restarting / logging off (Start, Big Picture, shutdown.exe): the console mode on -> OFF
-    before the process is closed, so that after startup the picture is not on the TV only.
+    """Windows is shutting down / restarting / logging off (Start, Big Picture, shutdown.exe).
+
+    The console mode on -> OFF before the process is closed, so that after startup the picture is not on the TV only.
     """
     if rx_console.power_off(_("wyłączanie Windows")):
         print("Windows session ending - console mode switched off")
@@ -1237,8 +1262,9 @@ def create_window(settings_path=None):
 
 
 def run_gui() -> None:
-    """Run the GUI: optionally wait for the first pad, create the window and the update checker, handle Ctrl+C, then run the Qt loop and
-    hide the tray icon on exit.
+    """Run the GUI: optionally wait for the first pad, create the window and the update checker.
+
+    Handle Ctrl+C, then run the Qt loop and hide the tray icon on exit.
     """
     if C.cfg["gui_wait_pad"]:      # an option: do not create the window or the icon until some pad connects
         while not S.stop.is_set() and not any(w.is_set() for w in S.want):

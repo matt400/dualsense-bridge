@@ -72,8 +72,9 @@ class Editor:
         return [(k, profile_name(k), k == active) for k in S.store.keys_for(S.profile_key(self.slot))]
 
     def select(self, key=None) -> None:
-        """Load profile `key` (default: the one in use). The edited profile takes effect on the pad at once (preview and testing in a
-        game).
+        """Load profile `key` (default: the one in use).
+
+        The edited profile takes effect on the pad at once (preview and testing in a game).
         """
         s = self.slot
         self.base = S.profile_key(s)
@@ -147,6 +148,7 @@ class Editor:
 
     def trigger_fx(self, name):
         """A trigger effect of L2 / R2: {"mode", parameters of all modes} - the sliders remember the values of other modes.
+
         mode "inherit" = a game profile without an entry (as in the pad profile).
         """
         e = self.prof["triggers"].get(name)
@@ -154,8 +156,9 @@ class Editor:
         return {**self._fx_mem.get(name, TRIG_FX_DEF), **(e or {}), "mode": mode}
 
     def set_trigger_fx(self, name, **patch) -> None:
-        """Change a trigger effect; the values of the sliders are remembered, and an "inherit" / default-off entry is removed from the
-        profile.
+        """Change a trigger effect.
+
+        The values of the sliders are remembered, and an "inherit" / default-off entry is removed from the profile.
         """
         e = {**self.trigger_fx(name), **patch}
         self._fx_mem[name] = {k: v for k, v in e.items() if k != "mode"}

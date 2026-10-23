@@ -43,8 +43,10 @@ def _winapi():
 
 
 def issues():
-    """Collect the current security problems. Key and DSU checks work everywhere; the folder and Python ownership checks
-    run only on Windows when the receiver is elevated (admin_owned() returns None when it cannot tell, which is not reported).
+    """Collect the current security problems.
+
+    Key and DSU checks work everywhere; the folder and Python ownership checks run only on Windows when the receiver is
+    elevated (admin_owned() returns None when it cannot tell, which is not reported).
     """
     out = []
     if not C.KEY:

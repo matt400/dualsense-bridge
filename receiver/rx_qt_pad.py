@@ -40,8 +40,9 @@ _ARGS = {"M": 2, "L": 2, "H": 1, "V": 1, "C": 6, "Q": 4}
 
 def svg_path(d):
     """An SVG path (absolute commands M L H V C Q Z only - enough for this drawing) -> a QPainterPath.
-    Tokens are commands (letters) and numbers; a command's arguments are read in groups of _ARGS[cmd], and a repeated group reuses the
-    command.
+
+    Tokens are commands (letters) and numbers; a command's arguments are read in groups of _ARGS[cmd], and a repeated
+    group reuses the command.
     """
     path, toks, i, cmd, x, y = QPainterPath(), _TOKENS.findall(d), 0, None, 0.0, 0.0
     while i < len(toks):
@@ -220,8 +221,9 @@ class PadView(QWidget):
             self.update()
 
     def _badges(self, prof):
-        """Compute the badges for a profile as (x, y, text, kind): button remaps, stick source / inversion, tuning, trigger effects and
-        the gyro mode.
+        """Compute the badges for a profile as (x, y, text, kind).
+
+        Button remaps, stick source / inversion, tuning, trigger effects and the gyro mode.
         """
         out = []
         for src, dst in prof["buttons"].items():
@@ -315,8 +317,9 @@ class PadView(QWidget):
 
     # ---------- drawing ----------
     def paintEvent(self, _e) -> None:
-        """Paint the stage, then the drawing scaled to fit: triggers behind the body, the body, decorations, buttons, sticks, and finally
-        the badges (or the Test overlay).
+        """Paint the stage, then the drawing scaled to fit.
+
+        Triggers behind the body, the body, decorations, buttons, sticks, and finally the badges (or the Test overlay).
         """
         p = QPainter(self)
         p.setRenderHints(QPainter.RenderHint.Antialiasing | QPainter.RenderHint.TextAntialiasing)

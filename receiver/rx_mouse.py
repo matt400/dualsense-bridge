@@ -62,8 +62,10 @@ def reset(i) -> None:
 
 
 def set_mode(i, on) -> bool:
-    """Pad i touchpad: mouse (on) or DS4 touch. Releases the button and resets the gesture; the game receives a released
-    touchpad click. -> True when the mode changed.
+    """Pad i touchpad: mouse (on) or DS4 touch.
+
+    Releases the button and resets the gesture; the game receives a released touchpad click. -> True when the mode
+    changed.
     """
     if S.mouse_mode[i] == on:
         return False

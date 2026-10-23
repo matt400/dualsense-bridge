@@ -166,8 +166,10 @@ def is_game_key(key) -> bool:
 
 
 def _inv(v):
-    """Mirror an axis around the centre 128: 0 <-> 255, 128 stays 128 (like _unit/_byte in rx_shape - a full deflection
-    in both directions gives a full deflection, not 1).
+    """Mirror an axis around the centre 128.
+
+    0 <-> 255, 128 stays 128 (like _unit/_byte in rx_shape - a full deflection in both directions gives a full
+    deflection, not 1).
     """
     return _byte(-_unit(v))
 

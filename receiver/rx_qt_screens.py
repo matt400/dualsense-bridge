@@ -1,5 +1,7 @@
-"""Receiver window: where it sits and how big it is - the chosen screen, full screen (the TV mode), centring after the screens
-change (the console mode switches the monitor <-> TV and changes the resolution), and coming to the front.
+"""Receiver window.
+
+Where it sits and how big it is - the chosen screen, full screen (the TV mode), centring after the screens change
+(the console mode switches the monitor <-> TV and changes the resolution), and coming to the front.
 
 `ScreenPlacement` is the base class of the main window (rx_qt.MainWindow): the window supplies the settings object, the
 full screen button and `apply_scale`; everything about the screen lives here.
@@ -52,8 +54,10 @@ class ScreenPlacement(QMainWindow):
         return str(self.settings.value("fullscreen", "false")).lower() == "true"
 
     def set_fullscreen(self, on) -> None:
-        """Full screen / window (remembered). Full screen = the TV mode: a bigger interface and pad control; it takes
-        the chosen screen (Settings -> Window) or the current one.
+        """Full screen / window (remembered).
+
+        Full screen = the TV mode: a bigger interface and pad control; it takes the chosen screen (Settings -> Window) or
+        the current one.
         """
         self.settings.setValue("fullscreen", bool(on))
         self.settings.sync()
@@ -67,16 +71,19 @@ class ScreenPlacement(QMainWindow):
         self.set_fullscreen(not self.fullscreen())
 
     def target_screen(self):
-        """The screen chosen in Settings -> Window; when it is absent (the monitor off in the console mode) or nothing was
-        chosen - the one the window is on now (Windows moves windows from a disconnected screen to the remaining one).
+        """The screen chosen in Settings -> Window.
+
+        When it is absent (the monitor off in the console mode) or nothing was chosen - the one the window is on now
+        (Windows moves windows from a disconnected screen to the remaining one).
         """
         name = self.screen_choice()
         return (dict(screens()).get(name) if name else None) or self.screen() or QApplication.primaryScreen()
 
     def place_on_screen(self):
-        """The window always in the centre of the screen (target_screen) and entirely on it: one bigger than the work area (a TV
-        1280x720 at 200 % scaling) is shrunk, and on a bigger screen it returns to the size chosen by the user.
-        It does not show the window (one hidden in the tray stays hidden). -> the screen.
+        """The window always in the centre of the screen (target_screen) and entirely on it.
+
+        One bigger than the work area (a TV 1280x720 at 200 % scaling) is shrunk, and on a bigger screen it returns to the
+        size chosen by the user. It does not show the window (one hidden in the tray stays hidden). -> the screen.
         """
         target = self.target_screen()
         area = target.availableGeometry()
@@ -111,8 +118,9 @@ class ScreenPlacement(QMainWindow):
             self._pref = e.size()
 
     def _watch_screens(self) -> None:
-        """The console mode switches the picture monitor <-> TV and changes the TV resolution and scaling - after every such
-        change the window returns to the centre and fits on the screen (without being pulled to the front).
+        """The console mode switches the picture monitor <-> TV and changes the TV resolution and scaling.
+
+        After every such change the window returns to the centre and fits on the screen (without being pulled to the front).
         """
         self._screen_timer = QTimer(self)
         self._screen_timer.setSingleShot(True)
@@ -154,8 +162,9 @@ class ScreenPlacement(QMainWindow):
                 self.showNormal()
 
     def bring_to_front(self) -> None:
-        """Show the window on its screen (centred, in the right mode) and take the foreground, which a background process needs extra help
-        for.
+        """Show the window on its screen (centred, in the right mode) and take the foreground.
+
+        Which a background process needs extra help for.
         """
         if self.isFullScreen() and not self.fullscreen():
             self.showNormal()

@@ -122,8 +122,10 @@ class ConsoleSettings(QDialog):
         self.tabs.currentChanged.connect(lambda i: self.test_btn.setVisible(i == 0))
 
     def _console_tab(self):
-        """The Console mode tab: the toggle button pick, the double click interval, auto-OFF, auto-ON, the TV / audio, and the program
-        list that blocks switching in a game.
+        """The Console mode tab.
+
+        The toggle button pick, the double click interval, auto-OFF, auto-ON, the TV / audio, and the program list that
+        blocks switching in a game.
         """
         self.pick = button("", small=True)
         self.pick.clicked.connect(self._toggle_capture)
@@ -280,8 +282,10 @@ class ConsoleSettings(QDialog):
         self._vpad_state()
 
     def _vpad_state(self, busy: bool = False) -> None:
-        """What works now: the kind of plugged pads, the HIDMaestro version (downloaded / newest / downloading / error), the reason
-        for working without HIDMaestro, the restart-as-administrator button.
+        """What works now: the kind of plugged pads.
+
+        The HIDMaestro version (downloaded / newest / downloading / error), the reason for working without HIDMaestro, the
+        restart-as-administrator button.
         """
         backend = self.vpad_backend.currentData()
         used = sorted({rx_ds4.LABELS[k] for k in rx_ds4.kinds if k})
@@ -453,8 +457,9 @@ class ConsoleSettings(QDialog):
         self.screen_box.set_data(cur)
 
     def _master_tab(self):
-        """The Master tab: the master pad, claiming with PS + R3, the master-only features, the behaviour without a master and the PS +
-        button actions.
+        """The Master tab: the master pad, claiming with PS + R3, the master-only features.
+
+        The behaviour without a master and the PS + button actions.
         """
         self.master_pad = Combo()
         self._master_touched = False
@@ -563,8 +568,9 @@ class ConsoleSettings(QDialog):
 
     # ---------- lightbar ----------
     def _load_light(self, cfg) -> None:
-        """Fill the Lightbar tab from a LightbarConfig: the pad list (default, connected pads, remembered ones) and the first entry's
-        values.
+        """Fill the Lightbar tab from a LightbarConfig.
+
+        The pad list (default, connected pads, remembered ones) and the first entry's values.
         """
         self.low_pct.setValue(cfg.low_pct)
         self._lights = dict(cfg.pads)
@@ -680,10 +686,11 @@ class ConsoleSettings(QDialog):
         self.activateWindow()
 
     def _fit(self) -> None:
-        """Centre on the main window's screen and fully inside the work area (without the taskbar): a fixed 860x780 on
-        1080p with 150 % scaling (720 px of height) went under the taskbar together with the Save buttons.
-        The window frame (the title bar) is known only after showing - remembered, so later openings place
-        the window once, before showing it (without moving a visible window).
+        """Centre on the main window's screen and fully inside the work area (without the taskbar).
+
+        A fixed 860x780 on 1080p with 150 % scaling (720 px of height) went under the taskbar together with the Save
+        buttons. The window frame (the title bar) is known only after showing - remembered, so later openings place the
+        window once, before showing it (without moving a visible window).
         """
         if self.isVisible():
             self._frame = self.frameGeometry().size() - self.geometry().size()
@@ -731,8 +738,10 @@ class ConsoleSettings(QDialog):
         self._status("")
 
     def refresh(self, tv=None, pc=None) -> None:
-        """Read the active audio outputs; a device chosen earlier that is absent now (e.g. the TV is off)
-        stays on the list as "unavailable", so that saving does not lose it.
+        """Read the active audio outputs.
+
+        A device chosen earlier that is absent now (e.g. the TV is off) stays on the list as "unavailable", so that saving
+        does not lose it.
         """
         tv = self.tv.currentData() if tv is None else tv
         pc = self.pc.currentData() if pc is None else pc
@@ -780,8 +789,9 @@ class ConsoleSettings(QDialog):
             combo.set_data(m.actions.get(k, ""))
 
     def collect_settings(self):
-        """-> the Settings described by the window (mouse, master, language, lightbar, Wake-on-LAN, pads); the log settings stay as they
-        are.
+        """-> the Settings described by the window (mouse, master, language, lightbar, Wake-on-LAN, pads).
+
+        The log settings stay as they are.
         """
         mouse = MouseConfig(sens=round(self.sens.value(), 2), click_freeze_ms=round(self.freeze.value()),
                             click_rewind_ms=round(self.rewind.value()), drag_threshold=round(self.drag.value()))
@@ -851,8 +861,10 @@ class ConsoleSettings(QDialog):
         QTimer.singleShot(int((rx_console.TEST_S + 5) * 1000), lambda: self.test_btn.setEnabled(True))
 
     def _save(self) -> None:
-        """Validate and save everything: settings.json (in effect at once) and, when the console mode or the language changed,
-        console.json plus a restart request.
+        """Validate and save everything.
+
+        Settings.json (in effect at once) and, when the console mode or the language changed, console.json plus a restart
+        request.
         """
         try:
             new = self.collect_settings()

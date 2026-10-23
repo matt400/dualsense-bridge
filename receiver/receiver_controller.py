@@ -1,5 +1,7 @@
-"""DualSense UDP receiver (Windows): a virtual DS4 (ViGEm) + a DSU (Cemuhook) server + one window (PySide6)
-with battery, link and remapping. Protocol: proto.py.
+"""DualSense UDP receiver (Windows).
+
+A virtual DS4 (ViGEm) + a DSU (Cemuhook) server + one window (PySide6) with battery, link and remapping. Protocol:
+proto.py.
 
 Files: proto.py (shared), rx_config.py, rx_state.py, rx_buttons.py (remap + remap.json),
        rx_shape.py (deadzones, curves, gyro), rx_hotkeys.py (PS shortcuts), rx_games.py (profile per game),
@@ -68,8 +70,9 @@ def _startup_events(rx_winapi) -> None:
         return
 
     def migrate() -> None:
-        """Autostart housekeeping thread: migrate the old Run entry, then raise the task to the highest privileges and refresh the admin
-        task.
+        """Autostart housekeeping thread.
+
+        Migrate the old Run entry, then raise the task to the highest privileges and refresh the admin task.
         """
         import rx_autostart
         if rx_autostart.migrate():
@@ -103,8 +106,10 @@ ELEVATE_GUARD_S = 60       # the admin task was started a moment ago and the pro
 
 
 def _guard_path():
-    """The marker of an attempt through the task - in the user's temp folder: the receiver folder can be read-only
-    (e.g. Program Files), and without a marker a task that gives no privileges started the receiver in a loop.
+    """The marker of an attempt through the task - in the user's temp folder.
+
+    The receiver folder can be read-only (e.g. Program Files), and without a marker a task that gives no privileges
+    started the receiver in a loop.
     """
     import tempfile
     return os.path.join(tempfile.gettempdir(), "dualsense-bridge-elevate_try")
@@ -127,11 +132,13 @@ def _clear_guard() -> None:
 
 
 def elevate() -> None:
-    """Windows without administrator rights: the receiver again as administrator, then exit. First through the
-    DualSenseBridgeAdmin task (no UAC prompt; created by a receiver running as administrator), without it - a UAC prompt.
-    A refusal in UAC / --no-elevate -> carry on without privileges (virtual pads through ViGEmBus). Before rx_config.init:
-    --autostart on always goes through UAC (the task would run the receiver without that flag). The receiver already running ->
-    no elevation (the second copy exits soon anyway - earlier it first showed a UAC prompt).
+    """Windows without administrator rights: the receiver again as administrator, then exit.
+
+    First through the DualSenseBridgeAdmin task (no UAC prompt; created by a receiver running as administrator), without
+    it - a UAC prompt. A refusal in UAC / --no-elevate -> carry on without privileges (virtual pads through ViGEmBus).
+    Before rx_config.init: --autostart on always goes through UAC (the task would run the receiver without that flag).
+    The receiver already running -> no elevation (the second copy exits soon anyway - earlier it first showed a UAC
+    prompt).
     """
     if os.name != "nt" or NO_ELEVATE in sys.argv[1:]:
         return
@@ -216,6 +223,7 @@ def _init_modules() -> None:
 
 def _start_workers() -> tuple[list[threading.Thread], threading.Thread]:
     """Start the background threads (one per pad slot, feedback, HIDMaestro updates, gyro mouse, game watch).
+
     Returns the slot threads and the feedback thread - the ones shutdown has to join.
     """
     import rx_ds4
@@ -283,8 +291,10 @@ def _run(use_gui) -> None:
 
 
 def _shutdown(slot_threads, fb_thread) -> None:
-    """Stop everything in the order that leaves no stuck state behind: release the pad triggers, disconnect the virtual pads,
-    restore the screens, close the sockets - then start the new process if a restart was requested.
+    """Stop everything in the order that leaves no stuck state behind.
+
+    Release the pad triggers, disconnect the virtual pads, restore the screens, close the sockets - then start the new
+    process if a restart was requested.
     """
     import rx_console
     import rx_dsu
@@ -325,8 +335,10 @@ def _shutdown(slot_threads, fb_thread) -> None:
 
 
 def main() -> None:
-    """Start the receiver: elevate, load the configuration, initialise the modules, start the worker threads and run the GUI
-    (or the network loop alone), then shut everything down in order - optionally restarting the process.
+    """Start the receiver.
+
+    Elevate, load the configuration, initialise the modules, start the worker threads and run the GUI (or the network
+    loop alone), then shut everything down in order - optionally restarting the process.
     """
     elevate()
     rx_config.init()

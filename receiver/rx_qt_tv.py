@@ -43,6 +43,7 @@ def _focusable(w, root, scope=None):
 
 def move_focus(root, forward, scope=None):
     """Next / previous element in the focus chain of window `root` (like Tab), scrolling the panel so that it is visible.
+
     scope: only elements inside this widget (an open Bluetooth drawer).
     """
     start = QApplication.focusWidget()
@@ -94,8 +95,10 @@ class PadNav:
         return active if active is not None and active in (win, win.settings_dlg) else None
 
     def tick(self, now) -> None:
-        """One navigation step: compute the new press edges against the previous state, drop released directions from the
-        repeat table, act on every new press and repeat the held directions when their time comes.
+        """One navigation step.
+
+        Compute the new press edges against the previous state, drop released directions from the repeat table, act on every
+        new press and repeat the held directions when their time comes.
         """
         root = self.target()
         pressed = self._pressed() if root is not None else frozenset()
@@ -119,8 +122,10 @@ class PadNav:
                 self.act(root, d)
 
     def act(self, root, name) -> None:
-        """Perform one pad input as a UI action: with an open popup it is translated to keys; otherwise D-pad moves the focus
-        (or changes a slider / combo / tab), cross activates, circle goes back and L1 / R1 switch the pad.
+        """Perform one pad input as a UI action.
+
+        With an open popup it is translated to keys; otherwise D-pad moves the focus (or changes a slider / combo / tab),
+        cross activates, circle goes back and L1 / R1 switch the pad.
         """
         popup = QApplication.activePopupWidget()
         if popup is not None:                                   # an expanded list: arrows, cross selects, circle collapses
@@ -150,8 +155,10 @@ class PadNav:
         return next((s for d in getattr(self.win, "drawers", ()) if (s := d.focus_scope()) is not None), None)
 
     def _direction(self, root, fw, name, scope=None) -> None:
-        """A D-pad direction: left / right adjust sliders, tabs, the pad drawing and combo boxes; up / down scroll item views and
-        shortcut lists; everything else (and the edges) moves the focus in the focus chain.
+        """A D-pad direction.
+
+        Left / right adjust sliders, tabs, the pad drawing and combo boxes; up / down scroll item views and shortcut lists;
+        everything else (and the edges) moves the focus in the focus chain.
         """
         side = name in ("dpad_left", "dpad_right")
         from rx_qt_pad import PadView

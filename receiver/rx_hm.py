@@ -1,8 +1,9 @@
 """Receiver: the HIDMaestro backend - a virtual DualSense (a user-mode UMDF2 driver, MIT, actively developed).
-Compatible with HIDMaestro 1.x and 2.0.x (checked against the 2.0.3 migration guide). Calls used: LoadDefaultProfiles,
-InstallDriver, GetProfile, CreateControllerAt, SubmitRawReport, OutputReceived, Dispose - the same in both versions;
-2.0 only adds diagnostics: ProfileLoadIssues, LastDriverInstall, TransportIndex
-and exceptions derived from InvalidOperationException - see describe_error.
+
+Compatible with HIDMaestro 1.x and 2.0.x (checked against the 2.0.3 migration guide). Calls used:
+LoadDefaultProfiles, InstallDriver, GetProfile, CreateControllerAt, SubmitRawReport, OutputReceived, Dispose - the
+same in both versions; 2.0 only adds diagnostics: ProfileLoadIssues, LastDriverInstall, TransportIndex and
+exceptions derived from InvalidOperationException - see describe_error.
 
 HIDMaestro is a .NET library (HIDMaestro.Core.dll, .NET 10) - called from Python through pythonnet (CoreCLR). The driver
 lives inside the DLL and installs on first use (InstallDriver, idempotent). Creating a device needs administrator
@@ -39,8 +40,10 @@ WINGET_NET = "Microsoft.DotNet.Runtime.10"
 
 
 class HMError(Exception):
-    """HIDMaestro unavailable; missing = no DLL (in auto mode an ordinary situation, no warning);
-    need_dotnet = no .NET 10 (the window offers to install it).
+    """HIDMaestro unavailable.
+
+    Missing = no DLL (in auto mode an ordinary situation, no warning); need_dotnet = no .NET 10 (the window offers to
+    install it).
     """
 
     def __init__(self, msg, missing: bool = False, need_dotnet: bool = False) -> None:
@@ -61,8 +64,10 @@ def here():
 
 
 def candidates(cfg_path: str = ""):
-    """DLL paths to try, in order: the configured path (a folder gets the DLL name appended), else the newest downloaded version,
-    hidmaestro/ and the receiver folder.
+    """DLL paths to try, in order.
+
+    The configured path (a folder gets the DLL name appended), else the newest downloaded version, hidmaestro/ and the
+    receiver folder.
     """
     if cfg_path:
         p = os.path.expandvars(os.path.expanduser(cfg_path))
@@ -135,9 +140,10 @@ _HM_HINTS = {
 
 
 def describe_error(e) -> str:
-    """A HIDMaestro error as one readable line: the .NET type, the message and (for 2.0 exceptions) a hint. The fields of
-    HMProfileException / HMDriverVersionException (ProfileId, JsonPath, Reason, Problem) are already in the message - only the hint is
-    added.
+    """A HIDMaestro error as one readable line: the .NET type, the message and (for 2.0 exceptions) a hint.
+
+    The fields of HMProfileException / HMDriverVersionException (ProfileId, JsonPath, Reason, Problem) are already in
+    the message - only the hint is added.
     """
     name = type(e).__name__
     hint = _HM_HINTS.get(name)
@@ -167,6 +173,7 @@ def _major(version):
 
 def net_runtimes():
     """Installed Microsoft.NETCore.App versions (clr_loader looks for them like dotnet: DOTNET_ROOT, Program Files).
+
     None = unknown (no pythonnet / clr_loader) - not the same as no .NET.
     """
     try:
@@ -194,8 +201,9 @@ def need_dotnet() -> bool:
 
 
 def install_dotnet():
-    """Install .NET 10 through winget (the receiver runs as administrator - no windows). -> (ok, description). Call in the background (up
-    to several min).
+    """Install .NET 10 through winget (the receiver runs as administrator - no windows). -> (ok, description).
+
+    Call in the background (up to several min).
     """
     import subprocess
     cmd = ["winget", "install", "--id", WINGET_NET, "--exact", "--silent", "--accept-package-agreements",
@@ -243,8 +251,10 @@ def _load_clr(path):
 
 
 def submit_delegate(clr, ctrl_type):
-    """A delegate (controller, IntPtr, int) -> SubmitRawReport(new ReadOnlySpan<byte>((void*)ptr, len)) built as an IL method.
-    pythonnet does not pass bytes / arrays as a ReadOnlySpan, so without this delegate there is no way to send a report.
+    """A delegate (controller, IntPtr, int).
+
+    SubmitRawReport(new ReadOnlySpan<byte>((void*)ptr, len)) built as an IL method. pythonnet does not pass bytes /
+    arrays as a ReadOnlySpan, so without this delegate there is no way to send a report.
     """
     try:
         from System import Action, Array, Byte, Int32, IntPtr, Type, Void
@@ -288,8 +298,9 @@ class Backend:
     order_wait = ORDER_WAIT
 
     def __init__(self, path) -> None:
-        """Load the CLR and the DLL, install the driver, find the DualSense profile and bind the IL submit delegate; any failure is an
-        HMError.
+        """Load the CLR and the DLL, install the driver.
+
+        Find the DualSense profile and bind the IL submit delegate; any failure is an HMError.
         """
         if not is_admin():
             raise HMError("administrator rights required (Windows needs them to create a virtual device)")
@@ -319,8 +330,10 @@ class Backend:
         print(f"HIDMaestro loaded: {path}")
 
     def create(self, slot, on_fb):
-        """A virtual DualSense on a fixed index and with a fixed slot identity: the same device paths after every
-        recreation (Steam / games remember the pad's settings). An old SDK without the identity key - the index alone.
+        """A virtual DualSense on a fixed index and with a fixed slot identity.
+
+        The same device paths after every recreation (Steam / games remember the pad's settings). An old SDK without the
+        identity key - the index alone.
         """
         key = f"dualsense-bridge:{slot}"
         try:
@@ -352,8 +365,9 @@ def out_used(f0, f1):
 
 def parse_output(report_id, data):
     """A DualSense output report (without the ID byte) -> ((large, small) | None, (r, g, b) | None, (L2, R2) | None).
-    The validity flags decide which parts the game sets: bit 0/1 of flag 0 = motors, bit 2 / 3 of flag 0 = the right / left trigger
-    effect (raw 11 B; a trigger without its flag = None), bit 2 of flag 1 = the lightbar colour.
+
+    The validity flags decide which parts the game sets: bit 0/1 of flag 0 = motors, bit 2 / 3 of flag 0 = the right /
+    left trigger effect (raw 11 B; a trigger without its flag = None), bit 2 of flag 1 = the lightbar colour.
     """
     if report_id != OUT_REPORT or len(data) < OUT_LEN:
         return None, None, None
@@ -366,15 +380,17 @@ def parse_output(report_id, data):
 
 
 class Pad:
-    """One virtual DualSense. buf has a fixed address (the ctypes export blocks resizing) - the report is built
-    in place and sent through the delegate without a copy on the Python side.
+    """One virtual DualSense. buf has a fixed address (the ctypes export blocks resizing).
+
+    The report is built in place and sent through the delegate without a copy on the Python side.
     """
     kind = "hm"
     build = staticmethod(build_ds5_report)
 
     def __init__(self, backend, ctrl, on_fb) -> None:
-        """Pin the report buffer, take its address for the delegate, subscribe to the output reports and send one report to test the
-        path.
+        """Pin the report buffer, take its address for the delegate.
+
+        Subscribe to the output reports and send one report to test the path.
         """
         self.ctrl, self.on_fb = ctrl, on_fb
         self.buf = bytearray(REPORT_LEN)

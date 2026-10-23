@@ -86,8 +86,9 @@ class MotionChart(QWidget):
         self.update()
 
     def paintEvent(self, _e) -> None:
-        """Paint the frame, the zero line, the three axis traces (scale = the largest value rounded by _nice), the title, the latest
-        values and the scale.
+        """Paint the frame, the zero line, the three axis traces (scale = the largest value rounded by _nice).
+
+        The title, the latest values and the scale.
         """
         p = QPainter(self)
         p.setRenderHints(QPainter.RenderHint.Antialiasing | QPainter.RenderHint.TextAntialiasing)
@@ -129,9 +130,11 @@ class MotionChart(QWidget):
 
 
 class StickScope(QWidget):
-    """Both sticks live. A square-root scale (r -> √r): a 1 % deviation takes 10 % of the radius, so drift is visible, and
-    a full deflection still reaches the edge. A dashed circle = the dead zone from the drift correction, yellow = the peak of
-    the last measurement.
+    """Both sticks live.
+
+    A square-root scale (r -> √r): a 1 % deviation takes 10 % of the radius, so drift is visible, and a full deflection
+    still reaches the edge. A dashed circle = the dead zone from the drift correction, yellow = the peak of the last
+    measurement.
     """
 
     RINGS = (0.05, 0.25)
@@ -180,8 +183,9 @@ class StickScope(QWidget):
         return math.sqrt(min(1.0, max(0.0, v)))
 
     def paintEvent(self, _e) -> None:
-        """Paint each stick: the plate, reference rings, the dead zone and peak circles, the fading trail, the current position and its
-        value.
+        """Paint each stick.
+
+        The plate, reference rings, the dead zone and peak circles, the fading trail, the current position and its value.
         """
         p = QPainter(self)
         p.setRenderHints(QPainter.RenderHint.Antialiasing | QPainter.RenderHint.TextAntialiasing)
@@ -458,8 +462,10 @@ class TestPanel(QWidget):
         self.refresh()
 
     def _cal_tick(self, now) -> None:
-        """Follow a calibration: progress bar, the sender's answer (or a timeout) and its result note; without a calibration, re-ask for a
-        lost state.
+        """Follow a calibration.
+
+        Progress bar, the sender's answer (or a timeout) and its result note; without a calibration, re-ask for a lost
+        state.
         """
         if self.cal_t0 is None:
             if (S.gyro_cal[self.slot] is None and now - self.query_t >= QUERY_S and S.alive[self.slot]
@@ -530,8 +536,9 @@ class TestPanel(QWidget):
         set_prop(self.cal_text, "level", level)
 
     def tick(self, now, live):
-        """From the window clock (30 Hz): charts, sticks, the progress of the measurement and calibration. live = rx_profiles.live() of
-        the pad.
+        """From the window clock (30 Hz).
+
+        Charts, sticks, the progress of the measurement and calibration. live = rx_profiles.live() of the pad.
         """
         t = P.test_live(self.slot)
         self.gyro_chart.push(v / C.GYRO_RES for v in t["gyro"])

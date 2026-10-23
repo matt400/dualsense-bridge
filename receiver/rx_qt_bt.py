@@ -1,5 +1,7 @@
-"""Receiver: the sender's Bluetooth in the window - a status dot in the header and a panel sliding in from the right (scan,
-device list, Pair / Connect / Disconnect / Forget). A phone behind a TV needs no screen or mouse.
+"""Receiver: the sender's Bluetooth in the window.
+
+A status dot in the header and a panel sliding in from the right (scan, device list, Pair / Connect / Disconnect /
+Forget). A phone behind a TV needs no screen or mouse.
 
 The panel (rx_qt_drawer.SideDrawer) lies over the window: a dimmed background, a click on it or Esc closes it. TV mode: the D-pad moves
 only over the panel's elements, ✕ clicks, ○ closes and the focus returns to the Bluetooth icon.
@@ -56,6 +58,7 @@ def status_icon(level: str) -> QIcon:
 
 class ElidedLabel(QLabel):
     """A label that elides long text with an ellipsis instead of widening the panel (the full text in the tooltip).
+
     Plain text: Bluetooth device names are set by every device in range - a QLabel in AutoText mode would show a name
     with HTML tags as formatted content (impersonating window elements).
     """
@@ -153,8 +156,10 @@ class DeviceRow(QFrame):
         self.update_from(dev, None, False)
 
     def update_from(self, dev: BT.Device, busy: int | None, other_busy: bool) -> None:
-        """Refresh the row from the device state: name, signal, state text, and the action button (pair / connect / disconnect by state;
-        busy = the running operation code, other_busy disables the row while another device is busy).
+        """Refresh the row from the device state.
+
+        Name, signal, state text, and the action button (pair / connect / disconnect by state; busy = the running operation
+        code, other_busy disables the row while another device is busy).
         """
         self.name.set_full(dev.name)
         self.bars.set(dev.bars())
@@ -236,8 +241,9 @@ class BtDrawer(SideDrawer):
 
     # ---------- building ----------
     def _build(self, lay: QVBoxLayout) -> None:
-        """Build the panel: status, controller choice, power / scan buttons, hint, the scrollable device list and the last operation
-        result.
+        """Build the panel.
+
+        Status, controller choice, power / scan buttons, hint, the scrollable device list and the last operation result.
         """
         self.rows: dict[str, DeviceRow] = {}
         self.status = label("", wrap=True)
@@ -337,8 +343,10 @@ class BtDrawer(SideDrawer):
 
     # ---------- refreshing ----------
     def refresh(self) -> None:
-        """Every REFRESH_MS while the panel is open: state, scan, the result of the last operation, rows; every KEEPALIVE_S
-        BT_LIST (the sender sends the list while the panel is open).
+        """Every REFRESH_MS while the panel is open.
+
+        State, scan, the result of the last operation, rows; every KEEPALIVE_S BT_LIST (the sender sends the list while the
+        panel is open).
         """
         now = time.monotonic()
         if self._open and self.window().isVisible() and now - self._keepalive >= BT.KEEPALIVE_S:
@@ -362,8 +370,10 @@ class BtDrawer(SideDrawer):
         self._result(s)
 
     def _adapter(self, s: BT.Status | None, busy: bool, now: float) -> None:
-        """Controller choice: the mode (not during our own change - no flash of the old mode), the list of controllers
-        with names and a Use button, the description.
+        """Controller choice.
+
+        The mode (not during our own change - no flash of the old mode), the list of controllers with names and a Use
+        button, the description.
         """
         shown = s is not None and s.mode != 0
         self.adapter_box.setVisible(shown)
@@ -412,8 +422,9 @@ class BtDrawer(SideDrawer):
         set_prop(self.result, "level", "ok" if s.result == BTR_OK else "" if s.result == BTR_RUNNING else "warn")
 
     def _rows(self, now: float, busy: bool, enabled: bool) -> None:
-        """Sync the device rows with the list: drop the vanished ones (moving the focus off a removed row), add new ones, update all and
-        fix the order.
+        """Sync the device rows with the list.
+
+        Drop the vanished ones (moving the focus off a removed row), add new ones, update all and fix the order.
         """
         devs = BT.devices if enabled else ()
         order = [d.mac for d in devs]

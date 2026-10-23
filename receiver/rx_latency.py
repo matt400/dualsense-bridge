@@ -91,8 +91,10 @@ def _mean(xs):
 
 
 def _summarize(rows):
-    """[(bt | None, phone, net, pc) µs] -> Summary. The total of a row is the sum of its segments (a missing bt counts as 0);
-    p95 uses the nearest-rank method on the sorted totals.
+    """[(bt | None, phone, net, pc) µs] -> Summary.
+
+    The total of a row is the sum of its segments (a missing bt counts as 0); p95 uses the nearest-rank method on the
+    sorted totals.
     """
     bt, phone, net, pc = zip(*rows, strict=True)
     totals = sorted((b or 0) + p + n + c for b, p, n, c in rows)
@@ -102,8 +104,9 @@ def _summarize(rows):
 
 
 def summary(i, now_ns=None):
-    """-> Summary of all changes from the last WINDOW_S or None (too few samples: the pad is idle, an older sender,
-    no PC clock).
+    """-> Summary of all changes from the last WINDOW_S or None (too few samples.
+
+    The pad is idle, an older sender, no PC clock).
     """
     start = (now_ns or time.perf_counter_ns()) - int(WINDOW_S * 1e9)
     with _lock:

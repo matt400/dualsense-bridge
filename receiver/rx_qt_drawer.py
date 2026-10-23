@@ -1,5 +1,6 @@
-"""Receiver: a drawer sliding in from the right over the window - the common base of the Bluetooth (rx_qt_bt) and shortcuts (rx_qt_keys)
-panels.
+"""Receiver: a drawer sliding in from the right over the window.
+
+The common base of the Bluetooth (rx_qt_bt) and shortcuts (rx_qt_keys) panels.
 
 The panel lies over the window (it does not change the layout): a dimmed background, a click on it or Esc closes it. TV mode: an
 open panel keeps the focus inside itself (rx_qt_tv.PadNav asks focus_scope()), circle closes it. A subclass builds its content

@@ -28,8 +28,10 @@ SENS_STEP, SENS_MIN, SENS_MAX = 1.15, 0.05, 5.0
 
 
 class Slot:
-    """Per-pad PS shortcut state: whether PS is down / consumed, the PS pulse for the game, suppressed Share / D-pad, the previous raw
-    inputs and the hold timer.
+    """Per-pad PS shortcut state.
+
+    Whether PS is down / consumed, the PS pulse for the game, suppressed Share / D-pad, the previous raw inputs and the
+    hold timer.
     """
     __slots__ = ("down", "used", "out", "gen", "tap", "sup_share", "sup_dpad", "prev_mask", "prev_hat", "timer", "fresh")
 
@@ -176,8 +178,9 @@ def _untap(i, h, tap) -> None:
 
 
 def _hold(i, gen) -> None:
-    """Hold timer fired: run ps_hold_action (Game Bar via Win+G, or Steam Big Picture) unless PS was released, used or the action is
-    none.
+    """Hold timer fired.
+
+    Run ps_hold_action (Game Bar via Win+G, or Steam Big Picture) unless PS was released, used or the action is none.
     """
     h = slots[i]
     if h.gen != gen or not h.down or h.used or C.PS_HOLD_ACTION == "none":
@@ -211,8 +214,10 @@ def _share(i) -> None:
 
 
 def _sens(i, factor) -> None:
-    """PS + D-pad up / down: multiply the touchpad mouse sensitivity of this pad by `factor` within limits (not saved - Settings -> Mouse
-    keeps it).
+    """PS + D-pad up / down.
+
+    Multiply the touchpad mouse sensitivity of this pad by `factor` within limits (not saved - Settings -> Mouse keeps
+    it).
     """
     if not master.check(i, "sens"):
         return

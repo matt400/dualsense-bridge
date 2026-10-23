@@ -77,8 +77,9 @@ class Store:
 
 
 class StateSink(Sink):
-    """Sink for the receiver's virtual pad (ViGEm DS4 / HIDMaestro DualSense read the slot state). Other sinks
-    (vJoy, uinput) = further Sink subclasses; Runner knows only this interface.
+    """Sink for the receiver's virtual pad (ViGEm DS4 / HIDMaestro DualSense read the slot state).
+
+    Other sinks (vJoy, uinput) = further Sink subclasses; Runner knows only this interface.
     """
 
     def drive(self, slot, target, x, y, button) -> None:
@@ -219,8 +220,10 @@ class Runner:
         return e.state != ST_OFF
 
     def _feedback(self, slot, event, mode, now) -> None:
-        """Rumble / lightbar pulse on a zone crossing: full tilt reached (edge) or back in the deadzone (center). Only these two
-        crossings are signalled - leaving the deadzone and leaving the outer zone would tick on every small move.
+        """Rumble / lightbar pulse on a zone crossing: full tilt reached (edge) or back in the deadzone (center).
+
+        Only these two crossings are signalled - leaving the deadzone and leaving the outer zone would tick on every small
+        move.
         """
         kind = "edge" if event == EV_OUTER_IN else "center" if event == EV_DEAD_IN else None
         if kind is None or now - self._fb_t[slot] < FEEDBACK_GAP_S:

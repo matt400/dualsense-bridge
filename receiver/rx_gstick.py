@@ -131,6 +131,7 @@ def to_i16(v):
 # ---------------- geometria ----------------
 def tilt_basis(center):
     """Neutral center (gravity vector in g or None = detected at rest, see rest_up) -> (uy, uz, pitch0, roll0).
+
     (uy, uz) is the "up" direction in the plane perpendicular to the pad's X axis, pitch0 / roll0 are the center angles.
     """
     cy, cz = (center[1], center[2]) if center else (1.0, 0.0)
@@ -143,9 +144,11 @@ def tilt_basis(center):
 
 
 def rest_up(ax, ay, az):
-    """The "up" direction (uy, uz) of an uncalibrated pad, taken from where gravity points at rest: the sensor axis that
-    reads about +-1 g while the pad lies roughly flat. Which axis that is depends on the sensor frame (Y in the DS4 report,
-    Z in some evdev mappings) and on the sign, so it is detected instead of assumed. None = no axis is clearly vertical.
+    """The "up" direction (uy, uz) of an uncalibrated pad, taken from where gravity points at rest.
+
+    The sensor axis that reads about +-1 g while the pad lies roughly flat. Which axis that is depends on the sensor
+    frame (Y in the DS4 report, Z in some evdev mappings) and on the sign, so it is detected instead of assumed. None =
+    no axis is clearly vertical.
     """
     if max(abs(ay), abs(az)) < REST_MIN_G:
         return None
@@ -153,8 +156,10 @@ def rest_up(ax, ay, az):
 
 
 def angles(ax, ay, az, uy, uz):
-    """Gravity vector [g] -> (pitch, roll) in degrees in the frame given by (uy, uz): positive pitch = front
-    down, positive roll = right side down. Pitch is a rotation about the X axis, roll is measured from the "up" direction.
+    """Gravity vector [g] -> (pitch, roll) in degrees in the frame given by (uy, uz).
+
+    Positive pitch = front down, positive roll = right side down. Pitch is a rotation about the X axis, roll is measured
+    from the "up" direction.
     """
     gu = ay * uy + az * uz                       # the "up" component (the neutral direction in the YZ plane)
     gf = az * uy - ay * uz                       # the "back" component; front down = more "back" points up
@@ -177,7 +182,9 @@ def to_u8(v):
 
 def drive_state(s, gs) -> None:
     """Applies the gyro output `gs` = (target, x, y, mask) to the output state `s` (an rx_state dict; call under the lock).
-    A target taken by the gyro ignores the physical input; D-pad: a direction from half deflection (DPAD_AT); y > 0 = up.
+
+    A target taken by the gyro ignores the physical input; D-pad: a direction from half deflection (DPAD_AT); y > 0 =
+    up.
     """
     target, x, y, mask = gs
     if target == "left":
@@ -200,8 +207,9 @@ def sprint_mask(name):
 # ---------------- sink ----------------
 class Sink:
     """Warstwa abstrakcji wirtualnego pada: silnik zna tylko ten interfejs, nie ViGEm / HIDMaestro / uinput.
-    drive(): the gyro takes over the `target` input ("left" | "right" | "dpad") with x, y in -1..1 (y > 0 = up) and holds
-    the `button` (bit mask, 0 = none); release(): the gyro gives the input back (the physical one works again).
+
+    drive(): the gyro takes over the `target` input ("left" | "right" | "dpad") with x, y in -1..1 (y > 0 = up) and
+    holds the `button` (bit mask, 0 = none); release(): the gyro gives the input back (the physical one works again).
     """
 
     def drive(self, slot, target, x, y, button):
@@ -231,8 +239,10 @@ FORCE = ("force",)        # marker: the next output must be sent regardless of t
 
 class Engine:
     """State of one pad. step() once per sample (250 Hz thread): -> True when `out` has to be sent to the sink.
+
     out = None (the gyro doesn't drive - the physical input works) or (x, y, sprint) with x, y in -1..1 (y > 0 = up).
-    Preview fields: state, zone, raw / filt [°], xy (with the curve), mag (0..1 before the curve), event (threshold crossing).
+    Preview fields: state, zone, raw / filt [°], xy (with the curve), mag (0..1 before the curve), event (threshold
+    crossing).
     """
 
     def __init__(self, cfg=None) -> None:
@@ -271,8 +281,9 @@ class Engine:
         self._cal = [now + secs, 0.0, 0.0, 0.0, 0, 0.0]
 
     def release(self, rearm: bool = True) -> None:
-        """Hard clear: the gyro gives the input back, the filter and states are zeroed; rearm - the stick moves again only after
-        the pad returns near the center (no jump after a window / profile change).
+        """Hard clear: the gyro gives the input back, the filter and states are zeroed; rearm.
+
+        The stick moves again only after the pad returns near the center (no jump after a window / profile change).
         """
         if rearm:
             self.armed = False
@@ -304,8 +315,10 @@ class Engine:
         return self._decide()
 
     def _decide(self):
-        """Whether to send `out`: a change above the delta threshold; always zero (snap-back), the edge of the range, a button
-        change, taking and giving back the input.
+        """Whether to send `out`.
+
+        A change above the delta threshold; always zero (snap-back), the edge of the range, a button change, taking and
+        giving back the input.
         """
         out, sent = self.out, self.sent
         if sent is FORCE:
@@ -361,8 +374,9 @@ class Engine:
         return self.asleep
 
     def step(self, now, ax, ay, az, gdps, held, alive: bool = True):
-        """One sample: now [s, monotonic clock], acc [g], gdps = rotation magnitude [°/s], held = clutch held,
-        alive = pad connected. -> True when `out` has to be sent (`sent` itself is already updated).
+        """One sample: now [s, monotonic clock], acc [g], gdps = rotation magnitude [°/s], held = clutch held.
+
+        Alive = pad connected. -> True when `out` has to be sent (`sent` itself is already updated).
         """
         cfg = self.cfg
         if cfg is not self._cfg:

@@ -46,8 +46,9 @@ def master_only(feature):
 
 
 def _ps():
-    """The PS-button group: short press, long-press action, PS + Share capture and the PS + D-pad combos. Collapses to a single
-    row plus a note when ps_modifier is off.
+    """The PS-button group: short press, long-press action, PS + Share capture and the PS + D-pad combos.
+
+    Collapses to a single row plus a note when ps_modifier is off.
     """
     if not C.PS_MODIFIER:
         return Group(_("Skróty z PS"), (Shortcut(("ps",), _("PS dla gry i Steam (od razu)"), "ps_game"),),

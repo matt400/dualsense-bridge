@@ -60,9 +60,11 @@ def init(n) -> None:
 
 
 def reset(i, keep: bool = False) -> None:
-    """End the combinations and timers of a slot. keep: the pad stays connected (Test view boundary, block) - inputs held
-    right now are the "previous state" (they will not fire an action), and a new press after the boundary works at once (like
-    rx_hotkeys.reset); without keep - as after the pad connects (the first state is the initial state).
+    """End the combinations and timers of a slot. keep.
+
+    The pad stays connected (Test view boundary, block) - inputs held right now are the "previous state" (they will not
+    fire an action), and a new press after the boundary works at once (like rx_hotkeys.reset); without keep - as after
+    the pad connects (the first state is the initial state).
     """
     if slots[i].timer is not None:
         slots[i].timer.cancel()
@@ -89,8 +91,10 @@ def is_master(i):
 
 
 def allowed(i, feature):
-    """Whether pad i may use `feature`: always when it is not restricted or there is no master; otherwise only the master (or all / nobody
-    when the master is absent, per when_absent).
+    """Whether pad i may use `feature`.
+
+    Always when it is not restricted or there is no master; otherwise only the master (or all / nobody when the master
+    is absent, per when_absent).
     """
     m = rx_settings.cur.master
     if not m.pad or feature not in m.only_master:
@@ -109,9 +113,11 @@ def check(i, feature) -> bool:
 
 
 def mouse_follows_master(force: bool = False) -> None:
-    """The touchpad mouse follows the master: the master pad = mouse, the others = DS4 touch. The master is not connected
-    (or force after the master was removed) -> the mouse per mouse_pads from the configuration. With no master in the settings it changes
-    nothing (a manual PS + touchpad click switch stays). Called after the master changes and after a pad connects / leaves.
+    """The touchpad mouse follows the master: the master pad = mouse, the others = DS4 touch.
+
+    The master is not connected (or force after the master was removed) -> the mouse per mouse_pads from the
+    configuration. With no master in the settings it changes nothing (a manual PS + touchpad click switch stays). Called
+    after the master changes and after a pad connects / leaves.
     """
     if not rx_settings.cur.master.pad and not force:
         return
@@ -199,8 +205,9 @@ def on_state(i, mask, hx, hy, lt, rt) -> None:
 
 
 def _consume(i, h, b) -> None:
-    """A button consumed in a combination: it does not go to the game, and PS does not either after release (and there is no Game Bar from
-    a long PS).
+    """A button consumed in a combination.
+
+    It does not go to the game, and PS does not either after release (and there is no Game Bar from a long PS).
     """
     import rx_hotkeys                       # rx_hotkeys imports rx_master - import here
     rx_hotkeys.mark_used(i)
@@ -264,8 +271,10 @@ def _held(i, gen, button, action) -> None:
 
 # ---------------- actions ----------------
 def _do(i, action) -> None:
-    """Perform a master action: pause (Esc), close the foreground game window (never the desktop, Steam or this receiver),
-    sleep or shut down the PC (through console mode's power-off notification). Errors are logged, never raised.
+    """Perform a master action.
+
+    Pause (Esc), close the foreground game window (never the desktop, Steam or this receiver), sleep or shut down the PC
+    (through console mode's power-off notification). Errors are logged, never raised.
     """
     try:
         hwnd = 0

@@ -39,6 +39,7 @@ LEAST, HIGHEST = "<RunLevel>LeastPrivilege</RunLevel>", "<RunLevel>HighestAvaila
 
 def task_xml(exe, args, workdir, user, elevated: bool = False, logon: bool = True) -> str:
     """Task definition: at this user's logon, no delay and no time limit, normal priority.
+
     elevated: the highest privileges (administrator without a UAC prompt); logon=False: no trigger (start on demand).
     """
     e = escape
@@ -103,9 +104,10 @@ _XML_QUOTES = {"&quot;": '"', "&apos;": "'"}
 
 
 def task_action(xml):
-    """(program, arguments) from a task definition (schtasks /query /xml), or None. Only when the script from the arguments exists:
-    schtasks returns the XML in the console code page, so a path with non-ASCII characters may come back garbled - then
-    None (the caller keeps its own command).
+    """(program, arguments) from a task definition (schtasks /query /xml), or None.
+
+    Only when the script from the arguments exists: schtasks returns the XML in the console code page, so a path with
+    non-ASCII characters may come back garbled - then None (the caller keeps its own command).
     """
     m = _ACTION.search(xml or "")
     if m is None:
@@ -133,8 +135,9 @@ def create_task(exe, args, elevated: bool = False, name=NAME, logon: bool = True
 
 
 def _create_xml(xml, name=NAME):
-    """Create a task from an XML definition -> (ok, error description). The XML is UTF-16 (that is how schtasks reads it); the temporary
-    file is always removed.
+    """Create a task from an XML definition -> (ok, error description).
+
+    The XML is UTF-16 (that is how schtasks reads it); the temporary file is always removed.
     """
     fd, path = tempfile.mkstemp(suffix=".xml")
     try:
@@ -152,7 +155,9 @@ def _create_xml(xml, name=NAME):
 
 
 def enable(exe, args, elevated: bool = False) -> str:
-    """Enable autostart: create the logon task and drop the old Run entry; when the task cannot be created, fall back to the Run entry.
+    """Enable autostart.
+
+    Create the logon task and drop the old Run entry; when the task cannot be created, fall back to the Run entry.
     Returns a log message.
     """
     ok, err = create_task(exe, args, elevated)
@@ -192,10 +197,12 @@ def migrate() -> bool | None:
 
 def elevate(exe, args):
     """An existing autostart task without elevated privileges -> the same task with the highest ones. -> True when changed.
-    No task / already elevated / an error -> False (the receiver carries on). The definition is rebuilt (the XML from schtasks
-    /query comes in the console code page), but with the task's own command (task_action) - the exe, args of this process only
-    when it cannot be read. Earlier it always used the arguments of the current process: a manual start without --config (or
-    with other options) replaced the autostart and at the next logon the receiver started with different settings.
+
+    No task / already elevated / an error -> False (the receiver carries on). The definition is rebuilt (the XML from
+    schtasks /query comes in the console code page), but with the task's own command (task_action) - the exe, args of
+    this process only when it cannot be read. Earlier it always used the arguments of the current process: a manual
+    start without --config (or with other options) replaced the autostart and at the next logon the receiver started
+    with different settings.
     """
     try:
         r = _schtasks("/query", "/tn", NAME, "/xml")
@@ -212,8 +219,10 @@ def elevate(exe, args):
 
 
 def ensure_admin_task(exe, args):
-    """The start-on-demand task with the highest privileges - refreshed on every start as administrator (the same
-    command as the autostart; the receiver folder may have moved). -> True when it exists.
+    """The start-on-demand task with the highest privileges.
+
+    Refreshed on every start as administrator (the same command as the autostart; the receiver folder may have moved).
+    -> True when it exists.
     """
     try:
         ok, err = create_task(exe, args, elevated=True, name=ADMIN_NAME, logon=False)
@@ -227,9 +236,10 @@ def ensure_admin_task(exe, args):
 
 def run_admin_task(args=None):
     """The receiver as administrator without UAC: an existing ADMIN_NAME task with the highest privileges -> schtasks /run.
-    -> True when it started. No task / ordinary privileges in the task -> False (then the UAC prompt). args: the arguments
-    of this start (rx_config.autostart_command) - a task with different ones -> False: the task would run the receiver with its own,
-    and the --config / --pads of this start would be lost silently.
+
+    -> True when it started. No task / ordinary privileges in the task -> False (then the UAC prompt). args: the
+    arguments of this start (rx_config.autostart_command) - a task with different ones -> False: the task would run the
+    receiver with its own, and the --config / --pads of this start would be lost silently.
     """
     try:
         r = _schtasks("/query", "/tn", ADMIN_NAME, "/xml")

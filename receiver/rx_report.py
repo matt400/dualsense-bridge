@@ -23,8 +23,9 @@ def ds4_bits(mask):
 
 
 def put_touch(b, off, f) -> None:
-    """Write one finger f = (active, id, x, y) at offset `off` in the DS4 touch format: byte 0 = id with an inverted "active"
-    bit, then x and y packed as two 12-bit values over three bytes.
+    """Write one finger f = (active, id, x, y) at offset `off` in the DS4 touch format.
+
+    Byte 0 = id with an inverted "active" bit, then x and y packed as two 12-bit values over three bytes.
     """
     on, tid, x, y = f
     b[off] = (0 if on else 0x80) | (tid & 0x7F)
@@ -35,6 +36,7 @@ def put_touch(b, off, f) -> None:
 
 def build_report(s, counter, mmode, b=None):
     """Fill (and return) the 63-byte DS4 report; a supplied buffer is reused without allocation.
+
     Every variable byte is overwritten on every call, so a reused buffer never keeps stale data.
     """
     if b is None:
@@ -77,9 +79,10 @@ DS4_BATT_MAX = 8          # DS4 battery byte without a cable: level 0..8 (rx_net
 
 
 def ds5_battery(b4):
-    """DS4 battery byte (level 0..8 without a cable, 0..11 with a cable, 0x10 = cable) -> DualSense byte (level 0..10, state
-    in bits 4..7). Without a cable the 0..8 scale is stretched to 0..10: copied as is, a full pad would report level 8,
-    i.e. 85 % in games and Steam (hid-playstation: level * 10 + 5).
+    """DS4 battery byte (level 0..8 without a cable, 0..11 with a cable, 0x10 = cable).
+
+    DualSense byte (level 0..10, state in bits 4..7). Without a cable the 0..8 scale is stretched to 0..10: copied as
+    is, a full pad would report level 8, i.e. 85 % in games and Steam (hid-playstation: level * 10 + 5).
     """
     level, cable = b4 & 0x0F, b4 & 0x10
     level = min(level, 10) if cable else min(10, round(level * 10 / DS4_BATT_MAX))
@@ -93,9 +96,10 @@ def put_touch_ds5(b, off, f) -> None:
 
 
 def build_ds5_report(s, counter, mmode, b=None):
-    """DualSense USB input report 0x01 without the ID byte (63 B, like hid-playstation's dualsense_input_report): the buttons
-    use the same bits as on the DS4, but PS / touchpad sit in a separate byte and the counter has a byte of its own.
-    Every variable byte is overwritten.
+    """DualSense USB input report 0x01 without the ID byte (63 B.
+
+    Like hid-playstation's dualsense_input_report): the buttons use the same bits as on the DS4, but PS / touchpad sit
+    in a separate byte and the counter has a byte of its own. Every variable byte is overwritten.
     """
     if b is None:
         b = bytearray(63)
