@@ -12,22 +12,34 @@ CPU's power saving:
   scheduler          SCHED_FIFO (rt_priority): the sender thread does not wait in the run queue behind other
                      processes. With the RESET_ON_FORK flag - programs it launches (bluetoothctl) get a normal priority.
 """
+from __future__ import annotations
+
 import errno
 import glob
 import os
 import struct
+from typing import BinaryIO, Final
 
-_qos = None        # the open /dev/cpu_dma_latency - kept open until the process ends
+CPU_DMA_LATENCY: Final = "/dev/cpu_dma_latency"   # PM QoS interface: the request lives as long as the file stays open
+RUNTIME_NICE: Final = -10         # a little above normal priority; works without the real-time policy as well
+MIN_DISTINCT_CAPACITIES: Final = 2    # fewer distinct cpu_capacity values = identical cores, nothing to pin to
+CPU_DIR_PREFIX_LEN: Final = len("cpu")   # "cpu7" -> "7"
+ENOSYS_FALLBACK_NR: Final = 119   # sched_setscheduler in the asm-generic syscall table (aarch64, riscv64)
+
+_qos: BinaryIO | None = None      # the open /dev/cpu_dma_latency - kept open until the process ends
 
 
-def hold_cpu_latency(us, path: str="/dev/cpu_dma_latency") -> str | None:
-    """PM QoS: cap the CPU wake-up latency at `us` microseconds. Returns a description, or None (no permission / no file).
+def hold_cpu_latency(us: int, path: str = CPU_DMA_LATENCY) -> str | None:
+    """Cap the CPU wake-up latency at ``us`` microseconds with PM QoS.
 
     The kernel honours the request only while the file descriptor stays open, so the file is stored in a module
     global instead of being closed. If the request is made again, the new descriptor replaces (and closes) the old one.
+
+    Returns:
+        A description, or None (no permission / no file).
     """
     global _qos
-    f = None
+    f: BinaryIO | None = None
     try:
         f = open(path, "wb", buffering=0)  # noqa: SIM115 - kept open until the process ends
         f.write(struct.pack("i", us))
@@ -42,26 +54,26 @@ def hold_cpu_latency(us, path: str="/dev/cpu_dma_latency") -> str | None:
     return f"CPU wake-up latency <= {us} us"
 
 
-def fast_cpus(sys_root: str="/sys"):
+def fast_cpus(sys_root: str = "/sys") -> set[int]:
     """Return the set of CPUs with the highest capacity (sysfs cpu_capacity).
 
     On big.LITTLE SoCs every core reports a relative capacity; the cores sharing the maximum value are the "big" ones.
     The result is empty when all cores are identical or the data is unavailable, because then pinning would be pointless.
     """
-    cap = {}
-    for p in glob.glob(f"{sys_root}/devices/system/cpu/cpu[0-9]*/cpu_capacity"):
+    cap: dict[int, int] = {}
+    for path in glob.glob(f"{sys_root}/devices/system/cpu/cpu[0-9]*/cpu_capacity"):
         try:
-            with open(p) as f:
-                cap[int(os.path.basename(os.path.dirname(p))[3:])] = int(f.read())
+            with open(path) as f:
+                cap[int(os.path.basename(os.path.dirname(path))[CPU_DIR_PREFIX_LEN:])] = int(f.read())
         except (OSError, ValueError):
-            pass
-    if len(set(cap.values())) < 2:
+            continue              # a core that went offline or a file in a format we do not know: leave that core out
+    if len(set(cap.values())) < MIN_DISTINCT_CAPACITIES:
         return set()
     top = max(cap.values())
     return {cpu for cpu, c in cap.items() if c == top}
 
 
-def pin_fast_cpus(sys_root: str="/sys"):
+def pin_fast_cpus(sys_root: str = "/sys") -> str | None:
     """Restrict this process to the fast cores that it is allowed to use; returns a description or None.
 
     The fast set is intersected with the current affinity mask, so cgroup/cpuset limits are respected. Nothing is
@@ -79,24 +91,27 @@ def pin_fast_cpus(sys_root: str="/sys"):
 
 
 # system call number of sched_setscheduler (asm-generic: aarch64, riscv64; other architectures listed separately)
-_SYS_SCHED_SETSCHEDULER = {"x86_64": 144, "i686": 156, "i386": 156, "armv7l": 156, "armv6l": 156, "armv8l": 156}
+_SYS_SCHED_SETSCHEDULER: Final = {"x86_64": 144, "i686": 156, "i386": 156, "armv7l": 156, "armv6l": 156, "armv8l": 156}
 
 
-def _sched_syscall(policy, priority) -> None:
-    """Call sched_setscheduler directly through the raw syscall. musl (Alpine, postmarketOS) deliberately does not
-    implement this libc function (it always returns ENOSYS), so os.sched_setscheduler never works there, even as root.
-    The kernel itself supports the call, so we skip libc and invoke it by its syscall number."""
+def _sched_syscall(policy: int, priority: int) -> None:
+    """Call sched_setscheduler directly through the raw syscall.
+
+    musl (Alpine, postmarketOS) deliberately does not implement this libc function (it always returns ENOSYS), so
+    os.sched_setscheduler never works there, even as root. The kernel itself supports the call, so we skip libc and
+    invoke it by its syscall number.
+    """
     import ctypes
     import platform
     libc = ctypes.CDLL(None, use_errno=True)
-    nr = _SYS_SCHED_SETSCHEDULER.get(platform.machine(), 119)
+    nr = _SYS_SCHED_SETSCHEDULER.get(platform.machine(), ENOSYS_FALLBACK_NR)
     param = ctypes.c_int(priority)                  # struct sched_param { int sched_priority; }
     if libc.syscall(ctypes.c_long(nr), 0, policy, ctypes.byref(param)) != 0:
-        e = ctypes.get_errno()
-        raise OSError(e, os.strerror(e))
+        err = ctypes.get_errno()
+        raise OSError(err, os.strerror(err))
 
 
-def realtime(priority) -> str | None:
+def realtime(priority: int) -> str | None:
     """Switch this process to the SCHED_FIFO real-time policy with the given priority; returns a description or None.
 
     Priority 0 means "disabled". The standard library call is tried first; if libc answers ENOSYS (musl), the raw
@@ -120,16 +135,16 @@ def realtime(priority) -> str | None:
     return f"SCHED_FIFO {priority}"
 
 
-def setup(low_latency, cpu_latency_us, rt_priority) -> None:
+def setup(low_latency: bool, cpu_latency_us: int, rt_priority: int) -> None:
     """Apply every latency tweak once at sender startup; each step is independent, so one failing does not block the rest.
 
     A small negative nice value and (if configured) real-time scheduling are always attempted; the PM QoS request
     and the fast-core pinning only run when low_latency is enabled. The steps that worked are summarised in one log line.
     """
     try:
-        os.nice(-10)
+        os.nice(RUNTIME_NICE)
     except OSError:
-        pass
+        pass                  # without privileges the priority simply stays normal
     results = [realtime(rt_priority)]            # each step returns a description of what it set, or None
     if low_latency:
         results += [hold_cpu_latency(cpu_latency_us), pin_fast_cpus()]
