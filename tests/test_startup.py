@@ -39,6 +39,8 @@ for k in range(3):
 print("alive:", S.alive[0], "pad_id:", S.pad_id[0], "game:", S.game, "DS4 reports:", len(REPORTS),
       "lx:", REPORTS[-1][0] if REPORTS else None)
 assert S.alive[0] and S.pad_id[0] == "aa:bb:cc:dd:ee:ff" and S.game == "game.exe" and REPORTS and REPORTS[-1][0] == 200
+names = {th.name for th in threading.enumerate()}
+assert "gyro stick" in names, f"the tilt-to-stick thread is not running: {sorted(names)}"   # regression: it was never started
 S.stop.set(); time.sleep(0.5)
 assert not errors, errors
 print("STARTUP OK - main() startuje, wszystkie wątki działają bez wyjątków")
