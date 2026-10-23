@@ -295,7 +295,7 @@ class ConsoleSettings(QDialog):
         if busy:
             lines.append(_("HIDMaestro: sprawdzanie / pobieranie…"))
         elif st.version:
-            newer = st.latest and rx_hm_update.version_key(st.latest) > rx_hm_update.version_key(st.version)
+            newer = st.latest and rx_hm_update.version_tuple(st.latest) > rx_hm_update.version_tuple(st.version)
             lines.append(_("HIDMaestro {v} pobrany").format(v=st.version)
                          + (_(" (na GitHubie jest {v})").format(v=st.latest) if newer else ""))
             if newer and st.held_until > time.time():
