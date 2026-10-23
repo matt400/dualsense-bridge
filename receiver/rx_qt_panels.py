@@ -6,7 +6,9 @@ On top only what changes most often (what a button does, where a stick comes fro
 The panels read and change the Editor (rx_editor) and tell the window with the `edited` signal that the profile changed
 (the window refreshes the badges and the status, and sends the profile to the pad after a short delay).
 """
-from rx_i18n import _
+from collections.abc import Callable
+from typing import Any
+
 from PySide6.QtCore import QStringListModel, Qt, Signal
 from PySide6.QtWidgets import (QCheckBox, QCompleter, QFrame, QHBoxLayout, QLineEdit, QScrollArea, QStackedWidget,
                                QToolButton, QVBoxLayout, QWidget)
@@ -15,7 +17,8 @@ import rx_buttons as B
 import rx_status as ST
 from proto import RFX_GAIN_MAX, TRIG_AMP_MAX, TRIG_CLICK_MAX, TRIG_CLICK_MIN, TRIG_FORCE_MAX, TRIG_FREQ_MAX, TRIG_START_MAX
 from rx_shape import RUMBLE_LIMITS, needs_fx
-from rx_editor import GYRO_MODES, L3_OF, SHORT, STICK_NAME, STICK_OF
+from rx_editor import GYRO_MODES, L3_OF, SHORT, STICK_NAME, STICK_OF, Editor
+from rx_i18n import _
 from rx_qt_style import set_prop
 from rx_qt_icons import pixmap
 from rx_qt_gstick import TiltSection
@@ -37,20 +40,22 @@ RUMBLE_ON = {"inherit": "Jak w profilu pada", "on": "Włączona", "off": "Wyłą
 RUMBLE_KEY = {None: "inherit", True: "on", False: "off"}
 
 
-def _of8(v) -> str:
+def _of8(v: float) -> str:
     """Slider text for a value out of TRIG_FORCE_MAX, e.g. "5 / 8"."""
     return f"{round(v)} / {TRIG_FORCE_MAX}"
-def targets():
-    """Choices of what a button can act as: every pad input (icon + name) and \"disabled\"."""
+
+
+def targets() -> list[tuple[str, str]]:
+    """Choices of what a button can act as: every pad input (icon + name) and "disabled"."""
     return [*input_items(B.INPUTS, text=True), (NONE, _("— wyłączony —"))]   # icon + name: the choice is visible at once
 
 
-def r3(v):
+def r3(v: float) -> float:
     """Round to 3 decimals (profile values are stored that way)."""
     return round(v, 3)
 
 
-def _vbox(parent=None, spacing: int = 10):
+def _vbox(parent: QWidget | None = None, spacing: int = 10) -> QVBoxLayout:
     """A vertical layout without margins (on `parent` when given)."""
     lay = QVBoxLayout(parent)
     lay.setContentsMargins(0, 0, 0, 0)
@@ -58,7 +63,7 @@ def _vbox(parent=None, spacing: int = 10):
     return lay
 
 
-def scrolled(widget):
+def scrolled(widget: QWidget) -> QScrollArea:
     """A panel in vertical scrolling (no frame) - the content may be taller than the window."""
     sa = QScrollArea()
     sa.setWidgetResizable(True)
@@ -80,8 +85,9 @@ class ProfileBar(QWidget):
     def __init__(self) -> None:
         """Build the profile combo with the add / delete buttons, an info line and the hidden new-game-profile form."""
         super().__init__()
-        self._sig = None
-        self.recent, self.existing = [], set()
+        self._sig: tuple[tuple[str, str, bool], ...] | None = None
+        self.recent: list[str] = []
+        self.existing: set[str] = set()
         lay = _vbox(self, 6)
         row = QHBoxLayout()
         self.combo = Combo()
@@ -128,7 +134,7 @@ class ProfileBar(QWidget):
         self.form.hide()
         lay.addWidget(self.form)
 
-    def reload(self, profiles, key, info, recent) -> None:
+    def reload(self, profiles: list[tuple[str, str, bool]], key: str, info: str, recent: list[str]) -> None:
         """Profiles = [(key, name, in use)]; the list is rebuilt only when it changed (an open one is not closed)."""
         sig = tuple(profiles)
         if sig != self._sig:
@@ -163,19 +169,26 @@ class PartPage(QWidget):
 
     edited = Signal()
 
-    def __init__(self, ed) -> None:
+    def __init__(self, ed: Editor) -> None:
         """Stack three pages: a hint (nothing selected), a button / trigger page and a stick page."""
         super().__init__()
-        self.ed, self.name = ed, None
+        self.ed = ed
+        self.name: str | None = None
         self.stack = QStackedWidget()
         _vbox(self).addWidget(self.stack)
         self.stack.addWidget(self._hint_page())
         self.stack.addWidget(self._button_page())
         self.stack.addWidget(self._stick_page())
 
+    @property
+    def _part(self) -> str:
+        """The selected part's name. The widgets that call this are only reachable while a part is selected."""
+        assert self.name is not None
+        return self.name
+
     # ---------- building ----------
     @staticmethod
-    def _hint_page():
+    def _hint_page() -> QScrollArea:
         """The page shown while no part is selected."""
         w = QWidget()
         lay = _vbox(w)
@@ -183,7 +196,7 @@ class PartPage(QWidget):
         lay.addStretch(1)
         return scrolled(w)
 
-    def _button_page(self):
+    def _button_page(self) -> QScrollArea:
         """The page for a button or trigger.
 
         The target combo and reset; for L2 / R2 also the trigger effect, game rumble and the response tuning.
@@ -197,13 +210,19 @@ class PartPage(QWidget):
         head.addWidget(self.title, 1)
         lay.addLayout(head)
         self.dst = Combo(targets())
-        self.dst.changed.connect(lambda v: self._set_button(self.name, v))
+        self.dst.changed.connect(lambda v: self._set_button(self._part, v))
         lay.addWidget(field(_("Działa jak"), self.dst))
         self.dflt = button(_("Domyślnie"), small=True)
-        self.dflt.clicked.connect(lambda: self._reset_button(self.name))
+        self.dflt.clicked.connect(lambda: self._reset_button(self._part))
         lay.addWidget(self.dflt, 0, Qt.AlignmentFlag.AlignLeft)
 
-        self.trig = QWidget()                        # L2 / R2 only: the trigger effect, game rumble and the (collapsed) response
+        lay.addWidget(self._trigger_block())
+        lay.addStretch(1)
+        return scrolled(w)
+
+    def _trigger_block(self) -> QWidget:
+        """L2 / R2 only: the trigger effect, game rumble on the triggers and the (collapsed) response tuning."""
+        self.trig = QWidget()
         tl = _vbox(self.trig)
         tl.addSpacing(4)
         tl.addWidget(label(_("EFEKT SPUSTU"), "h2"))
@@ -245,16 +264,14 @@ class PartPage(QWidget):
         self.tdz = SliderRow(_("Strefa martwa (ignoruj lekkie dotknięcia do)"), 0, 200, 1)
         self.tmax = SliderRow(_("Pełne wciśnięcie od"), 55, 255, 1)
         self.tdef = button(_("Domyślna reakcja"), small=True)
-        self.tdz.changed.connect(lambda v: self._tune(self.name, dz=round(v)))
-        self.tmax.changed.connect(lambda v: self._tune(self.name, max=round(v)))
-        self.tdef.clicked.connect(lambda: self._reset_tuning(self.name))
+        self.tdz.changed.connect(lambda v: self._tune(self._part, dz=round(v)))
+        self.tmax.changed.connect(lambda v: self._tune(self._part, max=round(v)))
+        self.tdef.clicked.connect(lambda: self._reset_tuning(self._part))
         self.trig_adv = Collapsible(_("ZAAWANSOWANE: REAKCJA SPUSTU"), self.tdz, self.tmax, left(self.tdef))
         tl.addWidget(self.trig_adv)
-        lay.addWidget(self.trig)
-        lay.addStretch(1)
-        return scrolled(w)
+        return self.trig
 
-    def _stick_page(self):
+    def _stick_page(self) -> QScrollArea:
         """The page for a stick: the source stick, axis inversion, the stick-click target and the response tuning."""
         w = QWidget()
         lay = _vbox(w)
@@ -273,19 +290,19 @@ class PartPage(QWidget):
         lay.addLayout(inv)
         self.l3_caption = label("", "dim")
         self.l3 = Combo(targets())
-        self.l3.changed.connect(lambda v: self._set_button(L3_OF[self.name], v))
+        self.l3.changed.connect(lambda v: self._set_button(L3_OF[self._part], v))
         lay.addWidget(self.l3_caption)
         lay.addWidget(self.l3)
         self.dz = SliderRow(_("Strefa martwa"), 0, 50, 1, "%")
         self.outer = SliderRow(_("Pełne wychylenie od"), 50, 100, 1, "%")
         self.curve = SliderRow(_("Krzywa (powyżej 1 = dokładniejsze małe ruchy)"), 0.3, 3, 0.05, "x")
         self.anti = SliderRow(_("Anty-strefa martwa (pokonuje strefę martwą gry)"), 0, 50, 1, "%")
-        self.dz.changed.connect(lambda v: self._tune(STICK_OF[self.name], dz=r3(v / 100)))
-        self.outer.changed.connect(lambda v: self._tune(STICK_OF[self.name], outer=r3(v / 100)))
-        self.curve.changed.connect(lambda v: self._tune(STICK_OF[self.name], curve=r3(v)))
-        self.anti.changed.connect(lambda v: self._tune(STICK_OF[self.name], anti=r3(v / 100)))
+        self.dz.changed.connect(lambda v: self._tune(STICK_OF[self._part], dz=r3(v / 100)))
+        self.outer.changed.connect(lambda v: self._tune(STICK_OF[self._part], outer=r3(v / 100)))
+        self.curve.changed.connect(lambda v: self._tune(STICK_OF[self._part], curve=r3(v)))
+        self.anti.changed.connect(lambda v: self._tune(STICK_OF[self._part], anti=r3(v / 100)))
         self.sdef = button(_("Domyślna reakcja"), small=True)
-        self.sdef.clicked.connect(lambda: self._reset_tuning(STICK_OF[self.name]))
+        self.sdef.clicked.connect(lambda: self._reset_tuning(STICK_OF[self._part]))
         self.stick_adv = Collapsible(_("ZAAWANSOWANE: REAKCJA GAŁKI"), self.dz, self.outer, self.curve, self.anti,
                                      left(self.sdef))
         lay.addSpacing(4)
@@ -294,29 +311,29 @@ class PartPage(QWidget):
         return scrolled(w)
 
     # ---------- changes ----------
-    def _set_button(self, src, value) -> None:
+    def _set_button(self, src: str, value: str) -> None:
         """Remap `src` to `value` (NONE = disabled) and report the edit."""
         self.ed.set_button(src, None if value == NONE else value)
         self.edited.emit()
 
-    def _reset_button(self, src) -> None:
+    def _reset_button(self, src: str) -> None:
         """Restore the default mapping of `src`."""
         self.ed.clear_button(src)
         self.refresh()
         self.edited.emit()
 
-    def _tune(self, name, **patch) -> None:
+    def _tune(self, name: str, **patch: Any) -> None:
         """Patch the response tuning of a part (dead zone, curve...)."""
         self.ed.set_tuning(name, **patch)
         self.edited.emit()
 
-    def _reset_tuning(self, name) -> None:
+    def _reset_tuning(self, name: str) -> None:
         """Restore the default response of a part."""
         self.ed.clear_tuning(name)
         self.refresh()
         self.edited.emit()
 
-    def _trigger_fx(self, **patch) -> None:
+    def _trigger_fx(self, **patch: Any) -> None:
         """Patch the trigger effect of the selected trigger; a mode change also re-shows the matching sliders."""
         if self.name in B.TRIGGERS:
             self.ed.set_trigger_fx(self.name, **patch)
@@ -324,14 +341,14 @@ class PartPage(QWidget):
                 self._show_fx(self.ed.trigger_fx(self.name))
             self.edited.emit()
 
-    def _rumble_fx(self, **patch) -> None:
+    def _rumble_fx(self, **patch: Any) -> None:
         """Patch the game-rumble-on-triggers settings (shared by L2 and R2)."""
         self.ed.set_rumble_fx(**patch)
         if "on" in patch:
             self._show_rumble(self.ed.rumble_fx())
         self.edited.emit()
 
-    def _show_fx(self, fx) -> None:
+    def _show_fx(self, fx: dict[str, Any]) -> None:
         """The sliders of the effect mode (the rest hidden) and the hint."""
         self.fx_hint.setText(_(FX_MODES[fx["mode"]][1]))
         shown = FX_SLIDERS.get(fx["mode"], ())
@@ -340,7 +357,7 @@ class PartPage(QWidget):
             row.set(fx[k] * (10 if k in ("start", "pos") else 1))
         self.update_caps()
 
-    def _show_rumble(self, rv) -> None:
+    def _show_rumble(self, rv: dict[str, Any]) -> None:
         """Show the game rumble settings; the sliders only when it is on."""
         self.rv_gain.set(rv["gain"])
         self.rv_freq.set(rv["freq"])
@@ -348,19 +365,19 @@ class PartPage(QWidget):
         self.rv_freq.setVisible(bool(rv["on"]))
         self.update_caps()
 
-    def _stick(self, **patch) -> None:
+    def _stick(self, **patch: Any) -> None:
         """Patch the stick mapping (source, inversion) of the selected stick."""
         if self.name is not None and self.name in STICK_OF:
             self.ed.set_stick(STICK_OF[self.name], **patch)
             self.edited.emit()
 
     # ---------- reading ----------
-    def show_part(self, name) -> None:
+    def show_part(self, name: str | None) -> None:
         """Select a part (a button, trigger or stick name) and load it."""
         self.name = name
         self.refresh()
 
-    def _target(self, src):
+    def _target(self, src: str) -> str:
         """What `src` currently acts as, NONE when disabled."""
         t = self.ed.target_of(src)
         return NONE if t is None else t
@@ -426,7 +443,7 @@ class GyroPage(QWidget):
 
     edited = Signal()
 
-    def __init__(self, ed) -> None:
+    def __init__(self, ed: Editor) -> None:
         """Build the mode combo and the settings (activation, sensitivity, inversion, anti dead zone)."""
         super().__init__()
         self.ed = ed
@@ -470,7 +487,7 @@ class GyroPage(QWidget):
         lay.addWidget(self.tilt)
         lay.addStretch(1)
 
-    def _set(self, relayout: bool = False, **patch) -> None:
+    def _set(self, relayout: bool = False, **patch: Any) -> None:
         """Patch the gyro settings; relayout reloads the widgets (a mode change shows / hides parts)."""
         self.ed.set_gyro(**patch)
         if relayout:
@@ -494,7 +511,7 @@ class GyroPage(QWidget):
         self.anti.setVisible(g["mode"] == "stick")
         self.tilt.set_slot(self.ed.slot)
 
-    def set_live(self, in_use, active) -> None:
+    def set_live(self, in_use: bool, active: bool) -> None:
         """The row under the settings: whether the gyro reacts now (only for the profile in use)."""
         g = self.ed.gyro()
         if g["mode"] == "off":
@@ -515,10 +532,11 @@ class ChangesPage(QWidget):
 
     undone = Signal()      # an item was undone - the window must refresh all panels
 
-    def __init__(self, ed) -> None:
+    def __init__(self, ed: Editor) -> None:
         """Build the scrollable list and the Delete all button."""
         super().__init__()
-        self.ed, self._sig = ed, None
+        self.ed = ed
+        self._sig: tuple[str, ...] | None = None
         self.box = QWidget()
         self.lay = _vbox(self.box, 4)
         outer = _vbox(self, 8)
@@ -527,7 +545,7 @@ class ChangesPage(QWidget):
         self.reset.setToolTip(_("Usuń wszystkie zmiany w tym profilu"))
         outer.addLayout(left(self.reset))
 
-    def refresh(self):
+    def refresh(self) -> int:
         """-> the number of changes. Rows are rebuilt only when the list changed (a slider makes many changes a second)."""
         changes = self.ed.changes()
         sig = tuple(text for text, _ in changes)
@@ -547,7 +565,7 @@ class ChangesPage(QWidget):
             self.reset.setVisible(bool(changes))
         return len(changes)
 
-    def _row(self, text, undo):
+    def _row(self, text: str, undo: Callable[[], None]) -> QFrame:
         """One change row: its text and a × button that undoes it."""
         row = QFrame()
         row.setObjectName("row")
@@ -562,7 +580,7 @@ class ChangesPage(QWidget):
         hl.addWidget(x)
         return row
 
-    def _undo(self, undo) -> None:
+    def _undo(self, undo: Callable[[], None]) -> None:
         """Run the undo of one item and tell the window to refresh everything."""
         undo()
         self.undone.emit()
