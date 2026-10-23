@@ -135,7 +135,9 @@ ok("klik w pad: wybór części, przycisk, spust, gałka (strefa, krzywa, zamian
 
 # ---------- gyro ----------
 win.tabs.setCurrentIndex(1)
-gp = win.gyro_page   # the aiming settings sit in a collapsed category: visibility is checked relative to the page
+gp = win.gyro_page   # the aiming settings sit in a category that starts collapsed
+assert not gp.aim_cat.is_open()
+gp.aim_cat.set_open(True)
 assert not gp.body.isVisibleTo(gp) and gp.off_hint.isVisibleTo(gp)
 win.gyro_page.mode.changed.emit("stick"); win.gyro_page.hold.changed.emit("l2"); pump(20)
 assert gp.body.isVisibleTo(gp) and gp.anti.isVisibleTo(gp)
