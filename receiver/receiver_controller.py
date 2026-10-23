@@ -3,7 +3,8 @@ z baterią, łączem i remapowaniem. Protokół: proto.py.
 
 Pliki: proto.py (wspólny), rx_config.py, rx_state.py, rx_buttons.py (remap + remap.json),
        rx_shape.py (strefy martwe, krzywe, gyro), rx_hotkeys.py (skróty PS), rx_games.py (profil wg gry),
-       rx_gyro.py (gyro jako mysz), rx_feedback.py (wibracja, lightbar, potwierdzenia),
+       rx_gyro.py (gyro jako mysz), rx_gstick.py + rx_gstick_io.py (przechył pada jako gałka),
+       rx_feedback.py (wibracja, lightbar, potwierdzenia),
        rx_winapi.py, rx_mouse.py, rx_report.py, rx_net.py, rx_dsu.py, rx_ds4.py,
        rx_console.py + rx_audio.py (tryb konsoli: monitor / TV, console.json),
        rx_settings.py (settings.json: mysz, pad master), rx_master.py (pad master: uprawnienia, PS + przycisk),
@@ -167,6 +168,7 @@ def main():
     import rx_dsu
     import rx_feedback
     import rx_games
+    import rx_gstick_io
     import rx_gyro
     import rx_hotkeys
     import rx_master
@@ -185,6 +187,7 @@ def main():
     rx_master.init(C.NUM_PADS)
     rx_testmode.init(C.NUM_PADS)
     rx_ds4.init()
+    rx_gstick_io.runner.init()
     rx_net.init()
     rx_dsu.start()
     rx_console.init()   # ekran i dźwięk wg startup_mode (extend: oba ekrany aktywne, nigdy bez obrazu)
@@ -200,6 +203,7 @@ def main():
         rx_hm_update.on_installed = rx_ds4.hm_installed
         S.start_thread("hidmaestro update", rx_hm_update.thread, S.stop, rx_ds4.hm_auto_enabled)
     S.start_thread("gyro mouse", rx_gyro.mouse_thread)
+    S.start_thread("gyro stick", rx_gstick_io.thread)
     # zawsze (także bez profili gier): zmiana programu na pierwszym planie zatrzymuje wibrację z gry,
     # która skończyła się w trakcie wibracji; profile gier przełącza tylko przy game_profiles (rx_state.reload_profile)
     S.start_thread("game watch", rx_games.watch_thread)

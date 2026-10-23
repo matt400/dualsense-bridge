@@ -7,6 +7,7 @@ import rx_padcal
 from proto import SeqFilter
 from rx_buttons import apply_remap, apply_sticks, pressed_inputs, profile_size
 from rx_config import C
+from rx_gstick import drive_state
 from rx_shape import gyro_mouse_velocity, gyro_rates, gyro_stick, merge_triggers, shape_stick, shape_trigger
 
 lock = threading.Lock()
@@ -53,6 +54,7 @@ def new_state():
         "ts": 0,                                                         # kiedy (us) przyszła ostatnia zmiana stanu
         "gyro_on": False,                    # gyro aktywne (tryb gałki lub myszy i spełniony warunek "hold")
         "gyro_vel": None,                    # prędkość kursora z gyro [px/s] w trybie myszy, None = wyłączone
+        "gs": None,                          # gałka z przechyłu pada (rx_gstick_io): (cel, x, y, maska przycisków) albo None
         "lat": None,                         # pomiar opóźnienia ostatniej zmiany (rx_net -> rx_ds4 -> rx_latency)
         "blat": None,                        # to samo, tylko dla zmiany przycisku / D-pada / spustu (przycisk -> gra)
     }
@@ -157,6 +159,8 @@ def recompute(s, prof):
         else:
             s["gyro_vel"] = gyro_mouse_velocity(rates, g)
     s["lx"], s["ly"], s["rx"], s["ry"] = lx, ly, rx, ry
+    if s["gs"] is not None:          # przechył pada przejmuje wybrane wejście (po remapie i kształtowaniu)
+        drive_state(s, s["gs"])
 
 
 def set_remap(i, prof):

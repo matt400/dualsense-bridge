@@ -26,9 +26,17 @@
     błędy - nadajnik trzyma je, póki receiver nie odpowiada, więc np. Wake-on-LAN pojawia się po starcie komputera
     z prawdziwą godziną. Dziennik jest tylko w pamięci (restart go czyści), wysokość panelu da się przeciągnąć;
   - na środku rysunek pada na żywo: kliknij przycisk, spust albo gałkę, żeby ją zremapować lub dostroić;
-  - po prawej profil (domyślny / per gra), zakładki **Selected**, **Gyro**, **Changes** i przycisk **Save** (Ctrl+S);
+  - po prawej profil (domyślny / per gra), zakładki **Selected**, **Gyro**, **Changes**, **Tilt** i przycisk **Save** (Ctrl+S);
   - remapowanie przycisków i gałek, celowanie żyroskopem (prawa gałka / mysz); strefy martwe, krzywe i
     anti-deadzone w zwijanej sekcji „Zaawansowane” (otwiera się sama, gdy coś w niej zmieniono);
+  - **zakładka Przechył:** przechył pada steruje gałką analogową (albo D-padem), osobno dla każdego pada (zapis po MAC w
+    `gyrostick.json` obok `remap.json`, działa od razu - nie jest częścią profilu). Przód w dół = gałka w górę, lewo /
+    prawo = gałka w lewo / prawo, pełny zakres 360°. Ustawienia: martwa strefa, maksymalne wychylenie, wygładzanie (EMA),
+    stosunek pion / poziom, krzywa odpowiedzi (liniowa / sześcienna / agresywna), odwrócenie pitch / roll, przycisk
+    sprzęgła (przechył działa tylko, gdy jest trzymany), uśpienie po bezruchu pada, przycisk wciskany na skraju zakresu
+    (np. L3 jako sprint), kalibracja środka i podgląd 2D na żywo z wartościami surowymi i po filtrze. Powrót do martwej
+    strefy zeruje gałkę od razu (bez opóźnienia filtra), drobne zmiany nie są wysyłane, a gałka jest zwalniana przy zmianie
+    okna na pierwszym planie, utracie pada, zmianie profilu i wyłączeniu funkcji;
   - **efekty spustów** (adaptive triggers) L2 / R2 w profilu: **opór** (siła 1-8, od którego miejsca skoku),
     **klik** jak spust broni (punkt 20-70 % skoku i siła) albo **drgania** (od którego miejsca, siła,
     częstotliwość). Gra przez wirtualnego DS4 tego nie wyśle, więc ustawia to nadajnik raportem HID. Profil gry
