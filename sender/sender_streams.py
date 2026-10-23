@@ -23,23 +23,16 @@ import sender_state as state
 import sender_wol as wol
 from proto import (BATT_UNKNOWN, CAL_RUNNING, CLICK_PRESSED, CLICK_RELEASED, CLICK_TWO_FINGERS, KEY_BIT, LAT_NONE,
                    MOUSE_SCROLL, MOUSE_TAP, MOUSE_TAP_RIGHT, STATE_CHARGING, clamp)
-from sender_config import AUTOBIAS_MAX_STEP, BURST_DELAYS, C, IDLE_TP, PAD_ABS, TOUCH_H, TOUCH_W
+from sender_config import (AUTOBIAS_MAX_STEP, BURST_DELAYS, C, DEVICE_READ_ERRORS, HAT_AXES, IDLE_TP, PAD_ABS, TOUCH_H,
+                           TOUCH_W, US_PER_S)
 from sender_ioctl import IOC_READ, ioc
 
 if TYPE_CHECKING:
     from sender_ctrl import Ctrl
 
-# Everything a failing or fake evdev device can raise when asked for an axis: the device is going away (OSError), is not an
-# evdev device at all (tests, another platform) or lacks the axis (AttributeError / KeyError).
-DEVICE_READ_ERRORS: Final = (OSError, AttributeError, TypeError, ValueError, KeyError)
-
-US_PER_S: Final = 1_000_000
 EVIOC_MAGIC, EVIOCGMTSLOTS_NR = "E", 0x0A               # EVIOCGMTSLOTS(len), see linux/input.h
 INT32_BYTES: Final = 4
 ABS_RANGE: Final = 1 << 60                              # larger than any sample: the start value of a running minimum / maximum
-
-# ---- pad ----
-HAT_AXES: Final = (ec.ABS_HAT0X, ec.ABS_HAT0Y)
 
 # ---- motion: the packet carries accelerometer x y z and then gyro x y z ----
 MOTION_AXES: Final = 6
@@ -514,8 +507,10 @@ class _Session:
         self.pend = [0, 0]            # movement held back until touch_start_move is exceeded
 
 
-def _touch_range(dev: InputDevice) -> tuple[int, int]:
-    """Return the largest X / Y the touchpad reports; the DualSense defaults when the device cannot say."""
+def _touch_range(dev: InputDevice | None) -> tuple[int, int]:
+    """Return the largest X / Y the touchpad reports; the DualSense defaults when there is no device or it cannot say."""
+    if dev is None:
+        return TOUCH_DEFAULT_MAX_X, TOUCH_DEFAULT_MAX_Y
     try:
         return (dev.absinfo(ec.ABS_MT_POSITION_X).max or TOUCH_DEFAULT_MAX_X,
                 dev.absinfo(ec.ABS_MT_POSITION_Y).max or TOUCH_DEFAULT_MAX_Y)
@@ -624,11 +619,13 @@ def _frame_tap(c: Ctrl, sess: _Session, now: float) -> None:
         c.send_tap(MOUSE_TAP)
 
 
-def _kernel_slots(dev: InputDevice, n: int) -> Sequence[tuple[int, int | None, int | None]]:
+def _kernel_slots(dev: InputDevice | None, n: int) -> Sequence[tuple[int, int | None, int | None]]:
     """Read the multitouch slot state from the kernel ``[(tracking_id, x, y)]``.
 
     Without the ioctl (another platform, tests) the fingers are lifted and the position is unknown (None).
     """
+    if dev is None:
+        return [(-1, None, None)] * n
     try:
         return read_mt(dev, n)
     except (OSError, AttributeError, TypeError, ValueError):
