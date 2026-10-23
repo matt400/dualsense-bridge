@@ -230,7 +230,7 @@ def _start_workers() -> tuple[list[threading.Thread], threading.Thread]:
         rx_hm_update.on_installed = rx_ds4.hm_installed
         S.start_thread("hidmaestro update", rx_hm_update.thread, S.stop, rx_ds4.hm_auto_enabled)
     S.start_thread("gyro mouse", rx_gyro.mouse_thread)
-    S.start_thread("gyro stick", rx_gstick_io.thread)     # pad tilt -> stick: without this thread the engine never steps (state stays "off")
+    S.start_thread("gyro stick", rx_gstick_io.thread)     # pad tilt -> stick; the engine steps only here
     # always (also without game profiles): a change of the foreground program stops game rumble
     # that ended during the rumble; game profiles are switched only with game_profiles (rx_state.reload_profile)
     S.start_thread("game watch", rx_games.watch_thread)
