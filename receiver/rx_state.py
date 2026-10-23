@@ -7,6 +7,7 @@ import rx_padcal
 from proto import SeqFilter
 from rx_buttons import apply_remap, apply_sticks, pressed_inputs, profile_size
 from rx_config import C
+from rx_gstick import drive_state
 from rx_shape import gyro_mouse_velocity, gyro_rates, gyro_stick, merge_triggers, shape_stick, shape_trigger
 
 lock = threading.Lock()
@@ -53,6 +54,7 @@ def new_state():
         "ts": 0,                                                         # when (us) the last state change arrived
         "gyro_on": False,                    # gyro active (stick or mouse mode and the "hold" condition is met)
         "gyro_vel": None,                    # cursor velocity from the gyro [px/s] in mouse mode, None = off
+        "gs": None,                          # stick driven by pad tilt (rx_gstick_io): (target, x, y, button mask) or None
         "lat": None,                         # latency measurement of the last change (rx_net -> rx_ds4 -> rx_latency)
         "blat": None,                        # the same, only for a button / D-pad / trigger change (button -> game)
     }
@@ -160,6 +162,8 @@ def recompute(s, prof):
         else:
             s["gyro_vel"] = gyro_mouse_velocity(rates, g)
     s["lx"], s["ly"], s["rx"], s["ry"] = lx, ly, rx, ry
+    if s["gs"] is not None:          # pad tilt takes over the chosen input (after the remap and shaping)
+        drive_state(s, s["gs"])
 
 
 def set_remap(i, prof):

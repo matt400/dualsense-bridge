@@ -27,10 +27,18 @@
     sender keeps them while the receiver doesn't answer, so e.g. Wake-on-LAN appears after the PC starts with the real
     time. The log is in memory only (a restart clears it); the panel height can be dragged;
   - in the middle, a live pad drawing: click a button, trigger or stick to remap or tune it;
-  - on the right, the profile (default / per game), the **Selected**, **Gyro**, **Changes** tabs and the **Save**
+  - on the right, the profile (default / per game), the **Selected**, **Gyro**, **Changes**, **Tilt** tabs and the **Save**
     button (Ctrl+S);
   - remapping buttons and sticks, gyro aiming (right stick / mouse); deadzones, curves and anti-deadzone in the
     collapsible "Advanced" section (it opens by itself when something in it was changed);
+  - **Tilt tab:** tilting the pad drives an analog stick (or the d-pad), per pad (saved by MAC in `gyrostick.json` next
+    to `remap.json`, applied immediately - not part of the profile). Front down = stick up, left / right = stick left /
+    right, full 360° range. Settings: deadzone, max outer zone, smoothing (EMA), vertical / horizontal ratio, response
+    curve (linear / cubic / aggressive), invert pitch / roll, clutch button (tilt works only while it is held), auto-sleep
+    after the pad lies still, a button pressed at full tilt (e.g. L3 to sprint), center calibration and a live 2D
+    preview with raw and filtered values. Returning to the deadzone zeroes the stick at once (no filter lag), small
+    changes are not sent, and the stick is released when the foreground window changes, the pad drops out, the
+    profile changes or the feature is switched off;
   - **trigger effects** (adaptive triggers) L2 / R2 in the profile: **resistance** (strength 1-8, from which point of
     travel), a **click** like a gun trigger (point at 20-70 % of travel and strength) or **vibration** (from which
     point, strength, frequency). A game going through a virtual DS4 can't send this, so the sender sets it with a HID

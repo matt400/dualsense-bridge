@@ -24,6 +24,7 @@ import rx_ds4
 import rx_events as ev
 import rx_feedback as F
 import rx_games
+import rx_gstick_io
 import rx_latency
 import rx_master
 import rx_profiles as P
@@ -42,6 +43,7 @@ from rx_qt_keys import KeysDrawer
 from rx_qt_console import ConsoleSettings
 from rx_qt_icons import icon, pixmap
 from rx_qt_log import LogPanel
+from rx_qt_gstick import GyroStickPage
 from rx_qt_pad import PadView
 from rx_qt_panels import ChangesPage, GyroPage, PartPage, ProfileBar
 from rx_qt_style import DIM, LEVEL, SEGMENT, TV_SCALE, apply_theme, px, set_prop
@@ -607,10 +609,13 @@ class MainWindow(QMainWindow):
         lay.addWidget(self.profile_bar)
         self.part_page, self.gyro_page = PartPage(self.ed), GyroPage(self.ed)
         self.changes_page = ChangesPage(self.ed)
+        self.tilt_page = GyroStickPage()
+        self.tilt_page.changed.connect(lambda cfg: rx_gstick_io.runner.set_config(self.ed.slot, cfg))
         self.tabs = QTabWidget()
         self.tabs.tabBar().setExpanding(True)
         self.tabs.tabBar().setDrawBase(False)
-        for page, name in ((self.part_page, _("Wybrane")), (self.gyro_page, _("Gyro")), (self.changes_page, _("Zmiany"))):
+        for page, name in ((self.part_page, _("Wybrane")), (self.gyro_page, _("Gyro")), (self.changes_page, _("Zmiany")),
+                           (self.tilt_page, _("Przechył"))):
             self.tabs.addTab(page, name)
         for page in (self.part_page, self.gyro_page):
             page.edited.connect(self.on_edit)
@@ -1116,6 +1121,7 @@ class MainWindow(QMainWindow):
     def on_edit(self):
         """A change from a panel: refresh the badges and the list of changes; it reaches the pad after a short delay."""
         self.pad.set_profile(self.ed.prof)
+        self.tilt_page.set_slot(self.ed.slot)
         self.update_changes()
         self.update_status()
         self.apply_timer.start()
@@ -1168,6 +1174,7 @@ class MainWindow(QMainWindow):
         self.part_page.refresh()
         self.gyro_page.refresh()
         self.pad.set_profile(self.ed.prof)
+        self.tilt_page.set_slot(self.ed.slot)
         self.update_changes()
         self.update_status()
 
@@ -1210,6 +1217,8 @@ class MainWindow(QMainWindow):
             self._exit_hold(now, "circle" in live["pressed"])
         else:
             self.gyro_page.set_live(self.ed.key == live["active"], live["gyro_on"])
+            if self.tabs.currentWidget() is self.tilt_page:
+                self.tilt_page.tick()
 
     def _exit_hold(self, now, held):
         """TV mode: a held ○ of the pad under test (which then does not control the window) leaves the Test view."""

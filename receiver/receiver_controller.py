@@ -3,7 +3,8 @@ with battery, link and remapping. Protocol: proto.py.
 
 Files: proto.py (shared), rx_config.py, rx_state.py, rx_buttons.py (remap + remap.json),
        rx_shape.py (deadzones, curves, gyro), rx_hotkeys.py (PS shortcuts), rx_games.py (profile per game),
-       rx_gyro.py (gyro as a mouse), rx_feedback.py (rumble, lightbar, confirmations),
+       rx_gyro.py (gyro as a mouse), rx_gstick.py + rx_gstick_io.py (pad tilt as a stick),
+       rx_feedback.py (rumble, lightbar, confirmations),
        rx_winapi.py, rx_mouse.py, rx_report.py, rx_net.py, rx_dsu.py, rx_ds4.py,
        rx_console.py + rx_audio.py (console mode: monitor / TV, console.json),
        rx_settings.py (settings.json: mouse, master pad), rx_master.py (master pad: permissions, PS + button),
@@ -172,6 +173,7 @@ def main():
     import rx_dsu
     import rx_feedback
     import rx_games
+    import rx_gstick_io
     import rx_gyro
     import rx_hotkeys
     import rx_master
@@ -190,6 +192,7 @@ def main():
     rx_master.init(C.NUM_PADS)
     rx_testmode.init(C.NUM_PADS)
     rx_ds4.init()
+    rx_gstick_io.runner.init()
     rx_net.init()
     rx_dsu.start()
     rx_console.init()   # screen and sound per startup_mode (extend: both screens active, never without a picture)
