@@ -79,7 +79,7 @@ class Device:
 class BtError(Exception):
     """A failed busctl call: a message and a BTR_* result for the window."""
 
-    def __init__(self, msg: str, result: int = BTR_FAILED):
+    def __init__(self, msg: str, result: int = BTR_FAILED) -> None:
         super().__init__(msg)
         self.result = result
 
@@ -93,7 +93,8 @@ async def run_cmd(argv: Iterable[str], timeout: float) -> tuple[int, str, str]:
         proc.kill()
         await proc.wait()              # without this a zombie process is left behind
         return -1, "", "timed out"
-    return proc.returncode, out.decode(errors="replace"), err.decode(errors="replace")
+    code = proc.returncode           # set once communicate() has returned
+    return -1 if code is None else code, out.decode(errors="replace"), err.decode(errors="replace")
 
 
 def classify(msg: str, table: tuple[tuple[str, int], ...], default: int) -> int:
@@ -192,7 +193,7 @@ class Bluetooth:
     the controller through sender_btadapter, and periodically reports everything to the receiver window (loop()).
     """
 
-    def __init__(self, run: Runner = run_cmd, emit: Callable[..., None] | None = None, sysfs: Path | None = None):
+    def __init__(self, run: Runner = run_cmd, emit: Callable[..., None] | None = None, sysfs: Path | None = None) -> None:
         self.run = run
         self.emit = emit or (lambda *a: net.emit(*a))
         self.state = BTS_ERROR
@@ -468,7 +469,7 @@ class Bluetooth:
         for c in self.ctrls or ():
             flags = ((BTC_USB if c.usb else 0) | (BTC_FIXED if c.rank == btadapter.USB_FIXED else 0)
                      | (BTC_ACTIVE if c == self.pick else 0)
-                     | (BTC_BLOCKED if btadapter.is_blocked(c.name, self.sysfs) else 0)
+                     | (BTC_BLOCKED if self.sysfs is not None and btadapter.is_blocked(c.name, self.sysfs) else 0)
                      | (BTC_PICKED if picked and c.key == self.key else 0))
             rows.append((flags, c.index, c.label))
         return rows

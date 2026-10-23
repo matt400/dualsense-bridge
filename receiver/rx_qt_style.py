@@ -24,9 +24,9 @@ def px(n):
     return round(n * scale)
 
 
-def qss(k=1.0):
+def qss(k=1.0) -> str:
     """The whole application stylesheet with every pixel size multiplied by `k` (the TV-mode scale)."""
-    def p(n):
+    def p(n) -> str:
         return f"{round(n * k)}px"
     return f"""
 * {{ font-family: "Segoe UI Variable Text", "Segoe UI", "Noto Sans", sans-serif; font-size: {p(13)}; color: {FG}; outline: none; }}
@@ -142,7 +142,7 @@ QMessageBox {{ background: {CARD}; }}
 """
 
 
-def apply_theme(app: QApplication, k=1.0):
+def apply_theme(app: QApplication, k=1.0) -> None:
     """Fusion style + a dark palette (for elements the QSS does not cover: dialogs, tooltips) + the QSS.
     k = scale (TV mode); a scale change only swaps the QSS, the palette stays."""
     global scale, _palette
@@ -162,7 +162,7 @@ def apply_theme(app: QApplication, k=1.0):
     app.setStyleSheet(qss(k))
 
 
-def set_prop(widget, name, value):
+def set_prop(widget, name, value) -> None:
     """Set a property used in the QSS ([level="ok"], [selected="true"]...) and repolish the style only when it changed."""
     if widget.property(name) != value:
         widget.setProperty(name, value)

@@ -1,6 +1,6 @@
 #!/bin/sh
-# Testy na Linuksie (zaślepki Windows i urządzeń evdev): ./tests/run_tests.sh   (z katalogu głównego repo)
-# Wymagania: python3 >= 3.11, pip install evdev ruff (albo pyflakes); okno: pip install PySide6-Essentials (tryb offscreen, bez Xvfb);
+# Tests on Linux (stubs for Windows and the evdev devices): ./tests/run_tests.sh   (from the repo root)
+# Requirements: python3 >= 3.11, pip install evdev ruff mypy (or pyflakes); the window: pip install PySide6-Essentials (offscreen, no Xvfb).
 set -u
 cd "$(dirname "$0")/.."
 T=tests; RX=receiver; TX=sender
@@ -9,8 +9,13 @@ fail=0
 run() { name=$1; shift
   if out=$(timeout 120 "$@" 2>&1); then printf 'OK    %s\n' "$name"; else printf 'FAIL  %s\n%s\n' "$name" "$out" | tail -20; fail=1; fi
   if printf '%s' "$out" | grep -q '^FAIL'; then printf 'FAIL  %s (assert)\n' "$name"; fail=1; fi; }
-if command -v ruff >/dev/null 2>&1; then ruff check --quiet $RX $TX $T || fail=1      # reguły w pyproject.toml
+if command -v ruff >/dev/null 2>&1; then ruff check --quiet $RX $TX $T || fail=1      # rules in pyproject.toml
 else python3 -m pyflakes $RX/*.py $TX/*.py | grep -v "imported but unused" && fail=1; fi
+# types: the packages import each other by flat name, so each is checked from its own directory (the receiver as on Windows)
+if command -v mypy >/dev/null 2>&1; then
+  (cd $RX && mypy --config-file ../pyproject.toml --platform win32 --no-error-summary .) || fail=1
+  (cd $TX && mypy --config-file ../pyproject.toml --no-error-summary .) || fail=1
+fi
 cmp -s $RX/proto.py $TX/proto.py || { echo "FAIL  proto.py różni się między receiver/ i sender/"; fail=1; }
 for t in test_tx test_drop test_tx2 test_bugs_tx test_shutdown test_resilience_tx test_slots_tx test_rumble_tx test_trigfx_tx test_rt_tx test_devwatch_tx test_review_tx test_update_key_tx test_features_tx test_wol_tx test_calib_tx test_critical_path_tx test_hidraw_errors_tx test_bt_scan_lifecycle_tx test_bt_window_errors_tx test_atomic_writes_tx test_bt_multi_adapter_tx test_bt_link_policy_tx test_pad_limit_tx test_gametrig_tx test_security_tx h_rate; do run $t python3 $T/$t.py $TX; done
 for t in test_i18n test_rx2 test_editor test_bugs test_resilience test_startup test_console test_master test_restart test_review test_features test_trigfx test_extras test_padtest test_autostart test_critical_path test_release_on_exit test_touchpad_tv_mode test_vigem_callbacks test_input_state_boundaries test_atomic_writes test_hm_download_elevation test_lightbar_game_color test_loss_indicator_restart test_feedback_idle_loop test_display test_vpad test_hm_update test_gametrig test_security test_gstick test_proto_fields; do run $t python3 $T/$t.py $RX; done

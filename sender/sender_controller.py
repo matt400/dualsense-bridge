@@ -44,7 +44,7 @@ from sender_config import C
 STABLE_S = 60.0       # a loop that ran this long without an error resets its error counter (full traceback, short pause)
 
 
-async def forever(name, fn):
+async def forever(name, fn) -> None:
     """Supervise a long-running coroutine so that one unexpected exception cannot take the whole sender down.
 
     The coroutine is awaited in a loop: if it raises, the error is logged (the first one with a full traceback and
@@ -73,7 +73,7 @@ async def forever(name, fn):
             await asyncio.sleep(min(5.0, 0.2 * errors))
 
 
-async def main():
+async def main() -> None:
     """Run the sender until it is cancelled (SIGTERM, Ctrl+C or an update restart).
 
     Starts the independent service loops (socket keeper, heartbeat, pad supervisor, pinger, info/idle loop and the
@@ -109,7 +109,7 @@ LOCK_NAME = b"\0dualsense-bridge-sender"
 _lock = None
 
 
-def single_instance(name=LOCK_NAME):
+def single_instance(name=LOCK_NAME) -> bool:
     """Allow only one sender per machine; returns True if this process got the lock.
 
     Two senders (e.g. the root service plus an old user autostart) would fight over the same pads. The lock is an

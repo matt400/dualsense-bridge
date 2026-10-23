@@ -14,7 +14,7 @@ STEP_S = 0.002
 MAX_DT = 0.02          # a longer gap (thread sleep, stall) must not turn into a cursor jump
 
 
-def mouse_thread():
+def mouse_thread() -> None:
     """Integrate each pad's gyro velocity into whole-pixel mouse moves.
 
     Sleeps on S.gyro_wake while no pad has a velocity. Otherwise, every STEP_S it multiplies the velocity by the elapsed

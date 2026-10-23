@@ -59,7 +59,7 @@ class ElidedLabel(QLabel):
     Plain text: Bluetooth device names are set by every device in range - a QLabel in AutoText mode would show a name
     with HTML tags as formatted content (impersonating window elements)."""
 
-    def __init__(self, role: str):
+    def __init__(self, role: str) -> None:
         super().__init__()
         self.setTextFormat(Qt.TextFormat.PlainText)
         self.setProperty("role", role)
@@ -73,7 +73,7 @@ class ElidedLabel(QLabel):
             self.setToolTip(f"<qt>{html.escape(text)}</qt>" if text else "")   # a tooltip also interprets HTML
             self._elide()
 
-    def resizeEvent(self, e):
+    def resizeEvent(self, e) -> None:
         """Re-elide the text for the new width."""
         super().resizeEvent(e)
         self._elide()
@@ -87,7 +87,7 @@ class ElidedLabel(QLabel):
 class SignalBars(QWidget):
     """Signal strength as 0-4 bars (0 = no measurement - RSSI exists only during a scan)."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.n = 0
         self.setFixedSize(px(18), px(14))
@@ -98,7 +98,7 @@ class SignalBars(QWidget):
             self.n = n
             self.update()
 
-    def paintEvent(self, _e):
+    def paintEvent(self, _e) -> None:
         """Draw four bars of rising height; the first `n` in the OK colour, the rest dim."""
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -116,7 +116,7 @@ class DeviceRow(QFrame):
 
     action = Signal(str, str)        # (MAC, "pair" | "connect" | "disconnect" | "remove")
 
-    def __init__(self, dev: BT.Device):
+    def __init__(self, dev: BT.Device) -> None:
         super().__init__()
         self.setObjectName("row")
         self.mac = dev.mac
@@ -182,7 +182,7 @@ class ControllerRow(QFrame):
 
     use = Signal(int)                # N from hciN
 
-    def __init__(self, c: BT.Controller):
+    def __init__(self, c: BT.Controller) -> None:
         super().__init__()
         self.setObjectName("row")
         self.index = c.index
@@ -224,7 +224,7 @@ class ControllerRow(QFrame):
 class BtDrawer(SideDrawer):
     """The sender's Bluetooth panel sliding in from the right over the window `host` (the window's central widget)."""
 
-    def __init__(self, host: QWidget):
+    def __init__(self, host: QWidget) -> None:
         """Create the panel and its refresh timer (started only while the panel is open)."""
         super().__init__(host, "bluetooth", _("BLUETOOTH NADAJNIKA"))
         self.timer = QTimer(self)

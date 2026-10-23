@@ -23,7 +23,7 @@ class SideDrawer(QFrame):
     opened = Signal(bool)
     width_px = WIDTH
 
-    def __init__(self, host: QWidget, icon: str, title: str):
+    def __init__(self, host: QWidget, icon: str, title: str) -> None:
         super().__init__(host)
         self.host = host
         self.setObjectName("drawer")

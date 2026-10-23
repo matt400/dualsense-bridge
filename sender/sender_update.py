@@ -29,7 +29,7 @@ fail_msg = ""                  # reason of the last git pull failure - sent with
 _last = 0.0
 
 
-def init():
+def init() -> None:
     """Read the current git version of the sender's checkout once at startup and log it."""
     global version
     version = proto.git_version(ROOT)
@@ -37,7 +37,7 @@ def init():
         print(f"Sender version {version[0]} ({time.strftime('%Y-%m-%d', time.localtime(version[1]))}): {version[2]}")
 
 
-def send_build():
+def send_build() -> None:
     """Send the build packet (commit, commit time, update status) to the receiver.
 
     After a failed update the failure reason (updmsg) goes first - the window shows it even if the build packet is
@@ -57,7 +57,7 @@ def send_build():
         net.emit(T_BUILD, 255, commit, version[1], status)
 
 
-async def run():
+async def run() -> None:
     """Perform an update requested by the receiver.
 
     The command arrives several times (UDP redundancy), so a call is ignored while an update is running or within
@@ -89,7 +89,7 @@ async def run():
         restart()
 
 
-def restart():
+def restart() -> None:
     """End main() (pads are cleaned up as on SIGTERM); afterwards the __main__ block performs os.execv.
 
     Cancelling the main task is enough: state.restart tells the entry point to re-exec the process instead of exiting.

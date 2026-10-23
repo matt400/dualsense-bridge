@@ -222,7 +222,7 @@ __marimo__/
 # --- dualsense-bridge ---
 __pycache__/
 *.pyc
-# konfiguracja może zawierać klucz HMAC - do repo idą tylko *.example.toml
+# the configuration may contain the HMAC key - only *.example.toml goes into the repository
 *.toml
 !*.example.toml
 *.toml.bak
@@ -231,18 +231,18 @@ __pycache__/
 *.log
 *.log.1
 remap.json.tmp
-# profile remapowania użytkownika (git pull z przycisku Aktualizuj ich nie rusza)
+# the user's remap profiles (git pull from the Update button does not touch them)
 remap.json
 remap.json.bad
-# układ okna receivera (rozmiar, pozycja, wybrany pad)
+# the receiver window layout (size, position, the selected pad)
 receiver_ui.ini
-# zrzuty z testów UI
+# screenshots from the UI tests
 tests/*.png
-# ustawienia trybu konsoli (nazwy urządzeń audio użytkownika)
+# console mode settings (the user's audio device names)
 console.json
 console.json.tmp
 console.json.bad
-# ustawienia z okna (mysz, pad master) i stały przydział padów do slotów nadajnika
+# settings from the window (mouse, master pad) and the fixed pad-to-slot assignment of the sender
 settings.json
 settings.json.tmp
 slots.json
@@ -250,22 +250,22 @@ slots.json.tmp
 # Wake-on-LAN i zdarzenia nadajnika - ustawienia z okna receivera zapisane na telefonie
 wol.json
 wol.json.tmp
-# kalibracja żyroskopu z okna receivera zapisana na telefonie (per pad)
+# gyro calibration from the receiver window, stored on the sender (per pad)
 gyro_cal.json
 gyro_cal.json.tmp
 bt.json
 bt.json.tmp
-# przejście na protokół v3 z kluczem HMAC (odcisk klucza, oba programy)
+# the switch to protocol v3 with an HMAC key (the key fingerprint, both programs)
 auth.json
 auth.json.tmp
-# korekcja dryfu gałek per pad (receiver)
+# stick drift correction per pad (receiver)
 padcal.json
 padcal.json.tmp
 padcal.json.bad
-# kopie ustawień z aktualizacji (receiver/rx_backup.py)
+# settings copies from updates (receiver/rx_backup.py)
 receiver/backups/
 
-# HIDMaestro (HIDMaestro.Core.dll i zależności) wypakowany przez użytkownika
+# HIDMaestro (HIDMaestro.Core.dll and its dependencies) unpacked by the user
 receiver/hidmaestro/
 # start jako administrator przez zadanie (receiver_controller.elevate)
 receiver/.elevate_try

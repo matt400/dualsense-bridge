@@ -41,7 +41,7 @@ def ping_text(i, now):
     return _("ping {ms} ms").format(ms=f"{inf[0]:.1f}") if inf and inf[0] is not None else "—"
 
 
-def link_level(i, now):
+def link_level(i, now) -> str:
     """"ok" = good, "warn" = noticeable (ping > 5 ms / loss > 1 %), "bad" = poor (ping > 20 ms / loss > 5 %)."""
     inf = fresh_info(i, now)
     rtt = (inf[0] if inf else None) or 0
@@ -64,7 +64,7 @@ def button_latency(i):
     return rx_latency.buttons(i) if S.alive[i] else None
 
 
-def lat_level(summary):
+def lat_level(summary) -> str:
     """Quality level of the latency alone (mean): "ok" | "warn" | "bad" | "" (no measurement)."""
     if summary is None:
         return ""
@@ -96,7 +96,7 @@ def low_pct():
     return rx_settings.cur.lightbar.low_pct
 
 
-def battery_level(pct, charging, low_batt):
+def battery_level(pct, charging, low_batt) -> str:
     """"charge" | "bad" (below the threshold) | "warn" (up to 30 %) | "ok"."""
     return "charge" if charging else "bad" if pct <= low_batt else "warn" if pct <= 30 else "ok"
 

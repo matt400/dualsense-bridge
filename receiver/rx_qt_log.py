@@ -28,7 +28,7 @@ def _order(e):
 class LogPanel(QFrame):
     """The log panel widget: a toolbar (level, sender events, line limit, copy, clear) above a read-only text view."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.setObjectName("logpanel")
         self._seq, self._last = 0, (0.0, 0)
@@ -64,7 +64,7 @@ class LogPanel(QFrame):
         self.load(rx_settings.cur.log)
 
     # ---------- settings ----------
-    def load(self, cfg):
+    def load(self, cfg) -> None:
         """Show the settings from `cfg` in the toolbar controls (signals blocked where needed so loading does not save)."""
         self.level.set_data(cfg.level)
         self.sender_btn.blockSignals(True)
@@ -73,12 +73,12 @@ class LogPanel(QFrame):
         self._sender_tip(cfg.sender)
         self.limit.setValue(cfg.max_lines)
 
-    def _sender_tip(self, on):
+    def _sender_tip(self, on) -> None:
         """Set the tooltip of the sender-events toggle according to its state."""
         self.sender_btn.setToolTip((_("Zdarzenia z nadajnika: włączone") if on else _("Zdarzenia z nadajnika: wyłączone"))
                                    + " - " + _("połączenia padów z telefonem, Wake-on-LAN, błędy nadajnika"))
 
-    def _save(self, **changes):
+    def _save(self, **changes) -> None:
         """Persist changed log settings (no-op when nothing differs), then rebuild the view so the new filter applies."""
         cfg = replace(rx_settings.cur.log, **changes)
         if cfg == rx_settings.cur.log:
@@ -94,7 +94,7 @@ class LogPanel(QFrame):
         """Whether an entry passes the level filter and the sender-events switch."""
         return ev.visible(e, cfg.level) and (cfg.sender or not e.sender)
 
-    def tick(self):
+    def tick(self) -> None:
         """Append new entries (called from the window refresh); a hidden panel waits until it is shown.
 
         Entries are sorted by time. If the oldest new one is earlier than what is already displayed, appending would
@@ -123,23 +123,23 @@ class LogPanel(QFrame):
         if at_end:                     # scrolled up (reading older entries) - do not jump to the end
             bar.setValue(bar.maximum())
 
-    def rebuild(self):
+    def rebuild(self) -> None:
         """Clear the view, apply the current line limit and re-add all matching entries from memory."""
         self.view.clear()
         self.view.setMaximumBlockCount(rx_settings.cur.log.max_lines)
         self._seq, self._last = 0, (0.0, 0)
         self.tick()
 
-    def copy(self):
+    def copy(self) -> None:
         """Copy the visible lines to the clipboard."""
         QApplication.clipboard().setText(self.view.toPlainText())
 
-    def clear(self):
+    def clear(self) -> None:
         """Clear the stored log and the view."""
         ev.clear()
         self.rebuild()
 
-    def showEvent(self, e):
+    def showEvent(self, e) -> None:
         """Entries are not appended while hidden, so rebuild the view when the panel is shown."""
         super().showEvent(e)
         self.rebuild()

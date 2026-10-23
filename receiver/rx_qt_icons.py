@@ -40,14 +40,14 @@ def _pen(color, w):
     return p
 
 
-def _disc(p, fill=BODY):
+def _disc(p, fill=BODY) -> None:
     """A round "plate" of a button - the background of the face button and PS icons."""
     p.setPen(_pen("#565d70", 1.2))
     p.setBrush(fill)
     p.drawEllipse(QRectF(1.5, 1.5, 21, 21))
 
 
-def _face(p, name):
+def _face(p, name) -> None:
     """A face button: the round plate with its coloured symbol (cross, circle, square or triangle)."""
     _disc(p)
     p.setPen(_pen(FACE[name], 2.0))
@@ -67,7 +67,7 @@ def _face(p, name):
         p.drawPath(path)
 
 
-def _text(p, text, rect, px, color=FG, weight=QFont.Weight.Bold):
+def _text(p, text, rect, px, color=FG, weight=QFont.Weight.Bold) -> None:
     """Draw text centred in rect with the Segoe UI font at a pixel size."""
     f = QFont("Segoe UI")
     f.setPixelSize(px)
@@ -77,7 +77,7 @@ def _text(p, text, rect, px, color=FG, weight=QFont.Weight.Bold):
     p.drawText(rect, Qt.AlignmentFlag.AlignCenter, text)
 
 
-def _badge(p, text):
+def _badge(p, text) -> None:
     """L1 / R2 / L3...: a rounded badge (triggers lower and wider at the top, stick clicks round)."""
     p.setPen(_pen("#565d70", 1.2))
     p.setBrush(BODY)
@@ -94,7 +94,7 @@ def _badge(p, text):
     _text(p, text, QRectF(0, 1 if text[1] == "2" else 0, 24, 24), 9)
 
 
-def _dpad(p, name):
+def _dpad(p, name) -> None:
     """The D-pad cross with the given direction highlighted."""
     arms = {"dpad_up": QRectF(9, 2, 6, 9), "dpad_down": QRectF(9, 13, 6, 9),
             "dpad_left": QRectF(2, 9, 9, 6), "dpad_right": QRectF(13, 9, 9, 6)}
@@ -106,13 +106,13 @@ def _dpad(p, name):
     p.drawRect(QRectF(9, 9, 6, 6))
 
 
-def _ps(p):
+def _ps(p) -> None:
     """The PS button: a dark plate with the letters PS."""
     _disc(p, QColor("#2a2e3a"))
     _text(p, "PS", QRectF(0, 0, 24, 24), 9)
 
 
-def _share(p):
+def _share(p) -> None:
     """Create / Share: three short rays (as on the pad)."""
     p.setPen(_pen(FG, 1.8))
     for x1, y1, x2, y2 in ((12, 5, 12, 10), (6.5, 9, 9.5, 12.5), (17.5, 9, 14.5, 12.5)):
@@ -120,14 +120,14 @@ def _share(p):
     p.drawEllipse(QPointF(12, 16.5), 2.2, 2.2)
 
 
-def _options(p):
+def _options(p) -> None:
     """Options: three horizontal lines."""
     p.setPen(_pen(FG, 1.8))
     for y in (7, 12, 17):
         p.drawLine(QPointF(6, y), QPointF(18, y))
 
 
-def _crown(p):
+def _crown(p) -> None:
     path = QPainterPath(QPointF(4, 18))
     for pt in ((3, 7.5), (8.5, 12), (12, 5), (15.5, 12), (21, 7.5), (20, 18)):
         path.lineTo(*pt)
@@ -138,14 +138,14 @@ def _crown(p):
     p.drawRoundedRect(QRectF(4, 18.5, 16, 2.5), 1, 1)
 
 
-def _mouse(p):
+def _mouse(p) -> None:
     p.setPen(_pen(FG, 1.6))
     p.setBrush(Qt.BrushStyle.NoBrush)
     p.drawRoundedRect(QRectF(7, 3.5, 10, 17), 5, 5)
     p.drawLine(QPointF(12, 4), QPointF(12, 9))
 
 
-def _touchpad(p):
+def _touchpad(p) -> None:
     p.setPen(_pen(FG, 1.6))
     p.setBrush(Qt.BrushStyle.NoBrush)
     p.drawRoundedRect(QRectF(3, 6, 18, 12), 3, 3)
@@ -154,7 +154,7 @@ def _touchpad(p):
     p.drawEllipse(QPointF(14, 12), 2.2, 2.2)
 
 
-def _restart(p):
+def _restart(p) -> None:
     p.setPen(_pen(FG, 1.8))
     p.setBrush(Qt.BrushStyle.NoBrush)
     p.drawArc(QRectF(5, 5, 14, 14), 60 * 16, 290 * 16)
@@ -164,21 +164,21 @@ def _restart(p):
     p.drawPath(head)
 
 
-def _window(p):
+def _window(p) -> None:
     p.setPen(_pen(FG, 1.6))
     p.setBrush(Qt.BrushStyle.NoBrush)
     p.drawRoundedRect(QRectF(3, 5, 18, 14), 2, 2)
     p.drawLine(QPointF(3, 9), QPointF(21, 9))
 
 
-def _fullscreen(p):
+def _fullscreen(p) -> None:
     p.setPen(_pen(FG, 1.8))
     for x, y, dx, dy in ((4, 4, 1, 1), (20, 4, -1, 1), (4, 20, 1, -1), (20, 20, -1, -1)):
         p.drawLine(QPointF(x, y), QPointF(x + 5 * dx, y))
         p.drawLine(QPointF(x, y), QPointF(x, y + 5 * dy))
 
 
-def _rumble(p):
+def _rumble(p) -> None:
     p.setPen(_pen(FG, 1.6))
     p.setBrush(Qt.BrushStyle.NoBrush)
     p.drawRoundedRect(QRectF(8, 4, 8, 16), 2, 2)
@@ -189,7 +189,7 @@ def _rumble(p):
         p.drawPath(path)
 
 
-def _gear(p):
+def _gear(p) -> None:
     import math
     p.setPen(_pen(FG, 1.6))
     p.setBrush(Qt.BrushStyle.NoBrush)
@@ -199,7 +199,7 @@ def _gear(p):
     p.drawEllipse(QPointF(12, 12), 2.8, 2.8)
 
 
-def _update(p):
+def _update(p) -> None:
     """An arrow down into a "tray" - downloading a new version."""
     p.setPen(_pen(FG, 1.8))
     p.setBrush(Qt.BrushStyle.NoBrush)
@@ -215,21 +215,21 @@ def _update(p):
     p.drawPath(tray)
 
 
-def _tv(p):
+def _tv(p) -> None:
     p.setPen(_pen(FG, 1.6))
     p.setBrush(Qt.BrushStyle.NoBrush)
     p.drawRoundedRect(QRectF(3, 5, 18, 12), 2, 2)
     p.drawLine(QPointF(9, 20), QPointF(15, 20))
 
 
-def _power(p):
+def _power(p) -> None:
     p.setPen(_pen(FG, 1.8))
     p.setBrush(Qt.BrushStyle.NoBrush)
     p.drawArc(QRectF(5.5, 5.5, 13, 13), 120 * 16, 300 * 16)
     p.drawLine(QPointF(12, 3.5), QPointF(12, 11))
 
 
-def _backup(p):
+def _backup(p) -> None:
     """Two sheets one on another - a file copy."""
     p.setPen(_pen(FG, 1.6))
     p.setBrush(Qt.BrushStyle.NoBrush)
@@ -240,7 +240,7 @@ def _backup(p):
     p.drawLine(QPointF(7.5, 15.5), QPointF(12.5, 15.5))
 
 
-def _stopwatch(p):
+def _stopwatch(p) -> None:
     p.setPen(_pen(FG, 1.6))
     p.setBrush(Qt.BrushStyle.NoBrush)
     p.drawEllipse(QPointF(12, 13.5), 7, 7)
@@ -249,13 +249,13 @@ def _stopwatch(p):
     p.drawLine(QPointF(12, 13.5), QPointF(15, 10.5))
 
 
-def _plus(p):
+def _plus(p) -> None:
     p.setPen(_pen(FG, 2.0))
     p.drawLine(QPointF(12, 5), QPointF(12, 19))
     p.drawLine(QPointF(5, 12), QPointF(19, 12))
 
 
-def _press(p):
+def _press(p) -> None:
     """A finger (an arrow) pressing a round button - the latency of presses only."""
     p.setPen(_pen(FG, 1.6))
     p.setBrush(Qt.BrushStyle.NoBrush)
@@ -265,7 +265,7 @@ def _press(p):
     p.drawLine(QPointF(15, 8), QPointF(12, 11))
 
 
-def _reset(p):
+def _reset(p) -> None:
     """An arrow turning back to zero."""
     p.setPen(_pen(DIM, 1.8))
     p.setBrush(Qt.BrushStyle.NoBrush)
@@ -274,7 +274,7 @@ def _reset(p):
     p.drawLine(QPointF(5.5, 9.5), QPointF(10.5, 9.5))
 
 
-def _log(p):
+def _log(p) -> None:
     """A list of entries with bullets."""
     p.setPen(_pen(FG, 1.7))
     for y in (7, 12, 17):
@@ -282,7 +282,7 @@ def _log(p):
         p.drawLine(QPointF(9, y), QPointF(19, y))
 
 
-def _copy(p):
+def _copy(p) -> None:
     p.setPen(_pen(FG, 1.6))
     p.setBrush(Qt.BrushStyle.NoBrush)
     p.drawRoundedRect(QRectF(9, 4, 10, 12), 2, 2)
@@ -290,7 +290,7 @@ def _copy(p):
     p.drawRoundedRect(QRectF(5, 8, 10, 12), 2, 2)
 
 
-def _trash(p):
+def _trash(p) -> None:
     p.setPen(_pen(FG, 1.6))
     p.setBrush(Qt.BrushStyle.NoBrush)
     p.drawLine(QPointF(5, 7), QPointF(19, 7))
@@ -304,14 +304,14 @@ def _trash(p):
     p.drawPath(path)
 
 
-def _phone(p):
+def _phone(p) -> None:
     p.setPen(_pen(FG, 1.6))
     p.setBrush(Qt.BrushStyle.NoBrush)
     p.drawRoundedRect(QRectF(7, 3, 10, 18), 2.5, 2.5)
     p.drawLine(QPointF(11, 18), QPointF(13, 18))
 
 
-def _lightbar(p):
+def _lightbar(p) -> None:
     """A glowing strip (the lightbar) with a halo."""
     p.setPen(Qt.PenStyle.NoPen)
     p.setBrush(QColor(91, 155, 255, 70))
@@ -320,7 +320,7 @@ def _lightbar(p):
     p.drawRoundedRect(QRectF(5, 10.5, 14, 3), 1.5, 1.5)
 
 
-def _wake(p):
+def _wake(p) -> None:
     """A power symbol with a network wave - waking the PC over the network."""
     p.setPen(_pen(FG, 1.7))
     p.setBrush(Qt.BrushStyle.NoBrush)
@@ -331,7 +331,7 @@ def _wake(p):
     p.drawArc(QRectF(15.5, 5.5, 3, 3), -40 * 16, 120 * 16)
 
 
-def _target(p):
+def _target(p) -> None:
     """A crosshair with an off-centre dot - a stick that "escapes" from the centre (drift)."""
     p.setPen(_pen(FG, 1.6))
     p.setBrush(Qt.BrushStyle.NoBrush)
@@ -346,7 +346,7 @@ def _target(p):
     p.drawEllipse(QPointF(14.5, 9.5), 2.4, 2.4)
 
 
-def _gyro(p):
+def _gyro(p) -> None:
     """A gyroscope: a circle with two orbits and an axis."""
     p.setPen(_pen(FG, 1.5))
     p.setBrush(Qt.BrushStyle.NoBrush)
@@ -360,7 +360,7 @@ def _gyro(p):
     p.drawEllipse(QPointF(12, 12), 1.8, 1.8)
 
 
-def _shield(p):
+def _shield(p) -> None:
     """A shield with a horizontal bar - output to the game blocked."""
     path = QPainterPath(QPointF(12, 3))
     path.lineTo(19, 6)
@@ -374,7 +374,7 @@ def _shield(p):
     p.drawLine(QPointF(9, 11.5), QPointF(15, 11.5))
 
 
-def _pulse(p):
+def _pulse(p) -> None:
     """A chart with a wave - live pad motion (gyro and accelerometer)."""
     p.setPen(_pen(DIM, 1.2))
     p.drawLine(QPointF(3, 20), QPointF(21, 20))
@@ -386,7 +386,7 @@ def _pulse(p):
     p.drawPath(path)
 
 
-def _bluetooth(p):
+def _bluetooth(p) -> None:
     """The Bluetooth rune: a vertical line and two "beaks" to the right."""
     path = QPainterPath(QPointF(7, 8))
     for x, y in ((17, 16.5), (12, 21), (12, 3), (17, 7.5), (7, 16)):
@@ -396,7 +396,7 @@ def _bluetooth(p):
     p.drawPath(path)
 
 
-def _usb(p):
+def _usb(p) -> None:
     """A USB plug: the housing and a metal tip with two holes - a Bluetooth dongle."""
     p.setPen(_pen(FG, 1.6))
     p.setBrush(Qt.BrushStyle.NoBrush)
@@ -408,7 +408,7 @@ def _usb(p):
     p.drawRect(QRectF(12.3, 5.5, 1.4, 1.6))
 
 
-def _keys(p):
+def _keys(p) -> None:
     """A pad outline with buttons - the list of pad shortcuts."""
     p.setPen(_pen(FG, 1.6))
     p.setBrush(Qt.BrushStyle.NoBrush)
@@ -429,7 +429,7 @@ def _keys(p):
         p.drawEllipse(QPointF(x, y), 1.1, 1.1)
 
 
-def _draw(p, name):
+def _draw(p, name) -> None:
     """Paint the icon `name` on the 24x24 grid by dispatching to its painter."""
     if name in FACE:
         _face(p, name)

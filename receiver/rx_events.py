@@ -81,7 +81,7 @@ def since(seq):
         return [e for e in _events if e.seq > seq]
 
 
-def clear():
+def clear() -> None:
     """Drop all entries and the remembered sender event numbers."""
     with _lock:
         _events.clear()

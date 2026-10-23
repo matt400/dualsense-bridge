@@ -228,7 +228,7 @@ def unblock_all(ctrls: tuple[Ctrl, ...], sysfs: Path = SYSFS) -> None:
 
 def describe(ctrls: tuple[Ctrl, ...], pick: Ctrl | None, mode: int) -> str:
     """One-line log description: the mode, the chosen controller and the blocked ones."""
-    def text(c):
+    def text(c) -> str:
         return f"{c.name} {c.label} ({KIND_TEXT[c.rank]})"
     rest = ", ".join(text(c) for c in ctrls if c != pick)
     if pick is None:

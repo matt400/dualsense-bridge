@@ -20,7 +20,7 @@ import struct
 _qos = None        # the open /dev/cpu_dma_latency - kept open until the process ends
 
 
-def hold_cpu_latency(us, path="/dev/cpu_dma_latency"):
+def hold_cpu_latency(us, path="/dev/cpu_dma_latency") -> str | None:
     """PM QoS: cap the CPU wake-up latency at `us` microseconds. Returns a description, or None (no permission / no file).
 
     The kernel honours the request only while the file descriptor stays open, so the file is stored in a module
@@ -82,7 +82,7 @@ def pin_fast_cpus(sys_root="/sys"):
 _SYS_SCHED_SETSCHEDULER = {"x86_64": 144, "i686": 156, "i386": 156, "armv7l": 156, "armv6l": 156, "armv8l": 156}
 
 
-def _sched_syscall(policy, priority):
+def _sched_syscall(policy, priority) -> None:
     """Call sched_setscheduler directly through the raw syscall. musl (Alpine, postmarketOS) deliberately does not
     implement this libc function (it always returns ENOSYS), so os.sched_setscheduler never works there, even as root.
     The kernel itself supports the call, so we skip libc and invoke it by its syscall number."""
@@ -96,7 +96,7 @@ def _sched_syscall(policy, priority):
         raise OSError(e, os.strerror(e))
 
 
-def realtime(priority):
+def realtime(priority) -> str | None:
     """Switch this process to the SCHED_FIFO real-time policy with the given priority; returns a description or None.
 
     Priority 0 means "disabled". The standard library call is tried first; if libc answers ENOSYS (musl), the raw
@@ -120,7 +120,7 @@ def realtime(priority):
     return f"SCHED_FIFO {priority}"
 
 
-def setup(low_latency, cpu_latency_us, rt_priority):
+def setup(low_latency, cpu_latency_us, rt_priority) -> None:
     """Apply every latency tweak once at sender startup; each step is independent, so one failing does not block the rest.
 
     A small negative nice value and (if configured) real-time scheduling are always attempted; the PM QoS request
@@ -130,9 +130,9 @@ def setup(low_latency, cpu_latency_us, rt_priority):
         os.nice(-10)
     except OSError:
         pass
-    done = [realtime(rt_priority)]
+    results = [realtime(rt_priority)]            # each step returns a description of what it set, or None
     if low_latency:
-        done += [hold_cpu_latency(cpu_latency_us), pin_fast_cpus()]
-    done = [d for d in done if d]
+        results += [hold_cpu_latency(cpu_latency_us), pin_fast_cpus()]
+    done = [r for r in results if r]
     if done:
         print("Low latency: " + ", ".join(done))

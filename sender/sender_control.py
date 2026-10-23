@@ -23,7 +23,7 @@ def per_s(n, dt):
     return max(0, min(0xFFFF, round(n / dt))) if dt > 0 else 0
 
 
-async def power_off(c, reason):
+async def power_off(c, reason) -> None:
     """Disconnect a pad over Bluetooth - a DualSense switches itself off when it loses the link.
 
     Over USB there is nothing to disconnect, so the call is skipped (the key of a Bluetooth pad is its MAC address).
@@ -58,7 +58,7 @@ async def power_off(c, reason):
         print(f"Controller {c.idx}: power off failed: {err.decode(errors='replace').strip() or proc.returncode}")
 
 
-def on_command(idx, cmd, arg):
+def on_command(idx, cmd, arg) -> None:
     """Handle a command packet from the receiver (called by the network layer for the target slot idx).
 
     CMD_UPDATE concerns the whole sender, so it ignores idx. Every other command is looked up by slot and silently
@@ -82,7 +82,7 @@ def on_command(idx, cmd, arg):
         c.set_raw_sticks(arg)
 
 
-async def info_loop():
+async def info_loop() -> None:
     """Once a second: send one info packet per pad (ping, real report Hz) and power off pads that sat idle too long."""
     prev = {}        # Ctrl -> (pad reports, motion reports, time); keyed by object, because counters restart after a reconnect
     while True:
@@ -93,7 +93,7 @@ async def info_loop():
             print(f"info error: {e!r}")
 
 
-def _info_tick(prev, now):
+def _info_tick(prev, now) -> None:
     """One iteration of info_loop.
 
     Report rates are derived from the difference of the per-pad report counters since the previous tick, divided by

@@ -79,12 +79,12 @@ def discover():
     return groups
 
 
-def close_group(g):
+def close_group(g) -> None:
     """Close every device of a discovered group, ignoring errors."""
     for d in g.values():
         try:
             d.close()
-        except Exception:
+        except Exception:  # best effort: the device may already be gone
             pass
 
 
@@ -104,7 +104,7 @@ def _load_slots():
     return state.saved_slots
 
 
-def _save_slots():
+def _save_slots() -> None:
     """Write the remembered slot table to slots_file (atomically); errors are logged only."""
     if not C.SLOTS_FILE:
         return
@@ -144,19 +144,19 @@ def pick_slot(key):
     return i
 
 
-def dispatch_feedback(idx, vals):
+def dispatch_feedback(idx, vals) -> None:
     """Route rumble / lightbar feedback from the PC to the pad in slot idx (ignored if no pad is there)."""
     if (c := state.ctrl_by_idx(idx)) is not None:
         c.apply_feedback(*vals)
 
 
-def dispatch_triggers(idx, vals):
+def dispatch_triggers(idx, vals) -> None:
     """Route adaptive-trigger settings from the PC to the pad in slot idx (ignored if no pad is there)."""
     if (c := state.ctrl_by_idx(idx)) is not None:
         c.set_triggers(vals)
 
 
-def grab(dev, label):
+def grab(dev, label) -> None:
     """Take exclusive access to an evdev device, so the phone's own system stops reacting to the pad's input."""
     try:
         dev.grab()
@@ -168,7 +168,7 @@ def grab(dev, label):
 KIND_ATTR = {"motion": "motion_dev", "touch": "touch_dev"}
 
 
-def attach(c, kind, dev):
+def attach(c, kind, dev) -> None:
     """Attach a motion / touchpad device to a running pad (also when it appears later than the pad).
 
     The device is stored on the Ctrl and its reading loop runs as a separate task, kept in c.extra, so losing that
@@ -186,7 +186,7 @@ def attach(c, kind, dev):
     t.add_done_callback(c.extra.discard)
 
 
-async def _run_extra(c, kind, dev, coro):
+async def _run_extra(c, kind, dev, coro) -> None:
     """The end of a stream (the device disappeared) detaches only that device - the pad keeps working,
     and the supervisor attaches it again when it returns."""
     try:
@@ -217,13 +217,13 @@ async def _run_extra(c, kind, dev, coro):
         for fn in (dev.ungrab, dev.close):
             try:
                 fn()
-            except Exception:
+            except Exception:  # best effort: the device may already be gone
                 pass
         if state.active.get(c.key) is c and not getattr(c, "closing", False):
             print(f"Controller {c.idx}: {kind} device lost - waiting for it to come back")
 
 
-def _reject(key):
+def _reject(key) -> None:
     """A pad with no free slot: reported once in the log and in the window's event log (earlier it vanished without a trace)."""
     if key in _no_slot:
         return
@@ -237,7 +237,7 @@ def incomplete(c):
     return c.motion_dev is None or c.touch_dev is None
 
 
-async def run_ctrl(c):
+async def run_ctrl(c) -> None:
     """Life cycle of one pad: set it up, stream it until it goes away, then clean up.
 
     Setup reads the initial state, starts the rumble backend, grabs the pad, announces it to the receiver and starts
@@ -296,7 +296,7 @@ async def run_ctrl(c):
                 pass
             try:
                 d.close()
-            except Exception:
+            except Exception:  # best effort: the device may already be gone
                 pass
         c.send_neutral()
         emit_repeat(T_BYE, c.idx)
@@ -317,11 +317,11 @@ class DevWatch:
     IN_NONBLOCK, IN_CLOEXEC = 0o4000, 0o2000000
     DEBOUNCE_S = 0.05             # the pad, motion and touchpad nodes appear together - one scan for the whole group
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.fd = None
         self.event = asyncio.Event()
 
-    def start(self, path=b"/dev/input"):
+    def start(self, path=b"/dev/input") -> bool:
         """Start watching the directory for created / changed nodes; returns False if inotify is unavailable."""
         try:
             import ctypes
@@ -338,8 +338,10 @@ class DevWatch:
         self.fd = fd
         return True
 
-    def _readable(self):
+    def _readable(self) -> None:
         """Event-loop callback: throw away the pending inotify data and raise the "something changed" flag."""
+        if self.fd is None:
+            return
         try:
             while os.read(self.fd, 4096):
                 pass
@@ -347,7 +349,7 @@ class DevWatch:
             pass
         self.event.set()
 
-    async def wait(self, timeout):
+    async def wait(self, timeout) -> bool:
         """Wait for a change in /dev/input or `timeout` seconds. Returns True if there was a change.
 
         After a change a short debounce delay lets the whole group of nodes (pad, motion, touchpad) appear before the
@@ -361,7 +363,7 @@ class DevWatch:
         self.event.clear()
         return True
 
-    def close(self):
+    def close(self) -> None:
         """Stop watching and close the inotify descriptor."""
         if self.fd is not None:
             try:
@@ -380,7 +382,7 @@ def next_scan_s(now):
     return wait
 
 
-async def supervisor():
+async def supervisor() -> None:
     """Entry point of the pad supervisor: start the /dev/input watcher, run the scan loop, close the watcher on exit."""
     watch = DevWatch()
     watch.start()
@@ -390,7 +392,7 @@ async def supervisor():
         watch.close()
 
 
-async def _supervise(watch):
+async def _supervise(watch) -> None:
     """The scan loop: find pads, give each a slot, start its run_ctrl task, and attach late devices to running pads.
 
     A scan runs when /dev/input changed, when a slot is still free, or when a running pad still misses a device.

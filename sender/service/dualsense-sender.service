@@ -1,5 +1,5 @@
-# Nadajnik DualSense bridge jako usługa systemd - działa jako root: wibracja przez /dev/hidraw, tryb niskich
-# opóźnień. Instalacja: doas ./install-service.sh (podstawia @DIR@, @REPO@ i @ARGS@)
+# DualSense bridge sender as a systemd service - runs as root: rumble through /dev/hidraw, the low-latency mode.
+# Installation: doas ./install-service.sh (substitutes @DIR@, @REPO@ and @ARGS@)
 [Unit]
 Description=DualSense bridge sender
 After=bluetooth.target network-online.target
@@ -12,9 +12,9 @@ EnvironmentFile=-/etc/dualsense-sender.env
 ExecStart=/usr/bin/python3 -u @DIR@/sender_controller.py @ARGS@
 Restart=always
 RestartSec=2
-# Ograniczenia (docs/SECURITY.md): bez zdobywania nowych uprawnień, system plików tylko do odczytu poza repozytorium
-# (aktualizacja git pull, pliki stanu), /home tylko do odczytu. /dev i /sys zostają (hidraw, evdev, lightbar, rfkill,
-# PM QoS). Coś nie działa po aktualizacji systemu? doas systemctl edit dualsense-sender i wyzeruj wybraną opcję.
+# Restrictions (docs/SECURITY.md): no gaining new privileges, a read-only file system outside the repository
+# (git pull updates, state files), a read-only /home. /dev and /sys stay (hidraw, evdev, lightbar, rfkill,
+# PM QoS). Something stopped working after a system update? doas systemctl edit dualsense-sender and reset the option.
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=read-only

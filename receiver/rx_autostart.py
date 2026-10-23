@@ -37,7 +37,7 @@ def user_id():
 LEAST, HIGHEST = "<RunLevel>LeastPrivilege</RunLevel>", "<RunLevel>HighestAvailable</RunLevel>"
 
 
-def task_xml(exe, args, workdir, user, elevated=False, logon=True):
+def task_xml(exe, args, workdir, user, elevated=False, logon=True) -> str:
     """Task definition: at this user's logon, no delay and no time limit, normal priority.
     elevated: the highest privileges (administrator without a UAC prompt); logon=False: no trigger (start on demand)."""
     e = escape
@@ -84,7 +84,7 @@ def _run_value():
         return None
 
 
-def _set_run(cmd):
+def _set_run(cmd) -> None:
     """cmd = a command -> the Run entry; None -> remove the entry (a missing entry is not an error)."""
     import winreg
     with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as k:
@@ -148,7 +148,7 @@ def _create_xml(xml, name=NAME):
             pass
 
 
-def enable(exe, args, elevated=False):
+def enable(exe, args, elevated=False) -> str:
     """Enable autostart: create the logon task and drop the old Run entry; when the task cannot be created, fall back to the Run entry.
     Returns a log message."""
     ok, err = create_task(exe, args, elevated)
@@ -160,7 +160,7 @@ def enable(exe, args, elevated=False):
     return f"Task Scheduler failed ({err}) - autostart via the Run key (Windows starts it with a delay):\n{cmd}"
 
 
-def disable():
+def disable() -> str:
     """Disable autostart: delete the task and the Run entry. Returns a log message."""
     removed = _schtasks("/delete", "/tn", NAME, "/f").returncode == 0
     had_run = _run_value() is not None
@@ -168,7 +168,7 @@ def disable():
     return "Autostart disabled." if removed or had_run else "Autostart was not enabled."
 
 
-def migrate():
+def migrate() -> bool | None:
     """The old Run entry -> a task at logon. -> True when replaced. On error the Run entry stays (autostart keeps working)."""
     try:
         cmd = _run_value()

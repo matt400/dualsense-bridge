@@ -14,7 +14,7 @@ from proto import CAL_MAX_S, CAP_CALIB, CMD_GYRO_CAL, CMD_POWER_OFF, CMD_RAW_STI
 EXE_RE = re.compile(r"[a-z0-9_.()+\-][a-z0-9_.()+\- ]{0,78}\.exe")
 
 
-def game_key(slot, text):
+def game_key(slot, text) -> str | None:
     """Text typed by the user ("EldenRing") -> the key "<pad>@eldenring.exe", or None when it is not a valid program name.
 
     The text is lower-cased and ".exe" is appended when missing; EXE_RE rejects anything that is not a plain file name.
@@ -58,7 +58,7 @@ def use(slot, key):
     return S.use_profile(slot, key)
 
 
-def power_off(slot):
+def power_off(slot) -> bool:
     """Switch the pad off (the sender disconnects its Bluetooth link) -> False when the pad is not connected."""
     if not S.alive[slot]:
         return False
@@ -87,7 +87,7 @@ def test_live(i):
 
 
 # ---------- Test view: output block, stick drift, gyro calibration ----------
-def block(slot, on):
+def block(slot, on) -> bool:
     """Block (on) or unblock the slot's output: while blocked, games get a neutral state and the touchpad / gyro mouse and
     the pad shortcuts do nothing; off restores everything. Shortcuts and master start from a clean state - a PS button
     held from before the block will not fire a combination after it."""
@@ -107,12 +107,12 @@ def sender_calib(slot):
     return info is not None and bool(info[1] & CAP_CALIB)
 
 
-def raw_sticks(slot, secs):
+def raw_sticks(slot, secs) -> None:
     """Drift measurement: ask the sender for sticks without its deadzone for `secs` seconds (0 = end)."""
     rx_net.send_cmd(slot, CMD_RAW_STICKS, secs)
 
 
-def calibrate_gyro(slot, secs):
+def calibrate_gyro(slot, secs) -> bool:
     """Ask the sender to calibrate the gyro of a pad lying still (the result arrives in S.gyro_cal) -> False when the pad / sender
     cannot."""
     if not (S.alive[slot] and sender_calib(slot)):
@@ -122,7 +122,7 @@ def calibrate_gyro(slot, secs):
     return True
 
 
-def query_gyro_cal(slot):
+def query_gyro_cal(slot) -> None:
     """Ask for the gyro calibration status (whether a bias is saved on the sender) - the answer arrives in S.gyro_cal."""
     if S.alive[slot] and sender_calib(slot):
         rx_net.send_cmd(slot, CMD_GYRO_CAL, 0)

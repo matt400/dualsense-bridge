@@ -60,7 +60,7 @@ def _load():
     return _pads
 
 
-def reload():
+def reload() -> None:
     """Make the next use re-read the file (tests, restoring a settings backup)."""
     global _pads
     with _lock:

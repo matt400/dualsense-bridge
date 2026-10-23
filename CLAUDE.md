@@ -33,12 +33,15 @@ tools/     screenshots.py (offscreen window screenshots -> docs/img)
 - Receiver: shared state lives in `rx_state` (`S.xxx`, `S.lock`); long-running thread loops go through `rx_state` (run_forever).
 - Sender: asyncio; loops are wrapped in `forever()` (restart after an exception, never kill the process).
 - Configuration: `DEFAULTS` in `sender_config` / `rx_config`, TOML/JSON file, CLI flags override the file.
-- Lint: `ruff` per `pyproject.toml` (line length 140, py311).
+- Lint and types: `ruff` and `mypy` per `pyproject.toml` (line length 140, py311). New functions get type annotations; a
+  return type is required for new code (`-> None` included). Do not annotate the ViGEm notification callback in
+  `rx_feedback.make_cb`: vgamepad compares its signature, annotations included.
+- Per-pad state lists in `rx_state` are `None` until `init()`; they are declared with their real types on purpose.
 
 ## Tests
 ```
-pip install evdev ruff PySide6-Essentials
-./tests/run_tests.sh          # from the repo root; ruff + all tests, GUI in Qt offscreen
+pip install evdev ruff mypy PySide6-Essentials
+./tests/run_tests.sh          # from the repo root; ruff + mypy + all tests, GUI in Qt offscreen
 ```
 - Tests are plain scripts (`python3 tests/test_x.py receiver|sender`), no pytest.
   `*_tx.py` = sender, the rest = receiver, `test_e2e*` / `test_bt` = both.

@@ -12,6 +12,7 @@ import ctypes
 import gc
 import threading
 import time
+from typing import Any
 
 try:
     import vgamepad as vg
@@ -36,12 +37,12 @@ DS4_REPORT_EX = getattr(vg, "DS4_REPORT_EX", ctypes.c_ubyte * 63)
 _vcli = DS4_LIGHTBAR_COLOR = None   # without them (tests on Linux, another vgamepad version) - pad.register_notification
 if vg is not None:
     try:
-        from vgamepad.win.vigem_commons import DS4_REPORT_EX
+        from vgamepad.win.vigem_commons import DS4_REPORT_EX  # type: ignore[no-redef]  # the real class replaces the fallback
     except ImportError:
         pass
     try:
-        from vgamepad.win import vigem_client as _vcli
-        from vgamepad.win.vigem_commons import DS4_LIGHTBAR_COLOR
+        from vgamepad.win import vigem_client as _vcli  # type: ignore[no-redef]
+        from vgamepad.win.vigem_commons import DS4_LIGHTBAR_COLOR  # type: ignore[no-redef]
     except ImportError:
         _vcli = DS4_LIGHTBAR_COLOR = None
 VIGEM_ERROR_NONE = 0x20000000
@@ -55,8 +56,10 @@ class Out:
     A pad with submit() (HIDMaestro) has its own buffer at a fixed address and its own report format (build); without it this is
     vgamepad: the DS4 report is copied into a DS4_REPORT_EX structure."""
     __slots__ = ("pad", "raw", "build", "rep", "ba", "view", "counter", "last", "lock")
+    rep: Any       # a DS4_REPORT_EX for a vgamepad pad, None for a pad with its own buffer (HIDMaestro)
+    view: Any      # a ctypes view of `ba` used to copy the report into `rep`, None as above
 
-    def __init__(self, pad):
+    def __init__(self, pad) -> None:
         """Wrap a created pad: pick the report builder and set up the buffer (the pad's own one, or a bytearray + a ctypes view for
         vgamepad)."""
         self.pad = pad
@@ -72,7 +75,7 @@ class Out:
         self.counter, self.last = 0, 0.0
         self.lock = threading.Lock()
 
-    def send(self, idx):
+    def send(self, idx) -> None:
         """Send the freshest slot state to the virtual pad (call under self.lock); ends the change latency measurement."""
         with S.lock:
             s = S.states[idx]
@@ -105,7 +108,7 @@ _hm_warned = None         # this reason has already reached the log (no repeats 
 LABELS = {"hm": "DualSense (HIDMaestro)", "vigem": "DS4 (ViGEmBus)"}
 
 
-def init():
+def init() -> None:
     """Prepare the per-slot lists, the minimum report interval (1 / pad_hz) and hook push into S.notify; warn about a missing vgamepad /
     ViGEmBus."""
     global interval
@@ -123,7 +126,7 @@ def init():
         print("WARNING: DS4_REPORT_EX smaller than 63 bytes - report may not work")
 
 
-def push(idx):
+def push(idx) -> None:
     """A slot state change (S.notify): the report to ViGEm at once in the thread that brought it (usually the network thread) -
     without switching to the slot thread. Too early per pad_hz, the DS4 not plugged or busy with another report ->
     the slot thread sends the freshest state (changes within the pad_hz window merge into one report, nothing is lost)."""
@@ -150,7 +153,7 @@ def notification_type(lightbar_type):
     return factory(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ubyte, ctypes.c_ubyte, lightbar_type, ctypes.c_void_p)
 
 
-def register_feedback(pad, cb, vcli=None, lightbar_type=None):
+def register_feedback(pad, cb, vcli=None, lightbar_type=None) -> None:
     """Rumble and lightbar colour from the game -> cb. Directly through ViGEmClient with the real colour type; without access
     to it - through vgamepad (rumble works, the game colour is unknown). The reference to the callback stays in pad.cmp_func
     (collected by the GC = a process crash on the first rumble)."""
@@ -179,7 +182,7 @@ def needed(idx):
     return fixed_slots() and any(w.is_set() for w in S.want[idx + 1:])
 
 
-def wait_turn(idx, timeout=PLUG_ORDER_WAIT):
+def wait_turn(idx, timeout=PLUG_ORDER_WAIT) -> bool:
     """Virtual pads are plugged in slot order: Windows / Steam / XInput number players by the order in which devices
     appear, so slot 0 (the same pad thanks to the sender's slots.json) stays player 1 even when the packets of slot 1
     arrived a fraction of a second earlier. It waits only for slots that also need a pad (and have no backend error), at most timeout."""
@@ -191,7 +194,7 @@ def wait_turn(idx, timeout=PLUG_ORDER_WAIT):
     return False
 
 
-def backend_changed(old, new):
+def backend_changed(old, new) -> None:
     """Settings: another backend / DLL -> pads are created again; another order -> the slot threads check it at once."""
     global gen, _hm_warned
     if (old.vpad.backend, old.vpad.hm_dll) != (new.vpad.backend, new.vpad.hm_dll):
@@ -206,7 +209,7 @@ def backend_changed(old, new):
 rx_settings.on_change(backend_changed)
 
 
-def _note_hm(text, warn):
+def _note_hm(text, warn) -> None:
     """The reason for working without HIDMaestro: the window (hm_note) and once in the log (a warning or information)."""
     global hm_note, _hm_warned
     hm_note = text
@@ -223,7 +226,7 @@ def hm_auto_enabled():
     return cfg.backend != "vigem" and cfg.hm_auto and not cfg.hm_dll
 
 
-def hm_installed(tag):
+def hm_installed(tag) -> None:
     """rx_hm_update downloaded a new version. Nothing was loaded -> the next pad connection already goes through HIDMaestro
     (plugged pads stay - no switching during a game); an older one is loaded -> the new one after a restart."""
     global _hm_warned
@@ -269,8 +272,9 @@ def create_pad(idx):
     connection tries HIDMaestro again (PnP errors can be transient)."""
     hm = hm_backend()
     if hm is not None:
-        def on_fb(motors, rgb, trig=None):
-            F.game(idx, *(motors or (None, None)), rgb=rgb, trig=trig)
+        def on_fb(motors, rgb, trig=None) -> None:
+            large, small = motors or (None, None)
+            F.game(idx, large, small, rgb=rgb, trig=trig)
         try:
             return hm.create(idx, on_fb), "hm"
         except Exception as e:
@@ -278,7 +282,7 @@ def create_pad(idx):
     return vigem_pad(idx), "vigem"
 
 
-def close_pad(pad):
+def close_pad(pad) -> None:
     """HIDMaestro: Dispose removes the device. vgamepad: unregister the callback; the device is unplugged by the destructor (the last
     reference
     disappears at the caller, then gc.collect)."""
@@ -287,11 +291,11 @@ def close_pad(pad):
         return
     try:
         pad.unregister_notification()
-    except Exception:
+    except Exception:  # best effort: the pad may already be gone
         pass
 
 
-def slot_thread(idx):
+def slot_thread(idx) -> None:
     """The virtual pad exists while needed(idx) (the physical pad is connected or a placeholder for the fixed order).
     Event-driven: sleeps until data arrives, sends the freshest state, at most pad_hz. On any error the pad is unplugged and retried
     after a second; the pad is always unplugged and the game feedback reset in the end."""

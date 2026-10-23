@@ -64,7 +64,7 @@ def _ours(reg, scheme):
     return _value(reg, reg.HKEY_CURRENT_USER, rf"{CLASSES}\{scheme}", MARKER) is not None
 
 
-def _handled(reg, scheme):
+def _handled(reg, scheme) -> bool:
     """The link is handled by something other than our key (e.g. a classic program registered in HKLM / HKCU)."""
     try:
         reg.OpenKey(reg.HKEY_CLASSES_ROOT, scheme).Close()
@@ -73,7 +73,7 @@ def _handled(reg, scheme):
     return not _ours(reg, scheme)
 
 
-def _register_noop(reg, scheme):
+def _register_noop(reg, scheme) -> None:
     """Register the silent no-op handler for a URL scheme: a protocol key whose open command runs systray.exe, marked with MARKER."""
     hk = reg.HKEY_CURRENT_USER
     with reg.CreateKey(hk, rf"{CLASSES}\{scheme}") as k:
@@ -85,7 +85,7 @@ def _register_noop(reg, scheme):
         reg.SetValueEx(k, "", 0, reg.REG_SZ, f'"{NOOP}"')
 
 
-def _remove(reg, scheme):
+def _remove(reg, scheme) -> None:
     """Delete our handler key of a URL scheme (children first, since the registry cannot delete a key that has subkeys)."""
     for sub in (r"\shell\open\command", r"\shell\open", r"\shell", ""):
         try:

@@ -59,27 +59,27 @@ def _row(lat, done_ns):
     return None if bt == LAT_NONE else bt, phone, net, pc
 
 
-def add(i, lat, done_ns):
+def add(i, lat, done_ns) -> None:
     """Record a sample for slot i: the report with this change reached ViGEm at done_ns."""
     if (r := _row(lat, done_ns)) is not None:
         with _lock:
             _samples[i].append((done_ns, *r))
 
 
-def add_button(i, lat, done_ns):
+def add_button(i, lat, done_ns) -> None:
     """Record a button sample for slot i: the report with a button / D-pad / trigger (threshold) change reached ViGEm at done_ns."""
     if (r := _row(lat, done_ns)) is not None:
         with _lock:
             _buttons[i].append(r)
 
 
-def clear(i):
+def clear(i) -> None:
     """Restart the continuous measurement of a slot (silence, another pad). The button counter stays - see reset_buttons."""
     with _lock:
         _samples.pop(i, None)
 
 
-def reset_buttons(i):
+def reset_buttons(i) -> None:
     """Clear the button samples of slot i (the reset button in the window)."""
     with _lock:
         _buttons.pop(i, None)

@@ -1,5 +1,6 @@
 """Receiver: DSU (Cemuhook) server - gyro / accelerometer / touch data for emulators."""
 import random
+import socket
 import struct
 import threading
 import time
@@ -25,7 +26,7 @@ DSU_TOUCH = struct.Struct("<BBHHBBHH")
 ZERO12 = bytes(12)
 SERVER_ID = random.getrandbits(32)
 
-dsu = None
+dsu: socket.socket | None = None
 _threads = []
 dsu_clients = {}
 dsu_lock = threading.Lock()
@@ -95,7 +96,7 @@ def dsu_data(slot, s, counter):
     return dsu_pkt(0x100002, payload)
 
 
-def rx_thread():
+def rx_thread() -> None:
     """Receive thread: answer the protocol-version and slot-info requests and register data subscriptions.
 
     A subscription is just the client address with the time of its last request (clients must renew it); the number of
@@ -135,7 +136,7 @@ def rx_thread():
             pass
 
 
-def tx_thread():
+def tx_thread() -> None:
     """Send data to subscribers after a state change (at most dsu_hz), and without changes every dsu_tx_interval."""
     n = C.NUM_PADS
     counters = [0] * n
@@ -196,7 +197,7 @@ def tx_thread():
                         pass
 
 
-def close():
+def close() -> None:
     """After S.stop: wait for the server threads and close the socket - the port is free for a new process after a restart."""
     for t in _threads:
         t.join(1.0)
@@ -204,7 +205,7 @@ def close():
         dsu.close()
 
 
-def start():
+def start() -> None:
     """Bind the DSU UDP socket and start the receive and send threads."""
     global dsu
     dsu = bind_udp(C.DSU_PORT, "DSU server", host=getattr(C, "DSU_BIND", "127.0.0.1"))

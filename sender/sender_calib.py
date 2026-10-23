@@ -47,7 +47,7 @@ def stored(key):
     return _load().get((key or "").lower())
 
 
-def save(key, bias):
+def save(key, bias) -> bool:
     """Save a pad's bias (only pads with a MAC - a USB pad without uniq has a changing key). Returns True if saved.
 
     The table is updated in memory first (so the new value is used even if the file cannot be written), then written
@@ -75,7 +75,7 @@ class GyroCal:
     """
     __slots__ = ("end", "samples", "user")
 
-    def __init__(self, now, secs, user):
+    def __init__(self, now, secs, user) -> None:
         self.end, self.samples, self.user = now + secs, [], user
 
     def feed(self, now, gyro):
@@ -91,7 +91,7 @@ class GyroCal:
         return CAL_OK, [sum(a) / len(a) for a in axes]
 
 
-def report(c, status, repeat=False):
+def report(c, status, repeat=False) -> None:
     """Send a calres packet to the receiver: status, the saved bias and the bias the sender is using right now.
 
     With repeat=True a calibration result is sent two more times (BURST_DELAYS) with the same values - a lost packet
@@ -112,7 +112,7 @@ def report(c, status, repeat=False):
         loop.call_later(d, lambda: net.emit(T_CALRES, c.idx, *vals))
 
 
-def request(c, secs, now=None):
+def request(c, secs, now=None) -> None:
     """Command from the window: calibrate for `secs` seconds (stream_motion starts it on the next sample).
 
     The duration is clamped; a duplicate arriving within DUP_S is ignored. A pad that has no motion sensor yet (e.g.
@@ -129,7 +129,7 @@ def request(c, secs, now=None):
     c.cal_request = secs
 
 
-def startup_done(c, result):
+def startup_done(c, result) -> None:
     """Result of the startup calibration (not saved - only a calibration from the window is saved)."""
     status, bias = result
     if status == CAL_OK:
@@ -139,7 +139,7 @@ def startup_done(c, result):
         print(f"Controller {c.idx}: calibration skipped (pad was moving)")
 
 
-def finish(c, result):
+def finish(c, result) -> None:
     """Result of a calibration requested from the window: save it and answer the receiver.
 
     On success the new bias becomes active and is persisted; if the pad moved or too few samples arrived, the bias

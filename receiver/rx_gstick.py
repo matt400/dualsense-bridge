@@ -172,7 +172,7 @@ def to_u8(v):
     return max(0, min(255, 128 + round(v * 127)))
 
 
-def drive_state(s, gs):
+def drive_state(s, gs) -> None:
     """Applies the gyro output `gs` = (target, x, y, mask) to the output state `s` (an rx_state dict; call under the lock).
     A target taken by the gyro ignores the physical input; D-pad: a direction from half deflection (DPAD_AT); y > 0 = up."""
     target, x, y, mask = gs
@@ -229,7 +229,7 @@ class Engine:
     out = None (the gyro doesn't drive - the physical input works) or (x, y, sprint) with x, y in -1..1 (y > 0 = up).
     Preview fields: state, zone, raw / filt [°], xy (with the curve), mag (0..1 before the curve), event (threshold crossing)."""
 
-    def __init__(self, cfg=None):
+    def __init__(self, cfg=None) -> None:
         self.cfg = cfg or Config()
         self._cfg = None                 # the config the cache was computed for (_apply)
         self._basis = tilt_basis(None)
@@ -259,12 +259,12 @@ class Engine:
     def calibrating(self):
         return self._cal is not None
 
-    def start_center(self, now, secs=CAL_S):
+    def start_center(self, now, secs=CAL_S) -> None:
         """Center calibration: averages the pad position for `secs` s (result: cal_result)."""
         self.cal_result = None
         self._cal = [now + secs, 0.0, 0.0, 0.0, 0, 0.0]
 
-    def release(self, rearm=True):
+    def release(self, rearm=True) -> None:
         """Hard clear: the gyro gives the input back, the filter and states are zeroed; rearm - the stick moves again only after
         the pad returns near the center (no jump after a window / profile change)."""
         if rearm:
@@ -277,7 +277,7 @@ class Engine:
         return (self.state, self.zone, self.raw, self.filt_xy, self.xy, self.mag, self.sprint, self.out is not None)
 
     # ---------- internals ----------
-    def _apply(self, cfg):
+    def _apply(self, cfg) -> None:
         """New config: recompute the neutral center; a change of target / enabled / sprint = a full reset."""
         old, self._cfg = self._cfg, cfg
         if old is None or old.center != cfg.center:
@@ -375,7 +375,8 @@ class Engine:
                 self._rest = rest_up(ax, ay, az)
                 if self._rest is None:   # tilted past what can be called "roughly flat": wait for a flatter pose
                     return self._neutral(ST_SAFE)
-            uy, uz, p0, r0 = (*self._rest, 0.0, 0.0)
+            uy, uz = self._rest
+            p0 = r0 = 0.0
         else:
             uy, uz, p0, r0 = self._basis
         p, r = angles(ax, ay, az, uy, uz)
@@ -423,7 +424,7 @@ class Engine:
         self.out = (self.xy[0], self.xy[1], self.sprint) if cfg.target != "none" and cfg.enabled else None
         return self._decide()
 
-    def _zones(self, m, cfg):
+    def _zones(self, m, cfg) -> None:
         """Deflection zone (with edge hysteresis), the crossing event and the sprint state."""
         prev = self.zone
         zone = Z_DEAD if m <= 0 else Z_OUTER if m >= 1.0 or (prev == Z_OUTER and m >= OUTER_LEAVE) else Z_ACTIVE

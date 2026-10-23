@@ -1,10 +1,10 @@
-"""Zrzuty okna receivera do README / docs - bez Windowsa i bez padów (zaślepki z tests/rxenv.py, Qt offscreen).
+"""Screenshots of the receiver window for the README / docs - no Windows and no pads (the stubs from tests/rxenv.py, Qt offscreen).
 
     python3 tools/screenshots.py            # -> docs/img/*.png
     python3 tools/screenshots.py OUT_DIR
 
-Wymagania jak dla testów GUI: python3 >= 3.11, pip install PySide6-Essentials.
-Dane są atrapą: dwa pady, realistyczna bateria, ping i opóźnienia, nadajnik online.
+Requirements as for the GUI tests: python3 >= 3.11, pip install PySide6-Essentials.
+The data is fake: two pads, a realistic battery, ping and latencies, the sender online.
 """
 import math
 import os
@@ -32,7 +32,7 @@ from proto import (BTD_CONNECTED, BTD_PAD, BTD_PAIRED, BTD_TRUSTED, BTS_OK, CAP_
 from rx_console import Console, ConsoleConfig                     # noqa: E402
 from PySide6.QtTest import QTest                                  # noqa: E402
 
-BTF_LIST = 4                                                      # sender_bt.BTF_LIST: runda listy urządzeń
+BTF_LIST = 4                                                      # sender_bt.BTF_LIST: a device list round
 PADS = "a0:5a:5c:8e:12:41", "a0:5a:5c:3b:77:c2"
 SIZE = 1180, 760
 pump = lambda ms=60: QTest.qWait(ms)                              # noqa: E731
@@ -42,15 +42,15 @@ rx_console.ctl = Console(ConsoleConfig())
 F.pulse = lambda i, kind: None
 
 
-def save(widget, name):
+def save(widget, name) -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     path = OUT / f"{name}.png"
     widget.grab().save(str(path), "PNG", 0)                        # 0 = najmocniejsza kompresja (bezstratnie)
     print(f"saved {path} ({path.stat().st_size // 1024} KB)")
 
 
-def link(i, batt, ping):
-    """Pad 'połączony': stan z nadajnika, bateria, ping, pakiety/s i świeże próbki opóźnienia pad -> gra."""
+def link(i, batt, ping) -> None:
+    """A 'connected' pad: the sender's state, battery, ping, packets/s and fresh pad -> game latency samples."""
     state(i, batt=batt)
     now = time.monotonic()
     S.alive[i] = True
@@ -59,7 +59,7 @@ def link(i, batt, ping):
     S.pps[i] = 250.0
     S.sender_info[i] = (9, RUMBLE_HIDRAW | CAP_CALIB, 0)
     t = time.perf_counter_ns()
-    # lat = (odbiór na PC ns, telefon µs, Bluetooth µs, sieć µs); PC = done - odbiór. Lekki rozrzut dla p95 / max.
+    # lat = (arrival on the PC ns, sender µs, Bluetooth µs, network µs); PC = done - arrival. A little spread for p95 / max.
     for k in range(60):
         j = k * 37 % 11
         rx_latency.add(i, (t - 160_000 - j * 4_000, 300 + j * 25, 350 + j * 60, 230 + j * 9), t)
@@ -68,7 +68,7 @@ def link(i, batt, ping):
         rx_latency.add_button(i, (t - 170_000, 320 + j * 30, 420 + j * 70, 240 + j * 10), t)
 
 
-def online():
+def online() -> None:
     S.last_pkt, S.link_loss, S.peer = time.monotonic(), 0.0, ("192.168.1.50", 5005)
 
 
@@ -90,7 +90,7 @@ win.show()
 pump(200)
 
 
-def tick():
+def tick() -> None:
     online()
     for i, b in ((0, 78), (1, 41)):
         S.alive[i] = True
@@ -100,7 +100,7 @@ def tick():
     pump()
 
 
-# ---------- 1. główne okno: pady, bateria, opóźnienie, remap prawego panelu ----------
+# ---------- 1. the main window: pads, battery, latency, the right panel's remap ----------
 tick()
 win.on_part("cross")
 tick()
@@ -122,7 +122,7 @@ for lx, ry in ((130, 128), (127, 128), (131, 129), (129, 128)):
     state(0, sticks=(lx, 128, 128, ry), batt=78)
 panel._drift_tick(t0 + D.SETTLE_S + D.MEASURE_S)
 panel.refresh()
-for k in range(160):                                              # potem kilka sekund ruchu padem na żywo
+for k in range(160):                                              # then a few seconds of live pad movement
     a = k / 9
     gyro = (round(2600 * math.sin(a)), round(-1700 * math.sin(a * 0.7 + 1)), round(900 * math.cos(a * 1.3)))
     state(0, mask=BIT[304] if k > 140 else 0, lt=min(255, k * 2), rt=round(127 + 127 * math.sin(a / 2)),

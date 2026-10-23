@@ -29,7 +29,7 @@ DIRS = ("dpad_up", "dpad_down", "dpad_left", "dpad_right")
 ARROW = {"dpad_up": Qt.Key.Key_Up, "dpad_down": Qt.Key.Key_Down, "dpad_left": Qt.Key.Key_Left, "dpad_right": Qt.Key.Key_Right}
 
 
-def _key(widget, key):
+def _key(widget, key) -> None:
     """Send a key press and release of `key` to the widget."""
     for kind in (QEvent.Type.KeyPress, QEvent.Type.KeyRelease):
         QApplication.sendEvent(widget, QKeyEvent(kind, key, Qt.KeyboardModifier.NoModifier))
@@ -67,7 +67,7 @@ def move_focus(root, forward, scope=None):
 class PadNav:
     """Called from MainWindow.live_tick (30 Hz): press edges -> actions in the window."""
 
-    def __init__(self, win):
+    def __init__(self, win) -> None:
         self.win = win
         self.prev = frozenset()
         self.held = {}                 # direction -> time of the next repeat
@@ -92,7 +92,7 @@ class PadNav:
         active = QApplication.activeWindow()
         return active if active is not None and active in (win, win.settings_dlg) else None
 
-    def tick(self, now):
+    def tick(self, now) -> None:
         """One navigation step: compute the new press edges against the previous state, drop released directions from the
         repeat table, act on every new press and repeat the held directions when their time comes."""
         root = self.target()
@@ -116,7 +116,7 @@ class PadNav:
                 self.held[d] = now + REPEAT_EVERY_S
                 self.act(root, d)
 
-    def act(self, root, name):
+    def act(self, root, name) -> None:
         """Perform one pad input as a UI action: with an open popup it is translated to keys; otherwise D-pad moves the focus
         (or changes a slider / combo / tab), cross activates, circle goes back and L1 / R1 switch the pad."""
         popup = QApplication.activePopupWidget()
@@ -146,7 +146,7 @@ class PadNav:
             return None
         return next((s for d in getattr(self.win, "drawers", ()) if (s := d.focus_scope()) is not None), None)
 
-    def _direction(self, root, fw, name, scope=None):
+    def _direction(self, root, fw, name, scope=None) -> None:
         """A D-pad direction: left / right adjust sliders, tabs, the pad drawing and combo boxes; up / down scroll item views and
         shortcut lists; everything else (and the edges) moves the focus in the focus chain."""
         side = name in ("dpad_left", "dpad_right")
@@ -171,7 +171,7 @@ class PadNav:
         move_focus(root, name in ("dpad_down", "dpad_right"), scope)
 
     @staticmethod
-    def _activate(fw):
+    def _activate(fw) -> None:
         """Cross: click a button, open a combo box or activate the pad drawing."""
         from rx_qt_pad import PadView
         if isinstance(fw, QAbstractButton):
@@ -181,7 +181,7 @@ class PadNav:
         elif isinstance(fw, PadView):
             _key(fw, Qt.Key.Key_Return)
 
-    def _back(self, root, scope=None):
+    def _back(self, root, scope=None) -> None:
         """Circle: close the open drawer, else close Settings, else leave full screen."""
         if scope is not None:
             scope.close_drawer()                                # Bluetooth / shortcuts drawer
@@ -190,7 +190,7 @@ class PadNav:
         else:
             self.win.set_fullscreen(False)
 
-    def _pad(self, step):
+    def _pad(self, step) -> None:
         """Select the previous / next pad that is connected or wanted (wraps to the first / last when there is none further)."""
         win = self.win
         n = len(win.cards)

@@ -34,7 +34,7 @@ def path():
 class Store:
     """Gyro-stick settings of each pad. Key: the pad identifier (MAC) or "slotN"."""
 
-    def __init__(self, file=None):
+    def __init__(self, file=None) -> None:
         self.file = file
         self._lock = threading.Lock()
         self._cfgs = None
@@ -61,7 +61,7 @@ class Store:
         with self._lock:
             return self._load().get(key.lower()) or Config()
 
-    def set(self, key, cfg):
+    def set(self, key, cfg) -> bool:
         """Remembers and saves atomically (proto.write_json)."""
         with self._lock:
             cfgs = self._load()
@@ -79,14 +79,14 @@ class StateSink(Sink):
     """Sink for the receiver's virtual pad (ViGEm DS4 / HIDMaestro DualSense read the slot state). Other sinks
     (vJoy, uinput) = further Sink subclasses; Runner knows only this interface."""
 
-    def drive(self, slot, target, x, y, button):
+    def drive(self, slot, target, x, y, button) -> None:
         self._set(slot, (target, x, y, button))
 
-    def release(self, slot):
+    def release(self, slot) -> None:
         self._set(slot, None)
 
     @staticmethod
-    def _set(slot, gs):
+    def _set(slot, gs) -> None:
         with S.lock:
             s = S.states[slot]
             if s["gs"] == gs:
@@ -102,7 +102,7 @@ FEEDBACK_SUFFIX = {"haptic": "h", "led": "l", "both": "b"}
 
 
 class Runner:
-    def __init__(self, store=None, sink=None, pulse=None):
+    def __init__(self, store=None, sink=None, pulse=None) -> None:
         self.store = store or Store()
         self.sink = sink or StateSink()
         self.pulse = pulse or F.pulse           # (slot, kind, force) -> a short rumble / colour pulse on the pad
@@ -114,7 +114,7 @@ class Runner:
         self._fb_t = []                     # when the last feedback pulse of the slot was sent
         self._game = None
 
-    def init(self):
+    def init(self) -> None:
         """One engine per slot (receiver_controller at startup; the window entry points call it too if nobody did)."""
         n = C.NUM_PADS
         self.engines = [Engine() for _ in range(n)]
@@ -130,11 +130,11 @@ class Runner:
     def config(self, slot):
         return self.store.get(self.key(slot))
 
-    def _ready(self):
+    def _ready(self) -> None:
         if not self.engines:
             self.init()
 
-    def set_config(self, slot, cfg, save=True):
+    def set_config(self, slot, cfg, save=True) -> None:
         """New pad settings (from the window). The engine picks them up on the next sample (Config is immutable)."""
         self._ready()
         if save:
@@ -142,14 +142,14 @@ class Runner:
         self.engines[slot].cfg = cfg
         self.wake.set()
 
-    def calibrate(self, slot):
+    def calibrate(self, slot) -> None:
         """Sets the current pad position as the center (0, 0): averages ~0.4 s, the result goes to cal_msg and the settings."""
         self._ready()
         self.cal_msg[slot] = None
         self.engines[slot].start_center(time.monotonic())
         self.wake.set()
 
-    def reset_center(self, slot):
+    def reset_center(self, slot) -> None:
         self.set_config(slot, replace(self.config(slot), center=None))
 
     def cal_result(self, slot, clear=False):
@@ -160,7 +160,7 @@ class Runner:
             self.cal_msg[slot] = None
         return msg
 
-    def set_preview(self, slot, on):
+    def set_preview(self, slot, on) -> None:
         """The tilt window is open for the slot: the preview follows the pad even while the feature is switched off."""
         self._ready()
         self.engines[slot].preview = on
@@ -170,14 +170,14 @@ class Runner:
         self._ready()
         return self.engines[slot].snapshot()
 
-    def force_release_all(self):
+    def force_release_all(self) -> None:
         """All slots: the sticks go back to the physical pad, the engines are zeroed."""
         for i, e in enumerate(self.engines):
             e.release()
             self._push(i, e)
 
     # ---------- thread ----------
-    def _push(self, i, e):
+    def _push(self, i, e) -> None:
         """Passes the engine output to the sink (call when e.send)."""
         out = e.out
         if out is None:
@@ -216,7 +216,7 @@ class Runner:
             self._feedback(i, e.event, cfg.feedback, now)
         return e.state != ST_OFF
 
-    def _feedback(self, slot, event, mode, now):
+    def _feedback(self, slot, event, mode, now) -> None:
         """Rumble / lightbar pulse on a zone crossing: full tilt reached (edge) or back in the deadzone (center). Only these two
         crossings are signalled - leaving the deadzone and leaving the outer zone would tick on every small move."""
         kind = "edge" if event == EV_OUTER_IN else "center" if event == EV_DEAD_IN else None
@@ -225,7 +225,7 @@ class Runner:
         self._fb_t[slot] = now
         self.pulse(slot, f"tilt_{kind}_{FEEDBACK_SUFFIX[mode]}", force=True)    # force: independent of the "confirmations" setting
 
-    def _finish_calibration(self, i, e):
+    def _finish_calibration(self, i, e) -> None:
         res = e.cal_result
         if res is None or e.calibrating:
             return
@@ -235,7 +235,7 @@ class Runner:
         if ok:
             self.set_config(i, replace(self.config(i), center=center))
 
-    def loop(self):
+    def loop(self) -> None:
         """The 250 Hz loop; with nothing enabled (and no calibration) the thread just waits."""
         from rx_winapi import boost_thread
         boost_thread()
@@ -272,5 +272,5 @@ class Runner:
 runner = Runner()
 
 
-def thread():
+def thread() -> None:
     runner.loop()

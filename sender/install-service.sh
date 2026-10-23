@@ -1,22 +1,22 @@
 #!/bin/sh
-# Autostart nadajnika jako usługa systemd (root) - zamiast własnego autostartu jako zwykły użytkownik, który nie ma
-# dostępu do /dev/hidraw (wibracja: "brak uprawnień") ani do trybu niskich opóźnień.
+# Autostart for the sender as a systemd service (root) - instead of an own autostart as a normal user, who has no
+# access to /dev/hidraw (rumble: "no permission") or to the low-latency mode.
 #
-#   doas ./install-service.sh                     argumenty nadajnika: --config sender.toml (plik obok skryptu)
-#   doas ./install-service.sh 192.168.1.4 --key X  własne argumenty nadajnika (klucz trafia do pliku środowiska)
-#   doas ./install-service.sh --own-root ...      kod nadajnika na własność roota (patrz niżej)
-#   doas ./install-service.sh --remove            usuwa usługę
+#   doas ./install-service.sh                     sender arguments: --config sender.toml (the file next to the script)
+#   doas ./install-service.sh 192.168.1.4 --key X  your own sender arguments (the key goes to the environment file)
+#   doas ./install-service.sh --own-root ...      make root the owner of the sender code (see below)
+#   doas ./install-service.sh --remove            remove the service
 #
-# Bezpieczeństwo (docs/SECURITY.md):
-# - klucz z --key nie trafia do ExecStart (widać go w ps / /proc/PID/cmdline dla każdego użytkownika), tylko do
-#   /etc/dualsense-sender.env (0600, root) jako PADKEY;
-# - usługa ma ograniczenia systemd (NoNewPrivileges, system plików tylko do odczytu poza repozytorium...);
-# - usługa działa jako root, a kod leży w folderze zwykłego użytkownika: ten użytkownik (i każdy jego program) może
-#   zmienić kod wykonywany jako root. --own-root oddaje repozytorium rootowi (aktualizacja z okna dalej działa - git
-#   pull idzie wtedy jako root; ./setup-update-key.sh uruchamiaj wtedy przez doas).
+# Security (docs/SECURITY.md):
+# - the key from --key does not go to ExecStart (any user can see it in ps / /proc/PID/cmdline), only to
+#   /etc/dualsense-sender.env (0600, root) as PADKEY;
+# - the service has systemd restrictions (NoNewPrivileges, a read-only file system outside the repository...);
+# - the service runs as root while the code sits in an ordinary user's folder: that user (and any program of theirs) can
+#   change the code that runs as root. --own-root hands the repository to root (the update from the window keeps working -
+#   git pull then runs as root; run ./setup-update-key.sh through doas in that case).
 #
 # Log: journalctl -u dualsense-sender
-# Testy: ROOT=katalog - pliki trafiają pod ROOT, bez uruchamiania usługi.
+# Tests: ROOT=directory - the files go under ROOT, the service is not started.
 set -eu
 NAME=dualsense-sender
 DIR=$(cd "$(dirname "$0")" && pwd)
@@ -62,7 +62,7 @@ if [ $# -eq 0 ]; then
 	fi
 fi
 
-# Folder trafia do unitu bez cytowania (WorkingDirectory, ścieżka skryptu, ReadWritePaths) - tylko bezpieczne znaki.
+# The folder goes into the unit unquoted (WorkingDirectory, the script path, ReadWritePaths) - safe characters only.
 case $REPO in
 	*[!A-Za-z0-9/._+:-]*)
 		echo "Folder nadajnika ma spację lub znak specjalny: $DIR" >&2
@@ -70,10 +70,10 @@ case $REPO in
 		exit 1 ;;
 esac
 
-# Argumenty (np. klucz ze spacją, cudzysłowem, $ albo %) wg reguł ExecStart: każde słowo w "...", \ i " poprzedzone \,
+# Arguments (e.g. a key with a space, a quote, $ or %) follow the ExecStart rules: each word in "...", \ and " preceded by \,
 # % jako %%, $ jako $$.
 dq() { printf '"%s"' "$(printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/%/%%/g' -e 's/\$/$$/g')"; }
-# Wartość w pliku środowiska systemd: w "...", \ " $ i ` poprzedzone \ (dosłownie, bez rozwijania zmiennych).
+# A value in the systemd environment file: in "...", with \ " $ and ` preceded by \ (literally, no variable expansion).
 eq() { printf '"%s"' "$(printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\$/\\$/g' -e 's/`/\\`/g')"; }
 NL='
 '
@@ -107,7 +107,7 @@ if [ $HAS_KEY -eq 1 ]; then
 else
 	rm -f "$ENVF"
 fi
-# podstawienie bez sed: argumenty mogą zawierać |, & i \ (znaki specjalne sed)
+# substitution without sed: the arguments may contain |, & and \ (special characters for sed)
 U_DIR=$DIR U_REPO=$REPO U_ARGS=$ARGS awk '
 	function rep(s, a, b,   out, i) {
 		out = ""
@@ -117,7 +117,7 @@ U_DIR=$DIR U_REPO=$REPO U_ARGS=$ARGS awk '
 	{ print rep(rep(rep($0, "@ARGS@", ENVIRON["U_ARGS"]), "@DIR@", ENVIRON["U_DIR"]), "@REPO@", ENVIRON["U_REPO"]) }
 ' "$DIR/service/$NAME.service" > "$UNIT"
 chmod 600 "$UNIT"
-# plik konfiguracji może zawierać klucz HMAC - tylko właściciel (usługa czyta go jako root)
+# the configuration file may contain the HMAC key - owner only (the service reads it as root)
 [ -f "$DIR/sender.toml" ] && chmod go-rwx "$DIR/sender.toml"
 if [ $OWN_ROOT -eq 1 ]; then
 	live && chown -R 0:0 "$REPO"

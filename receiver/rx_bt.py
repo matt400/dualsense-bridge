@@ -9,6 +9,7 @@ that has sent btstate - an older one would reject the unknown length and the win
 """
 import time
 from dataclasses import dataclass, field
+from typing import Any
 
 import rx_events as ev
 import rx_net
@@ -164,7 +165,7 @@ class _Round:
     """A device / controller list round being collected: its generation, the expected count and the entries received so far."""
     gen: int
     total: int
-    got: dict[int, Device] = field(default_factory=dict)
+    got: dict[int, Any] = field(default_factory=dict)       # Device or Controller, depending on the round
 
 
 status: Status | None = None

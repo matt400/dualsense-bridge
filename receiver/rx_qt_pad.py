@@ -7,6 +7,7 @@ Test mode (set_test): no profile badges and no clicking; trigger values above th
 """
 from rx_i18n import _
 import re
+from typing import Any
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import (QColor, QFont, QFontMetricsF, QLinearGradient, QPainter, QPainterPath, QPen,
@@ -104,7 +105,7 @@ class Part:
     """A clickable part of the pad: an outline, optionally an arrow / symbol / label."""
     __slots__ = ("name", "path", "tip", "arrow", "sym", "label", "rot")
 
-    def __init__(self, name, path, tip, arrow=None, sym=None, label=None, rot=None):
+    def __init__(self, name, path, tip, arrow=None, sym=None, label=None, rot=None) -> None:
         """Store the part's name, outline path, tooltip and optional arrow / symbol / label / rotation."""
         self.name, self.path, self.tip = name, path, tip
         self.arrow, self.sym, self.label, self.rot = arrow, sym, label, rot     # label = (text, x, y)
@@ -160,7 +161,7 @@ class PadView(QWidget):
     """The pad drawing. Signal part_clicked(name) - an input name (cross, l2, dpad_up...) or left_stick / right_stick."""
     part_clicked = Signal(str)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None) -> None:
         """Build the parts and the static shapes, and set the initial live state (nothing pressed, sticks centred)."""
         super().__init__(parent)
         self.parts = _build_parts()
@@ -170,7 +171,7 @@ class PadView(QWidget):
         self.mic = _round_rect(391, 292, 18, 8, 4)          # the microphone button - drawing only (it does not reach the PC)
         self.selected = None
         self.hover = None
-        self.live = {"on": frozenset(), "ls": (128, 128), "rs": (128, 128), "l2": 0, "r2": 0}
+        self.live: dict[str, Any] = {"on": frozenset(), "ls": (128, 128), "rs": (128, 128), "l2": 0, "r2": 0}
         self.badges = []
         self.test = False                                 # the Test view: no badges and no clicking, touch on the drawing
         self.touch_live = ((), 0)                         # (fingers (x, y) in the DS4 scale, touchpad click 0/1/2)
@@ -181,13 +182,13 @@ class PadView(QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
     # ---------- data ----------
-    def set_selected(self, name):
+    def set_selected(self, name) -> None:
         """Mark the part being edited (drawn with the accent outline)."""
         if name != self.selected:
             self.selected = name
             self.update()
 
-    def set_test(self, on):
+    def set_test(self, on) -> None:
         """Switch the Test view on / off: it clears the selection and hover and shows the live touch instead of the badges."""
         if on != self.test:
             self.test = on
@@ -195,21 +196,21 @@ class PadView(QWidget):
             self.setCursor(Qt.CursorShape.ArrowCursor)
             self.update()
 
-    def set_touch(self, touch, click):
+    def set_touch(self, touch, click) -> None:
         """Live touch (the Test view): fingers ((active, id, x, y), ...) and the touchpad click."""
         live = (tuple((f[2], f[3]) for f in touch if f[0]), int(click))
         if live != self.touch_live:
             self.touch_live = live
             self.update()
 
-    def set_profile(self, prof):
+    def set_profile(self, prof) -> None:
         """Profile change badges next to the pad's parts (→ ○, ∅, ∿, gyro)."""
         badges = self._badges(prof)
         if badges != self.badges:
             self.badges = badges
             self.update()
 
-    def set_live(self, pressed, ls, rs, l2, r2):
+    def set_live(self, pressed, ls, rs, l2, r2) -> None:
         """Live state (what the drawing should show); repaints only when it changed."""
         on = frozenset(pressed) | {s for s, b in L3_OF.items() if b in pressed}
         live = {"on": on, "ls": tuple(ls), "rs": tuple(rs), "l2": l2, "r2": r2}
@@ -261,7 +262,7 @@ class PadView(QWidget):
         pt = self._inv.map(QPointF(pos))
         return next((p.name for p in reversed(self.parts) if p.path.contains(pt)), None)
 
-    def mouseMoveEvent(self, e):
+    def mouseMoveEvent(self, e) -> None:
         """Track the hovered part: update the cursor, tooltip and highlight."""
         name = self._hit(e.position())
         if name != self.hover:
@@ -271,20 +272,20 @@ class PadView(QWidget):
             self.setToolTip(self.by_name[name].tip if name else "")
             self.update()
 
-    def leaveEvent(self, _e):
+    def leaveEvent(self, _e) -> None:
         """The cursor left the widget: drop the hover highlight."""
         if self.hover is not None:
             self.hover = None
             self.update()
 
-    def mousePressEvent(self, e):
+    def mousePressEvent(self, e) -> None:
         """A left click on a part emits part_clicked (not in the Test view)."""
         if e.button() == Qt.MouseButton.LeftButton and not self.test:
             name = self._hit(e.position())
             if name:
                 self.part_clicked.emit(name)
 
-    def keyPressEvent(self, e):
+    def keyPressEvent(self, e) -> None:
         """← / → : the previous / next part (highlighted as under the cursor), Enter / Space: pick."""
         k = e.key()
         if k in (Qt.Key.Key_Left, Qt.Key.Key_Right):
@@ -299,19 +300,19 @@ class PadView(QWidget):
         else:
             super().keyPressEvent(e)
 
-    def focusInEvent(self, e):
+    def focusInEvent(self, e) -> None:
         """Repaint to show the focus frame."""
         super().focusInEvent(e)
         self.update()
 
-    def focusOutEvent(self, e):
+    def focusOutEvent(self, e) -> None:
         """Drop the keyboard hover and repaint without the focus frame."""
         super().focusOutEvent(e)
         self.hover = None
         self.update()
 
     # ---------- drawing ----------
-    def paintEvent(self, _e):
+    def paintEvent(self, _e) -> None:
         """Paint the stage, then the drawing scaled to fit: triggers behind the body, the body, decorations, buttons, sticks, and finally
         the badges (or the Test overlay)."""
         p = QPainter(self)
@@ -341,7 +342,7 @@ class PadView(QWidget):
         for cx, cy, text, bad in self.badges:
             self._badge(p, cx, cy, text, bad)
 
-    def _test_overlay(self, p):
+    def _test_overlay(self, p) -> None:
         """The Test view: trigger values (0-255) above them, fingers on the touchpad."""
         for name in B.TRIGGERS:
             r = self.by_name[name].path.boundingRect()
@@ -353,7 +354,7 @@ class PadView(QWidget):
             p.setBrush(FINGER[n])
             p.drawEllipse(pt, 6.5, 6.5)
 
-    def _stage(self, p):
+    def _stage(self, p) -> None:
         """The rounded background panel; the border turns accent-coloured when the widget has focus."""
         r = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
         g = QRadialGradient(r.center().x(), r.top() + r.height() * 0.38, max(r.width(), r.height()) * 0.7)
@@ -363,7 +364,7 @@ class PadView(QWidget):
         p.setBrush(g)
         p.drawRoundedRect(r, 16, 16)
 
-    def _decor(self, p):
+    def _decor(self, p) -> None:
         """Elements without remapping: the touchpad with light bars, the microphone, the D-pad base."""
         click = self.test and self.touch_live[1]
         p.setPen(QPen(ACCENT if click else QColor("#434a5c"), 3 if click else 2))
@@ -383,7 +384,7 @@ class PadView(QWidget):
         p.drawPath(self.mic)
         p.drawPath(_circle(205, 200, 13))
 
-    def _part(self, p, part):
+    def _part(self, p, part) -> None:
         """Paint one part: fill (accent when pressed, a trigger blends with its deflection), outline, arrow, symbol and label."""
         on = part.name in self.live["on"]
         fill = ACCENT if on else SHAPE
@@ -422,7 +423,7 @@ class PadView(QWidget):
             else:
                 self._text(p, text, x, y)
 
-    def _stick(self, p, part):
+    def _stick(self, p, part) -> None:
         """Paint a stick: the well, then the knob offset by the live deflection and its inner ring."""
         on = part.name in self.live["on"]
         cx, cy = STICK_CENTER[part.name]
@@ -446,7 +447,7 @@ class PadView(QWidget):
             return QPen(WHITE, 3 if self.hasFocus() else width)
         return QPen(base, width)
 
-    def _badge(self, p, cx, cy, text, kind):
+    def _badge(self, p, cx, cy, text, kind) -> None:
         """A change badge: kind True = disabled (red), "fx" = trigger resistance (violet), otherwise the accent."""
         p.setFont(self._font(11, QFont.Weight.Bold))
         w = QFontMetricsF(p.font()).horizontalAdvance(text)
@@ -465,7 +466,7 @@ class PadView(QWidget):
         return f
 
     @staticmethod
-    def _text(p, text, cx, y):
+    def _text(p, text, cx, y) -> None:
         """Text centred horizontally at cx, the baseline at y (like text-anchor: middle in SVG)."""
         p.drawText(QPointF(cx - QFontMetricsF(p.font()).horizontalAdvance(text) / 2, y), text)
 

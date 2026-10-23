@@ -41,7 +41,7 @@ class Slot:
     """Per-pad master state: PS held, previous inputs, inputs consumed in a combination, the pending combination button and its timer."""
     __slots__ = ("mod", "gen", "prev", "sup", "combo", "timer", "fresh")
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.mod = False          # PS held
         self.fresh = True         # first state after connecting: inputs already held are not new presses
         self.gen = 0              # PS press / combination number - a late timer does nothing
@@ -54,12 +54,12 @@ class Slot:
 slots = []
 
 
-def init(n):
+def init(n) -> None:
     """Create `n` fresh slots."""
     slots[:] = [Slot() for _ in range(n)]
 
 
-def reset(i, keep=False):
+def reset(i, keep=False) -> None:
     """End the combinations and timers of a slot. keep: the pad stays connected (Test view boundary, block) - inputs held
     right now are the "previous state" (they will not fire an action), and a new press after the boundary works at once (like
     rx_hotkeys.reset); without keep - as after the pad connects (the first state is the initial state)."""
@@ -97,7 +97,7 @@ def allowed(i, feature):
     return m.when_absent == "all" if ms is None else i == ms
 
 
-def check(i, feature):
+def check(i, feature) -> bool:
     """allowed() + a red flash on the pad when it is not allowed (a child knows it is not a malfunction)."""
     if allowed(i, feature):
         return True
@@ -106,7 +106,7 @@ def check(i, feature):
     return False
 
 
-def mouse_follows_master(force=False):
+def mouse_follows_master(force=False) -> None:
     """The touchpad mouse follows the master: the master pad = mouse, the others = DS4 touch. The master is not connected
     (or force after the master was removed) -> the mouse per mouse_pads from the configuration. With no master in the settings it changes
     nothing (a manual PS + touchpad click switch stays). Called after the master changes and after a pad connects / leaves."""
@@ -127,7 +127,7 @@ def master_label(pad):
     return f"{ev.pad_name(i)} ({pad})" if i is not None else pad
 
 
-def _master_changed(old, new):
+def _master_changed(old, new) -> None:
     """Settings listener: when the master changes, re-apply mouse mode and log the change."""
     if old.master.pad != new.master.pad:
         mouse_follows_master(force=True)
@@ -159,7 +159,7 @@ def _action_for(button):
     return next((a for a, b in rx_settings.cur.master.actions.items() if b == button), None)
 
 
-def on_state(i, mask, hx, hy, lt, rt):
+def on_state(i, mask, hx, hy, lt, rt) -> None:
     """Every change of the raw button state of a pad, before the output is recomputed (like rx_hotkeys.on_state)."""
     h = slots[i]
     now = frozenset(pressed_inputs(mask, hx, hy, lt, rt))
@@ -195,7 +195,7 @@ def on_state(i, mask, hx, hy, lt, rt):
     h.prev = now
 
 
-def _consume(i, h, b):
+def _consume(i, h, b) -> None:
     """A button consumed in a combination: it does not go to the game, and PS does not either after release (and there is no Game Bar from
     a long PS)."""
     import rx_hotkeys                       # rx_hotkeys imports rx_master - import here
@@ -222,7 +222,7 @@ def filter_inputs(i, mask, hx, hy):
     return mask, hx, hy
 
 
-def _timer(h, delay, fn, *args):
+def _timer(h, delay, fn, *args) -> None:
     """(Re)start the slot's timer: any running one is cancelled."""
     if h.timer is not None:
         h.timer.cancel()
@@ -231,12 +231,12 @@ def _timer(h, delay, fn, *args):
     h.timer.start()
 
 
-def _run(fn, *args):
+def _run(fn, *args) -> None:
     """Run an action in a separate thread so the network thread is never blocked."""
     threading.Thread(target=fn, args=args, daemon=True).start()
 
 
-def _claim(i, gen, button):
+def _claim(i, gen, button) -> None:
     """The claim timer fired: if PS + R3 are still held, this pad becomes the master (or confirm with a flash when it already is)."""
     h = slots[i]
     if h.gen != gen or h.combo != button or not h.mod or not rx_settings.cur.master.claim_hold:
@@ -249,7 +249,7 @@ def _claim(i, gen, button):
         F.pulse(i, "master")
 
 
-def _held(i, gen, button, action):
+def _held(i, gen, button, action) -> None:
     """The hold timer of a dangerous action fired: run it if the combination is still held."""
     h = slots[i]
     if h.gen != gen or h.combo != button or not h.mod:
@@ -259,7 +259,7 @@ def _held(i, gen, button, action):
 
 
 # ---------------- actions ----------------
-def _do(i, action):
+def _do(i, action) -> None:
     """Perform a master action: pause (Esc), close the foreground game window (never the desktop, Steam or this receiver),
     sleep or shut down the PC (through console mode's power-off notification). Errors are logged, never raised."""
     try:

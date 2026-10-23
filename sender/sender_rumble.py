@@ -252,7 +252,7 @@ def kernel_has_hidraw(sys_root="/sys"):
     return os.path.isdir(f"{sys_root}/class/hidraw")
 
 
-def ensure_node(path, sys_root="/sys"):
+def ensure_node(path, sys_root="/sys") -> None:
     """When /dev/hidrawN is missing although the device exists in sysfs (a system without udev / mdev) -> mknod using the
     numbers from sysfs (root only). No exceptions - an error will show up when the node is opened."""
     if os.path.exists(path):
@@ -291,7 +291,7 @@ class Rumble:
     timers keep the pad safe: a repeat resends a change once more shortly after (a lost report must not leave the
     pad silent), a watchdog stops the motors when refreshes cease, and a trigger watchdog releases the triggers."""
 
-    def __init__(self, idx, pad_dev, mode="auto", hidraw=None):
+    def __init__(self, idx, pad_dev, mode="auto", hidraw=None) -> None:
         self.idx, self.dev = idx, pad_dev
         self.methods = []             # "evdev" and/or "hidraw" - in this order
         self.fd, self.bt, self.seq, self.ff_id, self.path = None, False, 0, None, None
@@ -349,7 +349,7 @@ class Rumble:
             parts.append(f"direct HID reports ({self.path}, {fw}, vibration {mode})")
         return "via " + " + ".join(parts)
 
-    def _open_hidraw(self, given=None):
+    def _open_hidraw(self, given=None) -> bool:
         """Locate and open the pad's hidraw node, read its firmware version and decide the vibration flavour. True on success.
 
         On failure self.why records the reason (no hidraw in the kernel, node not found, no permission, other) so the
@@ -375,7 +375,7 @@ class Rumble:
         return True
 
     # ---------- control ----------
-    def set(self, small, large, rgb=None):
+    def set(self, small, large, rgb=None) -> None:
         """Rumble (and the lightbar colour when owns_lightbar). A change goes out at once and a second time after REPEAT_S
         (a lost / overwritten report does not leave the pad without rumble); with no change - a refresh at most every 0.4 s."""
         now = time.monotonic()
@@ -395,7 +395,7 @@ class Rumble:
         if changed:
             self._arm_repeat()
 
-    def set_triggers(self, vals):
+    def set_triggers(self, vals) -> bool:
         """Trigger effects from the PC: trig3 values (trig2 + game effects), trig2 (12) or the old trig (4: resistance only).
         Returns True when sent to the pad (HID report). The receiver refreshes them every few seconds, so after a reconnect
         the pad returns to the effects from the profile and the game.
@@ -411,7 +411,7 @@ class Rumble:
         if not vals[8] & RFX_ON:
             self._rv, self._rv_off = [None, None], [None, None]
         self._arm_trig_watch(any(vals) or game != (None, None))
-        if "hidraw" not in self.methods:
+        if "hidraw" not in self.methods or self.fd is None:
             return False
         trig = self._want_triggers(*self.cur)
         try:
@@ -426,7 +426,7 @@ class Rumble:
         self.trig = trig
         return True
 
-    def _arm_trig_watch(self, on):
+    def _arm_trig_watch(self, on) -> None:
         """(Re)start the trigger-effect watchdog timer when effects are active (`on`); cancel it otherwise."""
         if self._trig_watch is not None:
             self._trig_watch.cancel()
@@ -437,7 +437,7 @@ class Rumble:
             except RuntimeError:
                 pass
 
-    def _trig_expired(self):
+    def _trig_expired(self) -> None:
         """Watchdog fired: no trigger refresh from the PC for TRIG_WATCHDOG_S - release the triggers (switch all effects off)."""
         self._trig_watch = None
         if self.fx is not None and (any(self.fx) or self.game_fx != (None, None)):
@@ -478,7 +478,7 @@ class Rumble:
         self._arm_rv(hold)
         return tuple(out)
 
-    def _arm_rv(self, hold):
+    def _arm_rv(self, hold) -> None:
         """After RFX_HOLD_S of silent motors the trigger must return to its effect, even if nothing else arrives from the PC."""
         if self._rv_timer is not None:
             self._rv_timer.cancel()
@@ -489,13 +489,13 @@ class Rumble:
             except RuntimeError:
                 pass
 
-    def _rv_expired(self):
+    def _rv_expired(self) -> None:
         """Hold time over: resend the report so the trigger falls back to its normal effect."""
         self._rv_timer = None
         if self.methods:
             self._send(*self.cur, only="hidraw")
 
-    def _arm_repeat(self):
+    def _arm_repeat(self) -> None:
         """Schedule one extra send REPEAT_S from now (replacing a pending one) to protect a change against a lost report."""
         if self._repeat is not None:
             self._repeat.cancel()
@@ -504,13 +504,13 @@ class Rumble:
         except RuntimeError:
             self._repeat = None
 
-    def _send_again(self):
+    def _send_again(self) -> None:
         """Timer callback of _arm_repeat: resend the current rumble over the HID report."""
         self._repeat = None
         if self.methods:
             self._send(*self.cur, only="hidraw")
 
-    def _send(self, small, large, only=None):
+    def _send(self, small, large, only=None) -> None:
         """Send the rumble through every active way (or only `only`), handling errors per way.
 
         A momentarily full report queue is not a failure. A real error is counted by _failed; if that switches the
@@ -530,7 +530,7 @@ class Rumble:
             else:
                 self.fails[m] = 0
 
-    def _failed(self, m, e):
+    def _failed(self, m, e) -> bool:
         """A write error with way m. Returns True when the way was switched off (FAIL_MAX in a row, or the pad is gone)."""
         n = self.fails[m] = self.fails.get(m, 0) + 1
         if n < FAIL_MAX and e.errno not in FATAL_ERRNO:
@@ -545,7 +545,7 @@ class Rumble:
             self._close_fd()                          # without this the descriptor leaked (reopening overwrote fd)
         return True
 
-    def _close_fd(self):
+    def _close_fd(self) -> None:
         """Close the hidraw file descriptor if one is open."""
         if self.fd is not None:
             try:
@@ -554,8 +554,10 @@ class Rumble:
                 pass
             self.fd = None
 
-    def _send_hidraw(self, small, large):
+    def _send_hidraw(self, small, large) -> None:
         """Rumble (and colour); trigger effects only when they are about to change (game rumble on the triggers)."""
+        if self.fd is None:
+            return
         trig = self._want_triggers(small, large)
         if trig == self.trig:
             trig = None
@@ -564,7 +566,7 @@ class Rumble:
         if trig is not None:
             self.trig = trig
 
-    def _send_evdev(self, small, large):
+    def _send_evdev(self, small, large) -> None:
         """Rumble through the kernel force-feedback API: upload (or update) one long rumble effect and start it; stop it for 0/0.
 
         The effect lasts EFFECT_MS, so the watchdog / refresh logic of the caller decides when it really ends. The
@@ -580,7 +582,7 @@ class Rumble:
         elif self.ff_id is not None:
             self.dev.write(ec.EV_FF, self.ff_id, 0)
 
-    def _arm_watchdog(self):
+    def _arm_watchdog(self) -> None:
         """(Re)start the rumble watchdog: if no refresh arrives within WATCHDOG_S while the motors run, they are stopped."""
         if self._watch is not None:
             self._watch.cancel()
@@ -591,13 +593,13 @@ class Rumble:
             except RuntimeError:
                 pass
 
-    def _expired(self):
+    def _expired(self) -> None:
         """Watchdog fired: the receiver stopped refreshing the rumble, so switch the motors off."""
         self._watch = None
         if self.cur != (0, 0) and time.monotonic() - self.t_set >= WATCHDOG_S - 0.05:
             self.set(0, 0)                           # the receiver stopped refreshing - stop the motors
 
-    def close(self):
+    def close(self) -> None:
         """Shut rumble down cleanly: cancel timers, stop the motors, release hard triggers, erase the FF effect, close the fd."""
         for name in ("_watch", "_repeat", "_rv_timer", "_trig_watch"):
             t = getattr(self, name)
@@ -620,7 +622,7 @@ class Rumble:
 
 
 # ---------------- command-line test: doas python3 sender_rumble.py --test ----------------
-def _test():
+def _test() -> None:
     """Rumbles every connected DualSense in turn with every way - without the network and the receiver. It shows whether the problem
     is in the pad / kernel (nothing rumbles) or on the way PC -> sender (it rumbles here, but not from the game)."""
     import evdev
@@ -634,7 +636,7 @@ def _test():
         print(f"== {d.name} {d.uniq or d.phys} ({d.path}): {'Bluetooth' if bt else 'USB'}, hidraw {path}, "
               f"evdev FF {'yes' if has_ff(d) else 'NO (kernel without CONFIG_PLAYSTATION_FF)'}"
               + ("" if kernel_has_hidraw() else ", kernel WITHOUT CONFIG_HIDRAW"))
-        steps = [("evdev FF", "evdev", None)] if has_ff(d) else []
+        steps: list[tuple[str, str, bool | None]] = [("evdev FF", "evdev", None)] if has_ff(d) else []
         steps += [("HID report v1", "hidraw", False), ("HID report v2", "hidraw", True), ("HID report v1+v2", "hidraw", None)]
         for label, mode, v2 in steps:
             r = Rumble(0, d, mode)

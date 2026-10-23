@@ -2,6 +2,7 @@
 import threading
 import time
 import traceback
+from typing import Any
 
 import rx_padcal
 from proto import SeqFilter
@@ -31,11 +32,30 @@ gyro_wake = threading.Event()   # wakes the gyro mouse thread (rx_gyro)
 game = None                     # the foreground program (lower case, e.g. "eldenring.exe") or None
 link_loss = None                # packet loss from the sender in the last second [%] (None = no data)
 
-states = wake = want = plugged = last_seen = alive = ignore_until = None
-mouse_mode = tp_down = swallow = last_v = last_touch = batt_info = None
-pad_id = remap_maps = None
-override = active = info = pps = sender_info = None
-probe = gyro_cal = None
+# Per-pad state, one entry per slot. All of these are None until init() builds the lists (a few listeners that can fire
+# earlier check `S.states is not None`); the annotations describe the lists as they are afterwards.
+states: list[dict[str, Any]] = None      # the live state, see new_state()
+wake: list[threading.Event] = None       # wakes the slot thread after a state change
+want: list[threading.Event] = None       # set = the virtual pad should exist
+plugged: list[bool] = None               # the virtual pad is plugged in
+last_seen: list[float] = None            # when the pad last sent a packet (monotonic)
+alive: list[bool] = None                 # the pad is sending
+ignore_until: list[float] = None         # mute a slot until then (after a bye packet)
+mouse_mode: list[bool] = None            # the touchpad drives the mouse
+tp_down: list[int] = None                # the last touchpad click value (0 / 1 / 2)
+swallow: list[bool] = None               # the next touchpad release belongs to a shortcut
+last_v: list[tuple | None] = None        # the last state packet - repeats are skipped
+last_touch: list[tuple | None] = None    # the last touch packet
+batt_info: list[tuple[int, int]] = None  # (percent, flags) for the window
+pad_id: list[str | None] = None          # the pad identifier from the ident packet
+remap_maps: list[Any] = None             # the normalised button map in use
+override: list[str | None] = None        # a profile chosen by hand, None = automatic
+active: list[str] = None                 # the profile key in use
+info: list[tuple | None] = None          # (ping ms | None, pad Hz, motion Hz, time)
+pps: list[float] = None                  # state packets per second
+sender_info: list[tuple | None] = None   # (sender version, rumble ways, reason); None = old sender
+probe: list[list | None] = None          # drift measurement samples (lx, ly, rx, ry) or None
+gyro_cal: list[tuple | None] = None      # the last calres packet
 
 
 def new_state():
@@ -60,7 +80,7 @@ def new_state():
     }
 
 
-def init(store_):
+def init(store_) -> None:
     global states, wake, want, plugged, last_seen, alive, ignore_until, mouse_mode
     global tp_down, swallow, last_v, last_touch, batt_info, pad_id, remap_maps, store
     global override, active, info, pps, sender_info, probe, gyro_cal
@@ -93,7 +113,7 @@ def init(store_):
 STABLE_S = 60.0                            # a thread ran this long without an error -> the next error is counted from scratch
 
 
-def run_forever(name, fn, *args):
+def run_forever(name, fn, *args) -> None:
     """A background thread loop whose unexpected exception does not disable it for good: the error is printed
     (the first one with a full trace) and the loop starts again after a moment. It ends when fn returns on S.stop.
     The error counter resets after STABLE_S of calm work - rare errors do not grow into a 5 s pause (network thread:
@@ -131,7 +151,7 @@ push = None        # rx_ds4.push: a report to the virtual DS4 at once in the cha
 on_remap = None    # rx_feedback: a new slot profile -> send the trigger resistance at once (without waiting for the loop)
 
 
-def notify(i):
+def notify(i) -> None:
     """A change of slot i state: a DS4 report at once (rx_ds4.push), the DSU server sends from its own thread."""
     if push is not None:
         push(i)
@@ -142,12 +162,13 @@ def notify(i):
         dsu_wake.set()
 
 
-def recompute(s, prof):
+def recompute(s, prof) -> None:
     """Recompute the output state from the raw inputs according to the profile (call under lock):
     button remap -> stick swap / inversion -> stick and trigger shaping -> gyro."""
     tun, g = prof["tuning"], prof["gyro"]
     lt, rt = s["raw"][3:5]
-    s["mask"], s["hx"], s["hy"], lt, rt = apply_remap(prof["buttons"], *s["fwd"], lt, rt)
+    fwd_mask, fwd_hx, fwd_hy = s["fwd"]
+    s["mask"], s["hx"], s["hy"], lt, rt = apply_remap(prof["buttons"], fwd_mask, fwd_hx, fwd_hy, lt, rt)
     s["lt"], s["rt"] = shape_trigger(lt, tun.get("l2")), shape_trigger(rt, tun.get("r2"))
     lx, ly, rx, ry = apply_sticks(prof["sticks"], *s["rawst"])
     lx, ly = shape_stick(lx, ly, tun.get("left"))
@@ -166,7 +187,7 @@ def recompute(s, prof):
         drive_state(s, s["gs"])
 
 
-def set_remap(i, prof):
+def set_remap(i, prof) -> None:
     """Set the profile of slot i and immediately recompute the current state from the raw inputs."""
     with lock:
         remap_maps[i] = prof
@@ -185,7 +206,7 @@ def profile_key(i):
     return store.key_for(pad_id[i], i)
 
 
-def game_key(base, exe):
+def game_key(base, exe) -> str:
     """The game profile key "<pad>@<game.exe>"."""
     return f"{base}@{exe}"
 
@@ -233,7 +254,7 @@ def output(i):
     return {**NEUTRAL_OUT, "batt_dsu": s["batt_dsu"], "batt_ds4": s["batt_ds4"], "ts": s["ts"], "ver": s["ver"]}
 
 
-def set_blocked(i, on):
+def set_blocked(i, on) -> bool:
     """Test view: the slot output to the game neutral (on) or live again. -> True when it changed."""
     with lock:
         s = states[i]
@@ -258,7 +279,7 @@ def reload_profile(i):
         return changed
 
 
-def use_profile(i, key):
+def use_profile(i, key) -> bool:
     """Manual profile choice (editor, shortcut) until the next window change. -> False when the profile does not exist."""
     with profile_lock:
         if key not in store.keys_for(profile_key(i)):
@@ -292,7 +313,7 @@ def set_game(exe):
         return changed
 
 
-def reset_state(i):
+def reset_state(i) -> None:
     """A neutral pad state (released buttons, centred sticks); the version counter and the block flag are kept."""
     with lock:
         ver, blocked = states[i]["ver"] + 1, states[i]["blocked"]

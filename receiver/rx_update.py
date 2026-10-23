@@ -162,7 +162,7 @@ def _check(root, git):
         return None
 
 
-def _checker(stop):
+def _checker(stop) -> None:
     """Thread body: wait CHECK_FIRST_S, then check every CHECK_EVERY_S, store the result in `available` and log a newly found update
     once."""
     global available
@@ -179,7 +179,7 @@ def _checker(stop):
             return
 
 
-def start_checker(stop):
+def start_checker(stop) -> None:
     """A background thread: checks GitHub every CHECK_EVERY_S, the result in rx_update.available (the window reads it every 400 ms)."""
     import threading
     threading.Thread(target=_checker, args=(stop,), name="update check", daemon=True).start()

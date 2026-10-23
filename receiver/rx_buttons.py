@@ -194,7 +194,7 @@ class RemapStore:
     A profile key = the pad identifier (the MAC from the sender, lower case) or "slotN" when the sender
     did not send it (an old version)."""
 
-    def __init__(self, path):
+    def __init__(self, path) -> None:
         self.path = path
         self._lock = threading.Lock()
         self.saved = {}
@@ -206,7 +206,7 @@ class RemapStore:
         """The profile key of a pad: its id, or "slotN" when the sender has not sent one."""
         return pad_id or f"slot{slot}"
 
-    def load(self):
+    def load(self) -> None:
         """Load remap.json (a missing or broken file = no remaps), normalising every profile; resets the live profiles."""
         try:
             with open(self.path, encoding="utf-8") as f:
@@ -260,7 +260,7 @@ class RemapStore:
         with self._lock:
             return normalize_profile(self.saved.get(key))
 
-    def set_live(self, key, p):
+    def set_live(self, key, p) -> None:
         """Set the live (unsaved) version of a profile."""
         with self._lock:
             self.live[key] = normalize_profile(p)

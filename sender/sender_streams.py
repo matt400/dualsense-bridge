@@ -42,11 +42,11 @@ def read_mt(dev, nslots=2):
 class RateMeter:
     """The real report rate of a device and the gaps between reports (only with --stats)."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.t_prev = 0.0
         self.gaps = []
 
-    def tick(self, now):
+    def tick(self, now) -> None:
         """Record one report at time `now`; the gap since the previous report is stored (capped at 4096 entries)."""
         if self.t_prev and len(self.gaps) < 4096:
             self.gaps.append(now - self.t_prev)
@@ -69,7 +69,7 @@ class BtDelay:
 
     WINDOW_US = 2_000_000
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.epoch, self.last = 0, None
         self.win = collections.deque()        # (kernel time, difference), differences increasing
 
@@ -95,7 +95,7 @@ class BtDelay:
         return min(LAT_NONE - 1, d - win[0][1])
 
 
-async def stream_pad(c):
+async def stream_pad(c) -> None:
     """Read the pad's buttons, sticks, triggers and D-pad and turn them into state packets.
 
     Events are accumulated until SYN_REPORT, which marks a complete pad report. If the report changed a button, the
@@ -156,7 +156,7 @@ async def stream_pad(c):
                 c.request_send()
 
 
-async def heartbeat():
+async def heartbeat() -> None:
     """Periodic refresh so a lost packet never leaves the receiver with a stale state for long.
 
     Every HEARTBEAT_S, each pad that has not sent anything for twice that time resends its full state. Every fifth tick
@@ -194,7 +194,7 @@ def _start_cal(c, now):
     return calib.GyroCal(now, C.CAL_S, user=False)
 
 
-async def stream_motion(c):
+async def stream_motion(c) -> None:
     """Read the motion sensor (gyro + accelerometer), correct the gyro bias and send the averaged motion.
 
     Per SYN_REPORT it (1) feeds the Bluetooth delay estimator from the pad's own timestamp, (2) runs a calibration if
@@ -223,7 +223,7 @@ async def stream_motion(c):
             for k in range(6):        # an axis whose change was lost must not keep its old value
                 try:
                     v[k] = c.motion_dev.absinfo(k).value
-                except Exception:
+                except Exception:  # the axis cannot be read (the device is going away): keep the value we have
                     pass
         if e.type == ec.EV_ABS and 0 <= e.code <= 5:
             v[e.code] = e.value
@@ -282,6 +282,9 @@ async def stream_motion(c):
                 c.request_send()
 
 
+TOUCH_DEFAULT_MAX_X, TOUCH_DEFAULT_MAX_Y = 1919, 1079   # the DualSense touchpad axis range when the device reports none
+
+
 def _same_finger(a, b):
     """Whether a finger (on, id, x, y) has not changed enough to be worth sending (deadzone)."""
     if a[0] != b[0]:
@@ -295,14 +298,104 @@ class _Session:
     """One contact with the touchpad: from the placing of the first finger to the lifting of the last one."""
     __slots__ = ("t0", "moved", "max_n", "started", "scrolled", "clicked", "kind", "pend")
 
-    def __init__(self, now):
+    def __init__(self, now) -> None:
         self.t0, self.moved, self.max_n = now, 0, 0
         self.started = self.scrolled = self.clicked = False
         self.kind = 0                 # 0 = nothing, 1 = cursor, 2 = scrolling (pend applies to this kind)
         self.pend = [0, 0]            # movement held back until touch_start_move is exceeded
 
 
-async def stream_touch(c):
+def _touch_range(dev) -> tuple[int, int]:
+    """The largest X / Y the touchpad reports; the DualSense defaults when the device cannot say."""
+    try:
+        return (dev.absinfo(ec.ABS_MT_POSITION_X).max or TOUCH_DEFAULT_MAX_X,
+                dev.absinfo(ec.ABS_MT_POSITION_Y).max or TOUCH_DEFAULT_MAX_Y)
+    except Exception:    # not an evdev device (tests, another platform): any failure means "use the defaults"
+        return TOUCH_DEFAULT_MAX_X, TOUCH_DEFAULT_MAX_Y
+
+
+def _apply_touch_axis(e, slot, fingers, prev) -> int:
+    """Fold one EV_ABS multitouch event into the per-finger table; returns the (possibly changed) current slot."""
+    if e.code == ec.ABS_MT_SLOT:
+        return e.value
+    if slot in (0, 1):
+        f = fingers[slot]
+        if e.code == ec.ABS_MT_TRACKING_ID:
+            prev[slot] = None              # a new / lifted finger: no delta, the position stays (as in the kernel)
+            if e.value >= 0:
+                f.update(on=True, id=e.value & 0x7F)
+            else:
+                f["on"] = False
+        elif e.code == ec.ABS_MT_POSITION_X:
+            f["x"] = e.value
+        elif e.code == ec.ABS_MT_POSITION_Y:
+            f["y"] = e.value
+    return slot
+
+
+def _frame_mouse(c, fingers, prev, sess) -> None:
+    """Mouse part of a touchpad frame: finger deltas from the positions known in this frame become a cursor move
+    (1 finger) or a scroll (2 fingers), sent once the contact has moved past touch_start_move."""
+    deltas = []
+    for k, f in enumerate(fingers):
+        if f["on"] and f["x"] is not None and f["y"] is not None:
+            p = prev[k]
+            deltas.append((f["x"] - p[0], f["y"] - p[1]) if p else (0, 0))
+            prev[k] = (f["x"], f["y"])
+    n = len(deltas)
+    if n > sess.max_n:
+        sess.max_n = n
+    sess.moved += sum(abs(dx) + abs(dy) for dx, dy in deltas)
+    kind = dx = dy = 0
+    if C.GESTURES and n >= 2:
+        kind, dx, dy = 2, deltas[0][0] + deltas[1][0], deltas[0][1] + deltas[1][1]
+    elif n >= 1 and not (C.GESTURES and sess.max_n >= 2):
+        kind, (dx, dy) = 1, deltas[0]
+    if kind and (dx or dy):
+        if kind != sess.kind:
+            sess.kind, sess.pend = kind, [0, 0]
+        sess.pend[0] += dx
+        sess.pend[1] += dy
+        if sess.started or sess.moved >= C.TOUCH_START_MOVE:
+            sess.started = True
+            if kind == 2:
+                sess.scrolled = True
+            c.send_mouse(sess.pend[0], sess.pend[1], 2 if kind == 2 else 0)
+            sess.pend = [0, 0]
+
+
+def _frame_touch_packet(c, fingers, maxx, maxy, last_tp):
+    """DS4/DSU part of a touchpad frame: send the touch packet unless it only repeats the last one. The deadzone checks
+    BOTH fingers (the second must not be swallowed by the first). Returns the touch state to remember as `last_tp`."""
+    tp = []
+    for f in fingers:
+        if f["on"] and f["x"] is not None and f["y"] is not None:
+            tp.append((1, f["id"],
+                       clamp(f["x"] * TOUCH_W // maxx, 0, TOUCH_W),
+                       clamp(f["y"] * TOUCH_H // maxy, 0, TOUCH_H)))
+        else:
+            tp.append((0, f["id"], 0, 0))
+    tp = tuple(tp)
+    if tp != last_tp and not (_same_finger(tp[0], last_tp[0]) and _same_finger(tp[1], last_tp[1])):
+        c.touch = tp
+        c.send_touch()
+        return tp
+    return last_tp
+
+
+def _frame_tap(c, sess, now) -> None:
+    """All fingers are up: a short, nearly motionless contact that no physical click cancelled is a tap
+    (1 finger = left button, 2 fingers = right button unless it already scrolled)."""
+    if not (C.TAP_CLICK and not sess.clicked and now - sess.t0 < C.TAP_MAX_S and sess.moved < C.TAP_MAX_MOVE):
+        return
+    if C.GESTURES and sess.max_n >= 2:
+        if not sess.scrolled:
+            c.send_tap(4)
+    elif sess.max_n >= 1:
+        c.send_tap(1)
+
+
+async def stream_touch(c) -> None:
     """Touchpad -> (a) DS4/DSU touch packets, (b) mouse packets (cursor, tap, 2-finger scrolling).
 
     Mouse rules: 1 finger = cursor (it only starts moving after touch_start_move, so a tap does not jerk the cursor),
@@ -311,13 +404,10 @@ async def stream_touch(c):
 
     How it works: the kernel sends multitouch events (slot selection, tracking id, X, Y); they update a small
     per-finger table, and on every SYN_REPORT the frame is processed - deltas from the previous known position drive
-    the mouse, the same table drives the DS4 touch packet (with a per-finger deadzone) and the end of the contact
-    decides whether it was a tap. After SYN_DROPPED the table is rebuilt from the kernel state."""
-    try:
-        maxx = c.touch_dev.absinfo(ec.ABS_MT_POSITION_X).max or 1919
-        maxy = c.touch_dev.absinfo(ec.ABS_MT_POSITION_Y).max or 1079
-    except Exception:
-        maxx, maxy = 1919, 1079
+    the mouse (_frame_mouse), the same table drives the DS4 touch packet (_frame_touch_packet, with a per-finger deadzone)
+    and the end of the contact decides whether it was a tap (_frame_tap). After SYN_DROPPED the table is rebuilt from
+    the kernel state."""
+    maxx, maxy = _touch_range(c.touch_dev)
     loop = asyncio.get_running_loop()
     slot = 0
     # x / y = the position remembered in the kernel slot (None = unknown). The kernel skips an axis event when the value in the slot
@@ -349,23 +439,9 @@ async def stream_touch(c):
             resynced = True
             # then: the usual SYN_REPORT handling with the restored finger state
         if et == ec.EV_ABS:
-            if e.code == ec.ABS_MT_SLOT:
-                slot = e.value
-            elif slot in (0, 1):
-                f = fingers[slot]
-                if e.code == ec.ABS_MT_TRACKING_ID:
-                    prev[slot] = None              # a new / lifted finger: no delta, the position stays (as in the kernel)
-                    if e.value >= 0:
-                        f.update(on=True, id=e.value & 0x7F)
-                    else:
-                        f["on"] = False
-                elif e.code == ec.ABS_MT_POSITION_X:
-                    f["x"] = e.value
-                elif e.code == ec.ABS_MT_POSITION_Y:
-                    f["y"] = e.value
+            slot = _apply_touch_axis(e, slot, fingers, prev)
         elif et == ec.EV_SYN and e.code == ec.SYN_DROPPED:
             dropping = True
-            continue
         elif et == ec.EV_KEY and e.code == ec.BTN_LEFT:
             # a click with two fingers on the touchpad = 2 (in mouse mode the right button); the value is held until release
             c.tp = (2 if C.GESTURES and fingers[0]["on"] and fingers[1]["on"] else 1) if e.value else 0
@@ -386,58 +462,10 @@ async def stream_touch(c):
                 if resynced:
                     sess.clicked = True   # a finger placed during lost events - no tap
             resynced = False
-
-            # --- mouse: finger deltas from the positions known in this frame ---
-            deltas = []
-            for k, f in enumerate(fingers):
-                if f["on"] and f["x"] is not None and f["y"] is not None:
-                    p = prev[k]
-                    deltas.append((f["x"] - p[0], f["y"] - p[1]) if p else (0, 0))
-                    prev[k] = (f["x"], f["y"])
-            n = len(deltas)
-            if n > sess.max_n:
-                sess.max_n = n
-            sess.moved += sum(abs(dx) + abs(dy) for dx, dy in deltas)
-            kind = dx = dy = 0
-            if C.GESTURES and n >= 2:
-                kind, dx, dy = 2, deltas[0][0] + deltas[1][0], deltas[0][1] + deltas[1][1]
-            elif n >= 1 and not (C.GESTURES and sess.max_n >= 2):
-                kind, (dx, dy) = 1, deltas[0]
-            if kind and (dx or dy):
-                if kind != sess.kind:
-                    sess.kind, sess.pend = kind, [0, 0]
-                sess.pend[0] += dx
-                sess.pend[1] += dy
-                if sess.started or sess.moved >= C.TOUCH_START_MOVE:
-                    sess.started = True
-                    if kind == 2:
-                        sess.scrolled = True
-                    c.send_mouse(sess.pend[0], sess.pend[1], 2 if kind == 2 else 0)
-                    sess.pend = [0, 0]
-
-            # --- DS4/DSU touch: the deadzone checks BOTH fingers (the second must not be swallowed by the first) ---
-            tp = []
-            for f in fingers:
-                if f["on"] and f["x"] is not None and f["y"] is not None:
-                    tp.append((1, f["id"],
-                               clamp(f["x"] * TOUCH_W // maxx, 0, TOUCH_W),
-                               clamp(f["y"] * TOUCH_H // maxy, 0, TOUCH_H)))
-                else:
-                    tp.append((0, f["id"], 0, 0))
-            tp = tuple(tp)
-            if tp != last_tp and not (_same_finger(tp[0], last_tp[0]) and _same_finger(tp[1], last_tp[1])):
-                last_tp = c.touch = tp
-                c.send_touch()
-
-            # --- end of the contact: tap ---
+            _frame_mouse(c, fingers, prev, sess)
+            last_tp = _frame_touch_packet(c, fingers, maxx, maxy, last_tp)
             if not on:
-                if (C.TAP_CLICK and not sess.clicked and now - sess.t0 < C.TAP_MAX_S
-                        and sess.moved < C.TAP_MAX_MOVE):
-                    if C.GESTURES and sess.max_n >= 2:
-                        if not sess.scrolled:
-                            c.send_tap(4)
-                    elif sess.max_n >= 1:
-                        c.send_tap(1)
+                _frame_tap(c, sess, now)
                 sess = None
 
 
@@ -450,7 +478,7 @@ def _kernel_slots(dev, n):
         return [(-1, None, None)] * n
 
 
-def _resync_touch(c, fingers, prev):
+def _resync_touch(c, fingers, prev) -> None:
     """Rebuild the fingers and the touchpad button from the kernel state; without the ioctl (another platform) all fingers are lifted."""
     for k, (tid, x, y) in enumerate(_kernel_slots(c.touch_dev, len(fingers))):
         fingers[k].update(on=tid >= 0, x=x, y=y)       # the position of a lifted finger too (see stream_touch)
@@ -466,7 +494,7 @@ def _resync_touch(c, fingers, prev):
         c.send_click()
 
 
-async def stream_battery(c):
+async def stream_battery(c) -> None:
     """Poll the kernel power-supply entry of the pad every BATT_POLL_S: battery percentage and charging flag.
 
     The sysfs name contains the pad's MAC. When the entry cannot be read (USB pad, no driver support) the level is

@@ -21,7 +21,7 @@ _queue = collections.deque(maxlen=KEEP)      # [number, time, level, code, slot,
 _next = random.getrandbits(16)
 
 
-def add(level, code, idx=255, arg=""):
+def add(level, code, idx=255, arg="") -> None:
     """Queue an event for the receiver (no-op while events are disabled).
 
     Every event gets a 16-bit sequence number (so the receiver can drop duplicates) and a monotonic timestamp (so the
@@ -35,22 +35,22 @@ def add(level, code, idx=255, arg=""):
     _queue.append([_next, time.monotonic(), level, code, idx, utf8_field(arg, ARG_MAX, "…"), SENDS])   # cut on a character boundary
 
 
-def info(code, idx=255, arg=""):
+def info(code, idx=255, arg="") -> None:
     """Queue an informational event."""
     add(EV_INFO, code, idx, arg)
 
 
-def warn(code, idx=255, arg=""):
+def warn(code, idx=255, arg="") -> None:
     """Queue a warning event."""
     add(EV_WARN, code, idx, arg)
 
 
-def error(code, idx=255, arg=""):
+def error(code, idx=255, arg="") -> None:
     """Queue an error event."""
     add(EV_ERROR, code, idx, arg)
 
 
-def set_enabled(on):
+def set_enabled(on) -> None:
     """Turn event reporting on or off; turning it off also drops everything still waiting in the queue."""
     global enabled
     enabled = bool(on)
@@ -58,7 +58,7 @@ def set_enabled(on):
         _queue.clear()
 
 
-def flush(emit, now=None):
+def flush(emit, now=None) -> None:
     """Called from the ping loop when the receiver answers: send the waiting events, each one SENDS times in total.
 
     Every call sends each queued event once, with its age in seconds (capped to 16 bits), and decrements its counter;
