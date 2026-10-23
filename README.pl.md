@@ -2,6 +2,8 @@
 
 [English](README.md) | **Polski**
 
+> **Projekt w trakcie prac (WIP).** To jeszcze nie jest stabilny program: spodziewaj się błędów i zmian łamiących zgodność.
+
 DualSense bridge przesyła dane z pada PS5 (DualSense) do komputera z Windows przez sieć lokalną. Na PC pad działa
 jak zwykły DualSense (z HIDMaestro) albo pad PS4 (z ViGEmBus): przyciski, gałki, żyroskop, touchpad, a w drugą
 stronę wibracje i lightbar.

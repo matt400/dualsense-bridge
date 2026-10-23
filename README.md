@@ -2,6 +2,8 @@
 
 **English** | [Polski](README.pl.md)
 
+> **Work in progress.** This is not a stable program yet: expect bugs and breaking changes.
+
 DualSense bridge sends input from a PS5 pad (DualSense) to a Windows PC over the local network. On the PC the pad
 shows up as a regular DualSense (with HIDMaestro) or a PS4 pad (with ViGEmBus): buttons, sticks, gyro, touchpad, and
 in the other direction rumble and the lightbar.
