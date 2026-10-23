@@ -37,6 +37,29 @@ DualSense ──Bluetooth──> sender (sender/) ──network, UDP 5005──>
 | Network | the same local network as the sender | preferably a cable (Ethernet); Wi-Fi works but causes latency spikes |
 | Bluetooth | - | built-in is enough; a USB dongle (e.g. TP-Link UB500) often has noticeably lower latency - the sender picks it automatically |
 
+## Pad support
+
+What works from the PS5 pad (DualSense) and what is still missing.
+
+| Pad part | Status | Notes |
+|---|---|---|
+| Buttons (face, L1/R1, L3/R3, D-pad, Create, Options, PS) | ✅ | remapping, per-pad and per-game profiles |
+| Analog sticks | ✅ | remap, deadzones, curves, drift test |
+| Triggers L2/R2 (analog value) | ✅ | remapping and threshold tuning |
+| Gyro and accelerometer | ✅ | DSU for emulators, aiming, tilt as a stick, calibration |
+| Touchpad (click, 2 fingers) | ✅ | DS4 touch or mouse (cursor, scroll, right button) |
+| Battery and charging | ✅ | level, warning, lightbar colour by battery |
+| Lightbar | ✅ | own colour per pad or the game's colour |
+| Rumble (2 motors) | ✅ | through the driver and HID at the same time |
+| Adaptive triggers | ✅ | resistance, click, vibration; from the profile or from the game (HIDMaestro) |
+| Pairing and switching the pad off | ✅ | from the PC window, no need to walk to the sender |
+| Mute button and its LED | ❌ | |
+| Microphone | ❌ | |
+| Speaker and headphone jack | ❌ | |
+| HD haptics (real ones, not 2 motors) | ❌ | |
+| Player LEDs (under the lightbar) | ❌ | |
+| DualSense Edge (back buttons, Fn) | ❌ | |
+
 ## Installation
 
 ### 1. PC (Windows)

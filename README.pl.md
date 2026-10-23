@@ -37,6 +37,29 @@ DualSense ──Bluetooth──> nadajnik (sender/) ──sieć, UDP 5005──>
 | Sieć | ta sama sieć lokalna co nadajnik | najlepiej kabel (Ethernet); Wi-Fi działa, ale daje skoki opóźnienia |
 | Bluetooth | - | wbudowany wystarczy; dongle USB (np. TP-Link UB500) często ma wyraźnie mniejsze opóźnienie - nadajnik wybiera go sam |
 
+## Obsługa pada
+
+Co działa z pada PS5 (DualSense), a czego jeszcze brakuje.
+
+| Element pada | Status | Uwagi |
+|---|---|---|
+| Przyciski (krzyżyk, kółko, kwadrat, trójkąt, L1/R1, L3/R3, D-pad, Create, Options, PS) | ✅ | remapowanie, profile per pad i per gra |
+| Gałki analogowe | ✅ | remap, deadzone, krzywe, test dryfu |
+| Triggery L2/R2 (wartość analogowa) | ✅ | remapowanie i regulacja progu |
+| Żyroskop i akcelerometr | ✅ | DSU dla emulatorów, celowanie, pochylenie jako gałka, kalibracja |
+| Touchpad (kliknięcie, 2 palce) | ✅ | dotyk DS4 albo mysz (kursor, scroll, prawy przycisk) |
+| Bateria i ładowanie | ✅ | poziom, ostrzeżenie, kolor lightbara od baterii |
+| Lightbar | ✅ | kolor własny per pad lub z gry |
+| Wibracje (2 silniki) | ✅ | przez sterownik i HID jednocześnie |
+| Adaptacyjne triggery | ✅ | opór, klik, wibracja; z profilu lub z gry (HIDMaestro) |
+| Parowanie i wyłączanie pada | ✅ | z okna na PC, bez podchodzenia do sendera |
+| Przycisk mute i jego dioda | ❌ | |
+| Mikrofon | ❌ | |
+| Głośnik i gniazdo słuchawkowe | ❌ | |
+| Haptyka HD (prawdziwa, nie 2 silniki) | ❌ | |
+| Diody gracza (pod lightbarem) | ❌ | |
+| DualSense Edge (tylne przyciski, Fn) | ❌ | |
+
 ## Instalacja
 
 ### 1. PC (Windows)
