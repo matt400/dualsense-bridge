@@ -252,6 +252,34 @@ try:
 finally:
     rx_hm.net_runtimes, rx_hm._clr_ready, subprocess.run, rx_hm.os.name = real_rt, real_clr, real_run, real_os
 
+# ---------- HIDMaestro 2.0: LICENSE obok DLL, diagnostyka błędów ----------
+def zip_with(*entries):
+    b = io.BytesIO()
+    with zipfile.ZipFile(b, "w") as z:
+        for n, d in entries:
+            z.writestr(n, d)
+    return zipfile.ZipFile(io.BytesIO(b.getvalue()))
+zf = zip_with(("HIDMaestro.Core.dll", b"MZ"), ("LICENSE", b"MIT"), ("HIDMaestroTest\\LICENSE", b"other"),
+              ("HIDMaestroTest\\WinRT.Runtime.dll", b"MZ"))
+check([U._name(i) for i in U.pick(zf.infolist())] == ["HIDMaestro.Core.dll", "HIDMaestroTest/WinRT.Runtime.dll", "LICENSE"],
+      "LICENSE z folderu DLL jedzie z wersją")
+zf = zip_with(("HIDMaestro.Core.dll", b"MZ"), ("HIDMaestroTest\\LICENSE", b"other"))
+check([U._name(i) for i in U.pick(zf.infolist())] == ["HIDMaestro.Core.dll"], "cudza LICENSE z podfolderu nie jest brana")
+zf = zip_with(("HIDMaestro.Core.dll", b"MZ"))
+check([U._name(i) for i in U.pick(zf.infolist())] == ["HIDMaestro.Core.dll"], "wydanie bez LICENSE: bez błędu")
+
+class HMResourceInUseException(Exception): pass
+class Plain(Exception): pass
+check("another program" in rx_hm.describe_error(HMResourceInUseException("key held")) and
+      rx_hm.describe_error(HMResourceInUseException("key held")).startswith("HMResourceInUseException: key held"),
+      "wyjątek 2.0: typ, komunikat i wskazówka")
+check(rx_hm.describe_error(Plain("x")) == "Plain: x", "inny wyjątek: bez wskazówki")
+issue = _t.SimpleNamespace(File="p/dualsense.json", JsonPath="$.inputReportSize", Reason="unknown key")
+check(rx_hm.profile_issues(_t.SimpleNamespace(ProfileLoadIssues=[issue])) == ["p/dualsense.json: $.inputReportSize: unknown key"],
+      "ProfileLoadIssues: plik, ścieżka, powód")
+check(rx_hm.profile_issues(_t.SimpleNamespace()) == [] and rx_hm.profile_issues(_t.SimpleNamespace(ProfileLoadIssues=[issue] * 5))[-1] == "... +2 more",
+      "HIDMaestro 1.x bez ProfileLoadIssues: pusto; więcej niż 3: skrót")
+
 print("HM UPDATE", "OK" if not fails else f"BŁĘDY: {len(fails)}")
 if fails:
     sys.exit(1)
