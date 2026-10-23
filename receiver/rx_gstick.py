@@ -20,9 +20,13 @@ The output goes to the sink only when the change exceeds the delta threshold (or
 import math
 from collections.abc import MutableMapping
 from dataclasses import dataclass, fields, replace
-from typing import Any
+from typing import Any, TypeAlias
 
 from rx_buttons import BIT, BUTTON_CODES, INPUTS
+
+Vec2: TypeAlias = tuple[float, float]
+# what the window shows: (state, zone, raw °, filtered °, output -1..1, mag 0..1, sprint, driving)
+Snapshot: TypeAlias = tuple[int, int, Vec2, Vec2, Vec2, float, bool, bool]
 
 # ---------------- ustawienia ----------------
 TARGETS = {"left": "Lewa gałka", "right": "Prawa gałka", "dpad": "D-pad", "none": "Brak (tylko podgląd)"}
@@ -303,7 +307,7 @@ class Engine:
         self.sent = None
         self._neutral(ST_SAFE)
 
-    def snapshot(self) -> tuple[int, int, tuple[float, float], tuple[float, float], tuple[float, float], float, bool, bool]:
+    def snapshot(self) -> Snapshot:
         """Tuple for the window preview: (state, zone, raw °, filtered °, output -1..1, mag 0..1, sprint, driving)."""
         return (self.state, self.zone, self.raw, self.filt_xy, self.xy, self.mag, self.sprint, self.out is not None)
 

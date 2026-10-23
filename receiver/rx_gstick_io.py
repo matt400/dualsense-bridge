@@ -12,14 +12,17 @@ import json
 import os
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import replace
+from typing import Any
 
 import rx_feedback as F
 import rx_state as S
 from proto import write_json
 from rx_buttons import pressed_inputs
 from rx_config import C
-from rx_gstick import EV_DEAD_IN, EV_NONE, EV_OUTER_IN, FORCE, ST_OFF, Config, Engine, Sink, normalize, sprint_mask, to_raw
+from rx_gstick import (EV_DEAD_IN, EV_NONE, EV_OUTER_IN, FORCE, ST_OFF, Config, Engine, Sink, Snapshot, normalize, sprint_mask,
+                       to_raw)
 
 FEEDBACK_GAP_S = 0.15           # minimum gap between two feedback pulses of a pad (no chatter on a zone edge)
 STEP_S = 0.004                 # 250 Hz
@@ -27,7 +30,7 @@ IDLE_WAIT_S = 0.25             # nothing enabled: the thread sleeps and wakes on
 FILE_VERSION = 1
 
 
-def path():
+def path() -> str:
     """Next to remap.json (remap_file can be changed in the config - gyrostick.json follows it)."""
     return os.path.join(os.path.dirname(C.REMAP_PATH), "gyrostick.json")
 
@@ -35,15 +38,16 @@ def path():
 class Store:
     """Gyro-stick settings of each pad. Key: the pad identifier (MAC) or "slotN"."""
 
-    def __init__(self, file=None) -> None:
+    def __init__(self, file: str | None = None) -> None:
+        """`file` overrides the default location (tests)."""
         self.file = file
         self._lock = threading.Lock()
-        self._cfgs = None
+        self._cfgs: dict[str, Config] | None = None
 
-    def _path(self):
+    def _path(self) -> str:
         return self.file or path()
 
-    def _load(self):
+    def _load(self) -> dict[str, Config]:
         """Call under _lock."""
         if self._cfgs is None:
             self._cfgs = {}
@@ -58,11 +62,12 @@ class Store:
                 print(f"Gyro stick file {self._path()}: cannot read ({e}) - default settings")
         return self._cfgs
 
-    def get(self, key):
+    def get(self, key: str) -> Config:
+        """The saved settings of the pad, or the defaults."""
         with self._lock:
             return self._load().get(key.lower()) or Config()
 
-    def set(self, key, cfg) -> bool:
+    def set(self, key: str, cfg: Config) -> bool:
         """Remembers and saves atomically (proto.write_json)."""
         with self._lock:
             cfgs = self._load()
@@ -82,14 +87,16 @@ class StateSink(Sink):
     Other sinks (vJoy, uinput) = further Sink subclasses; Runner knows only this interface.
     """
 
-    def drive(self, slot, target, x, y, button) -> None:
+    def drive(self, slot: int, target: str, x: float, y: float, button: int) -> None:
+        """Put the gyro output into the slot state."""
         self._set(slot, (target, x, y, button))
 
-    def release(self, slot) -> None:
+    def release(self, slot: int) -> None:
+        """Clear the gyro output from the slot state."""
         self._set(slot, None)
 
     @staticmethod
-    def _set(slot, gs) -> None:
+    def _set(slot: int, gs: tuple[str, float, float, int] | None) -> None:
         with S.lock:
             s = S.states[slot]
             if s["gs"] == gs:
@@ -105,17 +112,20 @@ FEEDBACK_SUFFIX = {"haptic": "h", "led": "l", "both": "b"}
 
 
 class Runner:
-    def __init__(self, store=None, sink=None, pulse=None) -> None:
+    """One gyro-stick engine per slot, stepped by a 250 Hz thread; the window talks to it through the public methods."""
+
+    def __init__(self, store: Store | None = None, sink: Sink | None = None, pulse: Callable[..., None] | None = None) -> None:
+        """Injectable store / sink / pulse (tests); the defaults are the real ones."""
         self.store = store or Store()
         self.sink = sink or StateSink()
         self.pulse = pulse or F.pulse           # (slot, kind, force) -> a short rumble / colour pulse on the pad
-        self.engines = []
+        self.engines: list[Engine] = []
         self.wake = threading.Event()
-        self.cal_msg = []                   # ostatni wynik kalibracji slotu: None / True / False (okno)
-        self._driving = []                  # the sink currently holds our output
-        self._keys = []                     # the pad key the engine's settings belong to
-        self._fb_t = []                     # when the last feedback pulse of the slot was sent
-        self._game = None
+        self.cal_msg: list[bool | None] = []                   # ostatni wynik kalibracji slotu: None / True / False (okno)
+        self._driving: list[bool] = []                  # the sink currently holds our output
+        self._keys: list[str | None] = []                     # the pad key the engine's settings belong to
+        self._fb_t: list[float] = []                     # when the last feedback pulse of the slot was sent
+        self._game: Any = None
 
     def init(self) -> None:
         """One engine per slot (receiver_controller at startup; the window entry points call it too if nobody did)."""
@@ -127,17 +137,20 @@ class Runner:
         self._fb_t = [0.0] * n
 
     # ---------- dla okna ----------
-    def key(self, slot):
+    def key(self, slot: int) -> str:
+        """The store key of the slot's pad (its id, or "slotN")."""
         return S.store.key_for(S.pad_id[slot], slot)
 
-    def config(self, slot):
+    def config(self, slot: int) -> Config:
+        """The current settings of the slot's pad."""
         return self.store.get(self.key(slot))
 
     def _ready(self) -> None:
+        """Create the engines when nobody called init() yet."""
         if not self.engines:
             self.init()
 
-    def set_config(self, slot, cfg, save: bool = True) -> None:
+    def set_config(self, slot: int, cfg: Config, save: bool = True) -> None:
         """New pad settings (from the window). The engine picks them up on the next sample (Config is immutable)."""
         self._ready()
         if save:
@@ -145,17 +158,18 @@ class Runner:
         self.engines[slot].cfg = cfg
         self.wake.set()
 
-    def calibrate(self, slot) -> None:
+    def calibrate(self, slot: int) -> None:
         """Sets the current pad position as the center (0, 0): averages ~0.4 s, the result goes to cal_msg and the settings."""
         self._ready()
         self.cal_msg[slot] = None
         self.engines[slot].start_center(time.monotonic())
         self.wake.set()
 
-    def reset_center(self, slot) -> None:
+    def reset_center(self, slot: int) -> None:
+        """Forget the calibrated center: the pad lying flat is neutral again."""
         self.set_config(slot, replace(self.config(slot), center=None))
 
-    def cal_result(self, slot, clear: bool = False):
+    def cal_result(self, slot: int, clear: bool = False) -> bool | None:
         """The last calibration outcome of the slot (None / True / False); clear=True forgets it."""
         self._ready()
         msg = self.cal_msg[slot]
@@ -163,13 +177,14 @@ class Runner:
             self.cal_msg[slot] = None
         return msg
 
-    def set_preview(self, slot, on) -> None:
+    def set_preview(self, slot: int, on: bool) -> None:
         """The tilt window is open for the slot: the preview follows the pad even while the feature is switched off."""
         self._ready()
         self.engines[slot].preview = on
         self.wake.set()
 
-    def snapshot(self, slot):
+    def snapshot(self, slot: int) -> Snapshot:
+        """What the window shows for the slot (see Engine.snapshot)."""
         self._ready()
         return self.engines[slot].snapshot()
 
@@ -180,7 +195,7 @@ class Runner:
             self._push(i, e)
 
     # ---------- thread ----------
-    def _push(self, i, e) -> None:
+    def _push(self, i: int, e: Engine) -> None:
         """Passes the engine output to the sink (call when e.send)."""
         out = e.out
         if out is None:
@@ -192,7 +207,7 @@ class Runner:
         self.sink.drive(i, cfg.target, out[0], out[1], sprint_mask(cfg.sprint) if out[2] else 0)
         self._driving[i] = True
 
-    def _step_slot(self, i, now):
+    def _step_slot(self, i: int, now: float) -> bool:
         e = self.engines[i]
         key = self.key(i)
         if key != self._keys[i]:                     # the pad got an identifier (MAC) or it changed: load its settings
@@ -219,7 +234,7 @@ class Runner:
             self._feedback(i, e.event, cfg.feedback, now)
         return e.state != ST_OFF
 
-    def _feedback(self, slot, event, mode, now) -> None:
+    def _feedback(self, slot: int, event: int, mode: str, now: float) -> None:
         """Rumble / lightbar pulse on a zone crossing: full tilt reached (edge) or back in the deadzone (center).
 
         Only these two crossings are signalled - leaving the deadzone and leaving the outer zone would tick on every small
@@ -231,7 +246,8 @@ class Runner:
         self._fb_t[slot] = now
         self.pulse(slot, f"tilt_{kind}_{FEEDBACK_SUFFIX[mode]}", force=True)    # force: independent of the "confirmations" setting
 
-    def _finish_calibration(self, i, e) -> None:
+    def _finish_calibration(self, i: int, e: Engine) -> None:
+        """Collect a finished calibration: report the outcome and save the new center."""
         res = e.cal_result
         if res is None or e.calibrating:
             return
@@ -279,4 +295,5 @@ runner = Runner()
 
 
 def thread() -> None:
+    """Thread entry point: run the shared runner until the receiver stops."""
     runner.loop()
