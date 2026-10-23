@@ -45,7 +45,7 @@ def _of8(v: float) -> str:
     return f"{round(v)} / {TRIG_FORCE_MAX}"
 
 
-def targets() -> list[tuple[str, str]]:
+def targets() -> list[tuple[str, ...]]:
     """Choices of what a button can act as: every pad input (icon + name) and "disabled"."""
     return [*input_items(B.INPUTS, text=True), (NONE, _("— wyłączony —"))]   # icon + name: the choice is visible at once
 
