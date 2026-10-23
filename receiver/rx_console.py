@@ -181,7 +181,8 @@ def detector(name):
 def _display(mode):
     """Set the screen topology (extend / internal / tv) through SetDisplayConfig, falling back to DisplaySwitch.exe."""
     try:
-        return rx_display.set_topology(mode)
+        rx_display.set_topology(mode)
+        return
     except (OSError, AttributeError) as e:          # an old Windows / no API -> DisplaySwitch
         print(f"Console: SetDisplayConfig failed ({e!r}) - using DisplaySwitch")
     exe = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "DisplaySwitch.exe")

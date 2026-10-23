@@ -279,7 +279,7 @@ def utf8_field(text, size, more=""):
     if len(raw) <= size:
         return raw
     tail = more.encode("utf-8")
-    return raw[:size - len(tail)].decode("utf-8", "ignore").encode("utf-8") + tail
+    return raw[:max(0, size - len(tail))].decode("utf-8", "ignore").encode("utf-8") + tail
 
 
 KEY_MISMATCH_S = 5.0          # for this long after a packet with a different HMAC key setting we also reject the ambiguous lengths
