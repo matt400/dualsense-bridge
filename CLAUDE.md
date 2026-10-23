@@ -54,5 +54,5 @@ pip install evdev ruff PySide6-Essentials
 
 ## Git
 - Gałęzie: `fix/…`, `feat/…`, `docs/…`, `security/…`; zmiany przez PR z merge commitem do `main`.
-- Commity: krótki opis po polsku z prefiksem obszaru (`Receiver: …`, `Sender BT: …`, `Bug hunt N: …`, `docs: …`).
+- Commity, opisy PR i changelogi: po angielsku, krótko i naturalnie, z prefiksem obszaru (`Receiver: …`, `Sender BT: …`, `Bug hunt N: …`, `docs: …`).
 - Dokumentacja: zmiana w EN (`docs/*.md`) wymaga odpowiednika w PL (`docs/*.pl.md`) i odwrotnie.
