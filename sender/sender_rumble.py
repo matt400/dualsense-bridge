@@ -124,7 +124,7 @@ FATAL_ERRNO: Final = frozenset({errno.ENODEV, errno.ENOENT, errno.ENXIO, errno.E
 _HID_DIR = re.compile(r"^([0-9A-Fa-f]{4}):[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}\.[0-9A-Fa-f]{4}$")
 BUS_BLUETOOTH: Final = 0x0005
 FW_REPORT, FW_SIZE, FW_VERSION_AT = 0x20, 64, 44    # the feature report with the firmware version (as in hid-playstation)
-VIBRATION_V2_FROM: Final = 0x0221                   # DS_FEATURE_VERSION(2, 21)
+VIBRATION_V2_FROM: Final = (2 << 8) | 21            # DS_FEATURE_VERSION(2, 21): (major << 8) | minor, so 0x0215 (not 0x0221)
 HID_IOC_MAGIC, HIDIOCGFEATURE_NR = "H", 0x07     # HIDIOCGFEATURE(len), see linux/hidraw.h
 HIDRAW_NODE_MODE: Final = stat.S_IFCHR | 0o600
 
