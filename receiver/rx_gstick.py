@@ -27,7 +27,7 @@ TARGETS = {"left": "Lewa gałka", "right": "Prawa gałka", "dpad": "D-pad", "non
 CURVES = {"linear": "Liniowa", "cubic": "Wykładnicza (sześcienna)", "aggressive": "Agresywna"}
 FEEDBACKS = {"off": "Wyłączony", "haptic": "Wibracja", "led": "Kolor lightbara", "both": "Wibracja i kolor"}
 CLUTCHES = ("always", *INPUTS)                          # the input that has to be held ("always" = no clutch)
-SPRINTS = ("none", *(n for n in BUTTON_CODES if n != "ps"))   # wirtualny przycisk wciskany na skraju zakresu
+SPRINTS = ("none", *(n for n in BUTTON_CODES if n != "ps"))   # virtual button pressed at the edge of the range
 # ranges shared by file validation and the window sliders: name -> (min, max)
 LIMITS = {"deadzone": (0.0, 20.0),      # martwa strefa [°]
           "outer": (10.0, 80.0),        # tilt giving full deflection [°]

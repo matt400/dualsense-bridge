@@ -36,7 +36,8 @@
     sprzęgła (przechył działa tylko, gdy jest trzymany), uśpienie po bezruchu pada, przycisk wciskany na skraju zakresu
     (np. L3 jako sprint), kalibracja środka i podgląd 2D na żywo z wartościami surowymi i po filtrze. Powrót do martwej
     strefy zeruje gałkę od razu (bez opóźnienia filtra), drobne zmiany nie są wysyłane, a gałka jest zwalniana przy zmianie
-    okna na pierwszym planie, utracie pada, zmianie profilu i wyłączeniu funkcji;
+    okna na pierwszym planie, utracie pada, zmianie profilu i wyłączeniu funkcji. Opcjonalnie pad sygnalizuje osiągnięcie pełnego przechyłu (mocne stuknięcie /
+    pomarańczowy błysk) i powrót do martwej strefy (lekkie stuknięcie / niebieski błysk) - wibracją, kolorem lightbara albo oboma;
   - **efekty spustów** (adaptive triggers) L2 / R2 w profilu: **opór** (siła 1-8, od którego miejsca skoku),
     **klik** jak spust broni (punkt 20-70 % skoku i siła) albo **drgania** (od którego miejsca, siła,
     częstotliwość). Gra przez wirtualnego DS4 tego nie wyśle, więc ustawia to nadajnik raportem HID. Profil gry

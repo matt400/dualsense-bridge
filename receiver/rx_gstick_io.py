@@ -13,12 +13,14 @@ import threading
 import time
 from dataclasses import replace
 
+import rx_feedback as F
 import rx_state as S
 from proto import write_json
 from rx_buttons import pressed_inputs
 from rx_config import C
-from rx_gstick import ST_OFF, Config, Engine, Sink, normalize, sprint_mask, to_raw
+from rx_gstick import EV_DEAD_IN, EV_NONE, EV_OUTER_IN, ST_OFF, Config, Engine, Sink, normalize, sprint_mask, to_raw
 
+FEEDBACK_GAP_S = 0.15           # minimum gap between two feedback pulses of a pad (no chatter on a zone edge)
 STEP_S = 0.004                 # 250 Hz
 IDLE_WAIT_S = 0.25             # nothing enabled: the thread sleeps and wakes on a settings change
 FILE_VERSION = 1
@@ -96,15 +98,20 @@ class StateSink(Sink):
         S.notify(slot)
 
 
+FEEDBACK_SUFFIX = {"haptic": "h", "led": "l", "both": "b"}
+
+
 class Runner:
-    def __init__(self, store=None, sink=None):
+    def __init__(self, store=None, sink=None, pulse=None):
         self.store = store or Store()
         self.sink = sink or StateSink()
+        self.pulse = pulse or F.pulse           # (slot, kind, force) -> a short rumble / colour pulse on the pad
         self.engines = []
         self.wake = threading.Event()
         self.cal_msg = []                   # ostatni wynik kalibracji slotu: None / True / False (okno)
         self._driving = []                  # the sink currently holds our output
         self._keys = []                     # the pad key the engine's settings belong to
+        self._fb_t = []                     # when the last feedback pulse of the slot was sent
         self._game = None
 
     def init(self):
@@ -113,6 +120,7 @@ class Runner:
         self.cal_msg = [None] * n
         self._driving = [False] * n
         self._keys = [None] * n
+        self._fb_t = [0.0] * n
 
     # ---------- dla okna ----------
     def key(self, slot):
@@ -179,7 +187,18 @@ class Runner:
         send = e.step(now, acc[0] / res * k0, acc[1] / res * k1, acc[2] / res * k2, gdps, held, alive)
         if send:
             self._push(i, e)
+        if e.event != EV_NONE and cfg.feedback != "off":
+            self._feedback(i, e.event, cfg.feedback, now)
         return e.state != ST_OFF
+
+    def _feedback(self, slot, event, mode, now):
+        """Rumble / lightbar pulse on a zone crossing: full tilt reached (edge) or back in the deadzone (center). Only these two
+        crossings are signalled - leaving the deadzone and leaving the outer zone would tick on every small move."""
+        kind = "edge" if event == EV_OUTER_IN else "center" if event == EV_DEAD_IN else None
+        if kind is None or now - self._fb_t[slot] < FEEDBACK_GAP_S:
+            return
+        self._fb_t[slot] = now
+        self.pulse(slot, f"tilt_{kind}_{FEEDBACK_SUFFIX[mode]}", force=True)    # force: independent of the "confirmations" setting
 
     def _finish_calibration(self, i, e):
         res = e.cal_result

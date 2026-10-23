@@ -977,6 +977,8 @@ EN = {
     "Uśpione (pad nieruchomy)": "Asleep (pad still)",
     "Kalibracja...": "Calibrating...",
     "● Steruje": "● Driving",
+    "Wibracja i kolor": "Rumble and colour",
+    "Sygnał przy skraju zakresu i powrocie do środka": "Signal at full tilt and when back in the center",
     "Środek ustawiony.": "Center set.",
     "Kalibracja nie wyszła - trzymaj pada nieruchomo przez chwilę.": "Calibration failed - hold the pad still for a moment.",
 }
