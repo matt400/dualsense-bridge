@@ -944,8 +944,11 @@ EN = {
     "Tryb konsoli: Windows przywrócił oba ekrany - ponowne przełączenie na TV":
         "Console mode: Windows restored both screens - switching to the TV again",
     # karta "Przechył" (rx_qt_gstick)
-    "PRZECHYŁ PADA JAKO GAŁKA": "PAD TILT AS A STICK",
-    "ZAAWANSOWANE: PRZECHYŁ": "ADVANCED: TILT",
+    "PRZECHYŁ: PODSTAWOWE": "TILT: BASICS",
+    "PRZECHYŁ: ZAKRES I FILTR": "TILT: RANGE AND FILTER",
+    "PRZECHYŁ: AUTOMATYKA": "TILT: AUTOMATION",
+    "PRZECHYŁ: SYGNAŁ ZWROTNY": "TILT: FEEDBACK",
+    "PRZECHYŁ: PODGLĄD": "TILT: PREVIEW",
     "Przechyl pada: przód w dół = gałka w górę, na bok = gałka w bok. Gałka na rysunku pada porusza się razem z nim.":
         "Tilt the pad: front down = stick up, sideways = stick sideways. The stick in the pad drawing moves with it.",
     "Włącz (dla tego pada)": "Enable (for this pad)",

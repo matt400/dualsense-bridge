@@ -92,25 +92,14 @@ class TiltSection(QWidget):
         self.cfg = G.Config()
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(10)
-        lay.addWidget(label(_("PRZECHYŁ PADA JAKO GAŁKA"), "h2"))
+        lay.setSpacing(8)
+        # every category is a collapsed section; the live preview is its own one, so it only runs while it is open
         self.on = QCheckBox(_("Włącz (dla tego pada)"))
         self.on.toggled.connect(lambda v: self._set(enabled=v))
-        lay.addWidget(self.on)
-        lay.addWidget(label(_("Przechyl pada: przód w dół = gałka w górę, na bok = gałka w bok. Gałka na rysunku pada porusza się "
-                              "razem z nim."), "dim", wrap=True))
-        self.view = TiltView()
-        self.numbers = label("", "dim", wrap=True)
-        self.status = label("", "dim")
-        lay.addWidget(self.view)
-        lay.addWidget(self.numbers)
-        lay.addWidget(self.status)
         self.target = Combo([(k, _(v)) for k, v in G.TARGETS.items()])
         self.target.changed.connect(lambda v: self._set(target=v))
         self.clutch = Combo([("always", _("Zawsze")), *input_items(B.INPUTS, text=True)])
         self.clutch.changed.connect(lambda v: self._set(clutch=v))
-        lay.addWidget(field(_("Zastępuje wejście pada"), self.target))
-        lay.addWidget(field(_("Aktywne (sprzęgło)"), self.clutch))
         inv = QHBoxLayout()
         self.inv_p, self.inv_r = QCheckBox(_("Odwróć pitch")), QCheckBox(_("Odwróć roll"))
         self.inv_p.toggled.connect(lambda v: self._set(invert_pitch=v))
@@ -118,34 +107,44 @@ class TiltSection(QWidget):
         inv.addWidget(self.inv_p)
         inv.addWidget(self.inv_r)
         inv.addStretch(1)
-        lay.addLayout(inv)
-        self.sl = {}
-        for name in ("deadzone", "outer"):
-            lay.addWidget(self._slider(name))
         self.cal = button(_("Ustaw środek"))
         self.cal.setToolTip(_("Bieżące położenie pada staje się środkiem (0, 0) - trzymaj pada nieruchomo"))
         self.cal.clicked.connect(self._calibrate)
         self.cal_reset = button(_("Zeruj środek"), small=True)
         self.cal_reset.clicked.connect(lambda: self._set(center=None))
-        row = QHBoxLayout()
-        row.addWidget(self.cal, 1)
-        row.addWidget(self.cal_reset)
-        lay.addLayout(row)
-        self.sprint = Combo([("none", _("Brak")), *input_items([n for n in G.SPRINTS if n != "none"], text=True)])
-        self.sprint.changed.connect(lambda v: self._set(sprint=v))
+        cal_row = QHBoxLayout()
+        cal_row.addWidget(self.cal, 1)
+        cal_row.addWidget(self.cal_reset)
+        self.cal_note = label("", "dim", wrap=True)
+        self.sl = {}
         self.curve = Combo([(k, _(v)) for k, v in G.CURVES.items()])
         self.curve.changed.connect(lambda v: self._set(curve=v))
-        self.feedback = Combo([(k, _(v)) for k, v in G.FEEDBACKS.items()])
-        self.feedback.changed.connect(lambda v: self._set(feedback=v))
+        self.sprint = Combo([("none", _("Brak")), *input_items([n for n in G.SPRINTS if n != "none"], text=True)])
+        self.sprint.changed.connect(lambda v: self._set(sprint=v))
         self.focus = QCheckBox(_("Zeruj po zmianie okna"))
         self.focus.setToolTip(_("Zeruje gałkę, gdy na pierwszym planie zmieni się program"))
         self.focus.toggled.connect(lambda v: self._set(focus_release=v))
-        self.adv = Collapsible(_("ZAAWANSOWANE: PRZECHYŁ"),
-                               self._slider("smoothing"), self._slider("ratio"), field(_("Krzywa odpowiedzi"), self.curve),
-                               self._slider("idle_s"), self._slider("delta"),
-                               field(_("Przycisk na skraju zakresu"), self.sprint), self._slider("sprint_at"),
-                               field(_("Sygnał przy skraju zakresu i powrocie do środka"), self.feedback), self.focus)
-        lay.addWidget(self.adv)
+        self.feedback = Combo([(k, _(v)) for k, v in G.FEEDBACKS.items()])
+        self.feedback.changed.connect(lambda v: self._set(feedback=v))
+        self.view = TiltView()
+        self.numbers = label("", "dim", wrap=True)
+        self.status = label("", "dim")
+        self.cats = [
+            Collapsible(_("PRZECHYŁ: PODSTAWOWE"), self.on, field(_("Zastępuje wejście pada"), self.target),
+                        field(_("Aktywne (sprzęgło)"), self.clutch), inv, cal_row, self.cal_note),
+            Collapsible(_("PRZECHYŁ: ZAKRES I FILTR"), self._slider("deadzone"), self._slider("outer"), self._slider("smoothing"),
+                        self._slider("ratio"), field(_("Krzywa odpowiedzi"), self.curve)),
+            Collapsible(_("PRZECHYŁ: AUTOMATYKA"), self._slider("idle_s"), self._slider("delta"),
+                        field(_("Przycisk na skraju zakresu"), self.sprint), self._slider("sprint_at"), self.focus),
+            Collapsible(_("PRZECHYŁ: SYGNAŁ ZWROTNY"),
+                        field(_("Sygnał przy skraju zakresu i powrocie do środka"), self.feedback)),
+            Collapsible(_("PRZECHYŁ: PODGLĄD"), label(_("Przechyl pada: przód w dół = gałka w górę, na bok = gałka w bok. Gałka na "
+                                                      "rysunku pada porusza się razem z nim."), "dim", wrap=True),
+                        self.view, self.numbers, self.status),
+        ]
+        self.preview_cat = self.cats[-1]
+        for c in self.cats:
+            lay.addWidget(c)
         self.refresh()
 
     def _slider(self, name):
@@ -202,6 +201,17 @@ class TiltSection(QWidget):
     def tick(self):
         """Live preview (30 Hz from the window timer, only while this section is visible). Also asks the engine to follow the
         pad even when the feature is off, so the tilt can be seen before it is switched on."""
+        msg, now = runner.cal_msg[self.slot], time.monotonic()
+        if msg is not None and not self._msg_until:
+            self._msg_until = now + MSG_S                    # the calibration result shows for a moment
+            self.refresh()                                   # the new center was saved by the thread
+            self.cal_note.setText(_(CAL_TEXT[msg]))
+        elif msg is not None and now > self._msg_until:
+            runner.cal_msg[self.slot], self._msg_until, msg = None, 0.0, None
+            self.cal_note.setText("")
+        if not self.preview_cat.is_open():       # a collapsed preview costs nothing: the engine is not asked to follow the pad
+            self.idle()
+            return
         if self._preview != self.slot:
             self.idle()
             self._preview = self.slot
@@ -211,15 +221,7 @@ class TiltSection(QWidget):
         state, _zone, raw, _filt, xy, _mag, sprint, _driving = snap
         self.numbers.setText(_("Raw: pitch {p:+.1f}°  roll {r:+.1f}°   |   Filtered output: X {x:+.0f}%  Y {y:+.0f}%{s}").format(
             p=raw[1], r=raw[0], x=xy[0] * 100, y=xy[1] * 100, s="  [sprint]" if sprint else ""))
-        msg, now = runner.cal_msg[self.slot], time.monotonic()
-        if msg is not None and not self._msg_until:
-            self._msg_until = now + MSG_S                    # the calibration result shows for a moment, then the state again
-            self.refresh()                                   # the new center was saved by the thread
-        elif msg is not None and now > self._msg_until:
-            runner.cal_msg[self.slot], self._msg_until, msg = None, 0.0, None
-        if msg is not None:
-            self.status.setText(_(CAL_TEXT[msg]))
-        elif not self.cfg.enabled and state != G.ST_OFF:
+        if not self.cfg.enabled and state != G.ST_OFF:
             self.status.setText(_("Podgląd - funkcja jest wyłączona"))
         else:
             self.status.setText(_(STATE_TEXT[state]))

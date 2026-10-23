@@ -31,7 +31,7 @@
     button (Ctrl+S);
   - remapping buttons and sticks, gyro aiming (right stick / mouse); deadzones, curves and anti-deadzone in the
     collapsible "Advanced" section (it opens by itself when something in it was changed);
-  - **Pad tilt as a stick** (the bottom of the **Gyro** tab; the stick in the pad drawing moves with the tilt): tilting the pad drives an analog stick (or the d-pad), per pad (saved by MAC in `gyrostick.json` next
+  - **Pad tilt as a stick** (the **Gyro** tab: collapsed categories - basics, range and filter, automation, feedback, preview; the stick in the pad drawing moves with the tilt): tilting the pad drives an analog stick (or the d-pad), per pad (saved by MAC in `gyrostick.json` next
     to `remap.json`, applied immediately - not part of the profile). Front down = stick up, left / right = stick left /
     right, full 360° range. Settings: deadzone, max outer zone, smoothing (EMA), vertical / horizontal ratio, response
     curve (linear / cubic / aggressive), invert pitch / roll, clutch button (tilt works only while it is held), auto-sleep
