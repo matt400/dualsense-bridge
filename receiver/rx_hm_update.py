@@ -12,7 +12,7 @@ sterownik, a wydanie nie ma podpisu Authenticode ani sum kontrolnych. Nowa wersj
 publikacji (hm_min_age_days w receiver.toml, 0 = od razu) - podmienione wydania zwykle znikają w ciągu dni. Pierwsza
 instalacja (brak jakiejkolwiek wersji) nie czeka.
 
-  receiver/hidmaestro/v2.0.0/HIDMaestro.Core.dll   wersja w swoim folderze: nowsza nie nadpisuje DLL załadowanej
+  receiver/hidmaestro/v2.0.3/HIDMaestro.Core.dll   wersja w swoim folderze: nowsza nie nadpisuje DLL załadowanej
                                                     w działającym procesie (CLR trzyma plik) - działa po restarcie
   receiver/hidmaestro/state.json                    kiedy ostatnio sprawdzano i jaki był wynik
 

@@ -1,7 +1,8 @@
 """Receiver: backend HIDMaestro - wirtualny DualSense (sterownik UMDF2 w trybie użytkownika, MIT, rozwijany).
-Zgodny z HIDMaestro 1.x i 2.0 (używane wywołania: LoadDefaultProfiles, InstallDriver, GetProfile, CreateControllerAt,
-SubmitRawReport, OutputReceived, Dispose - te same w obu; 2.0 dodaje tylko diagnostykę: ProfileLoadIssues,
-LastDriverInstall, TransportIndex i wyjątki wyprowadzone z InvalidOperationException - patrz describe_error).
+Zgodny z HIDMaestro 1.x i 2.0.x (sprawdzony z poradnikiem migracji 2.0.3). Używane wywołania: LoadDefaultProfiles,
+InstallDriver, GetProfile, CreateControllerAt, SubmitRawReport, OutputReceived, Dispose - te same w obu;
+2.0 dodaje tylko diagnostykę: ProfileLoadIssues, LastDriverInstall, TransportIndex
+i wyjątki wyprowadzone z InvalidOperationException - patrz describe_error).
 
 HIDMaestro to biblioteka .NET (HIDMaestro.Core.dll, .NET 10) - wołana z Pythona przez pythonnet (CoreCLR). Sterownik
 siedzi w samej DLL i instaluje się przy pierwszym użyciu (InstallDriver, idempotentne). Tworzenie urządzenia wymaga
