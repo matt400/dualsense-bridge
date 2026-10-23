@@ -106,6 +106,9 @@ class GyroStickPage(QWidget):
         self.curve = Combo([(k, _(v)) for k, v in G.CURVES.items()])
         self.curve.changed.connect(lambda v: self._set(curve=v))
         lay.addLayout(pair(field(_("Przycisk na skraju zakresu"), self.sprint), field(_("Krzywa odpowiedzi"), self.curve)))
+        self.feedback = Combo([(k, _(v)) for k, v in G.FEEDBACKS.items()])
+        self.feedback.changed.connect(lambda v: self._set(feedback=v))
+        lay.addWidget(field(_("Sygnał przy skraju zakresu i powrocie do środka"), self.feedback))
         inv = QHBoxLayout()
         self.inv_p, self.inv_r = QCheckBox(_("Odwróć pitch")), QCheckBox(_("Odwróć roll"))
         self.inv_p.toggled.connect(lambda v: self._set(invert_pitch=v))
@@ -175,7 +178,8 @@ class GyroStickPage(QWidget):
             cb.blockSignals(True)
             cb.setChecked(v)
             cb.blockSignals(False)
-        for combo, v in ((self.target, cfg.target), (self.clutch, cfg.clutch), (self.sprint, cfg.sprint), (self.curve, cfg.curve)):
+        for combo, v in ((self.target, cfg.target), (self.clutch, cfg.clutch), (self.sprint, cfg.sprint), (self.curve, cfg.curve),
+                             (self.feedback, cfg.feedback)):
             combo.set_data(v)
         for name, row in self.sl.items():
             row.set(getattr(cfg, name))

@@ -158,6 +158,29 @@ r.force_release_all()
 check(not s["mask"] & G.sprint_mask("l3"), "force release zwalnia sprint")
 S.alive[0] = False
 
+# --- sygnał zwrotny (haptyka / LED) przy przejściu przez progi stref ---
+pulses = []
+r = IO.Runner(IO.Store(os.path.join(TMP, "g3.json")), pulse=lambda slot, kind, force=False: pulses.append((slot, kind, force)))
+r.init(); S.alive[0] = True
+def fb_run(mode, seq):
+    pulses.clear(); r.engines[0].release(); r.engines[0].t = 0.0; r._fb_t[0] = 0.0
+    r.set_config(0, replace(base, feedback=mode)); now = 20.0
+    for a_, n in seq:
+        S.states[0]["acc"] = tuple(round(v * C.ACC_RES) for v in a_)
+        for _k in range(n):
+            now += 0.004; r._step_slot(0, now)
+    return [p[1] for p in pulses]
+seq = [(acc(), 5), (acc(pitch=60), 45), (acc(pitch=0.5), 5)]
+check(fb_run("off", seq) == [], "feedback off: no pulses")
+check(fb_run("haptic", seq) == ["tilt_edge_h", "tilt_center_h"], f"haptic: edge then center ({pulses})")
+check(fb_run("led", seq) == ["tilt_edge_l", "tilt_center_l"], "led: colour pulses")
+check(fb_run("both", seq) == ["tilt_edge_b", "tilt_center_b"] and all(p[2] for p in pulses), "both: rumble + colour, forced")
+check(fb_run("haptic", [(acc(), 5), (acc(pitch=10), 5), (acc(pitch=12), 5)]) == [], "leaving the deadzone / moving inside is silent")
+import rx_feedback as RF
+check(all(k in RF.PULSES for k in ("tilt_edge_h", "tilt_edge_l", "tilt_edge_b", "tilt_center_h", "tilt_center_l", "tilt_center_b")),
+      "every feedback kind exists in rx_feedback.PULSES")
+S.alive[0] = False
+
 # --- okno ---
 try:
     os.environ["QT_QPA_PLATFORM"] = "offscreen"

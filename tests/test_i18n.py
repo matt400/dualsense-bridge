@@ -23,7 +23,7 @@ for f in glob.glob(os.path.join(RX, "*.py")):
 # teksty trzymane w słownikach i tłumaczone przy wyświetlaniu: _(LABELS[n]) itd.
 keys |= set(LABELS.values()) | set(STICK_NAME.values()) | set(GYRO_MODES.values()) | {NEW_GAME_HINT}
 keys |= {t for t, _ in MASTER_FEATURES.values()} | {t for t, _ in MASTER_ACTIONS.values()} | set(ABSENT.values())
-keys |= {*rx_gstick.TARGETS.values(), *rx_gstick.CURVES.values(), *GS_STATE.values(), *CAL_TEXT.values()}
+keys |= {*rx_gstick.TARGETS.values(), *rx_gstick.CURVES.values(), *rx_gstick.FEEDBACKS.values(), *GS_STATE.values(), *CAL_TEXT.values()}
 keys |= set(HOLD_ACTION.values()) | set(SHARE_ACTION.values())
 keys |= set(LIGHT_MODES.values()) | set(LOG_LEVELS.values()) | set(VPAD_BACKENDS.values()) | set(SENDER_TEXT.values()) | set(EXTRA_TIPS.values())
 keys |= {*STATE_TEXT.values(), *OP_TEXT.values(), *DONE_TEXT.values(), *RESULT_TEXT.values(), "Operacja", "gotowe",

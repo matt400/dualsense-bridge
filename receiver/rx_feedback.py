@@ -62,6 +62,13 @@ PULSES = {
     "hold": (0.06, 90, 0, None),                  # a master action: keep holding
     "denied": (0.25, 0, 0, (255, 0, 0)),          # only the master may - a red blink
     "test": (0.6, 200, 255, (255, 255, 255)),     # the "Test rumble" button in the window
+    # tilt-to-stick zone crossings (rx_gstick_io, per-pad "feedback": haptic / led / both)
+    "tilt_edge_h": (0.06, 0, 170, None),          # full tilt reached - a firm tick
+    "tilt_edge_l": (0.25, 0, 0, (255, 120, 0)),   # ... an orange flash
+    "tilt_edge_b": (0.25, 0, 170, (255, 120, 0)),
+    "tilt_center_h": (0.04, 90, 0, None),         # back in the deadzone - a light tick
+    "tilt_center_l": (0.15, 0, 0, (0, 200, 255)), # ... a cyan flash
+    "tilt_center_b": (0.15, 90, 0, (0, 200, 255)),
 }
 fb = []
 fb_event = threading.Event()
