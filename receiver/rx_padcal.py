@@ -1,9 +1,10 @@
-"""Receiver: korekcja sprzętowa padów - strefa martwa przeciw dryfowi gałek, osobno dla każdego pada (MAC).
+"""Receiver: hardware correction of pads - a deadzone against stick drift, separately for every pad (MAC).
 
-Dryf to cecha egzemplarza pada, a nie preferencja gracza, więc nie jest częścią profili: działa we WSZYSTKICH profilach
-tego pada (także profilach gier, które zastępują profil pada) jako minimum strefy martwej:
-    strefa martwa wyjścia = max(strefa z profilu, dryf gałki fizycznej, która je zasila)
-Liczona dla gałki fizycznej, więc zamiana gałek w profilu jej nie psuje. Plik padcal.json obok remap.json:
+Drift is a trait of a particular pad, not a player preference, so it is not part of the profiles: it applies in ALL
+profiles of that pad (also game profiles that replace the pad profile) as a minimum deadzone:
+    output deadzone = max(deadzone from the profile, drift of the physical stick that feeds it)
+It is computed for the physical stick, so swapping the sticks in a profile does not break it. The padcal.json file lives
+next to remap.json:
     {"version": 1, "pads": {"aa:bb:cc:dd:ee:ff": {"drift": {"left": 0.07, "right": 0.04}}}}
 """
 import json
@@ -19,16 +20,16 @@ STICKS = ("left", "right")
 DZ_MAX = STICK_LIMITS["dz"][1]
 
 _lock = threading.Lock()
-_pads = None             # klucz pada -> {"left": dz, "right": dz} (tylko niezerowe)
+_pads = None             # pad key -> {"left": dz, "right": dz} (non-zero values only)
 
 
 def path():
-    """Obok remap.json (remap_file da się zmienić w konfiguracji - padcal idzie za nim)."""
+    """Next to remap.json (remap_file can be changed in the configuration - padcal follows it)."""
     return os.path.join(os.path.dirname(C.REMAP_PATH), "padcal.json")
 
 
 def _clean(e):
-    """Wpis pada z pliku -> {gałka: dz} w zakresie 0..DZ_MAX, bez zer i nieznanych kluczy."""
+    """A pad entry from the file -> {stick: dz} clamped to 0..DZ_MAX, without zeros and unknown keys."""
     out = {}
     for name in STICKS:
         try:
@@ -41,7 +42,8 @@ def _clean(e):
 
 
 def _load():
-    """Wołać pod _lock."""
+    """Lazily load the file into _pads (a missing file = no corrections, an unreadable one is reported and ignored). Call with _lock
+    held."""
     global _pads
     if _pads is None:
         _pads = {}
@@ -59,20 +61,20 @@ def _load():
 
 
 def reload():
-    """Następne użycie wczyta plik od nowa (testy, przywrócenie kopii ustawień)."""
+    """Make the next use re-read the file (tests, restoring a settings backup)."""
     global _pads
     with _lock:
         _pads = None
 
 
 def drift(key):
-    """Korekcja dryfu pada -> {"left": dz, "right": dz} (brak wpisu = brak korekcji)."""
+    """Drift correction of a pad -> {"left": dz, "right": dz} (no entry = no correction)."""
     with _lock:
         return dict(_load().get((key or "").lower(), {}))
 
 
 def set_drift(key, values):
-    """Ustawia korekcję dryfu pada ({gałka: dz}, 0 = bez korekcji) i zapisuje od razu. -> (ok, komunikat)."""
+    """Set the pad's drift correction ({stick: dz}, 0 = no correction), merged with the existing one, and save at once -> (ok, message)."""
     key = (key or "").lower()
     with _lock:
         pads = _load()
@@ -85,7 +87,7 @@ def set_drift(key, values):
 
 
 def _write(pads):
-    """Zapis atomowy (plik tymczasowy + zamiana). Wołać pod _lock."""
+    """Atomic write (temporary file + replace) through proto.write_json. Call with _lock held."""
     p = path()
     try:
         write_json(p, {"version": 1, "pads": {k: {"drift": v} for k, v in pads.items()}}, indent=2, sort_keys=True)
@@ -95,7 +97,11 @@ def _write(pads):
 
 
 def apply_drift(prof, d):
-    """Profil (znormalizowany, kopia) z podniesioną strefą martwą wyjść zasilanych przez gałki z dryfem."""
+    """Profile (normalised, a copy) with the deadzone raised on every output fed by a stick that drifts.
+
+    The source stick of each output is looked up in the profile's stick mapping, so a swap is handled. The deadzone is
+    only ever raised, never lowered, and the outer limit is pushed up so that the usable range does not collapse.
+    """
     if not d:
         return prof
     tun = prof["tuning"]

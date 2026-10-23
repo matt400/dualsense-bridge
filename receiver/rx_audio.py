@@ -1,21 +1,22 @@
-"""Receiver: urządzenia audio Windows (pycaw): lista aktywnych wyjść i ustawianie domyślnego.
+"""Receiver: Windows audio devices (pycaw): list the active outputs and set the default one.
 
-pycaw / comtypes są importowane dopiero przy użyciu - bez nich receiver działa, tylko bez przełączania dźwięku.
-Każda funkcja sama inicjuje COM w wątku wołającym, więc można ich używać z dowolnego wątku.
+pycaw / comtypes are imported lazily, only when used - without them the receiver still works, just without audio
+switching. Every function initialises COM in the calling thread itself, so they can be used from any thread.
 """
 import contextlib
 import time
 
-ROLES = ("eConsole", "eMultimedia", "eCommunications")   # tak samo jak "Ustaw jako domyślne" w ustawieniach dźwięku
+ROLES = ("eConsole", "eMultimedia", "eCommunications")   # same as "Set as default" in the Windows sound settings
 
 
 @contextlib.contextmanager
 def _com():
+    """Context manager that initialises COM for the current thread and uninitialises it afterwards (only if we did the init)."""
     import comtypes
     try:
         comtypes.CoInitialize()
         owned = True
-    except OSError:          # wątek ma już COM w innym trybie (np. wątek Qt) - działamy na istniejącym
+    except OSError:          # the thread already has COM in another mode (e.g. a Qt thread) - use the existing one
         owned = False
     try:
         yield
@@ -25,20 +26,21 @@ def _com():
 
 
 def list_outputs():
-    """Aktywne urządzenia wyjściowe: [(id, nazwa)] w kolejności systemu."""
+    """Active output devices as [(id, name)], in system order."""
     from pycaw.constants import DEVICE_STATE, EDataFlow
     from pycaw.utils import AudioUtilities
     with _com():
         devices = AudioUtilities.GetAllDevices(EDataFlow.eRender.value, DEVICE_STATE.ACTIVE.value)
         out = [(d.id, d.FriendlyName) for d in devices if d.FriendlyName]
-        # obiekty COM zwolnione PRZED CoUninitialize: lista żyła do końca funkcji, czyli po wyjściu z _com() - Release
-        # na odinicjowanym COM (wątek trybu konsoli, wątek bez innych użytkowników COM) mógł wywrócić cały receiver
+        # release the COM objects BEFORE CoUninitialize: otherwise the list would live until the function returns, i.e. past
+        # the exit from _com(), and a Release on an uninitialised COM (console-mode thread, a thread with no other COM
+        # users) could crash the whole receiver
         del devices
     return out
 
 
 def find(name, devices):
-    """Id urządzenia po nazwie: dokładnie (bez wielkości liter), a gdy brak - jedyne urządzenie zawierające tekst."""
+    """Find a device id by name: an exact case-insensitive match first, otherwise the only device whose name contains the text."""
     want = name.casefold()
     exact = [dev_id for dev_id, n in devices if n.casefold() == want]
     if exact:
@@ -48,8 +50,8 @@ def find(name, devices):
 
 
 def set_default(name, wait_s=6.0):
-    """Domyślne wyjście dźwięku (wszystkie role) wg nazwy. Czeka do wait_s na pojawienie się urządzenia -
-    dźwięk HDMI telewizora jest aktywny dopiero po włączeniu jego ekranu. Brak urządzenia -> LookupError."""
+    """Set the default audio output (all roles) by device name. Polls the device list for up to wait_s until the device
+    appears - a TV's HDMI audio only becomes active after its screen is switched on. Device not found -> LookupError."""
     from pycaw.constants import ERole
     from pycaw.utils import AudioUtilities
     deadline = time.monotonic() + wait_s

@@ -1,11 +1,11 @@
-"""Receiver: lista wszystkich skrótów pada z bieżących ustawień - dla panelu „Skróty pada” w oknie (rx_qt_keys).
+"""Receiver: the list of all pad shortcuts built from the current settings - for the "Pad shortcuts" panel in the window (rx_qt_keys).
 
-Bez Qt: groups() składa grupy z konfiguracji (C), ustawień mastera (rx_settings) i trybu konsoli (rx_console), więc
-panel zawsze pokazuje to, co naprawdę działa: wybrany przycisk trybu konsoli, przypisane akcje mastera, akcję
-długiego PS. Wyłączone skróty (ps_modifier = false, akcja "none", przejęcie mastera wyłączone) nie są pokazywane.
+No Qt here: groups() assembles the groups from the configuration (C), the master settings (rx_settings) and the console
+mode (rx_console), so the panel always shows what really works: the chosen console-mode button, the assigned master
+actions, the long-PS action. Disabled shortcuts (ps_modifier = false, action "none", master claim off) are not shown.
 
-Klawisze to krotka tokenów: nazwa ikony pada ("ps", "cross", "dpad_up"...), "+" albo krótki tekst ("3 s", "×2").
-feature = klucz z rx_settings.MASTER_FEATURES - przy zastrzeżeniu dla mastera panel pokazuje koronę.
+Keys are a tuple of tokens: a pad icon name ("ps", "cross", "dpad_up"...), "+" or a short text ("3 s", "×2").
+feature = a key from rx_settings.MASTER_FEATURES - when the feature is restricted to the master, the panel shows a crown.
 """
 from dataclasses import dataclass
 
@@ -22,7 +22,7 @@ SHARE_ACTION = {"screenshot": "Zrzut ekranu (Obrazy\\Zrzuty ekranu)", "capture":
 
 @dataclass(frozen=True, slots=True)
 class Shortcut:
-    keys: tuple[str, ...]
+    keys: tuple[str, ...]     # tokens: icon names, "+" or a short text
     text: str
     feature: str | None = None
 
@@ -35,17 +35,19 @@ class Group:
 
 
 def _s(x):
-    """Sekundy bez zbędnego ",0": 1.0 -> "1 s", 1.2 -> "1,2 s"."""
+    """Seconds without a needless ",0": 1.0 -> "1 s", 1.2 -> "1,2 s"."""
     return f"{x:g} s".replace(".", ",")
 
 
 def master_only(feature):
-    """Skrót zastrzeżony dla pada master (master ustawiony i funkcja na liście only_master)."""
+    """Whether a shortcut is restricted to the master pad (a master is set and the feature is in the only_master list)."""
     m = rx_settings.cur.master
     return bool(feature and m.pad and feature in m.only_master)
 
 
 def _ps():
+    """The PS-button group: short press, long-press action, PS + Share capture and the PS + D-pad combos. Collapses to a single
+    row plus a note when ps_modifier is off."""
     if not C.PS_MODIFIER:
         return Group(_("Skróty z PS"), (Shortcut(("ps",), _("PS dla gry i Steam (od razu)"), "ps_game"),),
                      _("Skróty z PS są wyłączone (ps_modifier = false)."))
@@ -64,6 +66,7 @@ def _ps():
 
 
 def _touchpad():
+    """The touchpad group: switching between mouse and DS4 touch, and the gestures of the mouse mode."""
     return Group(_("Touchpad"), (
         Shortcut(("ps", "+", "touchpad"), _("Przełącz: mysz ↔ dotyk DS4 (klik touchpada)"), "mouse"),
         Shortcut(("touchpad", _("stuknięcie")), _("Mysz: lewy przycisk")),
@@ -74,6 +77,7 @@ def _touchpad():
 
 
 def _master():
+    """The master-pad group: the claim hold and every action that has a button assigned (a note appears when there are none)."""
     m = rx_settings.cur.master
     items = []
     if m.claim_hold:
@@ -89,6 +93,7 @@ def _master():
 
 
 def _console():
+    """The console-mode group: the toggle button pressed twice within double_click_ms."""
     cfg = rx_console.ctl.cfg if rx_console.ctl is not None else rx_console.ConsoleConfig()
     return Group(_("Tryb konsoli"), (
         Shortcut((cfg.toggle_button, "×2"),
@@ -98,6 +103,7 @@ def _console():
 
 
 def _tv():
+    """The TV-mode group: navigating the window with the pad."""
     return Group(_("Tryb TV (okno na pełnym ekranie i aktywne)"), (
         Shortcut(("dpad_up", "dpad_down", "dpad_left", "dpad_right"), _("Poruszanie się, suwaki, zakładki")),
         Shortcut(("cross",), _("Wybór / kliknięcie")),
@@ -107,7 +113,8 @@ def _tv():
 
 
 def _test():
-    from rx_qt import EXIT_HOLD_S       # tylko stała - rx_qt jest już załadowany, gdy panel istnieje
+    """The Test-view group: the emergency exit combination and the TV-mode exit hold."""
+    from rx_qt import EXIT_HOLD_S       # just a constant - rx_qt is already loaded whenever the panel exists
     return Group(_("Widok Test"), (
         Shortcut((rx_testmode.ESCAPE_KEYS[0], "+", rx_testmode.ESCAPE_KEYS[1]),
                  _("Wyjście awaryjne z testu (pad master; działa też przy schowanym oknie)")),
@@ -116,5 +123,5 @@ def _test():
 
 
 def groups():
-    """Wszystkie grupy w kolejności panelu; puste grupy (bez skrótów i bez uwagi) pominięte."""
+    """All groups in panel order; empty groups (no shortcuts and no note) are skipped."""
     return [g for g in (_ps(), _touchpad(), _master(), _console(), _tv(), _test()) if g.items or g.note]

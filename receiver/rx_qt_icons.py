@@ -1,9 +1,9 @@
-"""Receiver: ikony przycisków pada i kilku funkcji (QPainter, bez plików graficznych) - zamiast nazw w oknie.
+"""Receiver: icons of the pad buttons and a few functions (QPainter, no image files) - instead of names in the window.
 
-icon(name)  -> QIcon dla wejścia pada ("cross", "ps", "dpad_up", "l2"...) albo funkcji ("crown", "mouse",
-               "tv", "power"); ostre na ekranach HiDPI (rysowane w kilku rozmiarach), zapamiętywane po pierwszym użyciu.
-tip(name)   -> pełna nazwa do podpowiedzi (ikona bez tekstu musi mieć tooltip).
-Kolory symboli jak na rysunku pada (rx_qt_pad): trójkąt zielony, kółko czerwone, krzyżyk niebieski, kwadrat różowy.
+icon(name)  -> a QIcon for a pad input ("cross", "ps", "dpad_up", "l2"...) or a function ("crown", "mouse",
+               "tv", "power"); sharp on HiDPI screens (painted at several sizes), cached after the first use.
+tip(name)   -> the full name for a tooltip (an icon without text needs a tooltip).
+Symbol colours as in the pad drawing (rx_qt_pad): triangle green, circle red, cross blue, square pink.
 """
 from rx_i18n import _
 from functools import cache
@@ -28,10 +28,12 @@ SIZES = (16, 20, 24, 32, 48)
 
 
 def tip(name):
+    """The full, translated name of an input or function for a tooltip (a pad label, else an extra tip, else the name itself)."""
     return _(LABELS.get(name) or EXTRA_TIPS.get(name, name))
 
 
 def _pen(color, w):
+    """A round-capped, round-joined pen of the given colour and width."""
     p = QPen(QColor(color), w)
     p.setCapStyle(Qt.PenCapStyle.RoundCap)
     p.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
@@ -39,13 +41,14 @@ def _pen(color, w):
 
 
 def _disc(p, fill=BODY):
-    """Okrągła "nakładka" przycisku - tło ikon przycisków twarzowych i PS."""
+    """A round "plate" of a button - the background of the face button and PS icons."""
     p.setPen(_pen("#565d70", 1.2))
     p.setBrush(fill)
     p.drawEllipse(QRectF(1.5, 1.5, 21, 21))
 
 
 def _face(p, name):
+    """A face button: the round plate with its coloured symbol (cross, circle, square or triangle)."""
     _disc(p)
     p.setPen(_pen(FACE[name], 2.0))
     p.setBrush(Qt.BrushStyle.NoBrush)
@@ -65,6 +68,7 @@ def _face(p, name):
 
 
 def _text(p, text, rect, px, color=FG, weight=QFont.Weight.Bold):
+    """Draw text centred in rect with the Segoe UI font at a pixel size."""
     f = QFont("Segoe UI")
     f.setPixelSize(px)
     f.setWeight(weight)
@@ -74,7 +78,7 @@ def _text(p, text, rect, px, color=FG, weight=QFont.Weight.Bold):
 
 
 def _badge(p, text):
-    """L1 / R2 / L3...: zaokrąglona plakietka (spusty niższe i szersze u góry, kliki gałek okrągłe)."""
+    """L1 / R2 / L3...: a rounded badge (triggers lower and wider at the top, stick clicks round)."""
     p.setPen(_pen("#565d70", 1.2))
     p.setBrush(BODY)
     if text[1] == "3":
@@ -91,7 +95,7 @@ def _badge(p, text):
 
 
 def _dpad(p, name):
-    """Krzyż D-pada z podświetlonym kierunkiem."""
+    """The D-pad cross with the given direction highlighted."""
     arms = {"dpad_up": QRectF(9, 2, 6, 9), "dpad_down": QRectF(9, 13, 6, 9),
             "dpad_left": QRectF(2, 9, 9, 6), "dpad_right": QRectF(13, 9, 9, 6)}
     p.setPen(Qt.PenStyle.NoPen)
@@ -103,12 +107,13 @@ def _dpad(p, name):
 
 
 def _ps(p):
+    """The PS button: a dark plate with the letters PS."""
     _disc(p, QColor("#2a2e3a"))
     _text(p, "PS", QRectF(0, 0, 24, 24), 9)
 
 
 def _share(p):
-    """Create / Share: trzy krótkie promienie (jak na padzie)."""
+    """Create / Share: three short rays (as on the pad)."""
     p.setPen(_pen(FG, 1.8))
     for x1, y1, x2, y2 in ((12, 5, 12, 10), (6.5, 9, 9.5, 12.5), (17.5, 9, 14.5, 12.5)):
         p.drawLine(QPointF(x1, y1), QPointF(x2, y2))
@@ -116,6 +121,7 @@ def _share(p):
 
 
 def _options(p):
+    """Options: three horizontal lines."""
     p.setPen(_pen(FG, 1.8))
     for y in (7, 12, 17):
         p.drawLine(QPointF(6, y), QPointF(18, y))
@@ -187,14 +193,14 @@ def _gear(p):
     import math
     p.setPen(_pen(FG, 1.6))
     p.setBrush(Qt.BrushStyle.NoBrush)
-    radii = (9, 6.8)                       # zęby i wręby na zmianę
+    radii = (9, 6.8)                       # teeth and gaps alternating
     p.drawPolygon(QPolygonF([QPointF(12 + radii[k % 2] * math.cos(math.pi * k / 8), 12 + radii[k % 2] * math.sin(math.pi * k / 8))
                              for k in range(16)]))
     p.drawEllipse(QPointF(12, 12), 2.8, 2.8)
 
 
 def _update(p):
-    """Strzałka w dół do "tacki" - pobranie nowej wersji."""
+    """An arrow down into a "tray" - downloading a new version."""
     p.setPen(_pen(FG, 1.8))
     p.setBrush(Qt.BrushStyle.NoBrush)
     p.drawLine(QPointF(12, 4), QPointF(12, 14.5))
@@ -224,7 +230,7 @@ def _power(p):
 
 
 def _backup(p):
-    """Dwie kartki jedna na drugiej - kopia plików."""
+    """Two sheets one on another - a file copy."""
     p.setPen(_pen(FG, 1.6))
     p.setBrush(Qt.BrushStyle.NoBrush)
     p.drawRoundedRect(QRectF(8.5, 3.5, 11, 14), 2, 2)
@@ -250,7 +256,7 @@ def _plus(p):
 
 
 def _press(p):
-    """Palec (strzałka) wciskający okrągły przycisk - opóźnienie samych naciśnięć."""
+    """A finger (an arrow) pressing a round button - the latency of presses only."""
     p.setPen(_pen(FG, 1.6))
     p.setBrush(Qt.BrushStyle.NoBrush)
     p.drawEllipse(QRectF(5, 13, 14, 7))
@@ -260,7 +266,7 @@ def _press(p):
 
 
 def _reset(p):
-    """Strzałka zawracająca do zera."""
+    """An arrow turning back to zero."""
     p.setPen(_pen(DIM, 1.8))
     p.setBrush(Qt.BrushStyle.NoBrush)
     p.drawArc(QRectF(5, 5, 14, 14), 100 * 16, 290 * 16)
@@ -269,7 +275,7 @@ def _reset(p):
 
 
 def _log(p):
-    """Lista wpisów z punktami."""
+    """A list of entries with bullets."""
     p.setPen(_pen(FG, 1.7))
     for y in (7, 12, 17):
         p.drawPoint(QPointF(5.5, y))
@@ -306,7 +312,7 @@ def _phone(p):
 
 
 def _lightbar(p):
-    """Świecąca listwa (lightbar) z poświatą."""
+    """A glowing strip (the lightbar) with a halo."""
     p.setPen(Qt.PenStyle.NoPen)
     p.setBrush(QColor(91, 155, 255, 70))
     p.drawRoundedRect(QRectF(3, 8, 18, 8), 4, 4)
@@ -315,7 +321,7 @@ def _lightbar(p):
 
 
 def _wake(p):
-    """Symbol zasilania z falą sieci - budzenie komputera przez sieć."""
+    """A power symbol with a network wave - waking the PC over the network."""
     p.setPen(_pen(FG, 1.7))
     p.setBrush(Qt.BrushStyle.NoBrush)
     p.drawArc(QRectF(4, 6, 12, 12), 130 * 16, 280 * 16)
@@ -326,7 +332,7 @@ def _wake(p):
 
 
 def _target(p):
-    """Celownik z kropką poza środkiem - gałka, która "ucieka" ze środka (dryf)."""
+    """A crosshair with an off-centre dot - a stick that "escapes" from the centre (drift)."""
     p.setPen(_pen(FG, 1.6))
     p.setBrush(Qt.BrushStyle.NoBrush)
     p.drawEllipse(QPointF(12, 12), 8, 8)
@@ -341,7 +347,7 @@ def _target(p):
 
 
 def _gyro(p):
-    """Żyroskop: koło z dwiema orbitami i osią."""
+    """A gyroscope: a circle with two orbits and an axis."""
     p.setPen(_pen(FG, 1.5))
     p.setBrush(Qt.BrushStyle.NoBrush)
     p.drawEllipse(QPointF(12, 12), 8.5, 8.5)
@@ -355,7 +361,7 @@ def _gyro(p):
 
 
 def _shield(p):
-    """Tarcza z poziomą kreską - wyjście do gry zablokowane."""
+    """A shield with a horizontal bar - output to the game blocked."""
     path = QPainterPath(QPointF(12, 3))
     path.lineTo(19, 6)
     path.cubicTo(19, 13, 16.5, 18, 12, 21)
@@ -369,7 +375,7 @@ def _shield(p):
 
 
 def _pulse(p):
-    """Wykres z falą - ruch pada (gyro i akcelerometr) na żywo."""
+    """A chart with a wave - live pad motion (gyro and accelerometer)."""
     p.setPen(_pen(DIM, 1.2))
     p.drawLine(QPointF(3, 20), QPointF(21, 20))
     path = QPainterPath(QPointF(3, 13))
@@ -381,7 +387,7 @@ def _pulse(p):
 
 
 def _bluetooth(p):
-    """Runa Bluetooth: pionowa kreska i dwa "dzioby" w prawo."""
+    """The Bluetooth rune: a vertical line and two "beaks" to the right."""
     path = QPainterPath(QPointF(7, 8))
     for x, y in ((17, 16.5), (12, 21), (12, 3), (17, 7.5), (7, 16)):
         path.lineTo(x, y)
@@ -391,7 +397,7 @@ def _bluetooth(p):
 
 
 def _usb(p):
-    """Wtyczka USB: obudowa, metalowa końcówka z dwoma otworami - dongle Bluetooth."""
+    """A USB plug: the housing and a metal tip with two holes - a Bluetooth dongle."""
     p.setPen(_pen(FG, 1.6))
     p.setBrush(Qt.BrushStyle.NoBrush)
     p.drawRoundedRect(QRectF(7.5, 10, 9, 11), 2, 2)
@@ -403,7 +409,7 @@ def _usb(p):
 
 
 def _keys(p):
-    """Pad w zarysie z przyciskami - lista skrótów pada."""
+    """A pad outline with buttons - the list of pad shortcuts."""
     p.setPen(_pen(FG, 1.6))
     p.setBrush(Qt.BrushStyle.NoBrush)
     path = QPainterPath(QPointF(7, 7))
@@ -424,6 +430,7 @@ def _keys(p):
 
 
 def _draw(p, name):
+    """Paint the icon `name` on the 24x24 grid by dispatching to its painter."""
     if name in FACE:
         _face(p, name)
     elif name in BADGES:
@@ -440,7 +447,7 @@ def _draw(p, name):
 
 
 def pixmap(name, size=24, dim=False):
-    """Ikona narysowana w siatce 24x24 i przeskalowana do `size` px (dim = przygaszona, np. nieaktywna korona)."""
+    """An icon painted on a 24x24 grid and scaled to `size` px (dim = dimmed, e.g. an inactive crown)."""
     pm = QPixmap(size, size)
     pm.fill(Qt.GlobalColor.transparent)
     p = QPainter(pm)
@@ -455,6 +462,7 @@ def pixmap(name, size=24, dim=False):
 
 @cache
 def icon(name, dim=False):
+    """A QIcon with the picture rendered at all SIZES (cached per name and dim flag)."""
     ic = QIcon()
     for s in SIZES:
         ic.addPixmap(pixmap(name, s, dim))
@@ -462,6 +470,7 @@ def icon(name, dim=False):
 
 
 def has_icon(name):
+    """Whether an icon with this name exists."""
     return name in FACE or name in BADGES or name.startswith("dpad_") or name in (
         "ps", "share", "options", "crown", "mouse", "touchpad", "tv", "power", "restart", "window", "fullscreen", "rumble", "gear",
         "update", "backup", "stopwatch", "plus", "press", "reset", "log", "copy", "trash", "phone", "lightbar", "wake",

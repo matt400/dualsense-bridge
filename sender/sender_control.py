@@ -1,5 +1,5 @@
-"""Sender: polecenia z PC (wyłączenie pada, kalibracja gyro, gałki bez strefy martwej), wyłączanie po bezczynności
-i pakiety info (ping, Hz) dla okna receivera."""
+"""Sender: commands from the PC (power off a pad, gyro calibration, sticks without deadzone), idle power-off
+and info packets (ping, Hz) for the receiver window."""
 import asyncio
 import re
 import time
@@ -15,15 +15,22 @@ from proto import CAL_STATUS, CMD_GYRO_CAL, CMD_POWER_OFF, CMD_RAW_STICKS, CMD_U
 from sender_config import C
 
 MAC_RE = re.compile(r"[0-9a-f]{2}(?::[0-9a-f]{2}){5}", re.IGNORECASE)
-RETRY_S = 10.0          # ponowne wyłączenie tego samego pada najwcześniej po tylu sekundach
+RETRY_S = 10.0          # the same pad is powered off again no sooner than this many seconds later
 
 
 def per_s(n, dt):
+    """Convert a counter delta n over dt seconds into a rate per second, clamped to the 16-bit packet field."""
     return max(0, min(0xFFFF, round(n / dt))) if dt > 0 else 0
 
 
 async def power_off(c, reason):
-    """Rozłącza pada po Bluetooth - DualSense wtedy sam się wyłącza. Po USB nie ma czego rozłączać."""
+    """Disconnect a pad over Bluetooth - a DualSense switches itself off when it loses the link.
+
+    Over USB there is nothing to disconnect, so the call is skipped (the key of a Bluetooth pad is its MAC address).
+    The request is rate-limited per pad (RETRY_S). The preferred path asks the Bluetooth manager, which knows which
+    adapter the pad is attached to (also a dongle, hci1); if that fails, it falls back to `bluetoothctl disconnect`
+    with a 10 s timeout, killing and reaping the process on timeout so no zombie is left behind.
+    """
     now = time.monotonic()
     if now - c.powering_off < RETRY_S:
         return
@@ -33,7 +40,7 @@ async def power_off(c, reason):
         return
     print(f"Controller {c.idx}: powering off ({reason})")
     events.info(E_POWER_OFF, c.idx, reason)
-    if await sender_bt.bt.disconnect_pad(c.key):     # kontroler, z którym pad jest połączony (także dongle hci1)
+    if await sender_bt.bt.disconnect_pad(c.key):     # the adapter the pad is connected to (also the hci1 dongle)
         return
     try:
         proc = await asyncio.create_subprocess_exec("bluetoothctl", "disconnect", c.key, stdout=DEVNULL, stderr=PIPE)
@@ -44,7 +51,7 @@ async def power_off(c, reason):
         _, err = await asyncio.wait_for(proc.communicate(), 10)
     except TimeoutError:
         proc.kill()
-        await proc.wait()              # bez tego zostaje proces-zombie
+        await proc.wait()              # without this a zombie process is left behind
         print(f"Controller {c.idx}: power off timed out")
         return
     if proc.returncode:
@@ -52,7 +59,13 @@ async def power_off(c, reason):
 
 
 def on_command(idx, cmd, arg):
-    if cmd == CMD_UPDATE:                  # dotyczy całego nadajnika, nie pada (idx = 255)
+    """Handle a command packet from the receiver (called by the network layer for the target slot idx).
+
+    CMD_UPDATE concerns the whole sender, so it ignores idx. Every other command is looked up by slot and silently
+    dropped if no pad currently sits there. Slow work (power off, update) is started as a background task so the
+    UDP receive path never blocks.
+    """
+    if cmd == CMD_UPDATE:                  # concerns the whole sender, not a pad (idx = 255)
         state.spawn(sender_update.run())
         return
     c = state.ctrl_by_idx(idx)
@@ -60,27 +73,34 @@ def on_command(idx, cmd, arg):
         return
     if cmd == CMD_POWER_OFF:
         state.spawn(power_off(c, "requested from PC"))
-    elif cmd == CMD_GYRO_CAL:            # kalibracja żyroskopu z okna (arg sekund) albo sam stan (arg 0)
+    elif cmd == CMD_GYRO_CAL:            # gyro calibration from the window (arg = seconds), or just the status (arg 0)
         if arg:
             calib.request(c, arg)
         else:
             calib.report(c, CAL_STATUS)
-    elif cmd == CMD_RAW_STICKS:          # pomiar dryfu: gałki bez strefy martwej nadajnika przez arg sekund
+    elif cmd == CMD_RAW_STICKS:          # drift measurement: sticks without the sender's deadzone for arg seconds
         c.set_raw_sticks(arg)
 
 
 async def info_loop():
-    """Co sekundę: pakiet info per pad (ping, realne Hz raportów) + wyłączanie po bezczynności."""
-    prev = {}        # Ctrl -> (raporty pada, raporty ruchu, czas); klucz to obiekt, bo po reconnekcie liczniki od zera
+    """Once a second: send one info packet per pad (ping, real report Hz) and power off pads that sat idle too long."""
+    prev = {}        # Ctrl -> (pad reports, motion reports, time); keyed by object, because counters restart after a reconnect
     while True:
         await asyncio.sleep(1.0)
         try:
             _info_tick(prev, time.monotonic())
-        except Exception as e:          # statystyki nie mogą nigdy zatrzymać nadajnika
+        except Exception as e:          # statistics must never stop the sender
             print(f"info error: {e!r}")
 
 
 def _info_tick(prev, now):
+    """One iteration of info_loop.
+
+    Report rates are derived from the difference of the per-pad report counters since the previous tick, divided by
+    the elapsed time. Pads that disappeared are dropped from `prev`; a pad seen for the first time gets a zero delta.
+    If idle power-off is enabled and the pad has had no input for IDLE_OFF_S, a power-off task is spawned and
+    last_input is reset, so the next attempt only happens after another full idle period.
+    """
     rtt = net.rtt_x10()
     pads = list(state.active.values())
     for c in prev.keys() - set(pads):
@@ -92,5 +112,5 @@ def _info_tick(prev, now):
         dt = now - t0
         net.emit(T_INFO, c.idx, rtt, per_s(pad - p0, dt), per_s(motion - m0, dt))
         if C.IDLE_OFF_S and now - c.last_input > C.IDLE_OFF_S:
-            c.last_input = now            # kolejna próba dopiero po następnym okresie bezczynności
+            c.last_input = now            # the next attempt only after another idle period
             state.spawn(power_off(c, f"idle for {C.IDLE_OFF_S / 60:g} min"))

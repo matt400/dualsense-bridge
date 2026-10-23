@@ -1,8 +1,8 @@
-"""Receiver: panel dziennika zdarzeń na dole okna (ikona w nagłówku go wysuwa).
+"""Receiver: the event log panel at the bottom of the window (the header icon slides it out).
 
-Pokazuje wpisy z rx_events: poziom (wszystko / ostrzeżenia i błędy / tylko błędy), limit linii, zdarzenia z nadajnika
-(włączane tutaj - nadajnik wysyła je tylko wtedy), kopiowanie widocznych linii, czyszczenie (dwa kliknięcia).
-Ustawienia panelu w settings.json (log). Ukryty panel nic nie dopisuje - po pokazaniu odbudowuje widok z pamięci.
+It shows the entries of rx_events: level (everything / warnings and errors / errors only), the line limit, events from the
+sender (enabled here - the sender sends them only then), copying the visible lines, clearing (two clicks).
+The panel settings live in settings.json (log). A hidden panel appends nothing - when shown it rebuilds the view from memory.
 """
 import html
 from dataclasses import replace
@@ -21,11 +21,13 @@ COLOR = {"info": FG, "warn": WARN, "error": BAD}
 
 
 def _order(e):
-    """Kolejność w panelu: czas wpisu (nadajnik podaje własny), przy równym czasie - kolejność dodania."""
+    """Panel order: the entry time (the sender supplies its own), the order of adding on equal times."""
     return e.t, e.seq
 
 
 class LogPanel(QFrame):
+    """The log panel widget: a toolbar (level, sender events, line limit, copy, clear) above a read-only text view."""
+
     def __init__(self):
         super().__init__()
         self.setObjectName("logpanel")
@@ -61,8 +63,9 @@ class LogPanel(QFrame):
         lay.addWidget(self.view, 1)
         self.load(rx_settings.cur.log)
 
-    # ---------- ustawienia ----------
+    # ---------- settings ----------
     def load(self, cfg):
+        """Show the settings from `cfg` in the toolbar controls (signals blocked where needed so loading does not save)."""
         self.level.set_data(cfg.level)
         self.sender_btn.blockSignals(True)
         self.sender_btn.setChecked(cfg.sender)
@@ -71,10 +74,12 @@ class LogPanel(QFrame):
         self.limit.setValue(cfg.max_lines)
 
     def _sender_tip(self, on):
+        """Set the tooltip of the sender-events toggle according to its state."""
         self.sender_btn.setToolTip((_("Zdarzenia z nadajnika: włączone") if on else _("Zdarzenia z nadajnika: wyłączone"))
                                    + " - " + _("połączenia padów z telefonem, Wake-on-LAN, błędy nadajnika"))
 
     def _save(self, **changes):
+        """Persist changed log settings (no-op when nothing differs), then rebuild the view so the new filter applies."""
         cfg = replace(rx_settings.cur.log, **changes)
         if cfg == rx_settings.cur.log:
             return
@@ -84,12 +89,17 @@ class LogPanel(QFrame):
         self._sender_tip(cfg.sender)
         self.rebuild()
 
-    # ---------- wpisy ----------
+    # ---------- entries ----------
     def _shown(self, e, cfg):
+        """Whether an entry passes the level filter and the sender-events switch."""
         return ev.visible(e, cfg.level) and (cfg.sender or not e.sender)
 
     def tick(self):
-        """Dopisuje nowe wpisy (wołane z odświeżania okna); ukryty panel czeka na pokazanie."""
+        """Append new entries (called from the window refresh); a hidden panel waits until it is shown.
+
+        Entries are sorted by time. If the oldest new one is earlier than what is already displayed, appending would
+        break the time order, so the whole view is rebuilt instead. Autoscroll happens only when the user was already at the end.
+        """
         if not self.isVisible():
             return
         new = ev.since(self._seq)
@@ -97,8 +107,9 @@ class LogPanel(QFrame):
             return
         new.sort(key=_order)
         if self._seq and _order(new[0]) < self._last:
-            # zdarzenie nadajnika z jego czasem (zbierane, gdy receiver nie działał, np. "pad połączony z telefonem"
-            # sprzed startu receivera) jest starsze niż pokazane wpisy - dopisane na końcu psuło kolejność czasu
+            # a sender event with its own timestamp (collected while the receiver was not running, e.g. "pad connected
+            # to the phone" from before the receiver started) is older than the displayed entries - appending it at the end
+            # would break the time order
             self.rebuild()
             return
         self._seq = max(e.seq for e in new)
@@ -109,22 +120,26 @@ class LogPanel(QFrame):
         for e in new:
             if self._shown(e, cfg):
                 self.view.appendHtml(f"<span style='color:{COLOR[e.level]}'>{html.escape(ev.fmt(e))}</span>")
-        if at_end:                     # przewinięty w górę (czytanie starszych) - nie skacz na koniec
+        if at_end:                     # scrolled up (reading older entries) - do not jump to the end
             bar.setValue(bar.maximum())
 
     def rebuild(self):
+        """Clear the view, apply the current line limit and re-add all matching entries from memory."""
         self.view.clear()
         self.view.setMaximumBlockCount(rx_settings.cur.log.max_lines)
         self._seq, self._last = 0, (0.0, 0)
         self.tick()
 
     def copy(self):
+        """Copy the visible lines to the clipboard."""
         QApplication.clipboard().setText(self.view.toPlainText())
 
     def clear(self):
+        """Clear the stored log and the view."""
         ev.clear()
         self.rebuild()
 
     def showEvent(self, e):
+        """Entries are not appended while hidden, so rebuild the view when the panel is shown."""
         super().showEvent(e)
         self.rebuild()

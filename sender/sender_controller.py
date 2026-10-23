@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
-"""DualSense UDP sender (Linux, evdev) - protokół v2, patrz proto.py.
+"""DualSense UDP sender (Linux, evdev) - protocol v2, see proto.py.
 
-  doas python3 sender_controller.py 172.16.42.2 --key SEKRET --stats
+  doas python3 sender_controller.py 172.16.42.2 --key SECRET --stats
   doas python3 sender_controller.py --config sender.toml
 
-Pliki: proto.py (wspólny), sender_config.py, sender_state.py, sender_net.py,
-       sender_ctrl.py, sender_streams.py, sender_supervisor.py, sender_control.py, sender_rumble.py (wibracja),
-       sender_wol.py (Wake-on-LAN: PS + przycisk przy milczącym receiverze), sender_events.py (zdarzenia do okna PC),
-       sender_bt.py (Bluetooth telefonu z okna receivera: skan, parowanie, łączenie - busctl / bluetoothctl).
-Konfiguracja: --config plik.toml|json (klucze jak w DEFAULTS), flagi CLI nadpisują plik.
---stats pokazuje też realną częstotliwość raportów pada i ruchu (Hz, przerwy p99/max).
-Wyłączanie pada: przyciskiem "Off" w oknie receivera albo samo po idle_off_min minutach bez użycia
-(bluetoothctl disconnect - wymaga bluez). Co sekundę nadajnik wysyła ping i realne Hz pada do okna receivera.
-Gesty touchpada (gestures, touch_start_move) i opóźnienie dotyku (touch_coalesce_ms) - patrz sender_config.DEFAULTS.
+Entry point of the sender. It reads DualSense pads through evdev, packs their state and streams it over UDP to the
+receiver on the PC; feedback (rumble, lightbar, adaptive triggers) travels back the same way.
+
+Modules: proto.py (shared with the receiver), sender_config.py, sender_state.py, sender_net.py,
+         sender_ctrl.py, sender_streams.py, sender_supervisor.py, sender_control.py, sender_rumble.py (rumble),
+         sender_wol.py (Wake-on-LAN: PS + button while the receiver is silent), sender_events.py (events for the PC window),
+         sender_bt.py (phone Bluetooth driven from the receiver window: scan, pair, connect - busctl / bluetoothctl).
+Configuration: --config file.toml|json (keys as in DEFAULTS); CLI flags override the file.
+--stats also prints the real pad report rate and traffic rate (Hz, p99/max gaps).
+Switching a pad off: the "Off" button in the receiver window, or automatically after idle_off_min minutes without
+input (bluetoothctl disconnect - needs bluez). Every second the sender pings the receiver and reports the real pad Hz.
+Touchpad gestures (gestures, touch_start_move) and touch latency (touch_coalesce_ms) - see sender_config.DEFAULTS.
 """
 import asyncio
 import gc
@@ -38,14 +41,18 @@ from proto import E_ERROR, E_START
 from sender_config import C
 
 
-STABLE_S = 60.0       # pętla działała tyle bez błędu -> kolejny błąd liczony od nowa (pełny ślad, krótka przerwa)
+STABLE_S = 60.0       # a loop that ran this long without an error resets its error counter (full traceback, short pause)
 
 
 async def forever(name, fn):
-    """Długo działająca pętla, której nieoczekiwany wyjątek nie zatrzyma całego nadajnika:
-    błąd jest wypisywany (pierwszy z pełnym śladem), a pętla startuje ponownie po chwili. Licznik błędów zeruje się
-    po STABLE_S spokojnej pracy - inaczej rzadkie błędy (np. raz na godzinę) po kilkunastu razach dawały 5 s przerwy
-    przy każdym restarcie pętli."""
+    """Supervise a long-running coroutine so that one unexpected exception cannot take the whole sender down.
+
+    The coroutine is awaited in a loop: if it raises, the error is logged (the first one with a full traceback and
+    also reported to the receiver as an event) and the coroutine is started again after a short, growing pause
+    (0.2 s per consecutive error, capped at 5 s). The error counter resets once the coroutine has run for
+    STABLE_S seconds without failing - otherwise rare errors (say once an hour) would, after a dozen of them, add a
+    5 s pause to every restart. CancelledError is re-raised so shutdown still works; a normal return ends the loop.
+    """
     errors = 0
     while True:
         t0 = time.monotonic()
@@ -67,9 +74,16 @@ async def forever(name, fn):
 
 
 async def main():
+    """Run the sender until it is cancelled (SIGTERM, Ctrl+C or an update restart).
+
+    Starts the independent service loops (socket keeper, heartbeat, pad supervisor, pinger, info/idle loop and the
+    Bluetooth manager), each wrapped in forever(). On shutdown the pad tasks are cancelled first, because their
+    cleanup sends a neutral state and a "bye" packet, which still needs a working socket; only then is the socket closed.
+    """
     print(f"Sending to {C.HOST}:{C.PORT}" + (" (HMAC on)" if C.KEY else " (NO authentication - consider --key)"))
     state.main_task = asyncio.current_task()
     try:
+        # SIGTERM (systemd stop) cancels main(), which runs the orderly cleanup in the finally block below
         asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, asyncio.current_task().cancel)
     except (NotImplementedError, RuntimeError):
         pass
@@ -78,13 +92,14 @@ async def main():
             ("socket", net.sock_keeper), ("heartbeat", streams.heartbeat), ("supervisor", sup.supervisor),
             ("pinger", net.pinger), ("info", control.info_loop), ("bluetooth", sender_bt.bt.loop))))
     finally:
-        # najpierw pady: ich sprzątanie wysyła neutralny stan i "bye" - gniazdo musi jeszcze działać
+        # pads first: their cleanup sends a neutral state and "bye" - the socket must still be alive
         try:
             for t in list(state.bg_tasks):
                 t.cancel()
             await asyncio.gather(*state.bg_tasks, return_exceptions=True)
-            # powtórki "bye" (emit_repeat) to call_later: bez chwili czekania ginęły razem z pętlą, a po zamknięciu gniazda
-            # i tak by nie wyszły - przy restarcie po aktualizacji / SIGTERM zostawał jeden pakiet, który mógł zginąć
+            # the repeated "bye" packets (emit_repeat) are call_later timers: without a short wait they died with the
+            # loop, and after the socket is closed they could not be sent anyway - on an update restart / SIGTERM that
+            # left a single "bye" packet, which could be lost
             await asyncio.sleep(max(net.REPEAT_DELAYS) + 0.01)
         finally:
             net.close_sock()
@@ -95,8 +110,12 @@ _lock = None
 
 
 def single_instance(name=LOCK_NAME):
-    """Jeden nadajnik na telefonie (np. usługa root i stary autostart użytkownika naraz walczyłyby o pady).
-    Abstrakcyjne gniazdo Unix: wspólne dla wszystkich użytkowników, znika samo, gdy proces się kończy."""
+    """Allow only one sender per machine; returns True if this process got the lock.
+
+    Two senders (e.g. the root service plus an old user autostart) would fight over the same pads. The lock is an
+    abstract-namespace Unix socket: it is shared by all users, needs no file, and disappears by itself when the
+    process ends. Binding fails if another process already holds the name.
+    """
     global _lock
     s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
     try:
@@ -104,7 +123,7 @@ def single_instance(name=LOCK_NAME):
     except OSError:
         s.close()
         return False
-    _lock = s
+    _lock = s                          # keep a reference: closing the socket would release the lock
     return True
 
 
@@ -113,23 +132,24 @@ if __name__ == "__main__":
     if not single_instance():
         raise SystemExit("Another sender is already running (service or autostart) - stop it first.")
     net.init()
+    # callbacks the network layer calls for packets arriving from the receiver
     net.on_feedback = sup.dispatch_feedback
     net.on_command = control.on_command
     net.on_triggers = sup.dispatch_triggers
     net.on_scfg = wol.apply_scfg
-    net.on_bt = sender_bt.bt.on_command        # Bluetooth telefonu z okna receivera (skan, parowanie, łączenie)
-    wol.load()                         # Wake-on-LAN i zdarzenia: ustawienia z okna receivera zapisane przy ostatnim scfg
+    net.on_bt = sender_bt.bt.on_command        # phone Bluetooth driven from the receiver window (scan, pair, connect)
+    wol.load()                         # Wake-on-LAN and events: settings from the receiver window saved at the last scfg
     sender_rt.setup(C.LOW_LATENCY, C.CPU_LATENCY_US, C.RT_PRIORITY)
     gc.collect()
-    gc.freeze()   # obiekty ze startu poza zasięgiem GC - krótsze pauzy
+    gc.freeze()   # objects created at startup are moved out of the GC's reach - shorter GC pauses
     sender_update.init()
     events.info(E_START, 255, sender_update.version[0] or "?")
     try:
         asyncio.run(main())
     except (KeyboardInterrupt, asyncio.CancelledError):
         print("\nStopped.")
-    if state.restart:                  # po aktualizacji: nowy kod w tym samym procesie (PID dla usługi bez zmian)
+    if state.restart:                  # after an update: new code in the same process (the service PID stays the same)
         print("Restarting with the updated code")
         sys.stdout.flush()
-        # orig_argv: z opcjami interpretera (usługa: python3 -u) - bez -u log po aktualizacji szedłby z opóźnieniem (bufor)
+        # orig_argv keeps the interpreter options (service: python3 -u) - without -u the log would lag after an update (buffering)
         os.execv(sys.executable, [sys.executable, *sys.orig_argv[1:]])

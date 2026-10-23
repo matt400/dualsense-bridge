@@ -1,10 +1,10 @@
-"""Receiver: panele prawej kolumny okna - wybór profilu, edytor wybranej części pada, gyro i lista zmian.
+"""Receiver: the window's right column panels - profile choice, the editor of the selected pad part, gyro and the list of changes.
 
-Na wierzchu tylko to, co zmienia się najczęściej (co robi przycisk, skąd gałka, opór spustu); strojenie reakcji
-(strefy martwe, krzywe) jest w zwijanej sekcji "Zaawansowane", otwartej sama, gdy coś w niej zmieniono.
+On top only what changes most often (what a button does, where a stick comes from, trigger resistance); response tuning
+(dead zones, curves) is in the collapsible "Advanced" section, opened by itself when something in it was changed.
 
-Panele czytają i zmieniają Editor (rx_editor) i sygnałem `edited` mówią oknu, że profil się zmienił
-(okno odświeża plakietki, status i wysyła profil na pad z krótkim opóźnieniem).
+The panels read and change the Editor (rx_editor) and tell the window with the `edited` signal that the profile changed
+(the window refreshes the badges and the status, and sends the profile to the pad after a short delay).
 """
 from rx_i18n import _
 from PySide6.QtCore import QStringListModel, Qt, Signal
@@ -22,7 +22,7 @@ from rx_qt_widgets import (Collapsible, Combo, ConfirmButton, SliderRow, button,
                            left)
 
 NONE = "__none"
-# tryb efektu spustu -> (nazwa, podpowiedź); "inherit" tylko w profilu gry
+# trigger effect mode -> (name, tooltip); "inherit" only in a game profile
 FX_MODES = {
     "inherit": ("Jak w profilu pada", "W tej grze spust działa tak, jak ustawiono w profilu domyślnym pada."),
     "off": ("Wyłączony", "Spust bez efektu."),
@@ -36,16 +36,20 @@ RUMBLE_KEY = {None: "inherit", True: "on", False: "off"}
 
 
 def _of8(v):
+    """Slider text for a value out of TRIG_FORCE_MAX, e.g. "5 / 8"."""
     return f"{round(v)} / {TRIG_FORCE_MAX}"
 def targets():
-    return [*input_items(B.INPUTS, text=True), (NONE, _("— wyłączony —"))]   # ikona + nazwa: wybór widać od razu
+    """Choices of what a button can act as: every pad input (icon + name) and \"disabled\"."""
+    return [*input_items(B.INPUTS, text=True), (NONE, _("— wyłączony —"))]   # icon + name: the choice is visible at once
 
 
 def r3(v):
+    """Round to 3 decimals (profile values are stored that way)."""
     return round(v, 3)
 
 
 def _vbox(parent=None, spacing=10):
+    """A vertical layout without margins (on `parent` when given)."""
     lay = QVBoxLayout(parent)
     lay.setContentsMargins(0, 0, 0, 0)
     lay.setSpacing(spacing)
@@ -53,25 +57,26 @@ def _vbox(parent=None, spacing=10):
 
 
 def scrolled(widget):
-    """Panel w pionowym przewijaniu (bez ramki) - zawartość może być wyższa niż okno."""
+    """A panel in vertical scrolling (no frame) - the content may be taller than the window."""
     sa = QScrollArea()
     sa.setWidgetResizable(True)
     sa.setFrameShape(QFrame.Shape.NoFrame)
     sa.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
     if widget.layout():
-        widget.layout().setContentsMargins(0, 12, 6, 0)      # odstęp pod zakładkami i miejsce na pasek przewijania
+        widget.layout().setContentsMargins(0, 12, 6, 0)      # a gap under the tabs and room for the scroll bar
     sa.setWidget(widget)
     return sa
 
 
 class ProfileBar(QWidget):
-    """Lista profili pada (domyślny + gry), nowy profil gry i usuwanie."""
+    """The pad's profile list (default + games), a new game profile and deleting."""
 
-    selected = Signal(str)            # klucz wybranego profilu
-    create = Signal(str, bool)        # (nazwa programu, zacznij od bieżących ustawień)
+    selected = Signal(str)            # the key of the chosen profile
+    create = Signal(str, bool)        # (program name, start from the current settings)
     delete = Signal()
 
     def __init__(self):
+        """Build the profile combo with the add / delete buttons, an info line and the hidden new-game-profile form."""
         super().__init__()
         self._sig = None
         self.recent, self.existing = [], set()
@@ -122,7 +127,7 @@ class ProfileBar(QWidget):
         lay.addWidget(self.form)
 
     def reload(self, profiles, key, info, recent):
-        """profiles = [(klucz, nazwa, w użyciu)]; lista przebudowywana tylko, gdy się zmieniła (nie zamyka otwartej)."""
+        """profiles = [(key, name, in use)]; the list is rebuilt only when it changed (an open one is not closed)."""
         sig = tuple(profiles)
         if sig != self._sig:
             self._sig = sig
@@ -136,24 +141,28 @@ class ProfileBar(QWidget):
             self.completer_model.setStringList(recent)
 
     def _open_new(self):
+        """Show the new profile form, pre-filled with the most recent program that has no profile yet."""
         self.exe.setText(next((x for x in self.recent if x not in self.existing), ""))
         self.form.show()
         self.exe.setFocus()
         self.exe.selectAll()
 
     def _create(self):
+        """Emit `create` with the typed program name and the copy-current-settings flag."""
         self.create.emit(self.exe.text(), self.copy.isChecked())
 
     def close_new(self):
+        """Hide the new profile form."""
         self.form.hide()
 
 
 class PartPage(QWidget):
-    """Edytor wybranej części pada: przycisk / kierunek D-pada, spust (z krzywą) albo gałka (zamiana, odwrócenie, krzywa)."""
+    """The editor of the selected pad part: a button / D-pad direction, a trigger (with a curve) or a stick (swap, inversion, curve)."""
 
     edited = Signal()
 
     def __init__(self, ed):
+        """Stack three pages: a hint (nothing selected), a button / trigger page and a stick page."""
         super().__init__()
         self.ed, self.name = ed, None
         self.stack = QStackedWidget()
@@ -162,9 +171,10 @@ class PartPage(QWidget):
         self.stack.addWidget(self._button_page())
         self.stack.addWidget(self._stick_page())
 
-    # ---------- budowa ----------
+    # ---------- building ----------
     @staticmethod
     def _hint_page():
+        """The page shown while no part is selected."""
         w = QWidget()
         lay = _vbox(w)
         lay.addWidget(label(_("Kliknij przycisk, spust albo gałkę na rysunku pada, aby ją zremapować lub dostroić."), "dim", wrap=True))
@@ -172,6 +182,8 @@ class PartPage(QWidget):
         return scrolled(w)
 
     def _button_page(self):
+        """The page for a button or trigger: the target combo and reset; for L2 / R2 also the trigger effect, game rumble and the response
+        tuning."""
         w = QWidget()
         lay = _vbox(w)
         head = QHBoxLayout()
@@ -187,7 +199,7 @@ class PartPage(QWidget):
         self.dflt.clicked.connect(lambda: self._reset_button(self.name))
         lay.addWidget(self.dflt, 0, Qt.AlignmentFlag.AlignLeft)
 
-        self.trig = QWidget()                        # tylko L2 / R2: efekt spustu, wibracja z gry i (zwinięta) reakcja
+        self.trig = QWidget()                        # L2 / R2 only: the trigger effect, game rumble and the (collapsed) response
         tl = _vbox(self.trig)
         tl.addSpacing(4)
         tl.addWidget(label(_("EFEKT SPUSTU"), "h2"))
@@ -239,6 +251,7 @@ class PartPage(QWidget):
         return scrolled(w)
 
     def _stick_page(self):
+        """The page for a stick: the source stick, axis inversion, the stick-click target and the response tuning."""
         w = QWidget()
         lay = _vbox(w)
         self.stick_title = label("", "h3")
@@ -276,26 +289,31 @@ class PartPage(QWidget):
         lay.addStretch(1)
         return scrolled(w)
 
-    # ---------- zmiany ----------
+    # ---------- changes ----------
     def _set_button(self, src, value):
+        """Remap `src` to `value` (NONE = disabled) and report the edit."""
         self.ed.set_button(src, None if value == NONE else value)
         self.edited.emit()
 
     def _reset_button(self, src):
+        """Restore the default mapping of `src`."""
         self.ed.clear_button(src)
         self.refresh()
         self.edited.emit()
 
     def _tune(self, name, **patch):
+        """Patch the response tuning of a part (dead zone, curve...)."""
         self.ed.set_tuning(name, **patch)
         self.edited.emit()
 
     def _reset_tuning(self, name):
+        """Restore the default response of a part."""
         self.ed.clear_tuning(name)
         self.refresh()
         self.edited.emit()
 
     def _trigger_fx(self, **patch):
+        """Patch the trigger effect of the selected trigger; a mode change also re-shows the matching sliders."""
         if self.name in B.TRIGGERS:
             self.ed.set_trigger_fx(self.name, **patch)
             if "mode" in patch:
@@ -303,13 +321,14 @@ class PartPage(QWidget):
             self.edited.emit()
 
     def _rumble_fx(self, **patch):
+        """Patch the game-rumble-on-triggers settings (shared by L2 and R2)."""
         self.ed.set_rumble_fx(**patch)
         if "on" in patch:
             self._show_rumble(self.ed.rumble_fx())
         self.edited.emit()
 
     def _show_fx(self, fx):
-        """Suwaki trybu efektu (pozostałe ukryte) i podpowiedź."""
+        """The sliders of the effect mode (the rest hidden) and the hint."""
         self.fx_hint.setText(_(FX_MODES[fx["mode"]][1]))
         shown = FX_SLIDERS.get(fx["mode"], ())
         for k, row in self.fx.items():
@@ -318,6 +337,7 @@ class PartPage(QWidget):
         self.update_caps()
 
     def _show_rumble(self, rv):
+        """Show the game rumble settings; the sliders only when it is on."""
         self.rv_gain.set(rv["gain"])
         self.rv_freq.set(rv["freq"])
         self.rv_gain.setVisible(bool(rv["on"]))
@@ -325,21 +345,24 @@ class PartPage(QWidget):
         self.update_caps()
 
     def _stick(self, **patch):
+        """Patch the stick mapping (source, inversion) of the selected stick."""
         if self.name in STICK_OF:
             self.ed.set_stick(STICK_OF[self.name], **patch)
             self.edited.emit()
 
-    # ---------- odczyt ----------
+    # ---------- reading ----------
     def show_part(self, name):
+        """Select a part (a button, trigger or stick name) and load it."""
         self.name = name
         self.refresh()
 
     def _target(self, src):
+        """What `src` currently acts as, NONE when disabled."""
         t = self.ed.target_of(src)
         return NONE if t is None else t
 
     def refresh(self):
-        """Wczytuje wartości wybranej części z profilu do widżetów (bez wywoływania zmian)."""
+        """Load the selected part's values from the profile into the widgets (without triggering changes)."""
         name, ed = self.name, self.ed
         if name is None:
             self.stack.setCurrentIndex(0)
@@ -385,7 +408,7 @@ class PartPage(QWidget):
         self.stack.setCurrentIndex(1)
 
     def update_caps(self):
-        """Ostrzeżenie pod efektami spustu, gdy nadajnik tego pada ich nie ustawi (co 400 ms z okna - tani odczyt)."""
+        """A warning under the trigger effects when this pad's sender will not apply them (every 400 ms from the window - a cheap read)."""
         text, level = (ST.triggers_status(self.ed.slot, needs_fx(self.ed.prof["triggers"]))
                        if self.name in B.TRIGGERS else ("", ""))
         if text != self.fx_warn.text():
@@ -395,11 +418,12 @@ class PartPage(QWidget):
 
 
 class GyroPage(QWidget):
-    """Celowanie żyroskopem: jako prawa gałka (każda gra) albo mysz; kiedy aktywne i z jaką czułością."""
+    """Aiming with the gyro: as the right stick (any game) or the mouse; when it is active and with what sensitivity."""
 
     edited = Signal()
 
     def __init__(self, ed):
+        """Build the mode combo and the settings (activation, sensitivity, inversion, anti dead zone)."""
         super().__init__()
         self.ed = ed
         w = QWidget()
@@ -436,12 +460,14 @@ class GyroPage(QWidget):
         lay.addStretch(1)
 
     def _set(self, relayout=False, **patch):
+        """Patch the gyro settings; relayout reloads the widgets (a mode change shows / hides parts)."""
         self.ed.set_gyro(**patch)
         if relayout:
             self.refresh()
         self.edited.emit()
 
     def refresh(self):
+        """Load the gyro settings from the profile into the widgets (without triggering changes)."""
         g = self.ed.gyro()
         self.mode.set_data(g["mode"])
         on = g["mode"] != "off"
@@ -457,7 +483,7 @@ class GyroPage(QWidget):
         self.anti.setVisible(g["mode"] == "stick")
 
     def set_live(self, in_use, active):
-        """Wiersz pod ustawieniami: czy gyro teraz reaguje (tylko dla profilu w użyciu)."""
+        """The row under the settings: whether the gyro reacts now (only for the profile in use)."""
         g = self.ed.gyro()
         if g["mode"] == "off":
             return
@@ -473,11 +499,12 @@ class GyroPage(QWidget):
 
 
 class ChangesPage(QWidget):
-    """Lista zmian względem ustawień domyślnych; × cofa jedną pozycję, "Usuń wszystkie" (2 kliknięcia) - cały profil."""
+    """The list of changes against the defaults; × undoes one item, "Delete all" (2 clicks) - the whole profile."""
 
-    undone = Signal()      # cofnięto pozycję - okno musi odświeżyć wszystkie panele
+    undone = Signal()      # an item was undone - the window must refresh all panels
 
     def __init__(self, ed):
+        """Build the scrollable list and the Delete all button."""
         super().__init__()
         self.ed, self._sig = ed, None
         self.box = QWidget()
@@ -489,7 +516,7 @@ class ChangesPage(QWidget):
         outer.addLayout(left(self.reset))
 
     def refresh(self):
-        """-> liczba zmian. Wiersze są przebudowywane tylko, gdy lista się zmieniła (suwak daje wiele zmian na sekundę)."""
+        """-> the number of changes. Rows are rebuilt only when the list changed (a slider makes many changes a second)."""
         changes = self.ed.changes()
         sig = tuple(text for text, _ in changes)
         if sig != self._sig:
@@ -509,6 +536,7 @@ class ChangesPage(QWidget):
         return len(changes)
 
     def _row(self, text, undo):
+        """One change row: its text and a × button that undoes it."""
         row = QFrame()
         row.setObjectName("row")
         hl = QHBoxLayout(row)
@@ -523,5 +551,6 @@ class ChangesPage(QWidget):
         return row
 
     def _undo(self, undo):
+        """Run the undo of one item and tell the window to refresh everything."""
         undo()
         self.undone.emit()

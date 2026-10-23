@@ -1,17 +1,17 @@
-"""Receiver: tabele przycisków, remapowanie wejść i zapis profili (remap.json).
+"""Receiver: button tables, input remapping and saving profiles (remap.json).
 
-Remapować można 17 "wejść": 11 przycisków, 4 kierunki D-pada i spusty L2/R2. Mapa to słownik
-{wejście_źródłowe: wejście_docelowe | None}; brak wpisu = bez zmian, None = wyłączone.
-Spust -> przycisk działa progowo (TRIG_ON), przycisk -> spust daje pełne 255.
-PS + klik touchpada (przełączanie myszy) używa SUROWYCH wejść, więc nie da się go "zremapować away".
+17 "inputs" can be remapped: 11 buttons, 4 D-pad directions and the L2 / R2 triggers. A map is a dict
+{source_input: target_input | None}; no entry = no change, None = disabled.
+Trigger -> button works with a threshold (TRIG_ON), button -> trigger gives the full 255.
+PS + touchpad click (mouse switching) uses RAW inputs, so it cannot be "remapped away".
 
-Gałki: profil["sticks"] = {wyjście: {"src": "left"|"right"|"none", "inv_x": bool, "inv_y": bool}}, gdzie wyjście to
-"left" / "right" (gałka widziana przez grę), a src - z której fizycznej gałki bierze dane ("none" = środek).
-Profil = {"buttons", "sticks", "tuning", "gyro", "triggers"} (tuning, gyro i opór spustów: rx_shape.py); stary format
-(sama mapa przycisków) jest wczytywany jak "buttons".
+Sticks: profile["sticks"] = {output: {"src": "left"|"right"|"none", "inv_x": bool, "inv_y": bool}}, where the output is
+"left" / "right" (the stick as the game sees it), and src - which physical stick supplies the data ("none" = centre).
+A profile = {"buttons", "sticks", "tuning", "gyro", "triggers"} (tuning, gyro and trigger resistance: rx_shape.py); the old format
+(a bare button map) is loaded as "buttons".
 
-Profile gier: klucz "<pad>@<gra.exe>" (np. "aa:bb:cc:dd:ee:ff@eldenring.exe") - używany automatycznie, gdy ta gra
-jest na pierwszym planie. Profil gry istnieje nawet pusty (= "w tej grze bez zmian"), w odróżnieniu od profilu pada.
+Game profiles: the key "<pad>@<game.exe>" (e.g. "aa:bb:cc:dd:ee:ff@eldenring.exe") - used automatically when that game
+is in the foreground. A game profile exists even when empty (= "no changes in this game"), unlike a pad profile.
 """
 from rx_i18n import _
 import json
@@ -30,17 +30,17 @@ BUTTON_CODES = {"cross": 304, "circle": 305, "triangle": 307, "square": 308,
 DIRS = {"dpad_up": (0, -1), "dpad_down": (0, 1), "dpad_left": (-1, 0), "dpad_right": (1, 0)}   # (hx, hy)
 TRIGGERS = ("l2", "r2")
 INPUTS = tuple(BUTTON_CODES) + tuple(DIRS) + TRIGGERS
-# nazwy wejść po polsku - w oknie zawsze przez rx_i18n._() (wersja angielska w rx_i18n.EN)
+# input names in Polish - in the window always through rx_i18n._() (the English version in rx_i18n.EN)
 LABELS = {"cross": "Krzyżyk (X)", "circle": "Kółko (O)", "triangle": "Trójkąt", "square": "Kwadrat",
           "l1": "L1", "r1": "R1", "share": "Share / Create", "options": "Options", "ps": "Przycisk PS",
           "l3": "L3 (gałka)", "r3": "R3 (gałka)",
           "dpad_up": "D-pad góra", "dpad_down": "D-pad dół", "dpad_left": "D-pad lewo", "dpad_right": "D-pad prawo",
           "l2": "L2 (spust)", "r2": "R2 (spust)"}
-TRIG_ON = 40   # od tej wartości analogowej spust liczy się jako wciśnięty przycisk
+TRIG_ON = 40   # from this analog value a trigger counts as a pressed button
 
 
 def bits_from(mask, *tables):
-    """Dla maski przycisków składa bajty raportu z tabel {kod_evdev: bit}."""
+    """For a button mask, assemble report bytes from tables {evdev_code: bit}."""
     out = [0] * len(tables)
     for code, bit in BIT.items():
         if mask & bit:
@@ -50,9 +50,9 @@ def bits_from(mask, *tables):
 
 
 def normalize(m):
-    """Czyści mapę: tylko znane nazwy, bez wpisów tożsamościowych."""
+    """Clean a map: known names only, no identity entries."""
     out = {}
-    for src, dst in (m.items() if isinstance(m, dict) else ()):    # zły typ (ręczna edycja remap.json, API) = pusta mapa
+    for src, dst in (m.items() if isinstance(m, dict) else ()):    # a wrong type (hand edit of remap.json, API) = an empty map
         if src not in INPUTS:
             continue
         if dst in (None, "", "none"):
@@ -63,7 +63,7 @@ def normalize(m):
 
 
 def pressed_inputs(mask, hx, hy, lt, rt):
-    """Zbiór wejść aktualnie aktywnych (dla podświetlenia w oknie remapowania)."""
+    """The set of currently active inputs (for highlighting in the remap window)."""
     out = {n for n, code in BUTTON_CODES.items() if mask & BIT[code]}
     if hy < 0:
         out.add("dpad_up")
@@ -81,7 +81,7 @@ def pressed_inputs(mask, hx, hy, lt, rt):
 
 
 def apply_remap(m, mask, hx, hy, lt, rt):
-    """(maska, hatx, haty, l2, r2) surowe -> po remapowaniu. m = znormalizowana mapa."""
+    """(mask, hatx, haty, l2, r2) raw -> after remapping. m = a normalised map."""
     if not m:
         return mask, hx, hy, lt, rt
     out_mask = 0
@@ -124,7 +124,7 @@ STICKS = ("left", "right")
 
 
 def normalize_sticks(sm):
-    """Czyści ustawienia gałek: zostają tylko odstępstwa od domyślnych (src = to samo wyjście, bez inwersji)."""
+    """Clean the stick settings: only deviations from the defaults remain (src = the same output, no inversion)."""
     out = {}
     sm = sm if isinstance(sm, dict) else {}
     for name in STICKS:
@@ -141,11 +141,11 @@ def normalize_sticks(sm):
 
 
 PROFILE_PARTS = ("buttons", "sticks", "tuning", "gyro", "triggers")
-HOLD_INPUTS = ("always", *INPUTS)      # czym można aktywować gyro
+HOLD_INPUTS = ("always", *INPUTS)      # what can activate the gyro
 
 
 def normalize_profile(p):
-    """-> {"buttons", "sticks", "tuning", "gyro", "triggers"}; akceptuje też stary, płaski format (same przyciski)."""
+    """-> {"buttons", "sticks", "tuning", "gyro", "triggers"}; also accepts the old flat format (buttons only)."""
     if not isinstance(p, dict):
         p = {}
     elif not any(k in p for k in PROFILE_PARTS):
@@ -156,22 +156,23 @@ def normalize_profile(p):
 
 
 def profile_size(p):
-    """Liczba zmian w profilu (0 = wszystko domyślne)."""
+    """The number of changes in a profile (0 = everything default)."""
     return len(p["buttons"]) + len(p["sticks"]) + len(p["tuning"]) + (1 if p["gyro"] else 0) + len(p["triggers"])
 
 
 def is_game_key(key):
+    """Whether a profile key belongs to a game ("<pad>@<game.exe>") rather than to a pad."""
     return "@" in key
 
 
 def _inv(v):
-    """Odbicie osi wokół środka 128: 0 <-> 255, 128 zostaje 128 (jak _unit/_byte w rx_shape - pełne wychylenie
-    w obie strony daje pełne wychylenie, a nie 1)."""
+    """Mirror an axis around the centre 128: 0 <-> 255, 128 stays 128 (like _unit/_byte in rx_shape - a full deflection
+    in both directions gives a full deflection, not 1)."""
     return _byte(-_unit(v))
 
 
 def apply_sticks(sm, lx, ly, rx, ry):
-    """Surowe wychylenia (0..255, środek 128) -> (lx, ly, rx, ry) po remapowaniu gałek."""
+    """Raw deflections (0..255, centre 128) -> (lx, ly, rx, ry) after stick remapping."""
     if not sm:
         return lx, ly, rx, ry
     phys = {"left": (lx, ly), "right": (rx, ry), "none": (128, 128)}
@@ -188,10 +189,10 @@ def apply_sticks(sm, lx, ly, rx, ry):
 
 
 class RemapStore:
-    """Profile remapowania: `saved` (z pliku) i `live` (aktualnie używane, mogą być niezapisane).
+    """Remap profiles: `saved` (from the file) and `live` (currently used, may be unsaved).
 
-    Klucz profilu = identyfikator pada (MAC z nadajnika, małe litery) albo "slotN", gdy nadajnik
-    go nie przysłał (stara wersja)."""
+    A profile key = the pad identifier (the MAC from the sender, lower case) or "slotN" when the sender
+    did not send it (an old version)."""
 
     def __init__(self, path):
         self.path = path
@@ -202,9 +203,11 @@ class RemapStore:
 
     @staticmethod
     def key_for(pad_id, slot):
+        """The profile key of a pad: its id, or "slotN" when the sender has not sent one."""
         return pad_id or f"slot{slot}"
 
     def load(self):
+        """Load remap.json (a missing or broken file = no remaps), normalising every profile; resets the live profiles."""
         try:
             with open(self.path, encoding="utf-8") as f:
                 data = json.load(f)
@@ -228,7 +231,7 @@ class RemapStore:
         print(f"Remap profiles loaded from {self.path}: {sorted(self.saved) or 'none'}")
 
     def get(self, key):
-        """Profil w użyciu (live, a jeśli go nie ma - zapisany). Zwraca kopię."""
+        """The profile in use (live, and when there is none - the saved one). Returns a copy."""
         with self._lock:
             p = self.live.get(key)
             if p is None:
@@ -236,30 +239,34 @@ class RemapStore:
             return normalize_profile(p)
 
     def has(self, key):
+        """Whether a profile exists, live or saved."""
         with self._lock:
             return key in self.live or key in self.saved
 
     def keys_for(self, base):
-        """[profil pada, profile gier tego pada (alfabetycznie)]."""
+        """[the pad profile, the game profiles of this pad (alphabetically)]."""
         prefix = base + "@"
         with self._lock:
             games = {k for k in self.live.keys() | self.saved.keys() if k.startswith(prefix)}
         return [base, *sorted(games)]
 
     def in_file(self, key):
+        """Whether a profile is saved in the file."""
         with self._lock:
             return key in self.saved
 
     def get_saved(self, key):
+        """A copy of the saved version of a profile (an empty profile when it is not saved)."""
         with self._lock:
             return normalize_profile(self.saved.get(key))
 
     def set_live(self, key, p):
+        """Set the live (unsaved) version of a profile."""
         with self._lock:
             self.live[key] = normalize_profile(p)
 
     def save(self, key, p):
-        """Zapisuje profil do pliku (atomowo). -> (ok, komunikat)."""
+        """Save the profile to the file (atomically). -> (ok, message)."""
         p = normalize_profile(p)
         with self._lock:
             self.live[key] = p
@@ -270,7 +277,7 @@ class RemapStore:
             return self._write()
 
     def delete(self, key):
-        """Usuwa profil (z pamięci i z pliku). -> (ok, komunikat)."""
+        """Delete a profile (from memory and from the file). -> (ok, message)."""
         with self._lock:
             self.live.pop(key, None)
             if self.saved.pop(key, None) is None:
@@ -278,7 +285,7 @@ class RemapStore:
             return self._write("Usunięto - {file}")
 
     def _write(self, done="Zapisano - {file}"):
-        """Zapis atomowy (plik tymczasowy + zamiana) - przerwanie w trakcie nie psuje remap.json. Wołać pod _lock."""
+        """Atomic write (temporary file + replace) - an interruption does not corrupt remap.json. Call with _lock held."""
         try:
             write_json(self.path, {"version": 3, "profiles": self.saved}, indent=2, sort_keys=True)
         except OSError as e:

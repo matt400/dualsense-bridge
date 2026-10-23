@@ -1,4 +1,4 @@
-"""Receiver: współdzielony stan padów. Moduły używają go jako `S.xxx` (listy powstają w init())."""
+"""Receiver: the shared pad state. Modules use it as `S.xxx` (the lists are created in init())."""
 import threading
 import time
 import traceback
@@ -11,25 +11,25 @@ from rx_gstick import drive_state
 from rx_shape import gyro_mouse_velocity, gyro_rates, gyro_stick, merge_triggers, shape_stick, shape_trigger
 
 lock = threading.Lock()
-profile_lock = threading.RLock()            # wybór profilu (gra / edytor / skróty / ident) z kilku wątków
+profile_lock = threading.RLock()            # profile choice (game / editor / shortcuts / ident) from several threads
 stop = threading.Event()
-restart = False                            # True = po czystym zamknięciu uruchom receiver od nowa (zapis ustawień w oknie);
-#                                            "admin" = to samo jako administrator (UAC - HIDMaestro)
-seen = SeqFilter(1.0)                      # odrzucanie spóźnionych / zdublowanych pakietów
+restart = False                            # True = after a clean shutdown start the receiver again (saving settings in the window);
+# "admin" = the same as administrator (UAC - HIDMaestro)
+seen = SeqFilter(1.0)                      # dropping late / duplicated packets
 MACS = [bytes([0, 2, 3, 4, 5, 6 + s]) for s in range(5)]
-SENDER_TIMEOUT = 3.0                       # cisza dłuższa niż tyle (3 pingi) = nadajnik offline
+SENDER_TIMEOUT = 3.0                       # silence longer than this (3 pings) = the sender is offline
 
-peer = None        # adres ostatniego nadajnika (dla feedbacku / pong)
-sender_build = None  # (commit, czas commita, stan aktualizacji UPD_*, czas odbioru) z pakietu build nadajnika
-sender_update_msg = ""  # powód błędu ostatniej aktualizacji nadajnika (pakiet updmsg)
-sender_wol = None  # (MAC komputera, broadcast) - tego użyje Wake-on-LAN nadajnika (pakiet build2); "" = nie zna
-last_pkt = 0.0     # kiedy przyszedł ostatni poprawny pakiet - do wskaźnika online
+peer = None        # address of the last sender (for feedback / pong)
+sender_build = None  # (commit, commit time, update state UPD_*, receive time) from the sender's build packet
+sender_update_msg = ""  # the reason for the last sender update failure (the updmsg packet)
+sender_wol = None  # (the PC's MAC, broadcast) - what the sender's Wake-on-LAN will use (the build2 packet); "" = it does not know
+last_pkt = 0.0     # when the last valid packet arrived - for the online indicator
 store = None       # RemapStore
 dsu_wake = threading.Event()
-dsu_active = False              # serwer DSU ma subskrybentów - bez nich zmiany stanu go nie budzą (rx_dsu)
-gyro_wake = threading.Event()   # budzi wątek myszy-żyroskopu (rx_gyro)
-game = None                     # program na pierwszym planie (małe litery, np. "eldenring.exe") albo None
-link_loss = None                # utrata pakietów od nadajnika w ostatniej sekundzie [%] (None = brak danych)
+dsu_active = False              # the DSU server has subscribers - without them state changes do not wake it (rx_dsu)
+gyro_wake = threading.Event()   # wakes the gyro mouse thread (rx_gyro)
+game = None                     # the foreground program (lower case, e.g. "eldenring.exe") or None
+link_loss = None                # packet loss from the sender in the last second [%] (None = no data)
 
 states = wake = want = plugged = last_seen = alive = ignore_until = None
 mouse_mode = tp_down = swallow = last_v = last_touch = batt_info = None
@@ -40,23 +40,23 @@ probe = gyro_cal = None
 
 def new_state():
     return {
-        "lx": 128, "ly": 128, "rx": 128, "ry": 128, "lt": 0, "rt": 0,   # gałki/lt/rt/hx/hy/mask: PO remapowaniu
+        "lx": 128, "ly": 128, "rx": 128, "ry": 128, "lt": 0, "rt": 0,   # sticks/lt/rt/hx/hy/mask: AFTER remapping
         "hx": 0, "hy": 0, "mask": 0,
-        "raw": (0, 0, 0, 0, 0),                                          # (maska, hatx, haty, l2, r2) surowe
-        "fwd": (0, 0, 0),                    # (maska, hatx, haty) przekazywane do remapu - bez wejść zużytych przez skróty
-        "rawst": (128, 128, 128, 128),                                   # (lx, ly, rx, ry) surowe
+        "raw": (0, 0, 0, 0, 0),                                          # (mask, hatx, haty, l2, r2) raw
+        "fwd": (0, 0, 0),                    # (mask, hatx, haty) passed to the remap - without inputs consumed by shortcuts
+        "rawst": (128, 128, 128, 128),                                   # (lx, ly, rx, ry) raw
         "acc": (0, 0, 0), "gyro": (0, 0, 0),
         "touch": ((0, 0, 0, 0), (0, 0, 0, 0)), "tp": False,
-        "rtp": 0,                            # klik touchpada na żywo (0/1/2) także w trybie myszy - widok Test
-        "blocked": False,                    # widok Test: gra dostaje neutralny stan, mysz i skróty nie działają
+        "rtp": 0,                            # live touchpad click (0/1/2), also in mouse mode - the Test view
+        "blocked": False,                    # Test view: the game gets a neutral state, the mouse and shortcuts do not work
         "batt_dsu": 5, "batt_ds4": 0x1B,
         "ver": 0,
-        "ts": 0,                                                         # kiedy (us) przyszła ostatnia zmiana stanu
-        "gyro_on": False,                    # gyro aktywne (tryb gałki lub myszy i spełniony warunek "hold")
-        "gyro_vel": None,                    # prędkość kursora z gyro [px/s] w trybie myszy, None = wyłączone
-        "gs": None,                          # gałka z przechyłu pada (rx_gstick_io): (cel, x, y, maska przycisków) albo None
-        "lat": None,                         # pomiar opóźnienia ostatniej zmiany (rx_net -> rx_ds4 -> rx_latency)
-        "blat": None,                        # to samo, tylko dla zmiany przycisku / D-pada / spustu (przycisk -> gra)
+        "ts": 0,                                                         # when (us) the last state change arrived
+        "gyro_on": False,                    # gyro active (stick or mouse mode and the "hold" condition is met)
+        "gyro_vel": None,                    # cursor velocity from the gyro [px/s] in mouse mode, None = off
+        "gs": None,                          # stick driven by pad tilt (rx_gstick_io): (target, x, y, button mask) or None
+        "lat": None,                         # latency measurement of the last change (rx_net -> rx_ds4 -> rx_latency)
+        "blat": None,                        # the same, only for a button / D-pad / trigger change (button -> game)
     }
 
 
@@ -67,37 +67,37 @@ def init(store_):
     n = C.NUM_PADS
     store = store_
     states = [new_state() for _ in range(n)]
-    wake = [threading.Event() for _ in range(n)]     # budzi wątek pada po zmianie stanu
-    want = [threading.Event() for _ in range(n)]     # ustawione = wirtualny DS4 ma istnieć
-    plugged = [False] * n                            # wirtualny DS4 jest podłączony do ViGEm
+    wake = [threading.Event() for _ in range(n)]     # wakes the pad thread after a state change
+    want = [threading.Event() for _ in range(n)]     # set = the virtual DS4 should exist
+    plugged = [False] * n                            # the virtual DS4 is plugged into ViGEm
     last_seen = [0.0] * n
     alive = [False] * n
-    ignore_until = [0.0] * n                         # krótkie "wyciszenie" slotu po pakiecie bye
+    ignore_until = [0.0] * n                         # a short "mute" of the slot after a bye packet
     mouse_mode = [i in C.MOUSE_PADS for i in range(n)]
-    tp_down = [0] * n                                # ostatnia wartość kliku touchpada (0/1/2)
+    tp_down = [0] * n                                # the last touchpad click value (0/1/2)
     swallow = [False] * n
-    last_v = [None] * n                              # ostatni pakiet stanu / dotyku - powtórki pomijamy
+    last_v = [None] * n                              # the last state / touch packet - repeats are skipped
     last_touch = [None] * n
-    batt_info = [(255, 0)] * n                       # (% , flagi) - dla okna
-    pad_id = [None] * n                              # identyfikator pada z pakietu ident
-    active = [store.key_for(None, i) for i in range(n)]   # klucz profilu w użyciu
+    batt_info = [(255, 0)] * n                       # (%, flags) - for the window
+    pad_id = [None] * n                              # pad identifier from the ident packet
+    active = [store.key_for(None, i) for i in range(n)]   # the profile key in use
     remap_maps = [store.get(k) for k in active]
-    override = [None] * n                            # profil wybrany ręcznie (PS + d-pad), None = automatycznie
-    info = [None] * n                                # (ping ms | None, Hz pada, Hz ruchu, czas) z pakietu info
-    pps = [0.0] * n                                  # pakiety stanu na sekundę
-    sender_info = [None] * n                         # (wersja nadajnika, sposoby wibracji, powód) z pakietu version; None = stary
-    probe = [None] * n                               # pomiar dryfu (rx_drift): lista próbek (lx, ly, rx, ry) albo None
-    gyro_cal = [None] * n                            # ostatni pakiet calres: (stan, flagi, zapisany, bieżący, czas, odebrano)
+    override = [None] * n                            # a profile chosen manually (PS + d-pad), None = automatic
+    info = [None] * n                                # (ping ms | None, pad Hz, motion Hz, time) from the info packet
+    pps = [0.0] * n                                  # state packets per second
+    sender_info = [None] * n                         # (sender version, rumble ways, reason) from the version packet; None = old
+    probe = [None] * n                               # drift measurement (rx_drift): a list of samples (lx, ly, rx, ry) or None
+    gyro_cal = [None] * n                            # the last calres packet: (state, flags, saved, current, time, received)
 
 
-STABLE_S = 60.0                            # wątek działał tyle bez błędu -> kolejny błąd liczony od nowa
+STABLE_S = 60.0                            # a thread ran this long without an error -> the next error is counted from scratch
 
 
 def run_forever(name, fn, *args):
-    """Pętla wątku w tle, której nieoczekiwany wyjątek nie wyłączy na stałe: błąd jest wypisywany
-    (pierwszy z pełnym śladem), a pętla startuje ponownie po chwili. Kończy się, gdy fn wróci przy S.stop.
-    Licznik błędów zeruje się po STABLE_S spokojnej pracy - rzadkie błędy nie narastają do 5 s przerwy (wątek sieci:
-    5 s bez padów)."""
+    """A background thread loop whose unexpected exception does not disable it for good: the error is printed
+    (the first one with a full trace) and the loop starts again after a moment. It ends when fn returns on S.stop.
+    The error counter resets after STABLE_S of calm work - rare errors do not grow into a 5 s pause (network thread:
+    5 s without pads)."""
     errors = 0
     while not stop.is_set():
         t0 = time.monotonic()
@@ -116,32 +116,35 @@ def run_forever(name, fn, *args):
 
 
 def start_thread(name, fn, *args):
+    """Start a daemon thread running fn under run_forever and return it."""
     t = threading.Thread(target=run_forever, args=(name, fn, *args), name=name, daemon=True)
     t.start()
     return t
 
 
 def sender_online(now=None):
+    """Whether a packet from the sender arrived within SENDER_TIMEOUT."""
     return (now or time.monotonic()) - last_pkt < SENDER_TIMEOUT
 
 
-push = None        # rx_ds4.push: raport do wirtualnego DS4 od razu w wątku zmiany (bez rx_ds4 - tylko budzenie)
-on_remap = None    # rx_feedback: nowy profil slotu -> od razu wyślij opór spustów (bez czekania na pętlę)
+push = None        # rx_ds4.push: a report to the virtual DS4 at once in the changing thread (without rx_ds4 - only a wake-up)
+on_remap = None    # rx_feedback: a new slot profile -> send the trigger resistance at once (without waiting for the loop)
 
 
 def notify(i):
-    """Zmiana stanu slotu i: raport DS4 od razu (rx_ds4.push), serwer DSU wysyła swoim wątkiem."""
+    """A change of slot i state: a DS4 report at once (rx_ds4.push), the DSU server sends from its own thread."""
     if push is not None:
         push(i)
     else:
         wake[i].set()
-    if dsu_active:              # bez klientów DSU: bez ~1000 pustych wybudzeń/s wątku DSU (walczył o GIL z wątkiem sieci)
+    # without DSU clients: no ~1000 empty wake-ups/s of the DSU thread (it fought the network thread for the GIL)
+    if dsu_active:
         dsu_wake.set()
 
 
 def recompute(s, prof):
-    """Przelicza stan wyjściowy z surowych wejść wg profilu (wołać pod lock):
-    remap przycisków -> zamiana / odwrócenie gałek -> kształtowanie gałek i spustów -> gyro."""
+    """Recompute the output state from the raw inputs according to the profile (call under lock):
+    button remap -> stick swap / inversion -> stick and trigger shaping -> gyro."""
     tun, g = prof["tuning"], prof["gyro"]
     lt, rt = s["raw"][3:5]
     s["mask"], s["hx"], s["hy"], lt, rt = apply_remap(prof["buttons"], *s["fwd"], lt, rt)
@@ -164,7 +167,7 @@ def recompute(s, prof):
 
 
 def set_remap(i, prof):
-    """Ustaw profil dla slotu i i natychmiast przelicz aktualny stan z surowych wejść."""
+    """Set the profile of slot i and immediately recompute the current state from the raw inputs."""
     with lock:
         remap_maps[i] = prof
         s = states[i]
@@ -178,20 +181,22 @@ def set_remap(i, prof):
 
 
 def profile_key(i):
-    """Klucz profilu pada (bez gry)."""
+    """The profile key of a pad (without a game)."""
     return store.key_for(pad_id[i], i)
 
 
 def game_key(base, exe):
+    """The game profile key "<pad>@<game.exe>"."""
     return f"{base}@{exe}"
 
 
 def profile_label(key):
+    """The label of a profile key: the game executable for a game profile, "default" otherwise."""
     return key.split("@", 1)[1] if "@" in key else "default"
 
 
 def active_key(i):
-    """Profil do użycia: ręcznie wybrany > profil gry na pierwszym planie > profil pada."""
+    """The profile to use: manually chosen > the profile of the foreground game > the pad profile."""
     base = profile_key(i)
     if override[i] and override[i] in store.keys_for(base):
         return override[i]
@@ -201,9 +206,9 @@ def active_key(i):
 
 
 def effective_profile(i, key, drift=True):
-    """Profil do użycia na padzie: profil gry dziedziczy z profilu pada efekty spustów, których sam nie ustawia
-    (pozostałe części profilu gry zastępują profil pada w całości, jak dotąd); korekcja dryfu gałek tego pada
-    (rx_padcal) działa w każdym profilu jako minimum strefy martwej (drift=False - bez niej: liczba zmian profilu)."""
+    """The profile to use on a pad: a game profile inherits from the pad profile the trigger effects it does not set itself
+    (the other parts of a game profile replace the pad profile as a whole, as before); this pad's stick drift correction
+    (rx_padcal) works in every profile as a minimum deadzone (drift=False - without it: the number of profile changes)."""
     prof = store.get(key)
     base = profile_key(i)
     if key != base:
@@ -212,7 +217,7 @@ def effective_profile(i, key, drift=True):
 
 
 def profile_changes(i):
-    """Liczba zmian profilu w użyciu (karta pada, log) - bez korekcji dryfu, która nie jest częścią profilu."""
+    """The number of changes of the profile in use (pad card, log) - without the drift correction, which is not part of the profile."""
     return profile_size(effective_profile(i, active[i], drift=False))
 
 
@@ -220,8 +225,8 @@ NEUTRAL_OUT = {**new_state(), "ver": None}
 
 
 def output(i):
-    """Stan slotu dla gry (raport DS4, DSU) - wołać pod lock. Zablokowany slot (widok Test) = neutralny stan: puszczone
-    przyciski, gałki w środku, bez ruchu i dotyku; bateria i czas próbki jak naprawdę."""
+    """The state of a slot for the game (DS4 report, DSU) - call under lock. A blocked slot (Test view) = a neutral state: released
+    buttons, sticks centred, no motion and touch; battery and sample time as they really are."""
     s = states[i]
     if not s["blocked"]:
         return s
@@ -229,7 +234,7 @@ def output(i):
 
 
 def set_blocked(i, on):
-    """Widok Test: wyjście slotu do gry neutralne (on) albo z powrotem na żywo. -> True, gdy się zmieniło."""
+    """Test view: the slot output to the game neutral (on) or live again. -> True when it changed."""
     with lock:
         s = states[i]
         if s["blocked"] == on:
@@ -245,7 +250,7 @@ def set_blocked(i, on):
 
 
 def reload_profile(i):
-    """Ustawia profil wg active_key(). -> True, gdy zmienił się klucz profilu."""
+    """Set the profile per active_key(). -> True when the profile key changed."""
     with profile_lock:
         key = active_key(i)
         changed, active[i] = key != active[i], key
@@ -254,7 +259,7 @@ def reload_profile(i):
 
 
 def use_profile(i, key):
-    """Ręczny wybór profilu (edytor, skrót) do następnej zmiany okna. -> False, gdy profil nie istnieje."""
+    """Manual profile choice (editor, shortcut) until the next window change. -> False when the profile does not exist."""
     with profile_lock:
         if key not in store.keys_for(profile_key(i)):
             return False
@@ -264,7 +269,7 @@ def use_profile(i, key):
 
 
 def cycle_profile(i, step):
-    """Następny / poprzedni profil pada (ręcznie, do zmiany gry). -> nowy klucz."""
+    """The next / previous pad profile (manually, until the game changes). -> the new key."""
     with profile_lock:
         keys = store.keys_for(profile_key(i))
         cur = active[i] if active[i] in keys else keys[0]
@@ -273,7 +278,7 @@ def cycle_profile(i, step):
 
 
 def set_game(exe):
-    """Zmiana programu na pierwszym planie. -> sloty, którym zmienił się profil."""
+    """The foreground program changed. -> the slots whose profile changed."""
     global game
     with profile_lock:
         if exe == game:
@@ -288,7 +293,7 @@ def set_game(exe):
 
 
 def reset_state(i):
-    """Neutralny stan pada (puszczone przyciski, wyśrodkowane drążki)."""
+    """A neutral pad state (released buttons, centred sticks); the version counter and the block flag are kept."""
     with lock:
         ver, blocked = states[i]["ver"] + 1, states[i]["blocked"]
         states[i].update(new_state())

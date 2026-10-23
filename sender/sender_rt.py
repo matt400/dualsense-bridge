@@ -1,30 +1,35 @@
-"""Sender: tryb niskich opóźnień telefonu (wymaga doas / roota; bez uprawnień - log i dalej bez zmian).
+"""Sender: low-latency mode for the phone (needs doas / root; without privileges it logs and carries on unchanged).
 
-Skoki pingu i opóźnienia wejścia o kilka ms na telefonie nie biorą się z sieci (Ethernet: < 1 ms), tylko z
-oszczędzania energii procesora:
-  uśpienie klastra   bez ruchu na padzie / w sieci rdzenie i cały klaster zasypiają głęboko; wybudzenie trwa
-                     milisekundy (Snapdragon 845: wyjście z "cluster sleep" ~6.5 ms) - tyle czeka pong albo raport
-                     pada. PM QoS (/dev/cpu_dma_latency) zabrania stanów z dłuższym wybudzeniem niż cpu_latency_us,
-                     dopóki plik jest otwarty (jądro zdejmuje blokadę samo, gdy proces się kończy - także po awarii).
-  małe rdzenie       Python na rdzeniu "LITTLE" przy niskim zegarze przetwarza zdarzenie kilka razy dłużej;
-                     proces jest przypinany do najszybszych rdzeni (największe cpu_capacity w sysfs).
-  planista           SCHED_FIFO (rt_priority): wątek nadajnika nie czeka w kolejce za innymi procesami. Z flagą
-                     RESET_ON_FORK - uruchamiane programy (bluetoothctl) dostają zwykły priorytet.
+Ping spikes and input delays of a few ms on a phone do not come from the network (Ethernet: < 1 ms) but from the
+CPU's power saving:
+  cluster sleep      with no pad or network traffic the cores and the whole cluster fall into deep sleep; waking up
+                     takes milliseconds (Snapdragon 845: leaving "cluster sleep" ~6.5 ms) - that is how long a pong or
+                     a pad report waits. PM QoS (/dev/cpu_dma_latency) forbids idle states whose wake-up is longer
+                     than cpu_latency_us for as long as the file stays open (the kernel drops the request by itself
+                     when the process exits - also after a crash).
+  little cores       Python on a "LITTLE" core at a low clock needs several times longer to process an event; the
+                     process is pinned to the fastest cores (largest cpu_capacity in sysfs).
+  scheduler          SCHED_FIFO (rt_priority): the sender thread does not wait in the run queue behind other
+                     processes. With the RESET_ON_FORK flag - programs it launches (bluetoothctl) get a normal priority.
 """
 import errno
 import glob
 import os
 import struct
 
-_qos = None        # otwarty /dev/cpu_dma_latency - trzymany do końca procesu
+_qos = None        # the open /dev/cpu_dma_latency - kept open until the process ends
 
 
 def hold_cpu_latency(us, path="/dev/cpu_dma_latency"):
-    """PM QoS: maksymalne opóźnienie wybudzenia procesora w µs. -> opis albo None (brak uprawnień / pliku)."""
+    """PM QoS: cap the CPU wake-up latency at `us` microseconds. Returns a description, or None (no permission / no file).
+
+    The kernel honours the request only while the file descriptor stays open, so the file is stored in a module
+    global instead of being closed. If the request is made again, the new descriptor replaces (and closes) the old one.
+    """
     global _qos
     f = None
     try:
-        f = open(path, "wb", buffering=0)  # noqa: SIM115 - trzymany otwarty do końca procesu
+        f = open(path, "wb", buffering=0)  # noqa: SIM115 - kept open until the process ends
         f.write(struct.pack("i", us))
     except OSError as e:
         if f is not None:
@@ -38,7 +43,11 @@ def hold_cpu_latency(us, path="/dev/cpu_dma_latency"):
 
 
 def fast_cpus(sys_root="/sys"):
-    """Rdzenie o największej wydajności (cpu_capacity) albo pusty zbiór, gdy wszystkie są takie same / brak danych."""
+    """Return the set of CPUs with the highest capacity (sysfs cpu_capacity).
+
+    On big.LITTLE SoCs every core reports a relative capacity; the cores sharing the maximum value are the "big" ones.
+    The result is empty when all cores are identical or the data is unavailable, because then pinning would be pointless.
+    """
     cap = {}
     for p in glob.glob(f"{sys_root}/devices/system/cpu/cpu[0-9]*/cpu_capacity"):
         try:
@@ -53,6 +62,11 @@ def fast_cpus(sys_root="/sys"):
 
 
 def pin_fast_cpus(sys_root="/sys"):
+    """Restrict this process to the fast cores that it is allowed to use; returns a description or None.
+
+    The fast set is intersected with the current affinity mask, so cgroup/cpuset limits are respected. Nothing is
+    changed when there is no distinction between cores or the affinity call fails.
+    """
     cpus = fast_cpus(sys_root) & os.sched_getaffinity(0)
     if not cpus:
         return None
@@ -64,13 +78,14 @@ def pin_fast_cpus(sys_root="/sys"):
     return "fast cores " + ",".join(map(str, sorted(cpus)))
 
 
-# numer wywołania systemowego sched_setscheduler (asm-generic: aarch64, riscv64; inne architektury osobno)
+# system call number of sched_setscheduler (asm-generic: aarch64, riscv64; other architectures listed separately)
 _SYS_SCHED_SETSCHEDULER = {"x86_64": 144, "i686": 156, "i386": 156, "armv7l": 156, "armv6l": 156, "armv8l": 156}
 
 
 def _sched_syscall(policy, priority):
-    """sched_setscheduler wprost przez syscall. musl (Alpine, postmarketOS) celowo nie implementuje tej funkcji libc
-    (zawsze ENOSYS), więc os.sched_setscheduler nie działa tam nigdy, także jako root."""
+    """Call sched_setscheduler directly through the raw syscall. musl (Alpine, postmarketOS) deliberately does not
+    implement this libc function (it always returns ENOSYS), so os.sched_setscheduler never works there, even as root.
+    The kernel itself supports the call, so we skip libc and invoke it by its syscall number."""
     import ctypes
     import platform
     libc = ctypes.CDLL(None, use_errno=True)
@@ -82,6 +97,12 @@ def _sched_syscall(policy, priority):
 
 
 def realtime(priority):
+    """Switch this process to the SCHED_FIFO real-time policy with the given priority; returns a description or None.
+
+    Priority 0 means "disabled". The standard library call is tried first; if libc answers ENOSYS (musl), the raw
+    syscall is used instead. SCHED_RESET_ON_FORK makes child processes (bluetoothctl) fall back to a normal
+    priority. Failures (typically a missing root privilege) are logged and are not fatal.
+    """
     if not priority:
         return None
     policy = os.SCHED_FIFO | getattr(os, "SCHED_RESET_ON_FORK", 0)
@@ -91,7 +112,7 @@ def realtime(priority):
         except OSError as e:
             if e.errno != errno.ENOSYS:
                 raise
-            _sched_syscall(policy, priority)     # musl: funkcja libc nie istnieje, jądro obsługuje ją normalnie
+            _sched_syscall(policy, priority)     # musl: the libc function does not exist, the kernel handles the call normally
     except (OSError, AttributeError) as e:
         hint = " - run with doas" if getattr(e, "errno", None) in (errno.EPERM, errno.EACCES) else ""
         print(f"Low latency: realtime scheduling unavailable ({e}){hint}")
@@ -100,7 +121,11 @@ def realtime(priority):
 
 
 def setup(low_latency, cpu_latency_us, rt_priority):
-    """Wszystko naraz na starcie nadajnika; każdy krok niezależny."""
+    """Apply every latency tweak once at sender startup; each step is independent, so one failing does not block the rest.
+
+    A small negative nice value and (if configured) real-time scheduling are always attempted; the PM QoS request
+    and the fast-core pinning only run when low_latency is enabled. The steps that worked are summarised in one log line.
+    """
     try:
         os.nice(-10)
     except OSError:

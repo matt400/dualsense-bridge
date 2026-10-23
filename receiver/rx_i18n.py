@@ -1,22 +1,25 @@
-"""Receiver: język okna - polski (teksty w kodzie) albo angielski (słownik EN poniżej).
+"""Receiver: the window language - Polish (the texts in the code) or English (the EN dictionary below).
 
-    _("Zapisz")                  -> "Zapisz" albo "Save"
-    _("Pad {n}").format(n=2)     -> szablon tłumaczony, potem wstawiane wartości
+    _("Zapisz")                  -> "Zapisz" or "Save"
+    _("Pad {n}").format(n=2)     -> a translated template, then the values are inserted
 
-Język wybiera się w oknie (Ustawienia -> Okno), zapis w settings.json; zmiana działa po restarcie receivera
-(okno budowane jest raz). Logi w konsoli zostają po angielsku. tests/test_i18n.py sprawdza, że każdy tekst
-z _("...") w kodzie ma tłumaczenie.
+The language is chosen in the window (Settings -> Window), saved in settings.json; a change takes effect after a receiver restart
+(the window is built once). Console logs stay in English. tests/test_i18n.py checks that every text
+from _("...") in the code has a translation.
 """
 LANGS = {"pl": "Polski", "en": "English"}
 lang = "pl"
 
 
 def set_lang(code):
+    """Select the language (an unknown code falls back to Polish)."""
     global lang
     lang = code if code in LANGS else "pl"
 
 
 def _(text):
+    """Translate a Polish UI text: the EN dictionary entry in English mode, otherwise the text itself (the Polish text is the lookup
+    key)."""
     return EN.get(text, text) if lang == "en" else text
 
 
@@ -68,7 +71,7 @@ EN = {
         "Version {v} will be installed on {when} - new releases wait a few days (security)",
     "Odrzucono przeterminowane pakiety nadajnika (powtórzone nagranie albo problem z zegarem)":
         "Expired sender packets rejected (a replayed recording or a clock problem)",
-    # ---------- okno główne ----------
+    # ---------- main window ----------
     "Wynik": "Result",
     "Dostępna aktualizacja: {n}": "Update available: {n}",
     "Adres nadajnika: {ip}": "Sender address: {ip}",
@@ -134,7 +137,7 @@ EN = {
     "DualSense bridge - NISKA BATERIA": "DualSense bridge - LOW BATTERY",
     "Nadajnik": "Sender",
     "Brak podłączonych padów": "No pads connected",
-    # ---------- panele ----------
+    # ---------- panels ----------
     "+ Gra": "+ Game",
     "Nowy profil dla gry": "New profile for a game",
     "Usuń": "Delete",
@@ -179,7 +182,7 @@ EN = {
     "Gyro nieaktywne — przytrzymaj {b}": "Gyro idle — hold {b}",
     "Usuń tę zmianę": "Remove this change",
     "Brak zmian - wszystko działa domyślnie.": "No changes - everything works as default.",
-    # ---------- przyciski i gałki ----------
+    # ---------- buttons and sticks ----------
     "Krzyżyk (X)": "Cross (X)",
     "Kółko (O)": "Circle (O)",
     "Trójkąt": "Triangle",
@@ -206,7 +209,7 @@ EN = {
     "Prawa gałka (działa w każdej grze)": "Right stick (works in every game)",
     "Mysz (strzelanki na PC, menu)": "Mouse (PC shooters, menus)",
     "TOUCHPAD": "TOUCHPAD",
-    # ---------- edytor profilu ----------
+    # ---------- profile editor ----------
     "Wpisz nazwę pliku .exe gry, np. eldenring.exe": "Type the game's .exe file name, e.g. eldenring.exe",
     "Domyślny": "Default",
     "● = profil teraz w użyciu": "● = profile in use right now",
@@ -239,12 +242,12 @@ EN = {
     "Usunięto - {file}": "Deleted - {file}",
     "Usunięto": "Deleted",
     "Zapis nieudany: {err}": "Save failed: {err}",
-    # ---------- łącze ----------
+    # ---------- link ----------
     "ping {ms} ms": "ping {ms} ms",
     "strata {pct}%": "loss {pct}%",
     "pad {hz} Hz": "pad {hz} Hz",
     "{n} pkt/s": "{n} pkt/s",
-    # ---------- okno ustawień ----------
+    # ---------- settings window ----------
     "Tryb konsoli": "Console mode",
     "Mysz": "Mouse",
     "Master": "Master",
@@ -336,7 +339,7 @@ EN = {
     "Tryb konsoli nie działa w tym uruchomieniu.": "Console mode is not running in this session.",
     "Test: TV i dźwięk TV na {s} s, potem powrót do trybu rozszerzonego.":
         "Test: TV and TV sound for {s} s, then back to extended mode.",
-    # ---------- pad master / mysz (rx_settings) ----------
+    # ---------- master pad / mouse (rx_settings) ----------
     "Tryb konsoli (ekran i dźwięk)": "Console mode (screen and sound)",
     "Akcje systemowe (PS + przycisk)": "System actions (PS + button)",
     "Przytrzymanie PS: Game Bar / Big Picture": "Holding PS: Game Bar / Big Picture",
@@ -355,7 +358,7 @@ EN = {
         "Pad {n} has not sent its ID (MAC) yet - try again in a moment",
     "Bez zmian": "No change",
     "Zapisano": "Saved",
-    # ---------- tryb konsoli (powiadomienia) ----------
+    # ---------- console mode (notifications) ----------
     "Tryb konsoli włączony": "Console mode on",
     "Tryb konsoli wyłączony": "Console mode off",
     "Brak sygnału z pada przez {s} s": "No signal from the pad for {s} s",
@@ -366,7 +369,7 @@ EN = {
     "wyłączanie komputera": "shutting down the PC",
     "usypianie komputera": "putting the PC to sleep",
     "wyłączanie Windows": "Windows shutting down",
-    # ---------- układ okna (sekcje, przyciski) ----------
+    # ---------- window layout (sections, buttons) ----------
     "PRZEŁĄCZANIE": "SWITCHING",
     "TELEWIZOR I DŹWIĘK": "TV AND SOUND",
     "BLOKADA W GRZE": "IN-GAME LOCK",
@@ -382,7 +385,7 @@ EN = {
     "Zmiana języka działa po restarcie receivera.": "The language changes after the receiver restarts.",
     "Przejęcie na padzie: PS + R3 przez {s} s": "Take over on the pad: PS + R3 for {s} s",
     "Wibracja": "Rumble",
-    # ---------- wibracja ----------
+    # ---------- rumble ----------
     "wibracja: stary nadajnik": "rumble: old sender",
     "Skopiuj nowe pliki sender/ na telefon - starszy nadajnik nie wibruje bez obsługi wibracji w jądrze.":
         "Copy the new sender/ files to the phone - an older sender cannot rumble without kernel rumble support.",
@@ -401,7 +404,7 @@ EN = {
         "The sender did not find /dev/hidraw of this pad - on the phone: doas python3 sender_rumble.py --test",
     "sterownik": "driver",
     "wibracja: {ways}": "rumble: {ways}",
-    # ---------- aktualizacja ----------
+    # ---------- update ----------
     "Aktualizuj": "Update",
     "Aktualizować?": "Update?",
     "Aktualizuję…": "Updating…",
@@ -446,13 +449,13 @@ EN = {
     "nowe biblioteki zainstalowane": "new libraries installed",
     "Uruchom ponownie receiver (przycisk Restart w oknie), żeby działał nowy kod.":
         "Restart the receiver (Restart button in the window) to run the new code.",
-    # ---------- ikony ----------
+    # ---------- icons ----------
     "Ekran": "Screen",
     "Uruchom ponownie": "Restart",
     "Kopie ustawień": "Settings backups",
     "Opóźnienie": "Latency",
     "Nowy profil gry": "New game profile",
-    # ---------- opóźnienie pad -> gra ----------
+    # ---------- latency pad -> game ----------
     "Opóźnienie pad → gra": "Latency pad → game",
     "średnia · {stats} ms · {n} próbek z 5 s": "average · {stats} ms · {n} samples from 5 s",
     "Bluetooth (ponad minimum)": "Bluetooth (above minimum)",
@@ -472,7 +475,7 @@ EN = {
         "Buttons, D-pad and triggers only (press / release) - no sticks or gyro.",
     "Wyzeruj pomiar przycisk → gra": "Reset the button → game measurement",
     "Wyzeruj": "Reset",
-    # ---------- efekty spustów ----------
+    # ---------- trigger effects ----------
     "EFEKT SPUSTU": "TRIGGER EFFECT",
     "Efekt": "Effect",
     "Jak w profilu pada": "As in the pad profile",
@@ -530,7 +533,7 @@ EN = {
     "ZAAWANSOWANE: REAKCJA GAŁKI": "ADVANCED: STICK RESPONSE",
     "Usuń wszystkie": "Remove all",
     "Usunąć wszystkie?": "Remove all?",
-    # ---------- kopie ustawień ----------
+    # ---------- settings backups ----------
     "Kopie": "Backups",
     "KOPIE USTAWIEŃ": "SETTINGS BACKUPS",
     "Przed każdą aktualizacją receiver kopiuje settings.json, console.json, remap.json i padcal.json (zostaje {n} ostatnich). "
@@ -562,7 +565,7 @@ EN = {
     "kopia ustawień zapisana": "settings backed up",
     "brak ustawień do skopiowania": "no settings to back up",
     "kopia ustawień nieudana: {err}": "settings backup failed: {err}",
-    # ---------- dziennik zdarzeń ----------
+    # ---------- event log ----------
     "Dziennik zdarzeń": "Event log",
     "DZIENNIK ZDARZEŃ": "EVENT LOG",
     "Schowaj dziennik zdarzeń": "Hide the event log",
@@ -726,7 +729,7 @@ EN = {
         "Invalid MAC address - enter e.g. aa:bb:cc:dd:ee:ff or leave it empty.",
     "Zły adres broadcast - wpisz np. 192.168.1.255 albo zostaw puste.":
         "Invalid broadcast address - enter e.g. 192.168.1.255 or leave it empty.",
-    # ---------- widok Test ----------
+    # ---------- Test view ----------
     "Test": "Test",
     "Wynik = to, co dostaje gra po remapowaniu. Fizycznie = to, co robi sam pad. Test = przyciski, spusty, gałki, "
     "touchpad i ruch na żywo, dryf gałek, kalibracja żyroskopu.":
@@ -798,12 +801,12 @@ EN = {
     "Offset teraz [°/s]: {v}": "Current offset [°/s]: {v}",
     "{pad}: żyroskop skalibrowany": "{pad}: gyro calibrated",
     "{pad}: kalibracja żyroskopu przerwana - pad się ruszał": "{pad}: gyro calibration aborted - the pad was moving",
-    # ---------- widok Test: wyjście z pada ----------
+    # ---------- Test view: leaving the pad ----------
     "{pad}: wyjście z widoku Test (Options + Create)": "{pad}: left the Test view (Options + Create)",
     "Wyjście z widoku Test z pada (Options + Create)": "Left the Test view from the pad (Options + Create)",
     "Skróty padów nie działają; Options + Create (pad master) kończy test.":
         "Pad shortcuts are off; Options + Create (master pad) ends the test.",
-    # ---------- Bluetooth nadajnika (rx_bt, panel w oknie) ----------
+    # ---------- the sender's Bluetooth (rx_bt, the panel in the window) ----------
     "Bluetooth nadajnika: brak danych (nadajnik offline albo starsza wersja - Aktualizuj)":
         "Sender Bluetooth: no data (sender offline or an older version - Update)",
     "Bluetooth nadajnika: brak danych od {s} s": "Sender Bluetooth: no data for {s} s",
@@ -884,7 +887,7 @@ EN = {
     "nowy": "new",
     "połączony": "connected",
     "sparowany": "paired",
-    # ---------- panel skrótów pada ----------
+    # ---------- pad shortcuts panel ----------
     '2 palce': '2 fingers',
     'Brak przypisanych akcji (Ustawienia → Master).': 'No actions assigned (Settings → Master).',
     'Czułość myszy touchpada +15 %': 'Touchpad mouse sensitivity +15 %',
@@ -927,7 +930,7 @@ EN = {
     'Steam Big Picture': 'Steam Big Picture',
     'Zrzut ekranu (Obrazy\\Zrzuty ekranu)': 'Screenshot (Pictures\\Screenshots)',
     'Zrzut ekranu przez Game Bar': 'Screenshot via Game Bar',
-    # ---------- autostart, tryb konsoli przy starcie ----------
+    # ---------- autostart, console mode at startup ----------
     "Autostart przeniesiony do Harmonogramu zadań - receiver startuje zaraz po zalogowaniu":
         "Autostart moved to Task Scheduler - the receiver starts right after logon",
     "Receiver uruchomiony {s} s po starcie Windows": "Receiver started {s} s after Windows start",

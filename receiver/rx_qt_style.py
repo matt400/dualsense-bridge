@@ -1,7 +1,7 @@
-"""Receiver: motyw okna (ciemny, akcent w kolorze PlayStation): kolory, QSS ze skalą, paleta Qt.
+"""Receiver: the window theme (dark, with a PlayStation-blue accent): colours, scaled QSS, the Qt palette.
 
-Skala: tryb TV (pełny ekran) powiększa czcionki, odstępy i stałe szerokości (MainWindow.apply_scale) - okno
-czytelne z kanapy. QSS jest generowany dla danej skali (qss(scale)); px(n) przelicza wymiary w kodzie okna.
+Scale: TV mode (full screen) enlarges fonts, spacing and fixed widths (MainWindow.apply_scale) - a window
+readable from the couch. The QSS is generated for a given scale (qss(scale)); px(n) converts dimensions used in the window code.
 """
 from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import QApplication
@@ -9,22 +9,23 @@ from PySide6.QtWidgets import QApplication
 BG, CARD, CARD_HI, BORDER, TRACK, LINE = "#0e1016", "#161922", "#1b1f2a", "#252a36", "#1f2430", "#323849"
 FG, DIM, MUTED = "#eceef4", "#8d93a5", "#5a6072"
 OK, WARN, BAD, CHARGE, ACCENT, ACCENT_HI = "#3ecf8e", "#ffb547", "#ff6b6b", "#5bc0ff", "#4c8dff", "#6ea2ff"
-ARMED = "#d93a3f"      # tło przycisku "na pewno?" - ciemniejsza czerwień, biały napis jest czytelny
-LEVEL = {"ok": OK, "warn": WARN, "bad": BAD, "charge": CHARGE}     # poziom z rx_status -> kolor
-# odcinki opóźnienia (karta pada, rx_latency): Bluetooth, telefon, sieć, PC
+ARMED = "#d93a3f"      # background of the "are you sure?" button - a darker red, so the white label stays readable
+LEVEL = {"ok": OK, "warn": WARN, "bad": BAD, "charge": CHARGE}     # level from rx_status -> colour
+# latency segments (pad card, rx_latency): Bluetooth, phone, network, PC
 SEGMENT = {"bt": "#a78bfa", "phone": "#34d3c9", "net": ACCENT, "pc": OK}
 TV_SCALE = 1.35
 
 scale = 1.0
-_palette = False      # ciemna paleta ustawiona (raz - zmiana skali podmienia tylko QSS)
+_palette = False      # dark palette already set (once - a scale change only swaps the QSS)
 
 
 def px(n):
-    """Wymiar w pikselach w bieżącej skali (tryb TV)."""
+    """A dimension in pixels at the current scale (TV mode)."""
     return round(n * scale)
 
 
 def qss(k=1.0):
+    """The whole application stylesheet with every pixel size multiplied by `k` (the TV-mode scale)."""
     def p(n):
         return f"{round(n * k)}px"
     return f"""
@@ -142,8 +143,8 @@ QMessageBox {{ background: {CARD}; }}
 
 
 def apply_theme(app: QApplication, k=1.0):
-    """Styl Fusion + ciemna paleta (dla elementów, których QSS nie obejmuje: okna dialogowe, podpowiedzi) + QSS.
-    k = skala (tryb TV); zmiana skali tylko podmienia QSS, paleta zostaje."""
+    """Fusion style + a dark palette (for elements the QSS does not cover: dialogs, tooltips) + the QSS.
+    k = scale (TV mode); a scale change only swaps the QSS, the palette stays."""
     global scale, _palette
     scale = k
     if not _palette:
@@ -162,7 +163,7 @@ def apply_theme(app: QApplication, k=1.0):
 
 
 def set_prop(widget, name, value):
-    """Ustawia właściwość używaną w QSS ([level="ok"], [selected="true"]...) i odświeża styl tylko, gdy się zmieniła."""
+    """Set a property used in the QSS ([level="ok"], [selected="true"]...) and repolish the style only when it changed."""
     if widget.property(name) != value:
         widget.setProperty(name, value)
         widget.style().unpolish(widget)

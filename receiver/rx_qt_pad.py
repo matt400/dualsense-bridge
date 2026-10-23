@@ -1,9 +1,9 @@
-"""Receiver: rysunek pada (QPainter) - klikalne części, podświetlenie na żywo i plakietki zmian profilu.
+"""Receiver: the pad drawing (QPainter) - clickable parts, live highlighting and profile change badges.
 
-Kształty pochodzą z rysunku SVG edytora w przeglądarce (ten sam układ 800x520); rysowane bezpośrednio, więc
-odświeżenie 30 razy na sekundę kosztuje niewiele, a trafianie w części jest dokładne (kontur, nie prostokąt).
-Klawiatura / pad w trybie TV (rx_qt_tv): ← / → przechodzą po częściach, Enter / Spacja wybiera część.
-Tryb testu (set_test): bez plakietek profilu i bez klikania; wartości spustów nad nimi, palce i klik na touchpadzie.
+The shapes come from the browser editor's SVG drawing (the same 800x520 layout); they are painted directly, so
+a refresh 30 times a second costs little, and hit-testing is exact (the outline, not a rectangle).
+Keyboard / pad in TV mode (rx_qt_tv): ← / → move over the parts, Enter / Space picks a part.
+Test mode (set_test): no profile badges and no clicking; trigger values above them, fingers and the touchpad click.
 """
 from rx_i18n import _
 import re
@@ -19,26 +19,28 @@ from rx_qt_style import ACCENT as _ACCENT
 from rx_qt_style import BAD as _BAD
 from rx_qt_style import BG as _BG
 
-VIEW_X, VIEW_Y, VIEW_W, VIEW_H = 44, 24, 712, 484     # kadr rysunku (współrzędne SVG 800x520 bez pustych marginesów)
+VIEW_X, VIEW_Y, VIEW_W, VIEW_H = 44, 24, 712, 484     # the drawing's frame (SVG 800x520 coordinates without the empty margins)
 ACCENT, BAD, DARK = QColor(_ACCENT), QColor(_BAD), QColor(_BG)
 SHAPE, EDGE, ARROW = QColor("#343a48"), QColor("#525a6d"), QColor("#8e96ab")
 LABEL = QColor("#c9cddb")
 WHITE = QColor("#ffffff")
-TRIG_FX = QColor("#a78bfa")                           # plakietka oporu spustu (jak odcinek Bluetooth - fiolet)
-# kolejność części przy przechodzeniu strzałkami (tryb TV): od lewej do prawej, mniej więcej po rysunku
+TRIG_FX = QColor("#a78bfa")                           # the trigger resistance badge (like the Bluetooth segment - violet)
+# the order of parts when moving with the arrows (TV mode): left to right, roughly following the drawing
 NAV_ORDER = ("l2", "l1", "dpad_up", "dpad_left", "dpad_right", "dpad_down", "share", "left_stick", "ps", "right_stick",
              "options", "triangle", "square", "circle", "cross", "r1", "r2")
-STICK_TRAVEL = 14      # o tyle (jednostek rysunku) przesuwa się gałka przy pełnym wychyleniu
-TOUCH_RECT = QRectF(300, 112, 200, 96)                # touchpad na rysunku; dotyk z nadajnika w skali DS4 1920x943
+STICK_TRAVEL = 14      # by this much (drawing units) the stick knob moves at full deflection
+TOUCH_RECT = QRectF(300, 112, 200, 96)                # the touchpad in the drawing; the sender's touch is in the DS4 1920x943 scale
 TOUCH_W, TOUCH_H = 1919, 942
-FINGER = (QColor("#ffb547"), QColor("#5bc0ff"))       # pierwszy / drugi palec
+FINGER = (QColor("#ffb547"), QColor("#5bc0ff"))       # first / second finger
 
 _TOKENS = re.compile(r"[A-Za-z]|-?\d+(?:\.\d+)?")
 _ARGS = {"M": 2, "L": 2, "H": 1, "V": 1, "C": 6, "Q": 4}
 
 
 def svg_path(d):
-    """Ścieżka SVG (tylko polecenia bezwzględne M L H V C Q Z - tyle wystarcza rysunkowi) -> QPainterPath."""
+    """An SVG path (absolute commands M L H V C Q Z only - enough for this drawing) -> a QPainterPath.
+    Tokens are commands (letters) and numbers; a command's arguments are read in groups of _ARGS[cmd], and a repeated group reuses the
+    command."""
     path, toks, i, cmd, x, y = QPainterPath(), _TOKENS.findall(d), 0, None, 0.0, 0.0
     while i < len(toks):
         if toks[i].isalpha():
@@ -72,12 +74,14 @@ def svg_path(d):
 
 
 def _circle(cx, cy, r):
+    """A circle path with centre (cx, cy) and radius r."""
     p = QPainterPath()
     p.addEllipse(QPointF(cx, cy), r, r)
     return p
 
 
 def _round_rect(x, y, w, h, r, rot=None):
+    """A rounded rectangle path, optionally rotated by rot = (angle, cx, cy) around that point."""
     p = QPainterPath()
     p.addRoundedRect(QRectF(x, y, w, h), r, r)
     if rot:
@@ -87,6 +91,7 @@ def _round_rect(x, y, w, h, r, rot=None):
 
 
 def _poly(*pts):
+    """A closed polygon path through the given points."""
     p = QPainterPath()
     p.moveTo(*pts[0])
     for pt in pts[1:]:
@@ -96,16 +101,17 @@ def _poly(*pts):
 
 
 class Part:
-    """Klikalna część pada: kontur, opcjonalnie strzałka / symbol / napis."""
+    """A clickable part of the pad: an outline, optionally an arrow / symbol / label."""
     __slots__ = ("name", "path", "tip", "arrow", "sym", "label", "rot")
 
     def __init__(self, name, path, tip, arrow=None, sym=None, label=None, rot=None):
+        """Store the part's name, outline path, tooltip and optional arrow / symbol / label / rotation."""
         self.name, self.path, self.tip = name, path, tip
-        self.arrow, self.sym, self.label, self.rot = arrow, sym, label, rot     # label = (tekst, x, y)
+        self.arrow, self.sym, self.label, self.rot = arrow, sym, label, rot     # label = (text, x, y)
 
 
 def _build_parts():
-    """Części w kolejności rysowania (ostatnia na wierzchu - tę sprawdza kliknięcie najpierw)."""
+    """The parts in drawing order (the last one is on top - the one a click checks first)."""
     L = {k: _(v) for k, v in B.LABELS.items()}
     sym = QPainterPath()
     sym.moveTo(587, 232)
@@ -146,39 +152,43 @@ STICK_CENTER = {"left_stick": (305, 285), "right_stick": (495, 285)}
 
 
 def _lerp(a, b, t):
+    """Linear interpolation from a to b by t (0..1), rounded to an int."""
     return round(a + (b - a) * t)
 
 
 class PadView(QWidget):
-    """Rysunek pada. Sygnał part_clicked(nazwa) - nazwa wejścia (cross, l2, dpad_up...) albo left_stick / right_stick."""
+    """The pad drawing. Signal part_clicked(name) - an input name (cross, l2, dpad_up...) or left_stick / right_stick."""
     part_clicked = Signal(str)
 
     def __init__(self, parent=None):
+        """Build the parts and the static shapes, and set the initial live state (nothing pressed, sticks centred)."""
         super().__init__(parent)
         self.parts = _build_parts()
         self.by_name = {p.name: p for p in self.parts}
         self.body = svg_path(BODY)
         self.touch = _round_rect(300, 112, 200, 96, 24)
-        self.mic = _round_rect(391, 292, 18, 8, 4)          # przycisk mikrofonu - tylko rysunek (nie trafia do PC)
+        self.mic = _round_rect(391, 292, 18, 8, 4)          # the microphone button - drawing only (it does not reach the PC)
         self.selected = None
         self.hover = None
         self.live = {"on": frozenset(), "ls": (128, 128), "rs": (128, 128), "l2": 0, "r2": 0}
         self.badges = []
-        self.test = False                                 # widok Test: bez plakietek i klikania, dotyk na rysunku
-        self.touch_live = ((), 0)                         # (palce (x, y) w skali DS4, klik touchpada 0/1/2)
+        self.test = False                                 # the Test view: no badges and no clicking, touch on the drawing
+        self.touch_live = ((), 0)                         # (fingers (x, y) in the DS4 scale, touchpad click 0/1/2)
         self._tf = self._inv = QTransform()
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.TabFocus)
-        self.setMinimumSize(320, 240)      # okno 1280 px (TV 2560×1440 przy 200 %) mieści się też w trybie TV
+        self.setMinimumSize(320, 240)      # a 1280 px window (TV 2560×1440 at 200 %) fits in TV mode too
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
-    # ---------- dane ----------
+    # ---------- data ----------
     def set_selected(self, name):
+        """Mark the part being edited (drawn with the accent outline)."""
         if name != self.selected:
             self.selected = name
             self.update()
 
     def set_test(self, on):
+        """Switch the Test view on / off: it clears the selection and hover and shows the live touch instead of the badges."""
         if on != self.test:
             self.test = on
             self.selected = self.hover = None
@@ -186,21 +196,21 @@ class PadView(QWidget):
             self.update()
 
     def set_touch(self, touch, click):
-        """Dotyk na żywo (widok Test): palce ((aktywny, id, x, y), ...) i klik touchpada."""
+        """Live touch (the Test view): fingers ((active, id, x, y), ...) and the touchpad click."""
         live = (tuple((f[2], f[3]) for f in touch if f[0]), int(click))
         if live != self.touch_live:
             self.touch_live = live
             self.update()
 
     def set_profile(self, prof):
-        """Plakietki zmian profilu przy częściach pada (→ ○, ∅, ∿, gyro)."""
+        """Profile change badges next to the pad's parts (→ ○, ∅, ∿, gyro)."""
         badges = self._badges(prof)
         if badges != self.badges:
             self.badges = badges
             self.update()
 
     def set_live(self, pressed, ls, rs, l2, r2):
-        """Stan na żywo (to, co ma pokazać rysunek); odrysowuje tylko, gdy się zmienił."""
+        """Live state (what the drawing should show); repaints only when it changed."""
         on = frozenset(pressed) | {s for s, b in L3_OF.items() if b in pressed}
         live = {"on": on, "ls": tuple(ls), "rs": tuple(rs), "l2": l2, "r2": r2}
         if live != self.live:
@@ -208,6 +218,8 @@ class PadView(QWidget):
             self.update()
 
     def _badges(self, prof):
+        """Compute the badges for a profile as (x, y, text, kind): button remaps, stick source / inversion, tuning, trigger effects and
+        the gyro mode."""
         out = []
         for src, dst in prof["buttons"].items():
             name = src if src in self.by_name else next((s for s, b in L3_OF.items() if b == src), None)
@@ -228,7 +240,7 @@ class PadView(QWidget):
                 out.append((r.left() - 16 if out_name == "left" else r.right() + 16, r.center().y(), "∿", False))
         trig = prof.get("triggers", {})
         game_rv = (trig.get("rumble") or {}).get("on")
-        for name in B.TRIGGERS:                           # efekt spustu DualSense: obok spustu, na zewnątrz
+        for name in B.TRIGGERS:                           # a DualSense trigger effect: next to the trigger, on the outside
             e = trig.get(name)
             tag = {"res": _("opór {n}"), "click": _("klik {n}"), "vib": _("drgania {n}"), "off": _("bez efektu")}.get(
                 (e or {}).get("mode"), "").format(n=(e or {}).get("force", (e or {}).get("amp")))
@@ -243,12 +255,14 @@ class PadView(QWidget):
             out.append((r.center().x(), r.bottom() + 30, "gyro · mouse" if mode == "mouse" else "gyro → R", False))
         return out
 
-    # ---------- mysz ----------
+    # ---------- mouse ----------
     def _hit(self, pos):
+        """The name of the topmost part under a widget position (mapped back to drawing coordinates), or None."""
         pt = self._inv.map(QPointF(pos))
         return next((p.name for p in reversed(self.parts) if p.path.contains(pt)), None)
 
     def mouseMoveEvent(self, e):
+        """Track the hovered part: update the cursor, tooltip and highlight."""
         name = self._hit(e.position())
         if name != self.hover:
             self.hover = name
@@ -258,18 +272,20 @@ class PadView(QWidget):
             self.update()
 
     def leaveEvent(self, _e):
+        """The cursor left the widget: drop the hover highlight."""
         if self.hover is not None:
             self.hover = None
             self.update()
 
     def mousePressEvent(self, e):
+        """A left click on a part emits part_clicked (not in the Test view)."""
         if e.button() == Qt.MouseButton.LeftButton and not self.test:
             name = self._hit(e.position())
             if name:
                 self.part_clicked.emit(name)
 
     def keyPressEvent(self, e):
-        """← / → : poprzednia / następna część (podświetlona jak pod kursorem), Enter / Spacja: wybierz."""
+        """← / → : the previous / next part (highlighted as under the cursor), Enter / Space: pick."""
         k = e.key()
         if k in (Qt.Key.Key_Left, Qt.Key.Key_Right):
             cur = self.hover if self.hover in NAV_ORDER else self.selected if self.selected in NAV_ORDER else None
@@ -284,16 +300,20 @@ class PadView(QWidget):
             super().keyPressEvent(e)
 
     def focusInEvent(self, e):
+        """Repaint to show the focus frame."""
         super().focusInEvent(e)
         self.update()
 
     def focusOutEvent(self, e):
+        """Drop the keyboard hover and repaint without the focus frame."""
         super().focusOutEvent(e)
         self.hover = None
         self.update()
 
-    # ---------- rysowanie ----------
+    # ---------- drawing ----------
     def paintEvent(self, _e):
+        """Paint the stage, then the drawing scaled to fit: triggers behind the body, the body, decorations, buttons, sticks, and finally
+        the badges (or the Test overlay)."""
         p = QPainter(self)
         p.setRenderHints(QPainter.RenderHint.Antialiasing | QPainter.RenderHint.TextAntialiasing)
         self._stage(p)
@@ -302,7 +322,7 @@ class PadView(QWidget):
                     .scale(k, k).translate(-VIEW_X, -VIEW_Y))
         self._inv = self._tf.inverted()[0]
         p.setTransform(self._tf)
-        for part in self.parts[:2]:                    # spusty są za korpusem
+        for part in self.parts[:2]:                    # the triggers are behind the body
             self._part(p, part)
         g = QLinearGradient(0, 96, 0, 496)
         g.setColorAt(0, QColor("#353b4b"))
@@ -322,7 +342,7 @@ class PadView(QWidget):
             self._badge(p, cx, cy, text, bad)
 
     def _test_overlay(self, p):
-        """Widok Test: wartość spustów (0-255) nad nimi, palce na touchpadzie."""
+        """The Test view: trigger values (0-255) above them, fingers on the touchpad."""
         for name in B.TRIGGERS:
             r = self.by_name[name].path.boundingRect()
             self._badge(p, r.center().x(), r.top() - 10, str(self.live[name]), False)
@@ -334,6 +354,7 @@ class PadView(QWidget):
             p.drawEllipse(pt, 6.5, 6.5)
 
     def _stage(self, p):
+        """The rounded background panel; the border turns accent-coloured when the widget has focus."""
         r = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
         g = QRadialGradient(r.center().x(), r.top() + r.height() * 0.38, max(r.width(), r.height()) * 0.7)
         g.setColorAt(0, QColor("#1d2230"))
@@ -343,7 +364,7 @@ class PadView(QWidget):
         p.drawRoundedRect(r, 16, 16)
 
     def _decor(self, p):
-        """Elementy bez remapowania: touchpad z paskami świetlnymi, mikrofon, podstawa D-pada."""
+        """Elements without remapping: the touchpad with light bars, the microphone, the D-pad base."""
         click = self.test and self.touch_live[1]
         p.setPen(QPen(ACCENT if click else QColor("#434a5c"), 3 if click else 2))
         p.setBrush(QColor("#1b2b4d") if click else QColor("#1a1d25"))
@@ -363,9 +384,10 @@ class PadView(QWidget):
         p.drawPath(_circle(205, 200, 13))
 
     def _part(self, p, part):
+        """Paint one part: fill (accent when pressed, a trigger blends with its deflection), outline, arrow, symbol and label."""
         on = part.name in self.live["on"]
         fill = ACCENT if on else SHAPE
-        if part.name in B.TRIGGERS:                       # spust: płynne wypełnienie zależne od wychylenia
+        if part.name in B.TRIGGERS:                       # a trigger: a smooth fill depending on the deflection
             v = self.live[part.name] / 255
             if v > 0.02 and not on:
                 fill = QColor(_lerp(SHAPE.red(), ACCENT.red(), v), _lerp(SHAPE.green(), ACCENT.green(), v),
@@ -401,6 +423,7 @@ class PadView(QWidget):
                 self._text(p, text, x, y)
 
     def _stick(self, p, part):
+        """Paint a stick: the well, then the knob offset by the live deflection and its inner ring."""
         on = part.name in self.live["on"]
         cx, cy = STICK_CENTER[part.name]
         x, y = self.live["ls" if part.name == "left_stick" else "rs"]
@@ -416,7 +439,7 @@ class PadView(QWidget):
         p.drawEllipse(QPointF(cx + ox, cy + oy), 17, 17)
 
     def _edge(self, name, base=EDGE, width=1.5):
-        """Kontur części: zaznaczona = akcent i gruby, pod kursorem / wybrana z pada = biały."""
+        """A part's outline: selected = accent and thick, under the cursor / picked from the pad = white."""
         if name == self.selected:
             return QPen(ACCENT, 3.5)
         if name == self.hover:
@@ -424,7 +447,7 @@ class PadView(QWidget):
         return QPen(base, width)
 
     def _badge(self, p, cx, cy, text, kind):
-        """Plakietka zmiany: kind True = wyłączone (czerwona), "fx" = opór spustu (fiolet), inaczej akcent."""
+        """A change badge: kind True = disabled (red), "fx" = trigger resistance (violet), otherwise the accent."""
         p.setFont(self._font(11, QFont.Weight.Bold))
         w = QFontMetricsF(p.font()).horizontalAdvance(text)
         p.setPen(Qt.PenStyle.NoPen)
@@ -435,6 +458,7 @@ class PadView(QWidget):
 
     @staticmethod
     def _font(px, weight):
+        """The drawing font (Segoe UI) at a pixel size and weight."""
         f = QFont("Segoe UI")
         f.setPixelSize(px)
         f.setWeight(weight)
@@ -442,6 +466,6 @@ class PadView(QWidget):
 
     @staticmethod
     def _text(p, text, cx, y):
-        """Napis wyśrodkowany poziomo w cx, linia bazowa na y (jak text-anchor: middle w SVG)."""
+        """Text centred horizontally at cx, the baseline at y (like text-anchor: middle in SVG)."""
         p.drawText(QPointF(cx - QFontMetricsF(p.font()).horizontalAdvance(text) / 2, y), text)
 

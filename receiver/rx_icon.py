@@ -1,10 +1,15 @@
-"""Receiver: ikona pada rysowana w kodzie (okno i zasobnik) - bez plików graficznych."""
+"""Receiver: the pad icon drawn in code (window and tray) - no image files needed."""
 import struct
 import zlib
 
 
 def render_icon(rgb, size=32):
-    """Piktogram pada jako wiersze RGBA (od góry), supersampling 3x3 dla gładkich krawędzi."""
+    """Render the pad pictogram as RGBA rows (top to bottom).
+
+    Each pixel is sampled 3x3 times; a sample counts when it lies inside the solid body (rounded bar plus two grips)
+    and outside the cut-outs (d-pad and four buttons). The fraction of hits becomes the alpha channel, which
+    gives smooth edges. Coordinates are defined on a 32x32 grid and scaled by `k` for other sizes.
+    """
     def rr(x, y, x0, y0, x1, y1, r):
         cx = min(max(x, x0 + r), x1 - r)
         cy = min(max(y, y0 + r), y1 - r)
@@ -39,6 +44,7 @@ def render_icon(rgb, size=32):
 
 
 def icon_png(rows):
+    """Encode square RGBA rows as a PNG (8-bit RGBA, filter 0 per scanline, one zlib-compressed IDAT chunk)."""
     n = len(rows)
     raw = b"".join(b"\x00" + b"".join(bytes(p) for p in row) for row in rows)
 

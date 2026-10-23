@@ -1,20 +1,20 @@
-"""Receiver: autostart z Windows przez Harmonogram zadań - start zaraz po zalogowaniu.
+"""Receiver: autostart with Windows through Task Scheduler - starts right after logon.
 
-Wcześniej autostart był wpisem w HKCU\\...\\Run. Windows uruchamia takie programy z opóźnieniem i po kolei, gdy pulpit
-się uspokoi - receiver startował nawet minutę po zalogowaniu, więc pad włączony od razu po starcie PC długo nie
-przełączał ekranu w tryb konsoli. Zadanie „przy logowaniu” startuje bez tego opóźnienia, bez limitu czasu działania
-(domyślne zadanie jest zabijane po 72 h) i także na baterii.
+Autostart used to be an entry in HKCU\\...\\Run. Windows launches such programs with a delay and one after another once the desktop
+settles down - the receiver started up to a minute after logon, so a pad switched on right after the PC booted did not
+switch the screen to console mode for a long time. A "at logon" task starts without that delay, without a run time limit
+(a default task is killed after 72 h) and also on battery.
 
-  enable(exe, args)  zadanie DualSenseBridge (schtasks /xml) i usunięcie starego wpisu Run; błąd -> zostaje wpis Run
-  disable()          usuwa zadanie i wpis Run
-  migrate()          przy starcie receivera: jest stary wpis Run -> zamiana na zadanie (raz, w tle)
-  ensure_admin_task(exe, args)  zadanie DualSenseBridgeAdmin bez wyzwalacza, z najwyższymi uprawnieniami (tworzy je
-                     receiver działający jako administrator) - ręczne uruchomienie receivera startuje przez nie
-  run_admin_task(args)  start receivera jako administrator bez okna UAC (schtasks /run DualSenseBridgeAdmin) - tylko,
-                     gdy zadanie ma te same argumenty co ten start
-  elevate()          zadanie z najwyższymi uprawnieniami (HIDMaestro tworzy pady tylko jako administrator) - zmienić je
-                     może tylko proces administratora, więc robi to receiver uruchomiony jako administrator; komenda
-                     zadania zostaje jego własna
+  enable(exe, args)  the DualSenseBridge task (schtasks /xml) and removal of the old Run entry; on error the Run entry stays
+  disable()          removes the task and the Run entry
+  migrate()          at receiver startup: an old Run entry exists -> replaced by the task (once, in the background)
+  ensure_admin_task(exe, args)  the DualSenseBridgeAdmin task without a trigger, with the highest privileges (created by a
+                     receiver running as administrator) - a manual receiver start goes through it
+  run_admin_task(args)  start the receiver as administrator without a UAC prompt (schtasks /run DualSenseBridgeAdmin) - only
+                     when the task has the same arguments as this start
+  elevate()          a task with the highest privileges (HIDMaestro creates pads only as administrator) - only an administrator
+                     process can change it, so a receiver running as administrator does it; the task command
+                     stays its own
 """
 import os
 import re
@@ -23,12 +23,13 @@ import tempfile
 from xml.sax.saxutils import escape, unescape
 
 NAME = "DualSenseBridge"
-ADMIN_NAME = "DualSenseBridgeAdmin"     # start na żądanie jako administrator (bez UAC) - bez wyzwalacza
+ADMIN_NAME = "DualSenseBridgeAdmin"     # start on demand as administrator (no UAC) - no trigger
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
 def user_id():
+    """The current user as "DOMAIN\\user" (just the user name when there is no domain)."""
     dom, user = os.environ.get("USERDOMAIN", ""), os.environ.get("USERNAME", "")
     return f"{dom}\\{user}" if dom else user
 
@@ -37,8 +38,8 @@ LEAST, HIGHEST = "<RunLevel>LeastPrivilege</RunLevel>", "<RunLevel>HighestAvaila
 
 
 def task_xml(exe, args, workdir, user, elevated=False, logon=True):
-    """Definicja zadania: przy logowaniu tego użytkownika, bez opóźnienia i bez limitu czasu, zwykły priorytet.
-    elevated: najwyższe uprawnienia (administrator bez okna UAC); logon=False: bez wyzwalacza (start na żądanie)."""
+    """Task definition: at this user's logon, no delay and no time limit, normal priority.
+    elevated: the highest privileges (administrator without a UAC prompt); logon=False: no trigger (start on demand)."""
     e = escape
     trigger = f"<LogonTrigger><Enabled>true</Enabled><UserId>{e(user)}</UserId></LogonTrigger>" if logon else ""
     return f"""<?xml version="1.0" encoding="UTF-16"?>
@@ -69,11 +70,12 @@ def task_xml(exe, args, workdir, user, elevated=False, logon=True):
 
 
 def _schtasks(*args):
+    """Run schtasks.exe with the arguments, without a console window; returns the CompletedProcess."""
     return subprocess.run(["schtasks", *args], capture_output=True, text=True, timeout=20, creationflags=NO_WINDOW)
 
 
 def _run_value():
-    """Stary wpis autostartu (komenda) albo None."""
+    """The old autostart entry (the command) or None."""
     import winreg
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as k:
@@ -83,7 +85,7 @@ def _run_value():
 
 
 def _set_run(cmd):
-    """cmd = komenda -> wpis Run; None -> usunięcie wpisu (brak wpisu to nie błąd)."""
+    """cmd = a command -> the Run entry; None -> remove the entry (a missing entry is not an error)."""
     import winreg
     with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as k:
         if cmd is not None:
@@ -100,9 +102,9 @@ _XML_QUOTES = {"&quot;": '"', "&apos;": "'"}
 
 
 def task_action(xml):
-    """(program, argumenty) z definicji zadania (schtasks /query /xml) albo None. Tylko gdy skrypt z argumentów istnieje:
-    schtasks oddaje XML w stronie kodowej konsoli, więc ścieżka z polskimi znakami może przyjść przekłamana - wtedy
-    None (wołający zostaje przy swojej komendzie)."""
+    """(program, arguments) from a task definition (schtasks /query /xml), or None. Only when the script from the arguments exists:
+    schtasks returns the XML in the console code page, so a path with non-ASCII characters may come back garbled - then
+    None (the caller keeps its own command)."""
     m = _ACTION.search(xml or "")
     if m is None:
         return None
@@ -112,7 +114,7 @@ def task_action(xml):
 
 
 def split_command(cmd):
-    """Komenda z wpisu Run -> (program, argumenty): program w cudzysłowie albo do pierwszej spacji."""
+    """A command from a Run entry -> (program, arguments): the program is quoted or ends at the first space."""
     cmd = cmd.strip()
     if cmd.startswith('"'):
         end = cmd.find('"', 1)
@@ -123,13 +125,14 @@ def split_command(cmd):
 
 
 def create_task(exe, args, elevated=False, name=NAME, logon=True):
-    """-> (ok, opis błędu)."""
+    """Create the task for `exe args` (the working folder is the script's folder) -> (ok, error description)."""
     script = split_command(args)[0] if args else exe
     return _create_xml(task_xml(exe, args, os.path.dirname(os.path.abspath(script)), user_id(), elevated, logon), name)
 
 
 def _create_xml(xml, name=NAME):
-    """Zadanie z definicji XML -> (ok, opis błędu). XML w UTF-16 (tak go czyta schtasks); plik tymczasowy usuwany zawsze."""
+    """Create a task from an XML definition -> (ok, error description). The XML is UTF-16 (that is how schtasks reads it); the temporary
+    file is always removed."""
     fd, path = tempfile.mkstemp(suffix=".xml")
     try:
         with os.fdopen(fd, "w", encoding="utf-16") as f:
@@ -146,6 +149,8 @@ def _create_xml(xml, name=NAME):
 
 
 def enable(exe, args, elevated=False):
+    """Enable autostart: create the logon task and drop the old Run entry; when the task cannot be created, fall back to the Run entry.
+    Returns a log message."""
     ok, err = create_task(exe, args, elevated)
     cmd = subprocess.list2cmdline([exe]) + " " + args
     if ok:
@@ -156,6 +161,7 @@ def enable(exe, args, elevated=False):
 
 
 def disable():
+    """Disable autostart: delete the task and the Run entry. Returns a log message."""
     removed = _schtasks("/delete", "/tn", NAME, "/f").returncode == 0
     had_run = _run_value() is not None
     _set_run(None)
@@ -163,7 +169,7 @@ def disable():
 
 
 def migrate():
-    """Stary wpis Run -> zadanie przy logowaniu. -> True, gdy zamieniono. Błąd: wpis Run zostaje (autostart działa)."""
+    """The old Run entry -> a task at logon. -> True when replaced. On error the Run entry stays (autostart keeps working)."""
     try:
         cmd = _run_value()
         if not cmd:
@@ -175,17 +181,17 @@ def migrate():
         _set_run(None)
         print("Autostart: moved from the Run key to Task Scheduler (starts right after logon)")
         return True
-    except Exception as e:          # migracja nie może zatrzymać receivera
+    except Exception as e:          # migration must not stop the receiver
         print(f"Autostart: migration failed: {e!r}")
         return False
 
 
 def elevate(exe, args):
-    """Istniejące zadanie autostartu bez podniesionych uprawnień -> to samo zadanie z najwyższymi. -> True, gdy zmieniono.
-    Brak zadania / już podniesione / błąd -> False (receiver działa dalej). Definicja powstaje od nowa (XML z schtasks
-    /query przychodzi w stronie kodowej konsoli), ale z komendą zadania (task_action) - exe, args tego procesu tylko,
-    gdy jej nie da się odczytać. Wcześniej zawsze z argumentów bieżącego procesu: ręczny start bez --config (albo
-    z innymi opcjami) podmieniał autostart i przy następnym logowaniu receiver startował z innymi ustawieniami."""
+    """An existing autostart task without elevated privileges -> the same task with the highest ones. -> True when changed.
+    No task / already elevated / an error -> False (the receiver carries on). The definition is rebuilt (the XML from schtasks
+    /query comes in the console code page), but with the task's own command (task_action) - the exe, args of this process only
+    when it cannot be read. Earlier it always used the arguments of the current process: a manual start without --config (or
+    with other options) replaced the autostart and at the next logon the receiver started with different settings."""
     try:
         r = _schtasks("/query", "/tn", NAME, "/xml")
         if r.returncode != 0 or LEAST not in r.stdout:
@@ -201,8 +207,8 @@ def elevate(exe, args):
 
 
 def ensure_admin_task(exe, args):
-    """Zadanie startu na żądanie z najwyższymi uprawnieniami - odświeżane przy każdym starcie jako administrator (ta sama
-    komenda co autostart; folder receivera mógł się przenieść). -> True, gdy jest."""
+    """The start-on-demand task with the highest privileges - refreshed on every start as administrator (the same
+    command as the autostart; the receiver folder may have moved). -> True when it exists."""
     try:
         ok, err = create_task(exe, args, elevated=True, name=ADMIN_NAME, logon=False)
         if not ok:
@@ -214,10 +220,10 @@ def ensure_admin_task(exe, args):
 
 
 def run_admin_task(args=None):
-    """Receiver jako administrator bez UAC: istniejące zadanie ADMIN_NAME z najwyższymi uprawnieniami -> schtasks /run.
-    -> True, gdy wystartowało. Brak zadania / zwykłe uprawnienia w zadaniu -> False (wtedy okno UAC). args: argumenty
-    tego startu (rx_config.autostart_command) - zadanie z innymi -> False: zadanie uruchomiłoby receiver ze swoimi,
-    a --config / --pads tego startu przepadłyby po cichu."""
+    """The receiver as administrator without UAC: an existing ADMIN_NAME task with the highest privileges -> schtasks /run.
+    -> True when it started. No task / ordinary privileges in the task -> False (then the UAC prompt). args: the arguments
+    of this start (rx_config.autostart_command) - a task with different ones -> False: the task would run the receiver with its own,
+    and the --config / --pads of this start would be lost silently."""
     try:
         r = _schtasks("/query", "/tn", ADMIN_NAME, "/xml")
         if r.returncode != 0 or HIGHEST not in r.stdout:
