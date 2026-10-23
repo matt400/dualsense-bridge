@@ -31,3 +31,9 @@ exclude = ["^tests/", "^tools/"]
 # never narrow, and many empty containers carry no element type. Until those globals get real types, these error kinds are
 # off; everything else (arg-type, call-arg, attr-defined, return-value, ...) is enforced.
 disable_error_code = ["var-annotated", "has-type", "assignment", "union-attr"]
+
+# The window code is dynamic Qt (attributes like `self.sender` shadow QObject methods, signals connect by keyword), which the
+# PySide6 stubs reject, so Qt is seen as untyped; our own code around it is still checked.
+[[tool.mypy.overrides]]
+module = ["PySide6", "PySide6.*", "shiboken6", "shiboken6.*"]
+follow_imports = "skip"

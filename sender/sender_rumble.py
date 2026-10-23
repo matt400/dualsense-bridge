@@ -633,7 +633,7 @@ def _test() -> None:
         return
     for d in pads:
         path, bt = find_hidraw(d)
-        print(f"== {d.name} {d.uniq or d.phys} ({d.path}): {'Bluetooth' if bt else 'USB'}, hidraw {path}, "
+        print(f"== {d.name} {d.uniq or d.phys} ({os.fsdecode(d.path)}): {'Bluetooth' if bt else 'USB'}, hidraw {path}, "
               f"evdev FF {'yes' if has_ff(d) else 'NO (kernel without CONFIG_PLAYSTATION_FF)'}"
               + ("" if kernel_has_hidraw() else ", kernel WITHOUT CONFIG_HIDRAW"))
         steps: list[tuple[str, str, bool | None]] = [("evdev FF", "evdev", None)] if has_ff(d) else []

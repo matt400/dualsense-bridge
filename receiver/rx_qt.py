@@ -387,8 +387,8 @@ class MainWindow(ScreenPlacement):
         self.update_done.connect(self._update_finished)
         self.test_escaped.connect(self._test_escaped)
         rx_testmode.on_escape = self.test_escaped.emit
-        QShortcut(QKeySequence.StandardKey.Save, self, activated=self.save)
-        QShortcut(QKeySequence(Qt.Key.Key_F11), self, activated=self.toggle_fullscreen)
+        QShortcut(QKeySequence.StandardKey.Save, self).activated.connect(self.save)
+        QShortcut(QKeySequence(Qt.Key.Key_F11), self).activated.connect(self.toggle_fullscreen)
         self.select_pad(self.ed.slot)
         self.pad.set_selected(None)
         self.root.setFocus()

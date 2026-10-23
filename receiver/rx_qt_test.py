@@ -136,7 +136,7 @@ class StickScope(QWidget):
 
     def __init__(self) -> None:
         super().__init__()
-        self.pos = {"left": (0.0, 0.0), "right": (0.0, 0.0)}
+        self.stick_pos = {"left": (0.0, 0.0), "right": (0.0, 0.0)}      # not `pos`: that would shadow QWidget.pos()
         self.trail = {"left": deque(maxlen=TRAIL), "right": deque(maxlen=TRAIL)}
         self.dz = {}                           # drift correction {stick: dz}
         self.peak = {}                         # the last measurement {stick: peak}
@@ -153,10 +153,10 @@ class StickScope(QWidget):
     def set_pos(self, ls, rs) -> None:
         """Set both stick positions (raw values -> unit range); the trail grows only when a position changed."""
         pos = {"left": (D.unit(ls[0]), D.unit(ls[1])), "right": (D.unit(rs[0]), D.unit(rs[1]))}
-        if pos != self.pos:
+        if pos != self.stick_pos:
             for k, v in pos.items():
                 self.trail[k].append(v)
-            self.pos = pos
+            self.stick_pos = pos
             self.update()
 
     def set_marks(self, dz, peak) -> None:
@@ -208,7 +208,7 @@ class StickScope(QWidget):
             for j, (x, y) in enumerate(trail[:-1]):
                 p.setBrush(QColor(255, 255, 255, 25 + 120 * j // TRAIL))
                 p.drawEllipse(self._pt(c, rad, x, y), px(2), px(2))
-            x, y = self.pos[name]
+            x, y = self.stick_pos[name]
             p.setPen(QPen(QColor("#ffffff"), 1.5))
             p.setBrush(QColor(ACCENT))
             p.drawEllipse(self._pt(c, rad, x, y), px(5), px(5))

@@ -12,9 +12,9 @@ run() { name=$1; shift
 if command -v ruff >/dev/null 2>&1; then ruff check --quiet $RX $TX $T || fail=1      # rules in pyproject.toml
 else python3 -m pyflakes $RX/*.py $TX/*.py | grep -v "imported but unused" && fail=1; fi
 # types: the packages import each other by flat name, so each is checked from its own directory (the receiver as on Windows)
-if command -v mypy >/dev/null 2>&1; then
-  (cd $RX && mypy --config-file ../pyproject.toml --platform win32 --no-error-summary .) || fail=1
-  (cd $TX && mypy --config-file ../pyproject.toml --no-error-summary .) || fail=1
+if python3 -m mypy --version >/dev/null 2>&1; then      # python3 -m: the same interpreter (and packages) as the tests
+  (cd $RX && python3 -m mypy --config-file ../pyproject.toml --platform win32 --no-error-summary .) || fail=1
+  (cd $TX && python3 -m mypy --config-file ../pyproject.toml --no-error-summary .) || fail=1
 fi
 cmp -s $RX/proto.py $TX/proto.py || { echo "FAIL  proto.py różni się między receiver/ i sender/"; fail=1; }
 for t in test_tx test_drop test_tx2 test_bugs_tx test_shutdown test_resilience_tx test_slots_tx test_rumble_tx test_trigfx_tx test_rt_tx test_devwatch_tx test_review_tx test_update_key_tx test_features_tx test_wol_tx test_calib_tx test_critical_path_tx test_hidraw_errors_tx test_bt_scan_lifecycle_tx test_bt_window_errors_tx test_atomic_writes_tx test_bt_multi_adapter_tx test_bt_link_policy_tx test_pad_limit_tx test_gametrig_tx test_security_tx h_rate; do run $t python3 $T/$t.py $TX; done

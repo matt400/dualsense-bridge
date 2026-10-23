@@ -66,7 +66,7 @@ pump()
 assert win.pad.live["l2"] == 120 and win.pad.live["r2"] == 255 and "cross" in win.pad.live["on"], "rysunek fizycznie"
 assert win.pad.touch_live == (((960, 470), (300, 100)), 1)
 assert panel.gyro_chart.data[-1] == (2.0, -1.0, 0.0) and abs(panel.acc_chart.data[-1][2] - 1.0) < 1e-9
-assert panel.scope.pos["left"] == (D.unit(131), D.unit(126))
+assert panel.scope.stick_pos["left"] == (D.unit(131), D.unit(126))
 win.grab().save(os.path.join(SHOTS, "test_view.png"))
 feed(T_CLICK, 0, 0)
 ok("na żywo: przyciski i spusty (wartości) na rysunku, 2 palce i klik touchpada, gyro °/s i akcelerometr g, gałki")
