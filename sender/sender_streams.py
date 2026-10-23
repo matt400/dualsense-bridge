@@ -1,191 +1,315 @@
-"""Sender: read loops of the evdev devices (pad, motion, touchpad, battery) and the heartbeat."""
+"""Sender: read loops of the evdev devices (pad, motion, touchpad, battery) and the heartbeat.
+
+Every device has one coroutine (``stream_pad``, ``stream_motion``, ``stream_touch``) that turns evdev events into the
+fields of the pad's ``Ctrl`` object and asks it to send packets. The per-device state of a loop lives in a small class
+(``_PadStream``, ``_MotionStream``, ``_TouchStream``), so that every event handler stays short and the loop itself is
+only ``async for event: handler.handle(event)``.
+"""
+from __future__ import annotations
+
 import array
 import asyncio
 import collections
 import fcntl
 import time
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Final
 
+from evdev import InputDevice, InputEvent
 from evdev import ecodes as ec
 
 import sender_calib as calib
 import sender_state as state
 import sender_wol as wol
-from sender_config import AUTOBIAS_MAX_STEP, BURST_DELAYS, C, IDLE_TP, TOUCH_H, TOUCH_W, PAD_ABS
-from proto import CAL_RUNNING, KEY_BIT, LAT_NONE, clamp
+from proto import (BATT_UNKNOWN, CAL_RUNNING, CLICK_PRESSED, CLICK_RELEASED, CLICK_TWO_FINGERS, KEY_BIT, LAT_NONE,
+                   MOUSE_SCROLL, MOUSE_TAP, MOUSE_TAP_RIGHT, STATE_CHARGING, clamp)
+from sender_config import AUTOBIAS_MAX_STEP, BURST_DELAYS, C, IDLE_TP, PAD_ABS, TOUCH_H, TOUCH_W
+from sender_ioctl import IOC_READ, ioc
+
+if TYPE_CHECKING:
+    from sender_ctrl import Ctrl
+
+# Everything a failing or fake evdev device can raise when asked for an axis: the device is going away (OSError), is not an
+# evdev device at all (tests, another platform) or lacks the axis (AttributeError / KeyError).
+DEVICE_READ_ERRORS: Final = (OSError, AttributeError, TypeError, ValueError, KeyError)
+
+US_PER_S: Final = 1_000_000
+EVIOC_MAGIC, EVIOCGMTSLOTS_NR = "E", 0x0A               # EVIOCGMTSLOTS(len), see linux/input.h
+INT32_BYTES: Final = 4
+ABS_RANGE: Final = 1 << 60                              # larger than any sample: the start value of a running minimum / maximum
+
+# ---- pad ----
+HAT_AXES: Final = (ec.ABS_HAT0X, ec.ABS_HAT0Y)
+
+# ---- motion: the packet carries accelerometer x y z and then gyro x y z ----
+MOTION_AXES: Final = 6
+GYRO_AT: Final = 3
+GYRO_AXES: Final = 3
+AUTOBIAS_MIN_SAMPLES: Final = 20                        # a window with fewer samples says nothing about the bias
+AUTOBIAS_STEP: Final = 0.5                              # the bias moves this far towards the window mean at once
+PAD_TIMESTAMP_BITS: Final = 32                          # the pad's MSC_TIMESTAMP counter is 32-bit (wraps every ~71 min)
+PAD_TIMESTAMP_MODULUS: Final = 1 << PAD_TIMESTAMP_BITS
+PAD_TIMESTAMP_HALF: Final = PAD_TIMESTAMP_MODULUS >> 1  # a backwards jump larger than this is a wrap-around, not jitter
+
+# ---- touchpad ----
+TOUCH_SLOTS: Final = 2                                  # the DualSense touchpad reports two fingers
+TWO_FINGERS: Final = 2                                  # two fingers = scrolling / right button (with gestures on)
+TOUCH_ID_MASK: Final = 0x7F                             # the touch packet carries the tracking id in 7 bits (as the DS4 does)
+TOUCH_DEFAULT_MAX_X, TOUCH_DEFAULT_MAX_Y = 1919, 1079   # the DualSense touchpad axis range when the device reports none
+KIND_NONE, KIND_CURSOR, KIND_SCROLL = 0, 1, 2           # what the pending touchpad movement of a contact means
+
+# ---- periodic jobs ----
+HEARTBEAT_SLOW_EVERY: Final = 5                         # every 5th heartbeat also refreshes ident, click and touch
+HEARTBEAT_QUIET_FACTOR: Final = 2.0                     # a pad is "quiet" after this many heartbeat periods without a packet
+METER_MAX_GAPS: Final = 4096
+METER_MIN_GAPS: Final = 10
+METER_P99: Final = 0.99
+BATTERY_PATH: Final = "/sys/class/power_supply/ps-controller-battery-"
+BATTERY_FULL_PERCENT: Final = 100
 
 
-def _eviocgmtslots(nslots):
-    """Build the EVIOCGMTSLOTS ioctl number: _IOC(_IOC_READ, 'E', 0x0a, size) for a buffer of (code + one value per slot) 4-byte ints."""
-    return (2 << 30) | ((4 * (nslots + 1)) << 16) | (ord("E") << 8) | 0x0A
+def _eviocgmtslots(nslots: int) -> int:
+    """Build the EVIOCGMTSLOTS ioctl number for a buffer of (axis code + one value per slot) 4-byte ints."""
+    return ioc(IOC_READ, EVIOC_MAGIC, EVIOCGMTSLOTS_NR, INT32_BYTES * (nslots + 1))
 
 
-def read_mt(dev, nslots: int=2):
-    """Read the current finger state straight from the kernel: [(tracking_id, x, y), ...] for slots 0..nslots-1.
+def read_mt(dev: InputDevice, nslots: int = 2) -> list[tuple[int, int, int]]:
+    """Read the current finger state straight from the kernel.
 
     Needed after SYN_DROPPED - the events were lost, but the kernel still knows which fingers are down and where.
     EVIOCGMTSLOTS returns, for one axis code at a time, the value of that axis in every multitouch slot, so the ioctl
     is issued once per axis (tracking id, X, Y) and the results are zipped per slot.
+
+    Args:
+        dev: The touchpad device.
+        nslots: How many slots to return.
+
+    Returns:
+        ``[(tracking_id, x, y), ...]`` for slots ``0..nslots-1``; a tracking id of -1 means no finger.
     """
     try:
         total = max(nslots, dev.absinfo(ec.ABS_MT_SLOT).max + 1)
-    except Exception:
+    except DEVICE_READ_ERRORS:
         total = nslots
-    vals = {}
+    values = {}
     for code in (ec.ABS_MT_TRACKING_ID, ec.ABS_MT_POSITION_X, ec.ABS_MT_POSITION_Y):
         buf = array.array("i", [code] + [0] * total)
         fcntl.ioctl(dev.fd, _eviocgmtslots(total), buf, True)
-        vals[code] = buf[1:]
-    return [(vals[ec.ABS_MT_TRACKING_ID][k], vals[ec.ABS_MT_POSITION_X][k], vals[ec.ABS_MT_POSITION_Y][k])
+        values[code] = buf[1:]
+    return [(values[ec.ABS_MT_TRACKING_ID][k], values[ec.ABS_MT_POSITION_X][k], values[ec.ABS_MT_POSITION_Y][k])
             for k in range(nslots)]
 
 
 class RateMeter:
-    """The real report rate of a device and the gaps between reports (only with --stats)."""
+    """The real report rate of a device and the gaps between reports (only with --stats).
+
+    Attributes:
+        t_prev: Time of the previous report (0 = none yet).
+        gaps: The gaps since the last :meth:`report`, in seconds.
+    """
 
     def __init__(self) -> None:
+        """Start with no reports."""
         self.t_prev = 0.0
-        self.gaps = []
+        self.gaps: list[float] = []
 
-    def tick(self, now) -> None:
-        """Record one report at time `now`; the gap since the previous report is stored (capped at 4096 entries)."""
-        if self.t_prev and len(self.gaps) < 4096:
+    def tick(self, now: float) -> None:
+        """Record one report at time ``now``; the gap since the previous report is kept (at most METER_MAX_GAPS of them)."""
+        if self.t_prev and len(self.gaps) < METER_MAX_GAPS:
             self.gaps.append(now - self.t_prev)
         self.t_prev = now
 
-    def report(self):
-        """Return (Hz, p99 gap ms, max gap ms) for the reports since the last call, or None if there are too few; resets the gaps."""
-        g, self.gaps = sorted(self.gaps), []
-        if len(g) < 10:
+    def report(self) -> tuple[float, float, float] | None:
+        """Summarise the reports since the last call and reset the gaps.
+
+        Returns:
+            ``(Hz, p99 gap ms, max gap ms)``, or None if there are too few reports.
+        """
+        gaps, self.gaps = sorted(self.gaps), []
+        if len(gaps) < METER_MIN_GAPS:
             return None
-        return len(g) / sum(g), g[int(len(g) * 0.99)] * 1000, g[-1] * 1000   # Hz, p99 ms, max ms
+        return len(gaps) / sum(gaps), gaps[int(len(gaps) * METER_P99)] * 1000, gaps[-1] * 1000
 
 
 class BtDelay:
-    """Bluetooth delay above the minimum. The pad stamps every report with its own clock (MSC_TIMESTAMP from the motion
-    device, µs) and the kernel stamps the time of reception. The difference = an unknown constant (the clocks) + the radio
-    delay; its minimum over the last WINDOW_US is the best case, and the excess over it is BT queueing / retransmissions.
-    A short window: the crystal drift of the pad and the phone (50 ppm = 0.1 ms per 2 s) does not pass for delay. The
-    minimum over the window uses a monotonic queue, O(1)."""
+    """Bluetooth delay above the minimum.
+
+    The pad stamps every report with its own clock (MSC_TIMESTAMP from the motion device, µs) and the kernel stamps the
+    time of reception. The difference = an unknown constant (the clocks) + the radio delay; its minimum over the last
+    WINDOW_US is the best case, and the excess over it is BT queueing / retransmissions. A short window: the crystal drift
+    of the pad and the phone (50 ppm = 0.1 ms per 2 s) does not pass for delay. The minimum over the window uses a
+    monotonic queue, O(1).
+    """
 
     WINDOW_US = 2_000_000
 
     def __init__(self) -> None:
-        self.epoch, self.last = 0, None
-        self.win = collections.deque()        # (kernel time, difference), differences increasing
+        """Start with an empty window."""
+        self.epoch = 0
+        self.last: int | None = None
+        self.win: collections.deque[tuple[int, int]] = collections.deque()    # (kernel time, difference), differences increasing
 
-    def sample(self, kernel_us, pad_us):
-        """Feed one (kernel receive time, pad timestamp) pair; returns the delay above the window minimum in µs.
+    def sample(self, kernel_us: int, pad_us: int) -> int:
+        """Feed one (kernel receive time, pad timestamp) pair.
 
         The pad counter is 32-bit, so a wrap-around (every ~71 min) is detected as a big backwards jump and added to
-        `epoch`. The deque holds candidates for the window minimum in increasing order: a new sample pops all larger
+        ``epoch``. The deque holds candidates for the window minimum in increasing order: a new sample pops all larger
         ones from the back, and samples older than the window are dropped from the front, so the front is always the
         current minimum.
+
+        Args:
+            kernel_us: The kernel's receive time in µs.
+            pad_us: The pad's own timestamp in µs.
+
+        Returns:
+            The delay above the window minimum in µs (never LAT_NONE).
         """
-        pad_us &= 0xFFFFFFFF                  # the pad counter is 32-bit (overflow every ~71 min)
-        if self.last is not None and pad_us < self.last - 0x80000000:
-            self.epoch += 1 << 32
+        pad_us %= PAD_TIMESTAMP_MODULUS
+        if self.last is not None and pad_us < self.last - PAD_TIMESTAMP_HALF:
+            self.epoch += PAD_TIMESTAMP_MODULUS
         self.last = pad_us
-        d = kernel_us - pad_us - self.epoch
+        diff = kernel_us - pad_us - self.epoch
         win = self.win
-        while win and win[-1][1] >= d:
+        while win and win[-1][1] >= diff:
             win.pop()
-        win.append((kernel_us, d))
+        win.append((kernel_us, diff))
         while win[0][0] < kernel_us - self.WINDOW_US:
             win.popleft()
-        return min(LAT_NONE - 1, d - win[0][1])
+        return min(LAT_NONE - 1, diff - win[0][1])
 
 
-async def stream_pad(c) -> None:
-    """Read the pad's buttons, sticks, triggers and D-pad and turn them into state packets.
+def _send_state_burst(c: Ctrl, loop: asyncio.AbstractEventLoop) -> None:
+    """Send the state now and again after each of BURST_DELAYS, then give Wake-on-LAN a look at the buttons.
+
+    The repeats protect a button change against a lost packet (a repeat of an identical state carries no latency
+    measurement). After SYN_DROPPED the lost events may have contained a released PS combination, which must not fire
+    Wake-on-LAN; while the receiver is silent, PS + a button held is the Wake-on-LAN trigger.
+    """
+    c.send_state()
+    for delay in BURST_DELAYS:
+        loop.call_later(delay, c.send_state, True)
+    wol.on_mask(c)
+
+
+def _is_report(e: InputEvent) -> bool:
+    """Whether an event is SYN_REPORT, which closes one complete report of a device."""
+    return e.type == ec.EV_SYN and e.code == ec.SYN_REPORT
+
+
+class _PadStream:
+    """The state of the pad's read loop: buttons, sticks, triggers and the D-pad -> state packets.
 
     Events are accumulated until SYN_REPORT, which marks a complete pad report. If the report changed a button, the
     state goes out at once, followed by two delayed repeats (BURST_DELAYS) as protection against a lost packet; pure
     axis changes go through request_send, which merges them under the pad_min_dt limit. After SYN_DROPPED (the kernel
     buffer overflowed) the half-finished events are skipped until the next SYN_REPORT and the whole state is re-read.
     """
-    loop = asyncio.get_running_loop()
-    dirty = burst = False
-    dropping = False
-    meter = c.meters.setdefault("pad", RateMeter()) if C.STATS else None
-    async for e in c.pad_dev.async_read_loop():
-        et = e.type
-        if et == ec.EV_SYN and e.code == ec.SYN_REPORT:
-            c.reports["pad"] += 1
-            if meter is not None:
-                meter.tick(time.monotonic())
-        if dropping:
-            # the kernel buffer overflowed (e.g. a series of reports after a BT stall): events up to the nearest
-            # SYN_REPORT are incomplete, so we skip them and read the whole state from the device
-            if et == ec.EV_SYN and e.code == ec.SYN_REPORT:
-                dropping = dirty = burst = False
-                c.resync()
-                c.send_state()
-                for d in BURST_DELAYS:
-                    loop.call_later(d, c.send_state, True)
-                wol.on_mask(c)            # a combination released inside the lost events must not fire Wake-on-LAN
-            continue
-        if et == ec.EV_ABS:
-            code = e.code
-            if code in PAD_ABS:
-                c.set_abs(code, e.value)
-                dirty = True
-            elif code == 16 or code == 17:
-                c.hat[code - 16] = clamp(e.value, -1, 1)
-                dirty = True
-        elif et == ec.EV_KEY:
-            bit = KEY_BIT.get(e.code)
-            if bit:
-                if e.value:
-                    c.mask |= bit
-                else:
-                    c.mask &= ~bit
-                dirty = burst = True
-        elif et == ec.EV_SYN and e.code == ec.SYN_DROPPED:
-            dropping = True
-        elif et == ec.EV_SYN and e.code == ec.SYN_REPORT and dirty:
-            dirty = False
-            c.mark_event(e)
-            c.note_input(time.monotonic())
-            if burst:
-                burst = False
-                c.send_state()
-                for d in BURST_DELAYS:
-                    loop.call_later(d, c.send_state, True)
-                wol.on_mask(c)            # PS + a button held while the receiver is silent = Wake-on-LAN
+
+    def __init__(self, c: Ctrl) -> None:
+        """Bind the loop to a pad."""
+        self.c = c
+        self.loop = asyncio.get_running_loop()
+        self.dirty = False          # an axis or a button changed since the last SYN_REPORT
+        self.burst = False          # a button changed: send with repeats
+        self.dropping = False       # skipping the events up to the next SYN_REPORT
+        self.meter = c.meters.setdefault("pad", RateMeter()) if C.STATS else None
+
+    def handle(self, e: InputEvent) -> None:
+        """Process one evdev event of the pad."""
+        report = _is_report(e)
+        if report:
+            self.c.reports["pad"] += 1
+            if self.meter is not None:
+                self.meter.tick(time.monotonic())
+        if self.dropping:
+            if report:
+                self._recover_from_drop()
+            return
+        if e.type == ec.EV_ABS:
+            self._on_axis(e.code, e.value)
+        elif e.type == ec.EV_KEY:
+            self._on_key(e.code, e.value)
+        elif e.type == ec.EV_SYN:
+            if e.code == ec.SYN_DROPPED:
+                self.dropping = True
+            elif report and self.dirty:
+                self._on_report(e)
+
+    def _on_axis(self, code: int, value: int) -> None:
+        """Store a stick / trigger axis or a D-pad axis of the current report."""
+        if code in PAD_ABS:
+            self.c.set_abs(code, value)
+            self.dirty = True
+        elif code in HAT_AXES:
+            self.c.hat[code - ec.ABS_HAT0X] = clamp(value, -1, 1)
+            self.dirty = True
+
+    def _on_key(self, code: int, value: int) -> None:
+        """Set or clear a button bit of the mask."""
+        bit = KEY_BIT.get(code)
+        if bit:
+            if value:
+                self.c.mask |= bit
             else:
-                c.request_send()
+                self.c.mask &= ~bit
+            self.dirty = self.burst = True
+
+    def _recover_from_drop(self) -> None:
+        """The incomplete report is over: read the whole state from the device and send it."""
+        self.dropping = self.dirty = self.burst = False
+        self.c.resync()
+        _send_state_burst(self.c, self.loop)
+
+    def _on_report(self, e: InputEvent) -> None:
+        """A complete report with changes: send the state (with repeats after a button change)."""
+        self.dirty = False
+        self.c.mark_event(e)
+        self.c.note_input(time.monotonic())
+        if self.burst:
+            self.burst = False
+            _send_state_burst(self.c, self.loop)
+        else:
+            self.c.request_send()
+
+
+async def stream_pad(c: Ctrl) -> None:
+    """Read the pad's buttons, sticks, triggers and D-pad and turn them into state packets (see ``_PadStream``)."""
+    stream = _PadStream(c)
+    async for e in c.pad_dev.async_read_loop():
+        stream.handle(e)
 
 
 async def heartbeat() -> None:
-    """Periodic refresh so a lost packet never leaves the receiver with a stale state for long.
+    """Refresh the state periodically so that a lost packet never leaves the receiver with a stale state for long.
 
     Every HEARTBEAT_S, each pad that has not sent anything for twice that time resends its full state. Every fifth tick
     additionally resends the pad identification, the click state and the touch state (the "finger lifted" packet of a
     pad without activity would otherwise never be repeated).
     """
-    n = 0
+    tick = 0
     while True:
         now = time.monotonic()
-        slow = n % 5 == 0
+        slow = tick % HEARTBEAT_SLOW_EVERY == 0
         for c in list(state.active.values()):
-            if now - c.t_state >= C.HEARTBEAT_S * 2.0:
+            if now - c.t_state >= C.HEARTBEAT_S * HEARTBEAT_QUIET_FACTOR:
                 c.send_state(True)
             if slow:
                 c.send_ident()
                 c.send_click()
                 c.send_touch(force=True)      # also without a touchpad: a lost "finger lifted" packet will get through
-        n += 1
+        tick += 1
         await asyncio.sleep(C.HEARTBEAT_S)
 
 
-def _start_cal(c, now):
-    """Startup calibration: a pad with a saved calibration (from the receiver window) uses it at once, without waiting.
+def _start_cal(c: Ctrl, now: float) -> calib.GyroCal | None:
+    """Decide about the startup calibration: a pad with a saved calibration (from the receiver window) uses it at once.
 
-    Returns a GyroCal collecting samples, or None when a saved bias was applied or startup calibration is disabled.
+    Returns:
+        A ``GyroCal`` collecting samples, or None when a saved bias was applied or the startup calibration is disabled.
     """
-    st = calib.stored(c.key)
-    if st is not None:
-        c.gyro_bias = list(st["bias"])
+    stored = calib.stored(c.key)
+    if stored is not None:
+        c.gyro_bias = list(stored["bias"])
         print(f"Controller {c.idx}: gyro bias {[round(b) for b in c.gyro_bias]} (saved calibration)")
         return None
     if C.CAL_S <= 0:
@@ -194,163 +318,260 @@ def _start_cal(c, now):
     return calib.GyroCal(now, C.CAL_S, user=False)
 
 
-async def stream_motion(c) -> None:
-    """Read the motion sensor (gyro + accelerometer), correct the gyro bias and send the averaged motion.
+class _AutobiasWindow:
+    """The gyro samples of the current autobias window.
+
+    While the pad is quiet (a small spread over the window) the bias is nudged half-way towards the window mean; a window
+    in which the pad moved leaves the bias alone.
+    """
+
+    def __init__(self, now: float) -> None:
+        """Start an empty window at ``now``."""
+        self.reset(now)
+
+    def reset(self, now: float) -> None:
+        """Throw away the samples and start a new window at ``now``."""
+        self.t0, self.count = now, 0
+        self.total = [0] * GYRO_AXES
+        self.low = [ABS_RANGE] * GYRO_AXES
+        self.high = [-ABS_RANGE] * GYRO_AXES
+
+    def add(self, sample: Sequence[int]) -> None:
+        """Add the gyro part of one motion sample (``sample[GYRO_AT:]``)."""
+        for k in range(GYRO_AXES):
+            x = sample[GYRO_AT + k]
+            self.total[k] += x
+            if x < self.low[k]:
+                self.low[k] = x
+            if x > self.high[k]:
+                self.high[k] = x
+        self.count += 1
+
+    def settle(self, now: float, bias: list[float]) -> None:
+        """At the end of the window, nudge ``bias`` towards the mean if the pad was quiet, and start a new window."""
+        if now - self.t0 < C.AUTOBIAS_S:
+            return
+        quiet = all(self.high[k] - self.low[k] <= C.AUTOBIAS_RANGE for k in range(GYRO_AXES))
+        if self.count >= AUTOBIAS_MIN_SAMPLES and quiet:
+            for k in range(GYRO_AXES):
+                target = self.total[k] / self.count
+                if abs(target - bias[k]) <= AUTOBIAS_MAX_STEP:
+                    bias[k] += (target - bias[k]) * AUTOBIAS_STEP
+        self.reset(now)
+
+
+class _MotionStream:
+    """The state of the motion read loop (gyro + accelerometer).
 
     Per SYN_REPORT it (1) feeds the Bluetooth delay estimator from the pad's own timestamp, (2) runs a calibration if
-    one is active or requested from the window, (3) runs autobias - while the pad is quiet (small spread over a
-    window) the bias is nudged half-way towards the window mean, (4) averages all samples since the last packet and
+    one is active or requested from the window, (3) runs autobias, (4) averages all samples since the last packet and
     sends only if the value moved past the deadband (or a send is already pending). Averaging, not taking the last
     sample, keeps the output smooth when samples arrive faster than MOTION_MIN_DT.
     """
-    v = [0] * 6
-    last = 0.0
-    cal = _start_cal(c, time.monotonic())
-    win_t0, win_n, win_sum = time.monotonic(), 0, [0, 0, 0]
-    win_min, win_max = [1 << 60] * 3, [-(1 << 60)] * 3
-    msum, mn = [0] * 6, 0       # sum of samples since the last packet: we send the AVERAGE, not an arbitrary last sample
-    meter = c.meters.setdefault("motion", RateMeter()) if C.STATS else None
-    bt = BtDelay()
-    dropping = False
-    async for e in c.motion_dev.async_read_loop():
+
+    def __init__(self, c: Ctrl) -> None:
+        """Bind the loop to a pad and start its startup calibration."""
+        self.c = c
+        self.sample = [0] * MOTION_AXES
+        self.last_sent = 0.0
+        self.cal = _start_cal(c, time.monotonic())
+        self.autobias = _AutobiasWindow(time.monotonic())
+        self.sums = [0] * MOTION_AXES       # the sum of the samples since the last packet: we send the AVERAGE
+        self.count = 0
+        self.meter = c.meters.setdefault("motion", RateMeter()) if C.STATS else None
+        self.bt = BtDelay()
+        self.dropping = False
+
+    def handle(self, e: InputEvent) -> None:
+        """Process one evdev event of the motion sensor."""
         if e.type == ec.EV_SYN and e.code == ec.SYN_DROPPED:
-            dropping = True
-            continue
-        if dropping:
-            if e.type != ec.EV_SYN or e.code != ec.SYN_REPORT:
-                continue
-            dropping = False
-            for k in range(6):        # an axis whose change was lost must not keep its old value
-                try:
-                    v[k] = c.motion_dev.absinfo(k).value
-                except Exception:  # the axis cannot be read (the device is going away): keep the value we have
-                    pass
-        if e.type == ec.EV_ABS and 0 <= e.code <= 5:
-            v[e.code] = e.value
+            self.dropping = True
+            return
+        report = _is_report(e)
+        if self.dropping:
+            if not report:
+                return
+            self.dropping = False
+            self._reread_axes()
+        if e.type == ec.EV_ABS and 0 <= e.code < MOTION_AXES:
+            self.sample[e.code] = e.value
         elif e.type == ec.EV_MSC and e.code == ec.MSC_TIMESTAMP:
-            c.bt_us = bt.sample(e.sec * 1_000_000 + e.usec, e.value)
-        elif e.type == ec.EV_SYN and e.code == ec.SYN_REPORT:
-            now = time.monotonic()
-            c.reports["motion"] += 1
-            if meter is not None:
-                meter.tick(now)
-            if c.cal_request:                 # calibration from the receiver window (the pad lies still)
-                cal = calib.GyroCal(now, c.cal_request, user=True)
-                c.cal_request = 0
-                calib.report(c, CAL_RUNNING)
-                # the autobias window starts over: samples from before the calibration (pad still in the hand) in the first
-                # window after it moved the freshly measured bias half-way to their mean - the camera "drifted" right after calibrating
-                win_t0, win_n, win_sum = now, 0, [0, 0, 0]
-                win_min, win_max = [1 << 60] * 3, [-(1 << 60)] * 3
-            if cal is not None and (r := cal.feed(now, v[3:6])) is not None:
-                (calib.finish if cal.user else calib.startup_done)(c, r)
-                cal = None
-            bias = c.gyro_bias
-            if C.AUTOBIAS and cal is None:
-                for k in range(3):
-                    x = v[3 + k]
-                    win_sum[k] += x
-                    if x < win_min[k]:
-                        win_min[k] = x
-                    if x > win_max[k]:
-                        win_max[k] = x
-                win_n += 1
-                if now - win_t0 >= C.AUTOBIAS_S:
-                    if win_n >= 20 and all(win_max[k] - win_min[k] <= C.AUTOBIAS_RANGE for k in range(3)):
-                        for k in range(3):
-                            target = win_sum[k] / win_n
-                            if abs(target - bias[k]) <= AUTOBIAS_MAX_STEP:
-                                bias[k] += (target - bias[k]) * 0.5
-                    win_t0, win_n, win_sum = now, 0, [0, 0, 0]
-                    win_min, win_max = [1 << 60] * 3, [-(1 << 60)] * 3
-            if cal is not None and not cal.user:
-                continue                      # startup calibration: motion is not sent yet
-            for k in range(6):
-                msum[k] += v[k]
-            mn += 1
-            if now - last < C.MOTION_MIN_DT:
-                continue        # samples arrive faster than the limit - they stay averaged until the next packet
-            last = now
-            m = c.motion
-            a = [x / mn for x in msum]
-            msum, mn = [0] * 6, 0
-            new = [round(a[0]), round(a[1]), round(a[2]),
-                   round(a[3] - bias[0]), round(a[4] - bias[1]), round(a[5] - bias[2])]
-            if c.pending or any(abs(new[k] - m[k]) > (C.DB_ACC if k < 3 else C.DB_GYRO) for k in range(6)):
-                c.motion = new
-                c.mark_event(e)
-                c.request_send()
+            self.c.bt_us = self.bt.sample(e.sec * US_PER_S + e.usec, e.value)
+        elif report:
+            self._on_report(e)
+
+    def _reread_axes(self) -> None:
+        """Read the axes from the device: an axis whose change was lost must not keep its old value."""
+        for k in range(MOTION_AXES):
+            try:
+                self.sample[k] = self.c.motion_dev.absinfo(k).value
+            except DEVICE_READ_ERRORS:
+                continue    # the axis cannot be read (the device is going away): keep the value we have
+
+    def _start_user_calibration(self, now: float) -> None:
+        """Start the calibration requested from the receiver window (the pad lies still)."""
+        c = self.c
+        self.cal = calib.GyroCal(now, c.cal_request, user=True)
+        c.cal_request = 0
+        calib.report(c, CAL_RUNNING)
+        # the autobias window starts over: samples from before the calibration (pad still in the hand) in the first
+        # window after it moved the freshly measured bias half-way to their mean - the camera "drifted" right after calibrating
+        self.autobias.reset(now)
+
+    def _advance_calibration(self, now: float) -> None:
+        """Feed the running calibration; when it has a result, store it and leave the calibration state."""
+        if self.cal is None:
+            return
+        result = self.cal.feed(now, self.sample[GYRO_AT:])
+        if result is not None:
+            (calib.finish if self.cal.user else calib.startup_done)(self.c, result)
+            self.cal = None
+
+    def _on_report(self, e: InputEvent) -> None:
+        """A complete motion report: calibrate, track the bias and (rate-limited) send the averaged motion."""
+        c = self.c
+        now = time.monotonic()
+        c.reports["motion"] += 1
+        if self.meter is not None:
+            self.meter.tick(now)
+        if c.cal_request:
+            self._start_user_calibration(now)
+        self._advance_calibration(now)
+        if C.AUTOBIAS and self.cal is None:
+            self.autobias.add(self.sample)
+            self.autobias.settle(now, c.gyro_bias)
+        if self.cal is not None and not self.cal.user:
+            return                              # startup calibration: motion is not sent yet
+        for k in range(MOTION_AXES):
+            self.sums[k] += self.sample[k]
+        self.count += 1
+        if now - self.last_sent < C.MOTION_MIN_DT:
+            return                              # samples arrive faster than the limit - they stay averaged until the next packet
+        self.last_sent = now
+        self._send_average(e)
+
+    def _send_average(self, e: InputEvent) -> None:
+        """Send the average of the samples since the last packet (bias-corrected) if it moved past the deadband."""
+        c = self.c
+        mean = [total / self.count for total in self.sums]
+        self.sums, self.count = [0] * MOTION_AXES, 0
+        bias = c.gyro_bias
+        new = [round(mean[k]) for k in range(GYRO_AT)] + [round(mean[GYRO_AT + k] - bias[k]) for k in range(GYRO_AXES)]
+        old = c.motion
+        if c.pending or any(abs(new[k] - old[k]) > (C.DB_ACC if k < GYRO_AT else C.DB_GYRO) for k in range(MOTION_AXES)):
+            c.motion = new
+            c.mark_event(e)
+            c.request_send()
 
 
-TOUCH_DEFAULT_MAX_X, TOUCH_DEFAULT_MAX_Y = 1919, 1079   # the DualSense touchpad axis range when the device reports none
+async def stream_motion(c: Ctrl) -> None:
+    """Read the motion sensor (gyro + accelerometer), correct the gyro bias and send the averaged motion."""
+    stream = _MotionStream(c)
+    async for e in c.motion_dev.async_read_loop():
+        stream.handle(e)
 
 
-def _same_finger(a, b):
+class _Finger:
+    """One finger of the touchpad as the kernel slot knows it.
+
+    The position survives lifting the finger: the kernel skips an axis event when the value in the slot did not change -
+    also for a NEW finger - so a new finger placed at the same x or y (e.g. at an edge: 0 / max) takes it from here; reset to
+    zero it lost such a touch and tap.
+    """
+
+    __slots__ = ("id", "on", "x", "y")
+
+    def __init__(self, on: bool = False, finger_id: int = 0, x: int | None = None, y: int | None = None) -> None:
+        """Create a finger; ``x`` / ``y`` of None mean "position unknown"."""
+        self.on, self.id, self.x, self.y = on, finger_id, x, y
+
+    def position(self) -> tuple[int, int] | None:
+        """Return the position of a finger that is down, or None when it is up or its position is unknown."""
+        if self.on and self.x is not None and self.y is not None:
+            return self.x, self.y
+        return None
+
+
+def _same_finger(a: tuple[int, int, int, int], b: tuple[int, int, int, int]) -> bool:
     """Whether a finger (on, id, x, y) has not changed enough to be worth sending (deadzone)."""
     if a[0] != b[0]:
         return False
     if not a[0]:
         return True
-    return (a[1] == b[1] and abs(a[2] - b[2]) < C.TOUCH_DEADZONE and abs(a[3] - b[3]) < C.TOUCH_DEADZONE)
+    return a[1] == b[1] and abs(a[2] - b[2]) < C.TOUCH_DEADZONE and abs(a[3] - b[3]) < C.TOUCH_DEADZONE
 
 
 class _Session:
     """One contact with the touchpad: from the placing of the first finger to the lifting of the last one."""
-    __slots__ = ("t0", "moved", "max_n", "started", "scrolled", "clicked", "kind", "pend")
 
-    def __init__(self, now) -> None:
+    __slots__ = ("clicked", "kind", "max_n", "moved", "pend", "scrolled", "started", "t0")
+
+    def __init__(self, now: float) -> None:
+        """Start a contact at ``now``."""
         self.t0, self.moved, self.max_n = now, 0, 0
         self.started = self.scrolled = self.clicked = False
-        self.kind = 0                 # 0 = nothing, 1 = cursor, 2 = scrolling (pend applies to this kind)
+        self.kind = KIND_NONE
         self.pend = [0, 0]            # movement held back until touch_start_move is exceeded
 
 
-def _touch_range(dev) -> tuple[int, int]:
-    """The largest X / Y the touchpad reports; the DualSense defaults when the device cannot say."""
+def _touch_range(dev: InputDevice) -> tuple[int, int]:
+    """Return the largest X / Y the touchpad reports; the DualSense defaults when the device cannot say."""
     try:
         return (dev.absinfo(ec.ABS_MT_POSITION_X).max or TOUCH_DEFAULT_MAX_X,
                 dev.absinfo(ec.ABS_MT_POSITION_Y).max or TOUCH_DEFAULT_MAX_Y)
-    except Exception:    # not an evdev device (tests, another platform): any failure means "use the defaults"
+    except DEVICE_READ_ERRORS:
         return TOUCH_DEFAULT_MAX_X, TOUCH_DEFAULT_MAX_Y
 
 
-def _apply_touch_axis(e, slot, fingers, prev) -> int:
-    """Fold one EV_ABS multitouch event into the per-finger table; returns the (possibly changed) current slot."""
+def _apply_touch_axis(e: InputEvent, slot: int, fingers: list[_Finger], prev: list[tuple[int, int] | None]) -> int:
+    """Fold one EV_ABS multitouch event into the per-finger table.
+
+    Returns:
+        The (possibly changed) current slot.
+    """
     if e.code == ec.ABS_MT_SLOT:
         return e.value
-    if slot in (0, 1):
-        f = fingers[slot]
+    if 0 <= slot < TOUCH_SLOTS:
+        finger = fingers[slot]
         if e.code == ec.ABS_MT_TRACKING_ID:
             prev[slot] = None              # a new / lifted finger: no delta, the position stays (as in the kernel)
-            if e.value >= 0:
-                f.update(on=True, id=e.value & 0x7F)
-            else:
-                f["on"] = False
+            finger.on = e.value >= 0
+            if finger.on:
+                finger.id = e.value & TOUCH_ID_MASK
         elif e.code == ec.ABS_MT_POSITION_X:
-            f["x"] = e.value
+            finger.x = e.value
         elif e.code == ec.ABS_MT_POSITION_Y:
-            f["y"] = e.value
+            finger.y = e.value
     return slot
 
 
-def _frame_mouse(c, fingers, prev, sess) -> None:
-    """Mouse part of a touchpad frame: finger deltas from the positions known in this frame become a cursor move
-    (1 finger) or a scroll (2 fingers), sent once the contact has moved past touch_start_move."""
+def _frame_deltas(fingers: list[_Finger], prev: list[tuple[int, int] | None]) -> list[tuple[int, int]]:
+    """Movement of every placed finger since its previous known position (0, 0 for a fresh finger); updates ``prev``."""
     deltas = []
-    for k, f in enumerate(fingers):
-        if f["on"] and f["x"] is not None and f["y"] is not None:
-            p = prev[k]
-            deltas.append((f["x"] - p[0], f["y"] - p[1]) if p else (0, 0))
-            prev[k] = (f["x"], f["y"])
+    for k, finger in enumerate(fingers):
+        now = finger.position()
+        if now is not None:
+            before = prev[k]
+            deltas.append((now[0] - before[0], now[1] - before[1]) if before else (0, 0))
+            prev[k] = now
+    return deltas
+
+
+def _frame_mouse(c: Ctrl, fingers: list[_Finger], prev: list[tuple[int, int] | None], sess: _Session) -> None:
+    """Mouse part of a touchpad frame.
+
+    Finger deltas from the positions known in this frame become a cursor move (1 finger) or a scroll (2 fingers), sent
+    once the contact has moved past touch_start_move.
+    """
+    deltas = _frame_deltas(fingers, prev)
     n = len(deltas)
-    if n > sess.max_n:
-        sess.max_n = n
+    sess.max_n = max(sess.max_n, n)
     sess.moved += sum(abs(dx) + abs(dy) for dx, dy in deltas)
     kind = dx = dy = 0
-    if C.GESTURES and n >= 2:
-        kind, dx, dy = 2, deltas[0][0] + deltas[1][0], deltas[0][1] + deltas[1][1]
-    elif n >= 1 and not (C.GESTURES and sess.max_n >= 2):
-        kind, (dx, dy) = 1, deltas[0]
+    if C.GESTURES and n >= TWO_FINGERS:
+        kind, dx, dy = KIND_SCROLL, deltas[0][0] + deltas[1][0], deltas[0][1] + deltas[1][1]
+    elif n >= 1 and not (C.GESTURES and sess.max_n >= TWO_FINGERS):
+        kind, (dx, dy) = KIND_CURSOR, deltas[0]
     if kind and (dx or dy):
         if kind != sess.kind:
             sess.kind, sess.pend = kind, [0, 0]
@@ -358,157 +579,201 @@ def _frame_mouse(c, fingers, prev, sess) -> None:
         sess.pend[1] += dy
         if sess.started or sess.moved >= C.TOUCH_START_MOVE:
             sess.started = True
-            if kind == 2:
+            if kind == KIND_SCROLL:
                 sess.scrolled = True
-            c.send_mouse(sess.pend[0], sess.pend[1], 2 if kind == 2 else 0)
+            c.send_mouse(sess.pend[0], sess.pend[1], MOUSE_SCROLL if kind == KIND_SCROLL else 0)
             sess.pend = [0, 0]
 
 
-def _frame_touch_packet(c, fingers, maxx, maxy, last_tp):
-    """DS4/DSU part of a touchpad frame: send the touch packet unless it only repeats the last one. The deadzone checks
-    BOTH fingers (the second must not be swallowed by the first). Returns the touch state to remember as `last_tp`."""
-    tp = []
-    for f in fingers:
-        if f["on"] and f["x"] is not None and f["y"] is not None:
-            tp.append((1, f["id"],
-                       clamp(f["x"] * TOUCH_W // maxx, 0, TOUCH_W),
-                       clamp(f["y"] * TOUCH_H // maxy, 0, TOUCH_H)))
-        else:
-            tp.append((0, f["id"], 0, 0))
-    tp = tuple(tp)
-    if tp != last_tp and not (_same_finger(tp[0], last_tp[0]) and _same_finger(tp[1], last_tp[1])):
-        c.touch = tp
+def _finger_packet(finger: _Finger, max_x: int, max_y: int) -> tuple[int, int, int, int]:
+    """One finger of the touch packet: ``(active, id, x, y)`` in the DS4 touchpad scale."""
+    pos = finger.position()
+    if pos is None:
+        return 0, finger.id, 0, 0
+    return 1, finger.id, clamp(pos[0] * TOUCH_W // max_x, 0, TOUCH_W), clamp(pos[1] * TOUCH_H // max_y, 0, TOUCH_H)
+
+
+def _frame_touch_packet(c: Ctrl, fingers: list[_Finger], max_x: int, max_y: int, last_touch: tuple) -> tuple:
+    """DS4/DSU part of a touchpad frame: send the touch packet unless it only repeats the last one.
+
+    The deadzone checks BOTH fingers (the second must not be swallowed by the first).
+
+    Returns:
+        The touch state to remember as ``last_touch``.
+    """
+    touch = tuple(_finger_packet(f, max_x, max_y) for f in fingers)
+    if touch != last_touch and not (_same_finger(touch[0], last_touch[0]) and _same_finger(touch[1], last_touch[1])):
+        c.touch = touch
         c.send_touch()
-        return tp
-    return last_tp
+        return touch
+    return last_touch
 
 
-def _frame_tap(c, sess, now) -> None:
-    """All fingers are up: a short, nearly motionless contact that no physical click cancelled is a tap
-    (1 finger = left button, 2 fingers = right button unless it already scrolled)."""
+def _frame_tap(c: Ctrl, sess: _Session, now: float) -> None:
+    """All fingers are up: decide whether the contact was a tap.
+
+    A short, nearly motionless contact that no physical click cancelled is a tap (1 finger = left button, 2 fingers =
+    right button unless it already scrolled).
+    """
     if not (C.TAP_CLICK and not sess.clicked and now - sess.t0 < C.TAP_MAX_S and sess.moved < C.TAP_MAX_MOVE):
         return
-    if C.GESTURES and sess.max_n >= 2:
+    if C.GESTURES and sess.max_n >= TWO_FINGERS:
         if not sess.scrolled:
-            c.send_tap(4)
+            c.send_tap(MOUSE_TAP_RIGHT)
     elif sess.max_n >= 1:
-        c.send_tap(1)
+        c.send_tap(MOUSE_TAP)
 
 
-async def stream_touch(c) -> None:
-    """Touchpad -> (a) DS4/DSU touch packets, (b) mouse packets (cursor, tap, 2-finger scrolling).
+def _kernel_slots(dev: InputDevice, n: int) -> Sequence[tuple[int, int | None, int | None]]:
+    """Read the multitouch slot state from the kernel ``[(tracking_id, x, y)]``.
 
-    Mouse rules: 1 finger = cursor (it only starts moving after touch_start_move, so a tap does not jerk the cursor),
-    2 fingers = scrolling, and until all fingers are lifted the cursor stays put (lifting fingers one by one does
-    not fire a click or a jump). A short tap with 1 finger = left button, with 2 fingers = right button.
-
-    How it works: the kernel sends multitouch events (slot selection, tracking id, X, Y); they update a small
-    per-finger table, and on every SYN_REPORT the frame is processed - deltas from the previous known position drive
-    the mouse (_frame_mouse), the same table drives the DS4 touch packet (_frame_touch_packet, with a per-finger deadzone)
-    and the end of the contact decides whether it was a tap (_frame_tap). After SYN_DROPPED the table is rebuilt from
-    the kernel state."""
-    maxx, maxy = _touch_range(c.touch_dev)
-    loop = asyncio.get_running_loop()
-    slot = 0
-    # x / y = the position remembered in the kernel slot (None = unknown). The kernel skips an axis event when the value in the slot
-    # did not change - also for a NEW finger. So the position survives lifting the finger, and a new finger placed
-    # at the same x or y (e.g. at an edge: 0 / max) takes it from here; reset to zero it lost such a touch and tap.
-    # A finger that is already down (a pad connected with a palm on the touchpad, a touchpad attached later) is also "on":
-    # the kernel will not send it ABS_MT_TRACKING_ID until it is lifted - without this its movement gave neither a cursor
-    # nor DS4 touch. Such a contact does not end with a tap (as after SYN_DROPPED).
-    fingers = [{"on": tid >= 0, "id": tid & 0x7F if tid >= 0 else 0, "x": x, "y": y}
-               for tid, x, y in _kernel_slots(c.touch_dev, 2)]
-    prev = [None, None]            # previous finger position (x, y); None = a fresh finger, no delta
-    sess = None
-    last_tp = IDLE_TP
-    dropping = False
-    resynced = any(f["on"] for f in fingers)
-    async for e in c.touch_dev.async_read_loop():
-        et = e.type
-        if dropping:
-            if et != ec.EV_SYN or e.code != ec.SYN_REPORT:
-                continue              # an incomplete frame after a buffer overflow - skipped
-            dropping = False
-            _resync_touch(c, fingers, prev)
-            try:
-                slot = c.touch_dev.absinfo(ec.ABS_MT_SLOT).value
-            except Exception:
-                slot = 0
-            if sess is not None:
-                sess.clicked = True   # this contact can no longer end with a tap
-            resynced = True
-            # then: the usual SYN_REPORT handling with the restored finger state
-        if et == ec.EV_ABS:
-            slot = _apply_touch_axis(e, slot, fingers, prev)
-        elif et == ec.EV_SYN and e.code == ec.SYN_DROPPED:
-            dropping = True
-        elif et == ec.EV_KEY and e.code == ec.BTN_LEFT:
-            # a click with two fingers on the touchpad = 2 (in mouse mode the right button); the value is held until release
-            c.tp = (2 if C.GESTURES and fingers[0]["on"] and fingers[1]["on"] else 1) if e.value else 0
-            if e.value and sess is not None:
-                sess.clicked = True      # a physical click during the touch cancels the tap until the fingers are lifted
-            c.send_click()
-            for d in BURST_DELAYS:
-                loop.call_later(d, c.send_click)
-        elif et == ec.EV_SYN and e.code == ec.SYN_REPORT:
-            on = fingers[0]["on"] or fingers[1]["on"]
-            now = time.monotonic()
-            if on:
-                c.last_input = now
-            if sess is None:
-                if not on:
-                    continue
-                sess = _Session(now)
-                if resynced:
-                    sess.clicked = True   # a finger placed during lost events - no tap
-            resynced = False
-            _frame_mouse(c, fingers, prev, sess)
-            last_tp = _frame_touch_packet(c, fingers, maxx, maxy, last_tp)
-            if not on:
-                _frame_tap(c, sess, now)
-                sess = None
-
-
-def _kernel_slots(dev, n):
-    """The multitouch slot state from the kernel [(tracking_id, x, y)]; without the ioctl (another platform, tests) the
-    fingers are lifted and the position is unknown (None)."""
+    Without the ioctl (another platform, tests) the fingers are lifted and the position is unknown (None).
+    """
     try:
         return read_mt(dev, n)
     except (OSError, AttributeError, TypeError, ValueError):
         return [(-1, None, None)] * n
 
 
-def _resync_touch(c, fingers, prev) -> None:
-    """Rebuild the fingers and the touchpad button from the kernel state; without the ioctl (another platform) all fingers are lifted."""
-    for k, (tid, x, y) in enumerate(_kernel_slots(c.touch_dev, len(fingers))):
-        fingers[k].update(on=tid >= 0, x=x, y=y)       # the position of a lifted finger too (see stream_touch)
-        if tid >= 0:
-            fingers[k]["id"] = tid & 0x7F
+def _click_state(fingers: list[_Finger], pressed: bool) -> int:
+    """The touchpad button state for the click packet: released, pressed, or pressed with two fingers (right button)."""
+    if not pressed:
+        return CLICK_RELEASED
+    return CLICK_TWO_FINGERS if C.GESTURES and fingers[0].on and fingers[1].on else CLICK_PRESSED
+
+
+def _resync_touch(c: Ctrl, fingers: list[_Finger], prev: list[tuple[int, int] | None]) -> None:
+    """Rebuild the fingers and the touchpad button from the kernel state; without the ioctl (another platform) all are lifted."""
+    for k, (tracking_id, x, y) in enumerate(_kernel_slots(c.touch_dev, len(fingers))):
+        finger = fingers[k]
+        finger.on, finger.x, finger.y = tracking_id >= 0, x, y       # the position of a lifted finger too
+        if tracking_id >= 0:
+            finger.id = tracking_id & TOUCH_ID_MASK
         prev[k] = None                # no delta in the first frame - the cursor will not jump
     try:
-        tp = ec.BTN_LEFT in c.touch_dev.active_keys()
+        pressed = ec.BTN_LEFT in c.touch_dev.active_keys()
     except (OSError, AttributeError):
         return
-    if bool(c.tp) != tp:
-        c.tp = (2 if C.GESTURES and fingers[0]["on"] and fingers[1]["on"] else 1) if tp else 0
+    if bool(c.tp) != pressed:
+        c.tp = _click_state(fingers, pressed)
         c.send_click()
 
 
-async def stream_battery(c) -> None:
+class _TouchStream:
+    """The state of the touchpad read loop.
+
+    Mouse rules: 1 finger = cursor (it only starts moving after touch_start_move, so a tap does not jerk the cursor),
+    2 fingers = scrolling, and until all fingers are lifted the cursor stays put (lifting fingers one by one does
+    not fire a click or a jump). A short tap with 1 finger = left button, with 2 fingers = right button.
+
+    How it works: the kernel sends multitouch events (slot selection, tracking id, X, Y); they update a small per-finger
+    table, and on every SYN_REPORT the frame is processed - deltas from the previous known position drive the mouse
+    (``_frame_mouse``), the same table drives the DS4 touch packet (``_frame_touch_packet``, with a per-finger deadzone)
+    and the end of the contact decides whether it was a tap (``_frame_tap``). After SYN_DROPPED the table is rebuilt from
+    the kernel state.
+    """
+
+    def __init__(self, c: Ctrl) -> None:
+        """Bind the loop to a pad and read the fingers that are already down."""
+        self.c = c
+        self.loop = asyncio.get_running_loop()
+        self.max_x, self.max_y = _touch_range(c.touch_dev)
+        self.slot = 0
+        # A finger that is already down (a pad connected with a palm on the touchpad, a touchpad attached later) is also
+        # "on": the kernel will not send it ABS_MT_TRACKING_ID until it is lifted - without this its movement gave neither a
+        # cursor nor DS4 touch. Such a contact does not end with a tap (as after SYN_DROPPED).
+        self.fingers = [_Finger(tid >= 0, tid & TOUCH_ID_MASK if tid >= 0 else 0, x, y)
+                        for tid, x, y in _kernel_slots(c.touch_dev, TOUCH_SLOTS)]
+        self.prev: list[tuple[int, int] | None] = [None] * TOUCH_SLOTS   # previous finger position; None = a fresh finger, no delta
+        self.sess: _Session | None = None
+        self.last_touch = IDLE_TP
+        self.dropping = False
+        self.resynced = any(f.on for f in self.fingers)
+
+    def handle(self, e: InputEvent) -> None:
+        """Process one evdev event of the touchpad."""
+        if self.dropping:
+            if not _is_report(e):
+                return                  # an incomplete frame after a buffer overflow - skipped
+            self._recover_from_drop()
+        if e.type == ec.EV_ABS:
+            self.slot = _apply_touch_axis(e, self.slot, self.fingers, self.prev)
+        elif e.type == ec.EV_SYN and e.code == ec.SYN_DROPPED:
+            self.dropping = True
+        elif e.type == ec.EV_KEY and e.code == ec.BTN_LEFT:
+            self._on_click(bool(e.value))
+        elif _is_report(e):
+            self._on_report()
+
+    def _recover_from_drop(self) -> None:
+        """The incomplete frame is over: rebuild the finger table from the kernel, then handle the report as usual."""
+        c = self.c
+        self.dropping = False
+        _resync_touch(c, self.fingers, self.prev)
+        try:
+            self.slot = c.touch_dev.absinfo(ec.ABS_MT_SLOT).value
+        except DEVICE_READ_ERRORS:
+            self.slot = 0
+        if self.sess is not None:
+            self.sess.clicked = True    # this contact can no longer end with a tap
+        self.resynced = True
+
+    def _on_click(self, pressed: bool) -> None:
+        """The physical touchpad button: sent as the click packet, repeated against a lost packet."""
+        c = self.c
+        c.tp = _click_state(self.fingers, pressed)      # held until release; two fingers = the right button in mouse mode
+        if pressed and self.sess is not None:
+            self.sess.clicked = True    # a physical click during the touch cancels the tap until the fingers are lifted
+        c.send_click()
+        for delay in BURST_DELAYS:
+            self.loop.call_later(delay, c.send_click)
+
+    def _on_report(self) -> None:
+        """A complete touchpad frame: mouse movement, the touch packet, and the tap decision when the fingers are up."""
+        c = self.c
+        on = any(f.on for f in self.fingers)
+        now = time.monotonic()
+        if on:
+            c.last_input = now
+        if self.sess is None:
+            if not on:
+                return
+            self.sess = _Session(now)
+            if self.resynced:
+                self.sess.clicked = True    # a finger placed during lost events - no tap
+        self.resynced = False
+        _frame_mouse(c, self.fingers, self.prev, self.sess)
+        self.last_touch = _frame_touch_packet(c, self.fingers, self.max_x, self.max_y, self.last_touch)
+        if not on:
+            _frame_tap(c, self.sess, now)
+            self.sess = None
+
+
+async def stream_touch(c: Ctrl) -> None:
+    """Turn touchpad events into DS4/DSU touch packets and mouse packets (cursor, tap, 2-finger scrolling).
+
+    See ``_TouchStream`` for the rules and the way it works.
+    """
+    stream = _TouchStream(c)
+    async for e in c.touch_dev.async_read_loop():
+        stream.handle(e)
+
+
+async def stream_battery(c: Ctrl) -> None:
     """Poll the kernel power-supply entry of the pad every BATT_POLL_S: battery percentage and charging flag.
 
     The sysfs name contains the pad's MAC. When the entry cannot be read (USB pad, no driver support) the level is
-    reported as 255 = unknown.
+    reported as BATT_UNKNOWN.
     """
-    path = f"/sys/class/power_supply/ps-controller-battery-{(c.key or '').lower()}"
+    path = f"{BATTERY_PATH}{(c.key or '').lower()}"
     while True:
         try:
             with open(path + "/capacity") as f:
-                pct = int(f.read().strip())
+                percent = int(f.read().strip())
             with open(path + "/status") as f:
-                st = f.read().strip().lower()
-            c.batt = clamp(pct, 0, 100)
-            c.flags = 1 if st in ("charging", "full") else 0
+                status = f.read().strip().lower()
+            c.batt = clamp(percent, 0, BATTERY_FULL_PERCENT)
+            c.flags = STATE_CHARGING if status in ("charging", "full") else 0
         except (OSError, ValueError):
-            c.batt, c.flags = 255, 0
+            c.batt, c.flags = BATT_UNKNOWN, 0
         await asyncio.sleep(C.BATT_POLL_S)

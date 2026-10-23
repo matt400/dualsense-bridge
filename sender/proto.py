@@ -184,6 +184,16 @@ RFX_HOLD_S: Final = 0.3                                 # this much motor silenc
 TRIG2_OFF: Final = (TFX_OFF, 0, 0, 0) * 2 + (0, 0, 0, 0)    # trig2: everything off
 TRG3_L2, TRG3_R2 = 1, 2                                 # trig3 flags: the game effect for L2 / R2 is valid
 TRIG_RAW_LEN: Final = 11                                # a trigger effect in the DualSense output report [B]
+CLICK_RELEASED, CLICK_PRESSED, CLICK_TWO_FINGERS = 0, 1, 2   # click packet: the touchpad button state (2 = pressed with 2 fingers)
+NO_PAD: Final = 255                                     # controller idx of a packet about the sender / the link, not about one pad
+IDENT_LEN: Final = 17                                   # the ident packet's text field: the pad's MAC (or a short hash)
+BATT_UNKNOWN: Final = 255                               # the state packet's battery %: unknown (USB pad, no power-supply entry)
+STATE_CHARGING: Final = 0x01                            # bit 0 of the state packet's flags byte: charging or full
+MOUSE_TAP: Final = 0x01                                 # mouse packet flags: tap = left button ...
+MOUSE_SCROLL: Final = 0x02                              # ... dx, dy are a two-finger scroll, not cursor movement ...
+MOUSE_TAP_RIGHT: Final = 0x04                           # ... two-finger tap = right button ...
+MOUSE_TAP_ID_SHIFT: Final = 4                           # ... bits 4-7: the tap number 1..MOUSE_TAP_ID_MAX
+MOUSE_TAP_ID_MAX: Final = 15
 # why there is no rumble through the HID report (version packet): ok, rumble=off, no permission, a kernel without hidraw,
 # the pad's hidraw was not found, another open error
 WHY_OK, WHY_OFF, WHY_ACCESS, WHY_NO_HIDRAW, WHY_NOT_FOUND, WHY_OPEN = range(6)

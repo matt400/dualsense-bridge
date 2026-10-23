@@ -42,6 +42,7 @@ from evdev import InputDevice
 from evdev import ecodes as ec
 from evdev import ff
 
+from sender_ioctl import IOC_READ, IOC_WRITE, ioc
 from proto import (CAP_TRIG_FX, CAP_TRIG_RAW, CAP_TRIGGERS, RFX_GAIN_MAX, RFX_HOLD_S, RFX_ON, RUMBLE_EVDEV, RUMBLE_HIDRAW,
                    TFX_CLICK, TFX_OFF, TFX_RES, TFX_VIB, TRG3_L2, TRG3_R2, TRIG2_OFF, TRIG_AMP_MAX, TRIG_CLICK_MAX,
                    TRIG_CLICK_MIN, TRIG_FORCE_MAX, TRIG_FREQ_MAX, TRIG_START_MAX, WHY_ACCESS, WHY_NO_HIDRAW,
@@ -124,16 +125,13 @@ _HID_DIR = re.compile(r"^([0-9A-Fa-f]{4}):[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}\.[0-9A-F
 BUS_BLUETOOTH: Final = 0x0005
 FW_REPORT, FW_SIZE, FW_VERSION_AT = 0x20, 64, 44    # the feature report with the firmware version (as in hid-playstation)
 VIBRATION_V2_FROM: Final = 0x0221                   # DS_FEATURE_VERSION(2, 21)
-# HIDIOCGFEATURE(len) = _IOC(_IOC_READ | _IOC_WRITE, 'H', 0x07, len), see linux/hidraw.h and asm-generic/ioctl.h
-IOC_READ_WRITE, IOC_DIR_SHIFT, IOC_SIZE_SHIFT, IOC_TYPE_SHIFT = 3, 30, 16, 8
-HID_IOC_MAGIC, HIDIOCGFEATURE_NR = ord("H"), 0x07
+HID_IOC_MAGIC, HIDIOCGFEATURE_NR = "H", 0x07     # HIDIOCGFEATURE(len), see linux/hidraw.h
 HIDRAW_NODE_MODE: Final = stat.S_IFCHR | 0o600
 
 
 def _hidiocgfeature(size: int) -> int:
     """Build the HIDIOCGFEATURE ioctl number (read an HID feature report of ``size`` bytes)."""
-    return ((IOC_READ_WRITE << IOC_DIR_SHIFT) | (size << IOC_SIZE_SHIFT) | (HID_IOC_MAGIC << IOC_TYPE_SHIFT)
-            | HIDIOCGFEATURE_NR)
+    return ioc(IOC_READ | IOC_WRITE, HID_IOC_MAGIC, HIDIOCGFEATURE_NR, size)
 
 
 def firmware_version(fd: int) -> int | None:
