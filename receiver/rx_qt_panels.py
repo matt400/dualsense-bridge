@@ -50,7 +50,7 @@ def r3(v):
     return round(v, 3)
 
 
-def _vbox(parent=None, spacing=10):
+def _vbox(parent=None, spacing: int = 10):
     """A vertical layout without margins (on `parent` when given)."""
     lay = QVBoxLayout(parent)
     lay.setContentsMargins(0, 0, 0, 0)
@@ -469,7 +469,7 @@ class GyroPage(QWidget):
         lay.addWidget(self.tilt)
         lay.addStretch(1)
 
-    def _set(self, relayout=False, **patch) -> None:
+    def _set(self, relayout: bool = False, **patch) -> None:
         """Patch the gyro settings; relayout reloads the widgets (a mode change shows / hides parts)."""
         self.ed.set_gyro(**patch)
         if relayout:

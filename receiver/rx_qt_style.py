@@ -24,7 +24,7 @@ def px(n):
     return round(n * scale)
 
 
-def qss(k=1.0) -> str:
+def qss(k: float = 1.0) -> str:
     """The whole application stylesheet with every pixel size multiplied by `k` (the TV-mode scale)."""
     def p(n) -> str:
         return f"{round(n * k)}px"
@@ -142,7 +142,7 @@ QMessageBox {{ background: {CARD}; }}
 """
 
 
-def apply_theme(app: QApplication, k=1.0) -> None:
+def apply_theme(app: QApplication, k: float = 1.0) -> None:
     """Fusion style + a dark palette (for elements the QSS does not cover: dialogs, tooltips) + the QSS.
     k = scale (TV mode); a scale change only swaps the QSS, the palette stays.
     """

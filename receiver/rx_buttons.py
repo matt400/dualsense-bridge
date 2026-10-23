@@ -160,7 +160,7 @@ def profile_size(p):
     return len(p["buttons"]) + len(p["sticks"]) + len(p["tuning"]) + (1 if p["gyro"] else 0) + len(p["triggers"])
 
 
-def is_game_key(key):
+def is_game_key(key) -> bool:
     """Whether a profile key belongs to a game ("<pad>@<game.exe>") rather than to a pad."""
     return "@" in key
 
@@ -240,7 +240,7 @@ class RemapStore:
                 p = self.saved.get(key)
             return normalize_profile(p)
 
-    def has(self, key):
+    def has(self, key) -> bool:
         """Whether a profile exists, live or saved."""
         with self._lock:
             return key in self.live or key in self.saved
@@ -252,7 +252,7 @@ class RemapStore:
             games = {k for k in self.live.keys() | self.saved.keys() if k.startswith(prefix)}
         return [base, *sorted(games)]
 
-    def in_file(self, key):
+    def in_file(self, key) -> bool:
         """Whether a profile is saved in the file."""
         with self._lock:
             return key in self.saved
@@ -286,7 +286,7 @@ class RemapStore:
                 return True, _("Usunięto")
             return self._write("Usunięto - {file}")
 
-    def _write(self, done="Zapisano - {file}"):
+    def _write(self, done: str = "Zapisano - {file}"):
         """Atomic write (temporary file + replace) - an interruption does not corrupt remap.json. Call with _lock held."""
         try:
             write_json(self.path, {"version": 3, "profiles": self.saved}, indent=2, sort_keys=True)

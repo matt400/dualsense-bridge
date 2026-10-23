@@ -48,7 +48,7 @@ _seq = 0
 _seen = collections.deque(maxlen=128)      # sender event numbers (UDP repeats)
 
 
-def add(level, text, sender=False, t=None):
+def add(level, text, sender: bool = False, t=None):
     """Append an entry with the next sequence number (an unknown level becomes "info") and return it. Thread-safe."""
     global _seq
     with _lock:

@@ -37,7 +37,7 @@ def user_id():
 LEAST, HIGHEST = "<RunLevel>LeastPrivilege</RunLevel>", "<RunLevel>HighestAvailable</RunLevel>"
 
 
-def task_xml(exe, args, workdir, user, elevated=False, logon=True) -> str:
+def task_xml(exe, args, workdir, user, elevated: bool = False, logon: bool = True) -> str:
     """Task definition: at this user's logon, no delay and no time limit, normal priority.
     elevated: the highest privileges (administrator without a UAC prompt); logon=False: no trigger (start on demand).
     """
@@ -126,7 +126,7 @@ def split_command(cmd):
     return exe, args.strip()
 
 
-def create_task(exe, args, elevated=False, name=NAME, logon=True):
+def create_task(exe, args, elevated: bool = False, name=NAME, logon: bool = True):
     """Create the task for `exe args` (the working folder is the script's folder) -> (ok, error description)."""
     script = split_command(args)[0] if args else exe
     return _create_xml(task_xml(exe, args, os.path.dirname(os.path.abspath(script)), user_id(), elevated, logon), name)
@@ -151,7 +151,7 @@ def _create_xml(xml, name=NAME):
             pass
 
 
-def enable(exe, args, elevated=False) -> str:
+def enable(exe, args, elevated: bool = False) -> str:
     """Enable autostart: create the logon task and drop the old Run entry; when the task cannot be created, fall back to the Run entry.
     Returns a log message.
     """

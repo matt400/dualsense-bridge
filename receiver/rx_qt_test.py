@@ -43,7 +43,7 @@ def _nice(v):
     return next(m * k for m in (1, 2, 5, 10) if m * k >= v)
 
 
-def _font(size, bold=False):
+def _font(size, bold: bool = False):
     """The chart font (Segoe UI) at a DPI-scaled pixel size."""
     f = QFont("Segoe UI")
     f.setPixelSize(px(size))
@@ -51,7 +51,7 @@ def _font(size, bold=False):
     return f
 
 
-def pct(v, digits=0) -> str:
+def pct(v, digits: int = 0) -> str:
     """A fraction 0..1 -> "6%" / "4.2%"."""
     return f"{v * 100:.{digits}f}%"
 
@@ -246,7 +246,7 @@ class TestPanel(QWidget):
 
     block_changed = Signal(bool)
 
-    def __init__(self, block_on=True) -> None:
+    def __init__(self, block_on: bool = True) -> None:
         """Build the panel: the output lock, motion charts, the stick scope with drift measurement, and the gyro calibration."""
         super().__init__()
         self.slot = 0

@@ -262,7 +262,7 @@ class Engine:
 
     # ---------- control from outside ----------
     @property
-    def calibrating(self):
+    def calibrating(self) -> bool:
         return self._cal is not None
 
     def start_center(self, now, secs=CAL_S) -> None:
@@ -270,7 +270,7 @@ class Engine:
         self.cal_result = None
         self._cal = [now + secs, 0.0, 0.0, 0.0, 0, 0.0]
 
-    def release(self, rearm=True) -> None:
+    def release(self, rearm: bool = True) -> None:
         """Hard clear: the gyro gives the input back, the filter and states are zeroed; rearm - the stick moves again only after
         the pad returns near the center (no jump after a window / profile change).
         """
@@ -360,7 +360,7 @@ class Engine:
             self.asleep = True
         return self.asleep
 
-    def step(self, now, ax, ay, az, gdps, held, alive=True):
+    def step(self, now, ax, ay, az, gdps, held, alive: bool = True):
         """One sample: now [s, monotonic clock], acc [g], gdps = rotation magnitude [°/s], held = clutch held,
         alive = pad connected. -> True when `out` has to be sent (`sent` itself is already updated).
         """
@@ -416,13 +416,13 @@ class Engine:
         elif raw_r < dz:
             self.dead = True
         if self.dead:
-            self.filt = (vx, vy)
+            fx, fy = vx, vy
         else:
             tau = cfg.smoothing / 100 * SMOOTH_MAX_S
             a = 1.0 - math.exp(-dt / tau) if tau > 0 else 1.0
             fx, fy = self.filt if self.filt is not None else (vx, vy)
-            self.filt = (fx + a * (vx - fx), fy + a * (vy - fy))
-        fx, fy = self.filt
+            fx, fy = fx + a * (vx - fx), fy + a * (vy - fy)
+        self.filt = (fx, fy)
         self.filt_xy = (fx, fy)
         fr = math.hypot(fx, fy)
         m = 0.0 if self.dead or fr <= dz else min(1.0, (fr - dz) / (cfg.outer - dz))

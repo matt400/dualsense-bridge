@@ -442,7 +442,7 @@ class PadView(QWidget):
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawEllipse(QPointF(cx + ox, cy + oy), 17, 17)
 
-    def _edge(self, name, base=EDGE, width=1.5):
+    def _edge(self, name, base=EDGE, width: float = 1.5):
         """A part's outline: selected = accent and thick, under the cursor / picked from the pad = white."""
         if name == self.selected:
             return QPen(ACCENT, 3.5)

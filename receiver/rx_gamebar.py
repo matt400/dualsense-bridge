@@ -59,7 +59,7 @@ def gamebar_installed(reg):
     return any(n.startswith(PACKAGE_PREFIX) for n in _subkeys(reg, reg.HKEY_CURRENT_USER, PACKAGES))
 
 
-def _ours(reg, scheme):
+def _ours(reg, scheme) -> bool:
     """Whether the handler of this URL scheme in HKCU was created by us (it carries the MARKER value)."""
     return _value(reg, reg.HKEY_CURRENT_USER, rf"{CLASSES}\{scheme}", MARKER) is not None
 

@@ -125,7 +125,7 @@ class ScreenPlacement(QMainWindow):
         for sc in app.screens():
             self._screen_added(sc, settle=False)
 
-    def _screen_added(self, sc, settle=True) -> None:
+    def _screen_added(self, sc, settle: bool = True) -> None:
         """Watch a screen's geometry and DPI; a new screen counts as a change."""
         sc.geometryChanged.connect(self._screens_changed)
         sc.availableGeometryChanged.connect(self._screens_changed)

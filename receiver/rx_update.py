@@ -81,7 +81,7 @@ def describe(commit, ts):
     return f"{commit} · {time.strftime('%d.%m.%Y', time.localtime(ts))}" if ts else commit
 
 
-def sender_state(build, old_commit=""):
+def sender_state(build, old_commit: str = ""):
     """The sender update state from the build packet. After downloading code the sender restarts (os.execv) and the new process
     reports UPD_NONE - when the receiver updated for longer (e.g. pip install), the window saw only that state and wrote
     "the sender did not answer". A commit different from the one before the update (old_commit) = updated.
@@ -93,7 +93,7 @@ def sender_state(build, old_commit=""):
     return build[2]
 
 
-def sender_text(build, msg="", old_commit=""):
+def sender_text(build, msg: str = "", old_commit: str = ""):
     """The sender update result from the build packet (None = a sender older than this feature); msg = the failure reason (updmsg);
     old_commit = the sender commit before the update (see sender_state).
     """
@@ -190,7 +190,7 @@ def start_checker(stop) -> None:
     threading.Thread(target=_checker, args=(stop,), name="update check", daemon=True).start()
 
 
-def update(root=ROOT, git=None, pip=True):
+def update(root=ROOT, git=None, pip: bool = True):
     """Update the code: git pull --ff-only, then a settings backup and (when requirements changed) pip install -> Result.
 
     Also covers code that is already on disk but not yet running (see the module docstring, 2a). The git lock keeps the pull from
@@ -242,7 +242,7 @@ def _run(cmd, root, timeout):
                           timeout=timeout, creationflags=NO_WINDOW)
 
 
-def _last_lines(text, n=3):
+def _last_lines(text, n: int = 3):
     """The last n non-empty lines of a text joined with " / " (the useful end of a pip error)."""
     lines = [x.strip() for x in text.strip().splitlines() if x.strip()]
     return " / ".join(lines[-n:])

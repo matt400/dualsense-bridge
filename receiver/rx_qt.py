@@ -878,7 +878,7 @@ class MainWindow(ScreenPlacement):
         if r.changed:
             QTimer.singleShot(UPDATE_RESTART_MS, self.restart)
 
-    def restart(self, admin=False) -> None:
+    def restart(self, admin: bool = False) -> None:
         """A restart (the button, the tray, saved settings): an ordinary window close, and the receiver starts again by itself
         after releasing the ports and virtual pads. admin: the new process as administrator (UAC, HIDMaestro).
         """

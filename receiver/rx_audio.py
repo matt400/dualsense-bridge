@@ -49,7 +49,7 @@ def find(name, devices):
     return partial[0] if len(partial) == 1 else None
 
 
-def set_default(name, wait_s=6.0) -> None:
+def set_default(name, wait_s: float = 6.0) -> None:
     """Set the default audio output (all roles) by device name. Polls the device list for up to wait_s until the device
     appears - a TV's HDMI audio only becomes active after its screen is switched on. Device not found -> LookupError.
     """

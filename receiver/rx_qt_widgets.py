@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (QButtonGroup, QComboBox, QFrame, QHBoxLayout, QLa
 from rx_qt_style import LINE, OK, TRACK, px, set_prop
 
 
-def label(text="", role=None, wrap=False):
+def label(text: str = "", role=None, wrap: bool = False):
     """A label with plain text: part of the content comes from the network (the sender, Bluetooth names, the pad id) -
     the default AutoText would render HTML tags in it.
     """
@@ -21,7 +21,7 @@ def label(text="", role=None, wrap=False):
     return lb
 
 
-def button(text, primary=False, small=False):
+def button(text, primary: bool = False, small: bool = False):
     """A push button with the `primary` / `small` style properties and a pointing-hand cursor."""
     b = QPushButton(text)
     b.setProperty("primary", primary)
@@ -31,7 +31,7 @@ def button(text, primary=False, small=False):
     return b
 
 
-def icon_button(name, tip_text, size=20):
+def icon_button(name, tip_text, size: int = 20):
     """A button with only an icon (rx_qt_icons) and a tooltip - the window header, the pad card."""
     from rx_qt_icons import icon
     b = button("")
@@ -42,7 +42,7 @@ def icon_button(name, tip_text, size=20):
     return b
 
 
-def spinbox(lo, hi, step=1, suffix=""):
+def spinbox(lo, hi, step: int = 1, suffix: str = ""):
     """A number field. The style sheet's padding does not move the QSpinBox text field (the text sticks to the left
     edge, unlike QLineEdit / QComboBox) - the left gap is made through the inner field's text margins.
     """
@@ -54,7 +54,7 @@ def spinbox(lo, hi, step=1, suffix=""):
     return box
 
 
-def icon_label(name, size=22):
+def icon_label(name, size: int = 22):
     """A pad button icon as a QLabel (the full name in the tooltip)."""
     from rx_qt_icons import pixmap, tip
     lb = QLabel()
@@ -112,7 +112,7 @@ def field(caption, widget):
     return w
 
 
-def input_items(names, text=False):
+def input_items(names, text: bool = False):
     """Pad inputs as list items: the button icon (the full name in the tooltip); text=True adds the name next to it."""
     from rx_qt_icons import tip
     return [(n, tip(n) if text else "", n) for n in names]
@@ -177,7 +177,7 @@ class SliderRow(QWidget):
 
     changed = Signal(float)      # only after a user move, not after set()
 
-    def __init__(self, caption, lo, hi, step, unit="", fmt=None) -> None:
+    def __init__(self, caption, lo, hi, step, unit: str = "", fmt=None) -> None:
         super().__init__()
         self.lo, self.step, self.unit, self.fmt = lo, step, unit, fmt   # fmt(v) -> the value text (instead of unit)
         self.title, self.val = label(caption, "dim", wrap=True), label("", "val")
@@ -225,7 +225,7 @@ class ConfirmButton(QPushButton):
 
     confirmed = Signal()
 
-    def __init__(self, text, armed="Sure?", timeout_ms=3000, small=False, iconic=None, tip="") -> None:
+    def __init__(self, text, armed: str = "Sure?", timeout_ms: int = 3000, small: bool = False, iconic=None, tip: str = "") -> None:
         super().__init__("" if iconic else text)
         self._text, self._armed = ("" if iconic else text), armed
         self.setProperty("small", small)
@@ -267,7 +267,7 @@ class Collapsible(QWidget):
 
     toggled = Signal(bool)
 
-    def __init__(self, title, *items, opened=False) -> None:
+    def __init__(self, title, *items, opened: bool = False) -> None:
         super().__init__()
         self._title = title
         self.head = QPushButton()
@@ -306,7 +306,7 @@ class Collapsible(QWidget):
 class SegmentBar(QWidget):
     """A thin bar of coloured segments (latency components): a segment's width = its share of the total."""
 
-    def __init__(self, height=6) -> None:
+    def __init__(self, height: int = 6) -> None:
         super().__init__()
         self.setFixedHeight(height)
         self.parts = ()
@@ -342,7 +342,7 @@ class SegmentBar(QWidget):
 class BatteryBar(QWidget):
     """A rounded battery bar; pct = None -> an empty track (unknown state)."""
 
-    def __init__(self, height=10) -> None:
+    def __init__(self, height: int = 10) -> None:
         super().__init__()
         self.setFixedHeight(height)
         self.pct, self.color = None, QColor(OK)

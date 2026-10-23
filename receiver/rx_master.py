@@ -59,7 +59,7 @@ def init(n) -> None:
     slots[:] = [Slot() for _ in range(n)]
 
 
-def reset(i, keep=False) -> None:
+def reset(i, keep: bool = False) -> None:
     """End the combinations and timers of a slot. keep: the pad stays connected (Test view boundary, block) - inputs held
     right now are the "previous state" (they will not fire an action), and a new press after the boundary works at once (like
     rx_hotkeys.reset); without keep - as after the pad connects (the first state is the initial state).
@@ -108,7 +108,7 @@ def check(i, feature) -> bool:
     return False
 
 
-def mouse_follows_master(force=False) -> None:
+def mouse_follows_master(force: bool = False) -> None:
     """The touchpad mouse follows the master: the master pad = mouse, the others = DS4 touch. The master is not connected
     (or force after the master was removed) -> the mouse per mouse_pads from the configuration. With no master in the settings it changes
     nothing (a manual PS + touchpad click switch stays). Called after the master changes and after a pad connects / leaves.
@@ -141,7 +141,7 @@ def _master_changed(old, new) -> None:
 rx_settings.on_change(_master_changed)
 
 
-def set_master(i, save=True):
+def set_master(i, save: bool = True):
     """The pad in slot i becomes the master (i = None: no master). -> (ok, message)."""
     if i is not None and S.pad_id[i] is None:
         return False, _("Pad {n} nie przysłał jeszcze identyfikatora (MAC) - spróbuj za chwilę").format(n=i + 1)

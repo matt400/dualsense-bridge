@@ -184,7 +184,7 @@ def reset(i) -> None:
         fb_sent[i] = None
 
 
-def pulse(i, kind, force=False) -> None:
+def pulse(i, kind, force: bool = False) -> None:
     """A short confirmation on the pad (rumble and/or colour), laid over the game feedback.
     force: also when confirm = false (the rumble test from the window).
     """

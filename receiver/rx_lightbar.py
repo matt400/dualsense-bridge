@@ -18,7 +18,7 @@ def hex_rgb(text):
     return tuple(int(text[k:k + 2], 16) for k in (1, 3, 5))
 
 
-def rgb_hex(rgb):
+def rgb_hex(rgb) -> str:
     """(r, g, b) -> "#rrggbb"."""
     return "#{:02x}{:02x}{:02x}".format(*rgb)
 

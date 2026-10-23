@@ -55,7 +55,7 @@ class Backup:
     files: tuple           # names of the files in the backup
 
 
-def create(reason="update", commit="", new=""):
+def create(reason: str = "update", commit: str = "", new: str = ""):
     """Copy the current settings files into a new backup folder named "<timestamp>[_<commit>]" -> Backup, or None when none of
     the files exists yet. Backups beyond the newest KEEP are deleted.
     """
@@ -116,7 +116,7 @@ def prune(keep=KEEP) -> None:
         shutil.rmtree(os.path.join(backup_dir(), b.name), ignore_errors=True)
 
 
-def restore(name, commit=""):
+def restore(name, commit: str = ""):
     """Restore backup `name` over the current files (a backup of the current ones is made first) -> (ok, message)."""
     from rx_i18n import _
     root = os.path.realpath(backup_dir())

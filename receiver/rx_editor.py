@@ -57,7 +57,7 @@ def _tuning_defaults(name):
 class Editor:
     """The edited profile of one pad (slot). The window calls the methods and refreshes its widgets."""
 
-    def __init__(self, slot=0) -> None:
+    def __init__(self, slot: int = 0) -> None:
         self.slot = slot
         self.base = None            # key of the pad profile the state was loaded for (changes when the pad id arrives)
         self.key = None
@@ -265,7 +265,7 @@ class Editor:
         return _("{stick} - reakcja: {parts}").format(stick=_(STICK_NAME[name]), parts=", ".join(parts))
 
     # ---------- saving and game profiles ----------
-    def apply(self, save=False):
+    def apply(self, save: bool = False):
         """Send the profile to the pad (save=True: also to remap.json). -> (ok, message)."""
         ok, msg = P.apply(self.slot, self.key, self.prof, save)
         if ok and save:
@@ -273,7 +273,7 @@ class Editor:
         self.saved, self.in_file = S.store.get_saved(self.key), S.store.in_file(self.key)
         return ok, msg
 
-    def new_game(self, text, copy_current=True):
+    def new_game(self, text, copy_current: bool = True):
         """Create a game profile (in memory only, to be saved) and select it. -> (ok, message)."""
         key = P.game_key(self.slot, text)
         if key is None:

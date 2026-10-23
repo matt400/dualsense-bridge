@@ -163,7 +163,7 @@ def elevate() -> None:
 _restart_once = threading.Lock()      # a new process starts once: a normal shutdown or the restart guard
 
 
-def _restart_now(console_on, force=False) -> None:
+def _restart_now(console_on, force: bool = False) -> None:
     """Start the new receiver process once (the guard calls it with force when cleanup hangs and then kills this process)."""
     import rx_console
     import rx_state as S

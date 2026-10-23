@@ -133,7 +133,7 @@ def rumble_status(i):
     return _("wibracja: {ways}").format(ways=" + ".join(ways)), "", ""
 
 
-def triggers_status(i, fx=False):
+def triggers_status(i, fx: bool = False):
     """Whether the sender will set trigger effects for this pad -> (text, level); ("", "") = works or the pad is disconnected.
     fx: the profile uses click / trigger vibration / game vibration (needs a sender with CAP_TRIG_FX).
     """

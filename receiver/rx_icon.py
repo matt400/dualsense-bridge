@@ -3,7 +3,7 @@ import struct
 import zlib
 
 
-def render_icon(rgb, size=32):
+def render_icon(rgb, size: int = 32):
     """Render the pad pictogram as RGBA rows (top to bottom).
 
     Each pixel is sampled 3x3 times; a sample counts when it lies inside the solid body (rounded bar plus two grips)

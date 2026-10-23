@@ -207,12 +207,12 @@ def send_feedback(i, vals) -> None:
     send_peer(codec.pack(T_FB, i, *vals))
 
 
-def send_cmd(i, cmd, arg=0) -> None:
+def send_cmd(i, cmd, arg: int = 0) -> None:
     """A command to the sender (3x - UDP may drop a packet; the sender ignores repeats)."""
     send_repeat(codec.pack(T_CMD, i, cmd, arg), 3)
 
 
-def send_triggers(i, vals, repeat=1) -> None:
+def send_triggers(i, vals, repeat: int = 1) -> None:
     """Trigger effects to the sender: 15 values = trig3 (with the game's effects), 12 = trig2, 4 = the old trig (resistance only);
     a change goes several times (a lost packet).
     """
@@ -229,7 +229,7 @@ def scfg_values(s=None):
             PAD_KEYS.index(BUTTON_CODES[w.button]), w.hold_ms)
 
 
-def send_scfg(repeat=1) -> None:
+def send_scfg(repeat: int = 1) -> None:
     """Send the settings packet (Wake-on-LAN, events) to the sender, `repeat` times."""
     if codec is None or S.peer is None:      # startup (settings loaded before the socket) / the sender not known yet
         return
@@ -256,7 +256,7 @@ def batt_codes(pct, flags):
     return dsu, min(8, pct * 8 // 100)
 
 
-def clear_slot(i, forget_id=False) -> None:
+def clear_slot(i, forget_id: bool = False) -> None:
     """Reset everything known about the pad in slot i (state, profile effects, shortcuts, latency, mouse); forget_id also forgets the pad
     identity - for a pad that really left.
     """
@@ -478,7 +478,7 @@ _HANDLERS = {T_TOUCH: _on_touch, T_CLICK: _on_click, T_MOUSE: _on_mouse, T_IDENT
              T_INFO: _on_info}
 
 
-def handle(t, i, data, arr=0) -> None:
+def handle(t, i, data, arr: int = 0) -> None:
     """A packet from the sender for slot i; arr = the arrival time (perf_counter_ns) - for latency measurement."""
     if t == T_BYE:   # the sender: the pad disconnected -> unplug the virtual DS4
         _on_bye(i)

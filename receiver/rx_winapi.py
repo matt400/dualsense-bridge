@@ -195,7 +195,7 @@ def relaunch_admin(cmd):
     return (r or 0) > 32
 
 
-def relaunch(env=None, admin=False) -> None:
+def relaunch(env=None, admin: bool = False) -> None:
     """A new receiver process with the same arguments (as autostart). Call after releasing the ports and the instance lock.
     env: extra environment variables for the new process (e.g. the console mode state). admin: through UAC; a refusal = an ordinary
     restart (the receiver must not vanish).
@@ -240,7 +240,7 @@ class INPUT(ctypes.Structure):
 INPUT_SIZE = ctypes.sizeof(INPUT)
 
 
-def send_mouse(flags, dx=0, dy=0, data=0) -> None:
+def send_mouse(flags, dx: int = 0, dy: int = 0, data: int = 0) -> None:
     # mouseData is a DWORD: a negative wheel delta must be passed in two's complement
     """Send one mouse event through SendInput: flags (move / button / wheel), a relative move dx, dy and the wheel data."""
     inp = INPUT(0, _INPUT_U(MOUSEINPUT(dx, dy, data & 0xFFFFFFFF, flags, 0, 0)))  # 0 = INPUT_MOUSE
@@ -381,7 +381,7 @@ def sleep_pc() -> None:
     ctypes.windll.powrprof.SetSuspendState(False, False, False)
 
 
-def shutdown_pc(delay_s=10) -> None:
+def shutdown_pc(delay_s: int = 10) -> None:
     """A delayed shutdown - until then "shutdown /a" in a console aborts it."""
     exe = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "shutdown.exe")
     subprocess.run([exe, "/s", "/t", str(int(delay_s))], timeout=15, check=False,
@@ -420,7 +420,7 @@ def recv_timeout(sk, seconds) -> None:
         sk.settimeout(seconds)
 
 
-def bind_udp(port, what, rcvbuf=0, host="0.0.0.0"):
+def bind_udp(port, what, rcvbuf: int = 0, host: str = "0.0.0.0"):
     """Bind a UDP socket (optionally with a bigger receive buffer); on failure print which port (`what`) is taken and exit."""
     sk = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     if rcvbuf:

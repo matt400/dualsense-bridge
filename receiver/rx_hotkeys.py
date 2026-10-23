@@ -50,7 +50,7 @@ def init(n) -> None:
     slots[:] = [Slot() for _ in range(n)]
 
 
-def reset(i, keep=False) -> None:
+def reset(i, keep: bool = False) -> None:
     """Slot disconnect / reset: ends all shortcuts in progress.
 
     keep: the pad stays connected (Test view boundary, output block) - the state is built from the inputs held right now
@@ -155,7 +155,7 @@ def _refresh(i) -> None:
     S.notify(i)
 
 
-def _tap(i, refresh=True) -> None:
+def _tap(i, refresh: bool = True) -> None:
     """Send a short PS pulse to the game (TAP_S long): set the output bit, recompute (optionally) and schedule its end."""
     h = slots[i]
     h.tap += 1

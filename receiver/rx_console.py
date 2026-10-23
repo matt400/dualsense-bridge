@@ -216,7 +216,7 @@ def _audio(name) -> None:
     rx_audio.set_default(name)
 
 
-def _toast(title, msg="") -> None:
+def _toast(title, msg: str = "") -> None:
     """Show a Windows notification."""
     from winotify import Notification
     Notification(app_id=APP_NAME, title=title, msg=msg, duration="short").show()
@@ -298,7 +298,7 @@ class Console:
         else:
             self._last_click[i] = now
 
-    def pad_connected(self, i, ident=False) -> None:
+    def pad_connected(self, i, ident: bool = False) -> None:
         """The pad in slot i has just connected (the first packet after silence) or sent a new identifier (ident).
         Without a master in the settings the connection alone decides: the identifier arrives right after the first packet and
         set auto-ON a second time - after a receiver restart with the mode off the first one used up the skip
@@ -436,7 +436,7 @@ class Console:
         self._pending = None
         self._apply(not self.on)
 
-    def _apply(self, on, cfg=None, why="", toast=True) -> None:
+    def _apply(self, on, cfg=None, why: str = "", toast: bool = True) -> None:
         """Switch the mode on / off: the screen topology, the TV resolution, the audio device, the log / event and the toast (each step
         isolated by _step).
         """
@@ -497,7 +497,7 @@ class Console:
         """ON with the given (not yet saved) settings, after TEST_S seconds OFF with the same ones."""
         self._jobs.put(lambda: self._test(cfg))
 
-    def close(self, restart=False) -> None:
+    def close(self, restart: bool = False) -> None:
         """Closing the receiver. On a plain exit with the console mode on we return to extend (after a restart
         the start itself sets the screen by startup_mode, so we do not switch twice).
         """
@@ -526,7 +526,7 @@ def on_state(i, mask, hx, hy, lt, rt) -> None:
         ctl.on_state(i, mask, hx, hy, lt, rt)
 
 
-def pad_connected(i, ident=False) -> None:
+def pad_connected(i, ident: bool = False) -> None:
     """Forward a pad connection to the console mode (if initialised)."""
     if ctl is not None:
         ctl.pad_connected(i, ident)
@@ -556,7 +556,7 @@ def on_touch_click(i) -> None:
         ctl.combo(i)
 
 
-def close(restart=False) -> None:
+def close(restart: bool = False) -> None:
     """Close the console mode (if initialised)."""
     if ctl is not None:
         ctl.close(restart)

@@ -25,7 +25,7 @@ def game_key(slot, text) -> str | None:
     return f"{S.profile_key(slot)}@{exe}" if EXE_RE.fullmatch(exe) else None
 
 
-def apply(slot, key, profile, save=False):
+def apply(slot, key, profile, save: bool = False):
     """Apply a profile: live (save=False: kept in memory only) or saved to remap.json -> (ok, message).
 
     The profile is normalised first; afterwards the slot reloads its profile so the change takes effect immediately.

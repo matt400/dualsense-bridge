@@ -279,7 +279,7 @@ class ConsoleSettings(QDialog):
         self._hm_timer.start()
         self._vpad_state()
 
-    def _vpad_state(self, busy=False) -> None:
+    def _vpad_state(self, busy: bool = False) -> None:
         """What works now: the kind of plugged pads, the HIDMaestro version (downloaded / newest / downloading / error), the reason
         for working without HIDMaestro, the restart-as-administrator button.
         """
@@ -601,7 +601,7 @@ class ConsoleSettings(QDialog):
             w.setEnabled(own)
         self.light_color.setEnabled(own and self.light_mode.currentData() == "solid")
 
-    def _set_color(self, hex_color, store=True) -> None:
+    def _set_color(self, hex_color, store: bool = True) -> None:
         """Set the chosen colour (empty = the default) and paint the button with it; store=False skips recording the edit."""
         self._color = hex_color
         rgb = rx_lightbar.hex_rgb(hex_color) if hex_color else C.IDLE_RGB
@@ -891,7 +891,7 @@ class ConsoleSettings(QDialog):
         self._stop_capture()
         self.saved.emit()
 
-    def _status(self, text, level="") -> None:
+    def _status(self, text, level: str = "") -> None:
         """Show a status message with a level style."""
         self.status.setText(text)
         set_prop(self.status, "level", level)

@@ -3,6 +3,7 @@ and stopping game rumble when the program changes (leaving the game / alt-tab - 
 Trigger effects survive a program change; they are released only when the program that set them closes (release_closed).
 """
 import time
+from typing import Any
 
 import rx_feedback as F
 import rx_state as S
@@ -24,7 +25,7 @@ POLL_S = 0.5
 recent = []      # recently active programs (newest first) - suggestions in the game profile editor
 
 
-def is_game(exe):
+def is_game(exe) -> bool:
     """Whether a foreground executable counts as a game: it is neither in the built-in NOT_GAMES list nor in the user's game_ignore."""
     return exe not in NOT_GAMES and exe not in C.GAME_IGNORE
 
@@ -72,7 +73,7 @@ def poll_once() -> None:
     release_closed()
 
 
-_procs = [0.0, None]           # (time, set of running programs) - at most one process snapshot per PROCS_S
+_procs: list[Any] = [0.0, None]           # (time, set of running programs) - at most one process snapshot per PROCS_S
 PROCS_S = 2.0
 
 
@@ -83,7 +84,7 @@ def release_closed(now=None) -> None:
     """
     now = time.monotonic() if now is None else now
 
-    def running(exe):
+    def running(exe) -> bool:
         if _procs[1] is None or now - _procs[0] >= PROCS_S:
             try:
                 _procs[:] = [now, W.running_exes()]

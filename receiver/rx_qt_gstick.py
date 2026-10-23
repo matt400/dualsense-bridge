@@ -174,7 +174,7 @@ class TiltSection(QWidget):
     def _calibrate(self) -> None:
         runner.calibrate(self.slot)
 
-    def refresh(self, cfg=None, reload=True) -> None:
+    def refresh(self, cfg=None, reload: bool = True) -> None:
         """Pad settings from the file (pad / tab change) or after an edit in this window (reload=False)."""
         if reload:
             self.cfg = cfg = runner.config(self.slot)

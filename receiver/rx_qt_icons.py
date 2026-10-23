@@ -446,7 +446,7 @@ def _draw(p, name) -> None:
          "shield": _shield, "pulse": _pulse, "bluetooth": _bluetooth, "keys": _keys, "usb": _usb}[name](p)
 
 
-def pixmap(name, size=24, dim=False):
+def pixmap(name, size: int = 24, dim: bool = False):
     """An icon painted on a 24x24 grid and scaled to `size` px (dim = dimmed, e.g. an inactive crown)."""
     pm = QPixmap(size, size)
     pm.fill(Qt.GlobalColor.transparent)
@@ -461,7 +461,7 @@ def pixmap(name, size=24, dim=False):
 
 
 @cache
-def icon(name, dim=False):
+def icon(name, dim: bool = False):
     """A QIcon with the picture rendered at all SIZES (cached per name and dim flag)."""
     ic = QIcon()
     for s in SIZES:

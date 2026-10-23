@@ -136,7 +136,7 @@ class Runner:
         if not self.engines:
             self.init()
 
-    def set_config(self, slot, cfg, save=True) -> None:
+    def set_config(self, slot, cfg, save: bool = True) -> None:
         """New pad settings (from the window). The engine picks them up on the next sample (Config is immutable)."""
         self._ready()
         if save:
@@ -154,7 +154,7 @@ class Runner:
     def reset_center(self, slot) -> None:
         self.set_config(slot, replace(self.config(slot), center=None))
 
-    def cal_result(self, slot, clear=False):
+    def cal_result(self, slot, clear: bool = False):
         """The last calibration outcome of the slot (None / True / False); clear=True forgets it."""
         self._ready()
         msg = self.cal_msg[slot]

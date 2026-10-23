@@ -316,7 +316,7 @@ cur = Settings()
 _listeners = []
 
 
-def defaults(mouse_sens=0.5, low_batt=15):
+def defaults(mouse_sens: float = 0.5, low_batt: int = 15):
     """Built-in Settings, seeded with the mouse sensitivity and low-battery threshold from receiver.toml (the threshold is clamped to
     LOW_PCT).
     """

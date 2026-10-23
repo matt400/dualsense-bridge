@@ -43,7 +43,7 @@ class HMError(Exception):
     need_dotnet = no .NET 10 (the window offers to install it).
     """
 
-    def __init__(self, msg, missing=False, need_dotnet=False) -> None:
+    def __init__(self, msg, missing: bool = False, need_dotnet: bool = False) -> None:
         super().__init__(msg)
         self.missing, self.need_dotnet = missing, need_dotnet
 
@@ -60,7 +60,7 @@ def here():
     return os.path.dirname(os.path.abspath(__file__))
 
 
-def candidates(cfg_path=""):
+def candidates(cfg_path: str = ""):
     """DLL paths to try, in order: the configured path (a folder gets the DLL name appended), else the newest downloaded version,
     hidmaestro/ and the receiver folder.
     """
@@ -72,7 +72,7 @@ def candidates(cfg_path=""):
     return [*([newest] if newest else []), os.path.join(here(), "hidmaestro", DLL), os.path.join(here(), DLL)]
 
 
-def find_dll(cfg_path=""):
+def find_dll(cfg_path: str = ""):
     """The first candidate that exists, or None."""
     return next((p for p in candidates(cfg_path) if os.path.isfile(p)), None)
 
@@ -99,7 +99,7 @@ def reset() -> None:
             del _cache[k]
 
 
-def get(cfg_path=""):
+def get(cfg_path: str = ""):
     """-> Backend or HMError. Loading (CoreCLR + driver) happens once - the first slot thread pays ~0.5-1 s."""
     global _loaded
     if _loaded is not None:
@@ -144,7 +144,7 @@ def describe_error(e) -> str:
     return f"{name}: {e}" + (f" ({hint})" if hint else "")
 
 
-def profile_issues(ctx, limit=3):
+def profile_issues(ctx, limit: int = 3):
     """Profile files refused by HIDMaestro (2.0: HMContext.ProfileLoadIssues; 1.x has none -> []) as ["file: path: reason"]."""
     try:
         issues = list(getattr(ctx, "ProfileLoadIssues", None) or ())
@@ -185,7 +185,7 @@ def best_runtime(runtimes=None):
     return max(ok, key=lambda r: tuple(_major(x) for x in str(r.version).split("."))) if ok else None
 
 
-def need_dotnet():
+def need_dotnet() -> bool:
     """For the window: .NET 10 is missing. Without pythonnet it is unknown - then a pythonnet error, not an offer to install .NET."""
     if os.name != "nt" or _clr_ready:
         return False

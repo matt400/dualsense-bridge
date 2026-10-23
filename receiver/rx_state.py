@@ -228,7 +228,7 @@ def active_key(i):
     return base
 
 
-def effective_profile(i, key, drift=True):
+def effective_profile(i, key, drift: bool = True):
     """The profile to use on a pad: a game profile inherits from the pad profile the trigger effects it does not set itself
     (the other parts of a game profile replace the pad profile as a whole, as before); this pad's stick drift correction
     (rx_padcal) works in every profile as a minimum deadzone (drift=False - without it: the number of profile changes).

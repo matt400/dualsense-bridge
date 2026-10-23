@@ -319,7 +319,7 @@ def refresh_status():
     return status
 
 
-def check(force=False):
+def check(force: bool = False):
     """One check: a newer version on GitHub -> download. A network error does not touch the downloaded version. -> Status."""
     if not _lock.acquire(blocking=False):
         return status                         # already running (a background thread or the button in the window)
