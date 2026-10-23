@@ -74,6 +74,7 @@ def live(i):
             "pressed": sorted(B.pressed_inputs(*raw)),
             "ls": [st[0], st[1]], "rs": [st[2], st[3]], "l2": raw[3], "r2": raw[4],
             "pressed_out": sorted(B.pressed_inputs(s["mask"], s["hx"], s["hy"], s["lt"], s["rt"])),
+            "tilt": s["gs"][0] if s["gs"] else None,          # the input that the pad tilt drives right now (rx_gstick_io)
             "ls_out": [s["lx"], s["ly"]], "rs_out": [s["rx"], s["ry"]], "l2_out": s["lt"], "r2_out": s["rt"]}
 
 

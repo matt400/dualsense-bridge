@@ -18,6 +18,8 @@ from rx_shape import RUMBLE_LIMITS, needs_fx
 from rx_editor import GYRO_MODES, L3_OF, SHORT, STICK_NAME, STICK_OF
 from rx_qt_style import set_prop
 from rx_qt_icons import pixmap
+from rx_qt_gstick import TiltSection
+from rx_gstick_io import runner
 from rx_qt_widgets import (Collapsible, Combo, ConfirmButton, SliderRow, button, field, icon_button, input_items, label,
                            left)
 
@@ -429,12 +431,14 @@ class GyroPage(QWidget):
         w = QWidget()
         lay = _vbox(w)
         _vbox(self).addWidget(scrolled(w))
-        lay.addWidget(label(_("CELOWANIE ŻYROSKOPEM"), "h2"))
+        aim = QWidget()                     # the first category: aiming with the gyro (a collapsed section, like the tilt ones)
+        al = _vbox(aim)
+        al.setContentsMargins(0, 0, 0, 0)
         self.mode = Combo([(k, _(v)) for k, v in GYRO_MODES.items()])
         self.mode.changed.connect(lambda v: self._set(mode=v, relayout=True))
-        lay.addWidget(field(_("Tryb"), self.mode))
+        al.addWidget(field(_("Tryb"), self.mode))
         self.off_hint = label(_("Obracaj padem, aby celować: jako prawa gałka (każda gra) albo jako mysz."), "dim", wrap=True)
-        lay.addWidget(self.off_hint)
+        al.addWidget(self.off_hint)
         self.body = QWidget()
         bl = _vbox(self.body)
         self.hold = Combo([("always", _("Zawsze")), *input_items(B.INPUTS, text=True)])
@@ -456,7 +460,12 @@ class GyroPage(QWidget):
         bl.addWidget(self.anti)
         self.live = label("", "dim")
         bl.addWidget(self.live)
-        lay.addWidget(self.body)
+        al.addWidget(self.body)
+        self.aim_cat = Collapsible(_("CELOWANIE ŻYROSKOPEM"), aim)
+        lay.addWidget(self.aim_cat)
+        self.tilt = TiltSection()           # per pad, not per profile: the tilt of the pad as a stick (rx_gstick_io)
+        self.tilt.changed.connect(lambda cfg: runner.set_config(self.ed.slot, cfg))
+        lay.addWidget(self.tilt)
         lay.addStretch(1)
 
     def _set(self, relayout=False, **patch):
@@ -481,6 +490,7 @@ class GyroPage(QWidget):
             cb.blockSignals(False)
         self.anti.set(g["anti"] * 100)
         self.anti.setVisible(g["mode"] == "stick")
+        self.tilt.set_slot(self.ed.slot)
 
     def set_live(self, in_use, active):
         """The row under the settings: whether the gyro reacts now (only for the profile in use)."""

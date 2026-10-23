@@ -944,9 +944,13 @@ EN = {
     "Tryb konsoli: Windows przywrócił oba ekrany - ponowne przełączenie na TV":
         "Console mode: Windows restored both screens - switching to the TV again",
     # karta "Przechył" (rx_qt_gstick)
-    "PRZECHYŁ PADA": "PAD TILT",
-    "Przechył pada jako gałka": "Pad tilt as a stick",
-    "Przechylenie pada steruje gałką analogową": "Tilting the pad drives an analog stick",
+    "PRZECHYŁ: PODSTAWOWE": "TILT: BASICS",
+    "PRZECHYŁ: ZAKRES I FILTR": "TILT: RANGE AND FILTER",
+    "PRZECHYŁ: AUTOMATYKA": "TILT: AUTOMATION",
+    "PRZECHYŁ: SYGNAŁ ZWROTNY": "TILT: FEEDBACK",
+    "PRZECHYŁ - PODGLĄD": "TILT - PREVIEW",
+    "Przechyl pada: przód w dół = gałka w górę, na bok = gałka w bok. Gałka na rysunku pada porusza się razem z nim.":
+        "Tilt the pad: front down = stick up, sideways = stick sideways. The stick in the pad drawing moves with it.",
     "Włącz (dla tego pada)": "Enable (for this pad)",
     "Zastępuje wejście pada": "Replaces pad input",
     "Aktywne (sprzęgło)": "Active (clutch)",
@@ -962,12 +966,15 @@ EN = {
     "Uśpienie po bezruchu (0 = wyłączone)": "Auto-sleep when still (0 = off)",
     "Najmniejsza wysyłana zmiana": "Smallest change sent",
     "Przycisk od tylu % zasięgu": "Button from this % of range",
-    "Zeruj gałkę po zmianie okna na pierwszym planie": "Zero the stick when the foreground window changes",
-    "Ustaw środek (trzymaj pada nieruchomo)": "Set center (hold the pad still)",
+    "Zeruj po zmianie okna": "Zero on window change",
+    "Zeruje gałkę, gdy na pierwszym planie zmieni się program": "Zeroes the stick when the foreground program changes",
+    "Ustaw środek": "Set center",
+    "Bieżące położenie pada staje się środkiem (0, 0) - trzymaj pada nieruchomo":
+        "The current pad position becomes the center (0, 0) - hold the pad still",
     "Zeruj środek": "Reset center",
     "Podgląd": "Preview",
-    "Raw: pitch {p:+.1f}°  roll {r:+.1f}°   |   Filtered output: X {x:+.0f}%  Y {y:+.0f}%{s}":
-        "Raw: pitch {p:+.1f}°  roll {r:+.1f}°   |   Filtered output: X {x:+.0f}%  Y {y:+.0f}%{s}",
+    "Raw: pitch {p:+.1f}°  roll {r:+.1f}°\nFiltered output: X {x:+.0f}%  Y {y:+.0f}%{s}":
+        "Raw: pitch {p:+.1f}°  roll {r:+.1f}°\nFiltered output: X {x:+.0f}%  Y {y:+.0f}%{s}",
     "D-pad": "D-pad",
     "Brak (tylko podgląd)": "None (preview only)",
     "Liniowa": "Linear",
