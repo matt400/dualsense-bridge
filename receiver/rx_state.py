@@ -1,15 +1,21 @@
 """Receiver: the shared pad state. Modules use it as `S.xxx` (the lists are created in init())."""
+from __future__ import annotations
+
 import threading
 import time
 import traceback
-from typing import Any
+from collections.abc import Callable
+from typing import Any, Final, TypeAlias
 
 import rx_padcal
 from proto import SeqFilter
 from rx_buttons import apply_remap, apply_sticks, pressed_inputs, profile_size
 from rx_config import C
 from rx_gstick import drive_state
-from rx_shape import gyro_mouse_velocity, gyro_rates, gyro_stick, merge_triggers, shape_stick, shape_trigger
+from rx_buttons import RemapStore
+from rx_shape import Profile, gyro_mouse_velocity, gyro_rates, gyro_stick, merge_triggers, shape_stick, shape_trigger
+
+PadState: TypeAlias = dict[str, Any]       # the live state of one pad, see new_state()
 
 lock = threading.Lock()
 profile_lock = threading.RLock()            # profile choice (game / editor / shortcuts / ident) from several threads
@@ -17,15 +23,15 @@ stop = threading.Event()
 restart = False                            # True = after a clean shutdown start the receiver again (saving settings in the window);
 # "admin" = the same as administrator (UAC - HIDMaestro)
 seen = SeqFilter(1.0)                      # dropping late / duplicated packets
-MACS = [bytes([0, 2, 3, 4, 5, 6 + s]) for s in range(5)]
-SENDER_TIMEOUT = 3.0                       # silence longer than this (3 pings) = the sender is offline
+MACS: Final = [bytes([0, 2, 3, 4, 5, 6 + s]) for s in range(5)]
+SENDER_TIMEOUT: Final = 3.0                       # silence longer than this (3 pings) = the sender is offline
 
 peer = None        # address of the last sender (for feedback / pong)
 sender_build = None  # (commit, commit time, update state UPD_*, receive time) from the sender's build packet
 sender_update_msg = ""  # the reason for the last sender update failure (the updmsg packet)
 sender_wol = None  # (the PC's MAC, broadcast) - what the sender's Wake-on-LAN will use (the build2 packet); "" = it does not know
 last_pkt = 0.0     # when the last valid packet arrived - for the online indicator
-store = None       # RemapStore
+store: RemapStore = None   # the remap profiles (set by init)
 dsu_wake = threading.Event()
 dsu_active = False              # the DSU server has subscribers - without them state changes do not wake it (rx_dsu)
 gyro_wake = threading.Event()   # wakes the gyro mouse thread (rx_gyro)
@@ -34,7 +40,7 @@ link_loss = None                # packet loss from the sender in the last second
 
 # Per-pad state, one entry per slot. All of these are None until init() builds the lists (a few listeners that can fire
 # earlier check `S.states is not None`); the annotations describe the lists as they are afterwards.
-states: list[dict[str, Any]] = None      # the live state, see new_state()
+states: list[PadState] = None      # the live state, see new_state()
 wake: list[threading.Event] = None       # wakes the slot thread after a state change
 want: list[threading.Event] = None       # set = the virtual pad should exist
 plugged: list[bool] = None               # the virtual pad is plugged in
@@ -48,7 +54,7 @@ last_v: list[tuple | None] = None        # the last state packet - repeats are s
 last_touch: list[tuple | None] = None    # the last touch packet
 batt_info: list[tuple[int, int]] = None  # (percent, flags) for the window
 pad_id: list[str | None] = None          # the pad identifier from the ident packet
-remap_maps: list[Any] = None             # the normalised button map in use
+remap_maps: list[Profile] = None             # the normalised button map in use
 override: list[str | None] = None        # a profile chosen by hand, None = automatic
 active: list[str] = None                 # the profile key in use
 info: list[tuple | None] = None          # (ping ms | None, pad Hz, motion Hz, time)
@@ -58,7 +64,8 @@ probe: list[list | None] = None          # drift measurement samples (lx, ly, rx
 gyro_cal: list[tuple | None] = None      # the last calres packet
 
 
-def new_state():
+def new_state() -> PadState:
+    """Return a neutral pad state: sticks centred, nothing pressed, no motion or touch."""
     return {
         "lx": 128, "ly": 128, "rx": 128, "ry": 128, "lt": 0, "rt": 0,   # sticks/lt/rt/hx/hy/mask: AFTER remapping
         "hx": 0, "hy": 0, "mask": 0,
@@ -80,7 +87,8 @@ def new_state():
     }
 
 
-def init(store_) -> None:
+def init(store_: RemapStore) -> None:
+    """Create the per-slot lists for C.NUM_PADS pads and bind the remap store."""
     global states, wake, want, plugged, last_seen, alive, ignore_until, mouse_mode
     global tp_down, swallow, last_v, last_touch, batt_info, pad_id, remap_maps, store
     global override, active, info, pps, sender_info, probe, gyro_cal
@@ -110,11 +118,13 @@ def init(store_) -> None:
     gyro_cal = [None] * n                            # the last calres packet: (state, flags, saved, current, time, received)
 
 
-STABLE_S = 60.0                            # a thread ran this long without an error -> the next error is counted from scratch
+RESTART_PAUSE_STEP_S: Final = 0.2            # the pause before restarting a failed thread grows by this much per error ...
+RESTART_PAUSE_MAX_S: Final = 5.0              # ... up to this
+STABLE_S: Final = 60.0                            # a thread ran this long without an error -> the next error is counted from scratch
 
 
-def run_forever(name, fn, *args) -> None:
-    """A background thread loop whose unexpected exception does not disable it for good.
+def run_forever(name: str, fn: Callable[..., None], *args: Any) -> None:
+    """Run a background thread loop whose unexpected exception does not disable it for good.
 
     The error is printed (the first one with a full trace) and the loop starts again after a moment. It ends when fn
     returns on S.stop. The error counter resets after STABLE_S of calm work - rare errors do not grow into a 5 s pause
@@ -126,7 +136,7 @@ def run_forever(name, fn, *args) -> None:
         try:
             fn(*args)
             return
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - the whole point: a thread loop must survive any bug
             if time.monotonic() - t0 >= STABLE_S:
                 errors = 0
             errors += 1
@@ -134,26 +144,28 @@ def run_forever(name, fn, *args) -> None:
                 print(f"{name} thread error - restarting:\n{traceback.format_exc()}")
             else:
                 print(f"{name} thread error #{errors} - restarting: {e!r}")
-            stop.wait(min(5.0, 0.2 * errors))
+            stop.wait(min(RESTART_PAUSE_MAX_S, RESTART_PAUSE_STEP_S * errors))
 
 
-def start_thread(name, fn, *args):
+def start_thread(name: str, fn: Callable[..., None], *args: Any) -> threading.Thread:
     """Start a daemon thread running fn under run_forever and return it."""
     t = threading.Thread(target=run_forever, args=(name, fn, *args), name=name, daemon=True)
     t.start()
     return t
 
 
-def sender_online(now=None):
-    """Whether a packet from the sender arrived within SENDER_TIMEOUT."""
+def sender_online(now: float | None = None) -> bool:
+    """Tell whether a packet from the sender arrived within SENDER_TIMEOUT."""
     return (now or time.monotonic()) - last_pkt < SENDER_TIMEOUT
 
 
-push = None        # rx_ds4.push: a report to the virtual DS4 at once in the changing thread (without rx_ds4 - only a wake-up)
-on_remap = None    # rx_feedback: a new slot profile -> send the trigger resistance at once (without waiting for the loop)
+# rx_ds4.push: a report to the virtual DS4 at once in the changing thread (without rx_ds4 - only a wake-up)
+push: Callable[[int], None] | None = None
+# rx_feedback: a new slot profile -> send the trigger resistance at once (without waiting for the loop)
+on_remap: Callable[[], None] | None = None
 
 
-def notify(i) -> None:
+def notify(i: int) -> None:
     """A change of slot i state: a DS4 report at once (rx_ds4.push), the DSU server sends from its own thread."""
     if push is not None:
         push(i)
@@ -164,10 +176,10 @@ def notify(i) -> None:
         dsu_wake.set()
 
 
-def recompute(s, prof) -> None:
-    """Recompute the output state from the raw inputs according to the profile (call under lock):
+def recompute(s: PadState, prof: Profile) -> None:
+    """Recompute the output state from the raw inputs according to the profile; call under lock.
 
-    button remap -> stick swap / inversion -> stick and trigger shaping -> gyro.
+    The steps: button remap -> stick swap / inversion -> stick and trigger shaping -> gyro.
     """
     tun, g = prof["tuning"], prof["gyro"]
     lt, rt = s["raw"][3:5]
@@ -191,7 +203,7 @@ def recompute(s, prof) -> None:
         drive_state(s, s["gs"])
 
 
-def set_remap(i, prof) -> None:
+def set_remap(i: int, prof: Profile) -> None:
     """Set the profile of slot i and immediately recompute the current state from the raw inputs."""
     with lock:
         remap_maps[i] = prof
@@ -205,33 +217,34 @@ def set_remap(i, prof) -> None:
         on_remap()
 
 
-def profile_key(i):
+def profile_key(i: int) -> str:
     """The profile key of a pad (without a game)."""
     return store.key_for(pad_id[i], i)
 
 
-def game_key(base, exe) -> str:
+def game_key(base: str, exe: str) -> str:
     """The game profile key "<pad>@<game.exe>"."""
     return f"{base}@{exe}"
 
 
-def profile_label(key):
+def profile_label(key: str) -> str:
     """The label of a profile key: the game executable for a game profile, "default" otherwise."""
     return key.split("@", 1)[1] if "@" in key else "default"
 
 
-def active_key(i):
+def active_key(i: int) -> str:
     """The profile to use: manually chosen > the profile of the foreground game > the pad profile."""
     base = profile_key(i)
-    if override[i] and override[i] in store.keys_for(base):
-        return override[i]
+    chosen = override[i]
+    if chosen and chosen in store.keys_for(base):
+        return chosen
     if game and C.GAME_PROFILES and store.has(game_key(base, game)):
         return game_key(base, game)
     return base
 
 
-def effective_profile(i, key, drift: bool = True):
-    """The profile to use on a pad.
+def effective_profile(i: int, key: str, drift: bool = True) -> Profile:
+    """Return the profile to use on a pad.
 
     A game profile inherits from the pad profile the trigger effects it does not set itself (the other parts of a game
     profile replace the pad profile as a whole, as before); this pad's stick drift correction (rx_padcal) works in every
@@ -244,16 +257,16 @@ def effective_profile(i, key, drift: bool = True):
     return rx_padcal.apply_drift(prof, rx_padcal.drift(base)) if drift else prof
 
 
-def profile_changes(i):
-    """The number of changes of the profile in use (pad card, log) - without the drift correction, which is not part of the profile."""
+def profile_changes(i: int) -> int:
+    """Return the number of changes of the profile in use (pad card, log), without the drift correction (not part of the profile)."""
     return profile_size(effective_profile(i, active[i], drift=False))
 
 
 NEUTRAL_OUT = {**new_state(), "ver": None}
 
 
-def output(i):
-    """The state of a slot for the game (DS4 report, DSU) - call under lock.
+def output(i: int) -> PadState:
+    """Return the state of a slot for the game (DS4 report, DSU); call under lock.
 
     A blocked slot (Test view) = a neutral state: released buttons, sticks centred, no motion and touch; battery and
     sample time as they really are.
@@ -264,8 +277,12 @@ def output(i):
     return {**NEUTRAL_OUT, "batt_dsu": s["batt_dsu"], "batt_ds4": s["batt_ds4"], "ts": s["ts"], "ver": s["ver"]}
 
 
-def set_blocked(i, on) -> bool:
-    """Test view: the slot output to the game neutral (on) or live again. -> True when it changed."""
+def set_blocked(i: int, on: bool) -> bool:
+    """Make the slot output to the game neutral (on) or live again (Test view).
+
+    Returns:
+        True when it changed.
+    """
     with lock:
         s = states[i]
         if s["blocked"] == on:
@@ -280,8 +297,12 @@ def set_blocked(i, on) -> bool:
     return True
 
 
-def reload_profile(i):
-    """Set the profile per active_key(). -> True when the profile key changed."""
+def reload_profile(i: int) -> bool:
+    """Set the profile per active_key().
+
+    Returns:
+        True when the profile key changed.
+    """
     with profile_lock:
         key = active_key(i)
         changed, active[i] = key != active[i], key
@@ -289,8 +310,12 @@ def reload_profile(i):
         return changed
 
 
-def use_profile(i, key) -> bool:
-    """Manual profile choice (editor, shortcut) until the next window change. -> False when the profile does not exist."""
+def use_profile(i: int, key: str) -> bool:
+    """Choose a profile by hand (editor, shortcut) until the next window change.
+
+    Returns:
+        False when the profile does not exist.
+    """
     with profile_lock:
         if key not in store.keys_for(profile_key(i)):
             return False
@@ -299,8 +324,8 @@ def use_profile(i, key) -> bool:
         return True
 
 
-def cycle_profile(i, step):
-    """The next / previous pad profile (manually, until the game changes). -> the new key."""
+def cycle_profile(i: int, step: int) -> str:
+    """Switch to the next / previous pad profile (manually, until the game changes) and return the new key."""
     with profile_lock:
         keys = store.keys_for(profile_key(i))
         cur = active[i] if active[i] in keys else keys[0]
@@ -308,14 +333,14 @@ def cycle_profile(i, step):
         return active[i]
 
 
-def set_game(exe):
-    """The foreground program changed. -> the slots whose profile changed."""
+def set_game(exe: str | None) -> list[int]:
+    """Record the new foreground program and return the slots whose profile changed."""
     global game
     with profile_lock:
         if exe == game:
             return []
         game = exe
-        changed = []
+        changed: list[int] = []
         for i in range(len(states)):
             override[i] = None
             if reload_profile(i):
@@ -323,7 +348,7 @@ def set_game(exe):
         return changed
 
 
-def reset_state(i) -> None:
+def reset_state(i: int) -> None:
     """A neutral pad state (released buttons, centred sticks); the version counter and the block flag are kept."""
     with lock:
         ver, blocked = states[i]["ver"] + 1, states[i]["blocked"]

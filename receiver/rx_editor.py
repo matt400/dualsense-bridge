@@ -59,8 +59,8 @@ class Editor:
 
     def __init__(self, slot: int = 0) -> None:
         self.slot = slot
-        self.base = None            # key of the pad profile the state was loaded for (changes when the pad id arrives)
-        self.key = None
+        self.base: str = ""         # key of the pad profile the state was loaded for (changes when the pad id arrives)
+        self.key: str = ""
         self.prof, self.saved, self.in_file = empty(), empty(), False
         self._fx_mem = {}           # last values of the trigger effect sliders (a mode change does not lose them)
         self.select()
