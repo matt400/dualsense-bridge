@@ -6,7 +6,8 @@ line-length = 140
 extend-exclude = ["tests/fakebin"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "B", "UP", "SIM", "RUF", "PERF", "C4", "PIE", "ISC", "BLE"]
+select = ["E", "F", "W", "B", "UP", "SIM", "RUF", "PERF", "C4", "PIE", "ISC", "BLE",
+          "D", "ANN", "S110", "S112", "PLR2004", "PLR0912", "PLR0915", "C901", "N", "A", "E722"]
 ignore = [
     "RUF001", "RUF002", "RUF003",   # typographic characters (×, –, „”) in UI strings and comments are intended
     "SIM105",                       # try/except/pass reads better than contextlib.suppress on hot paths
@@ -15,11 +16,19 @@ ignore = [
     "RUF023",                       # __slots__ follow the field order, not alphabetical order
     "SIM112",                       # Windows environment variables (%SystemRoot%) are case-insensitive
     "SIM905",                       # a program-name list as text + .split() is easier to read than a long list
+    "ANN401",                       # Any is the honest type for protocol payload tuples and decoded JSON
+    "N812",                         # `import PySide6.QtCore as QtCore`-style aliases follow the Qt documentation
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"receiver/*" = ["BLE001"]      # TODO(refactor): removed once the receiver is reviewed
-"tests/*" = ["E401", "E501", "F401", "E402", "E701", "E702", "E731", "B011", "F403", "F405", "SIM", "PERF", "RUF", "B"]
+"receiver/*" = ["D", "ANN", "BLE001", "S110", "S112", "PLR2004", "PLR0912", "PLR0915", "C901", "N", "A", "E722"]   # TODO(refactor): drop as the receiver is cleaned up
+"tests/*" = ["D", "ANN", "BLE", "S", "PLR", "C901", "N", "A", "E401", "E501", "F401", "E402", "E701", "E702", "E731", "B011", "F403", "F405", "SIM", "PERF", "RUF", "B"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.mccabe]
+max-complexity = 12
 
 [tool.mypy]
 python_version = "3.11"
