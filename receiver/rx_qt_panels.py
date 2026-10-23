@@ -18,6 +18,8 @@ from rx_shape import RUMBLE_LIMITS, needs_fx
 from rx_editor import GYRO_MODES, L3_OF, SHORT, STICK_NAME, STICK_OF
 from rx_qt_style import set_prop
 from rx_qt_icons import pixmap
+from rx_qt_gstick import TiltSection
+from rx_gstick_io import runner
 from rx_qt_widgets import (Collapsible, Combo, ConfirmButton, SliderRow, button, field, icon_button, input_items, label,
                            left)
 
@@ -457,6 +459,10 @@ class GyroPage(QWidget):
         self.live = label("", "dim")
         bl.addWidget(self.live)
         lay.addWidget(self.body)
+        lay.addSpacing(10)
+        self.tilt = TiltSection()           # per pad, not per profile: the tilt of the pad as a stick (rx_gstick_io)
+        self.tilt.changed.connect(lambda cfg: runner.set_config(self.ed.slot, cfg))
+        lay.addWidget(self.tilt)
         lay.addStretch(1)
 
     def _set(self, relayout=False, **patch):
@@ -481,6 +487,7 @@ class GyroPage(QWidget):
             cb.blockSignals(False)
         self.anti.set(g["anti"] * 100)
         self.anti.setVisible(g["mode"] == "stick")
+        self.tilt.set_slot(self.ed.slot)
 
     def set_live(self, in_use, active):
         """The row under the settings: whether the gyro reacts now (only for the profile in use)."""

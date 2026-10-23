@@ -221,6 +221,16 @@ pkt(acc(pitch=25)); time.sleep(0.1)
 rr.set_config(0, replace(base, enabled=False)); time.sleep(0.3)
 check(S.states[0]["gs"] is None and S.states[0]["ly"] == 128, "end to end: switching it off gives the stick back")
 S.stop.set(); th.join(2); S.stop.clear()
+S.states[0]["gs"] = None; S.reset_state(0)
+rr._driving[0] = True; rr.engines[0].sent = (0.0, 0.5, False)          # the state was reset behind our back
+rr.set_config(0, replace(base, target="left")); S.alive[0] = True
+S.states[0]["acc"] = tuple(round(v * C.ACC_RES) for v in acc())
+for k in range(3): rr._step_slot(0, 39.0 + k * 0.004)
+S.states[0]["acc"] = tuple(round(v * C.ACC_RES) for v in acc(pitch=25))
+rr._driving[0] = True; rr.engines[0].sent = (0.0, 0.5, False); S.reset_state(0)
+S.states[0]["acc"] = tuple(round(v * C.ACC_RES) for v in acc(pitch=25))
+for k in range(4): rr._step_slot(0, 40.0 + k * 0.004)
+check(S.states[0]["gs"] is not None, "a state reset behind our back: the output is put back")
 check(not th.is_alive(), "the thread stops with the receiver")
 
 # --- okno ---
@@ -232,10 +242,10 @@ except Exception as e:
     print("SKIP  okno (brak PySide6):", e)
 else:
     import rx_gstick_io
-    from rx_qt_gstick import GyroStickPage
+    from rx_qt_gstick import TiltSection
     rx_gstick_io.runner = r
     import rx_qt_gstick; rx_qt_gstick.runner = r
-    page = GyroStickPage(); got = []
+    page = TiltSection(); got = []
     page.changed.connect(got.append)
     page.on.setChecked(True); page.sl["deadzone"].set(5); page.sl["deadzone"]._moved(0)
     page.target.set_data("right"); page.target.changed.emit("right")

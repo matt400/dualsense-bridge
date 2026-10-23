@@ -1,16 +1,15 @@
-"""Receiver: the "Tilt" drawer - pad tilt as an analog stick (per-pad settings, a live 2D preview). It slides in over the
-window from the header icon (like Bluetooth and shortcuts), because the profile tabs are too narrow for the settings and the preview.
+"""Receiver: pad tilt as an analog stick - the section at the bottom of the "Gyro" tab (per-pad settings, a live 2D preview).
+It lives next to the pad drawing on purpose: while the tilt drives a stick, the drawing shows the stick that the game gets.
 
   TiltView         drawing: deadzone and range circles, raw tilt (grey), filtered (blue), output (crosshair)
-  TiltDrawer       the side panel holding GyroStickPage; a 30 Hz timer feeds the preview while it is open
-  GyroStickPage    settings (sliders, lists, switches), center calibration, raw / filtered output numbers
+  TiltSection      settings (sliders, lists, switches), center calibration, raw / filtered output numbers
 
 Setting changes go through the `changed(Config)` signal to rx_gstick_io.runner (a slot in the window); the 250 Hz thread never
 touches Qt, and the preview is refreshed by the window timer (tick) from an engine snapshot."""
 import time
 from dataclasses import replace
 
-from PySide6.QtCore import QPointF, Qt, QTimer, Signal
+from PySide6.QtCore import QPointF, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget
 
@@ -18,10 +17,8 @@ import rx_buttons as B
 import rx_gstick as G
 from rx_gstick_io import runner
 from rx_i18n import _
-from rx_qt_drawer import SideDrawer
-from rx_qt_panels import scrolled
 from rx_qt_style import ACCENT, BAD, CARD, LINE, OK
-from rx_qt_widgets import Combo, SliderRow, button, field, group, input_items, label, pair
+from rx_qt_widgets import Collapsible, Combo, SliderRow, button, field, input_items, label
 
 MSG_S = 4.0
 STATE_TEXT = {G.ST_OFF: "Wyłączone", G.ST_HOLD: "Czeka na sprzęgło", G.ST_SAFE: "Ustaw pada blisko środka",
@@ -34,7 +31,7 @@ class TiltView(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.setMinimumSize(180, 180)
+        self.setFixedHeight(150)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.cfg = G.Config()
         self.snap = (G.ST_OFF, G.Z_DEAD, (0.0, 0.0), (0.0, 0.0), (0.0, 0.0), 0.0, False, False)
@@ -82,35 +79,38 @@ class TiltView(QWidget):
         p.end()
 
 
-class GyroStickPage(QWidget):
-    changed = Signal(object)         # nowy G.Config pada
+class TiltSection(QWidget):
+    """The settings of the pad selected in the window. Changes leave through `changed(Config)`; tick() feeds the preview."""
+
+    changed = Signal(object)         # the pad's new G.Config
 
     def __init__(self):
         super().__init__()
         self.slot = 0
         self._msg_until = 0.0
+        self._preview = None             # the slot whose engine we asked to follow the pad (preview), None = none
         self.cfg = G.Config()
-        w = QWidget()
-        lay = QVBoxLayout(w)
+        lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(10)
-        QVBoxLayout(self).addWidget(scrolled(w))
+        lay.addWidget(label(_("PRZECHYŁ PADA JAKO GAŁKA"), "h2"))
         self.on = QCheckBox(_("Włącz (dla tego pada)"))
         self.on.toggled.connect(lambda v: self._set(enabled=v))
         lay.addWidget(self.on)
+        lay.addWidget(label(_("Przechyl pada: przód w dół = gałka w górę, na bok = gałka w bok. Gałka na rysunku pada porusza się "
+                              "razem z nim."), "dim", wrap=True))
+        self.view = TiltView()
+        self.numbers = label("", "dim", wrap=True)
+        self.status = label("", "dim")
+        lay.addWidget(self.view)
+        lay.addWidget(self.numbers)
+        lay.addWidget(self.status)
         self.target = Combo([(k, _(v)) for k, v in G.TARGETS.items()])
         self.target.changed.connect(lambda v: self._set(target=v))
         self.clutch = Combo([("always", _("Zawsze")), *input_items(B.INPUTS, text=True)])
         self.clutch.changed.connect(lambda v: self._set(clutch=v))
-        lay.addLayout(pair(field(_("Zastępuje wejście pada"), self.target), field(_("Aktywne (sprzęgło)"), self.clutch)))
-        self.sprint = Combo([("none", _("Brak")), *input_items([n for n in G.SPRINTS if n != "none"], text=True)])
-        self.sprint.changed.connect(lambda v: self._set(sprint=v))
-        self.curve = Combo([(k, _(v)) for k, v in G.CURVES.items()])
-        self.curve.changed.connect(lambda v: self._set(curve=v))
-        lay.addLayout(pair(field(_("Przycisk na skraju zakresu"), self.sprint), field(_("Krzywa odpowiedzi"), self.curve)))
-        self.feedback = Combo([(k, _(v)) for k, v in G.FEEDBACKS.items()])
-        self.feedback.changed.connect(lambda v: self._set(feedback=v))
-        lay.addWidget(field(_("Sygnał przy skraju zakresu i powrocie do środka"), self.feedback))
+        lay.addWidget(field(_("Zastępuje wejście pada"), self.target))
+        lay.addWidget(field(_("Aktywne (sprzęgło)"), self.clutch))
         inv = QHBoxLayout()
         self.inv_p, self.inv_r = QCheckBox(_("Odwróć pitch")), QCheckBox(_("Odwróć roll"))
         self.inv_p.toggled.connect(lambda v: self._set(invert_pitch=v))
@@ -120,21 +120,10 @@ class GyroStickPage(QWidget):
         inv.addStretch(1)
         lay.addLayout(inv)
         self.sl = {}
-        for name, caption, unit, step in (("deadzone", _("Martwa strefa"), "°", 0.5), ("outer", _("Maksymalne wychylenie"), "°", 1),
-                                          ("smoothing", _("Wygładzanie"), "%", 1),
-                                          ("ratio", _("Czułość pionu względem poziomu"), "x", 0.05),
-                                          ("idle_s", _("Uśpienie po bezruchu (0 = wyłączone)"), " s", 0.1),
-                                          ("delta", _("Najmniejsza wysyłana zmiana"), "%", 0.1),
-                                          ("sprint_at", _("Przycisk od tylu % zasięgu"), "%", 1)):
-            lo, hi = G.LIMITS[name]
-            row = SliderRow(caption, lo, hi, step, fmt=self._fmt(unit))
-            row.changed.connect(lambda v, n=name: self._set(**{n: round(v, 3)}))
-            self.sl[name] = row
-            lay.addWidget(row)
-        self.focus = QCheckBox(_("Zeruj gałkę po zmianie okna na pierwszym planie"))
-        self.focus.toggled.connect(lambda v: self._set(focus_release=v))
-        lay.addWidget(self.focus)
-        self.cal = button(_("Ustaw środek (trzymaj pada nieruchomo)"))
+        for name in ("deadzone", "outer"):
+            lay.addWidget(self._slider(name))
+        self.cal = button(_("Ustaw środek"))
+        self.cal.setToolTip(_("Bieżące położenie pada staje się środkiem (0, 0) - trzymaj pada nieruchomo"))
         self.cal.clicked.connect(self._calibrate)
         self.cal_reset = button(_("Zeruj środek"), small=True)
         self.cal_reset.clicked.connect(lambda: self._set(center=None))
@@ -142,13 +131,34 @@ class GyroStickPage(QWidget):
         row.addWidget(self.cal, 1)
         row.addWidget(self.cal_reset)
         lay.addLayout(row)
-        self.view = TiltView()
-        self.view.setMinimumHeight(220)
-        self.numbers = label("", "dim", wrap=True)
-        self.status = label("", "dim")
-        lay.addWidget(group(_("Podgląd"), self.view, self.numbers, self.status))
-        lay.addStretch(1)
+        self.sprint = Combo([("none", _("Brak")), *input_items([n for n in G.SPRINTS if n != "none"], text=True)])
+        self.sprint.changed.connect(lambda v: self._set(sprint=v))
+        self.curve = Combo([(k, _(v)) for k, v in G.CURVES.items()])
+        self.curve.changed.connect(lambda v: self._set(curve=v))
+        self.feedback = Combo([(k, _(v)) for k, v in G.FEEDBACKS.items()])
+        self.feedback.changed.connect(lambda v: self._set(feedback=v))
+        self.focus = QCheckBox(_("Zeruj po zmianie okna"))
+        self.focus.setToolTip(_("Zeruje gałkę, gdy na pierwszym planie zmieni się program"))
+        self.focus.toggled.connect(lambda v: self._set(focus_release=v))
+        self.adv = Collapsible(_("ZAAWANSOWANE: PRZECHYŁ"),
+                               self._slider("smoothing"), self._slider("ratio"), field(_("Krzywa odpowiedzi"), self.curve),
+                               self._slider("idle_s"), self._slider("delta"),
+                               field(_("Przycisk na skraju zakresu"), self.sprint), self._slider("sprint_at"),
+                               field(_("Sygnał przy skraju zakresu i powrocie do środka"), self.feedback), self.focus)
+        lay.addWidget(self.adv)
         self.refresh()
+
+    def _slider(self, name):
+        captions = {"deadzone": (_("Martwa strefa"), "°", 0.5), "outer": (_("Maksymalne wychylenie"), "°", 1),
+                    "smoothing": (_("Wygładzanie"), "%", 1), "ratio": (_("Czułość pionu względem poziomu"), "x", 0.05),
+                    "idle_s": (_("Uśpienie po bezruchu (0 = wyłączone)"), " s", 0.1),
+                    "delta": (_("Najmniejsza wysyłana zmiana"), "%", 0.1), "sprint_at": (_("Przycisk od tylu % zasięgu"), "%", 1)}
+        caption, unit, step = captions[name]
+        lo, hi = G.LIMITS[name]
+        row = SliderRow(caption, lo, hi, step, fmt=self._fmt(unit))
+        row.changed.connect(lambda v, n=name: self._set(**{n: round(v, 3)}))
+        self.sl[name] = row
+        return row
 
     @staticmethod
     def _fmt(unit):
@@ -157,12 +167,13 @@ class GyroStickPage(QWidget):
         return lambda v: f"{v:.1f}{unit}".replace(".0" + unit, unit)
 
     def set_slot(self, slot):
+        if slot != self.slot:
+            self.idle()
         self.slot = slot
         self.refresh()
 
     def _set(self, **patch):
-        cfg = replace(self.cfg, **patch)
-        cfg = G.normalize(G.to_raw(cfg))                     # te same granice co przy wczytaniu pliku (outer > martwa strefa)
+        cfg = G.normalize(G.to_raw(replace(self.cfg, **patch)))      # the same limits as when the file is loaded (outer > deadzone)
         self.cfg = cfg
         self.changed.emit(cfg)
         self.refresh(cfg, reload=False)
@@ -181,7 +192,7 @@ class GyroStickPage(QWidget):
             cb.setChecked(v)
             cb.blockSignals(False)
         for combo, v in ((self.target, cfg.target), (self.clutch, cfg.clutch), (self.sprint, cfg.sprint), (self.curve, cfg.curve),
-                             (self.feedback, cfg.feedback)):
+                         (self.feedback, cfg.feedback)):
             combo.set_data(v)
         for name, row in self.sl.items():
             row.set(getattr(cfg, name))
@@ -189,7 +200,12 @@ class GyroStickPage(QWidget):
         self.cal_reset.setEnabled(cfg.center is not None)
 
     def tick(self):
-        """Live preview (30 Hz from the window timer, only while the tab is visible)."""
+        """Live preview (30 Hz from the window timer, only while this section is visible). Also asks the engine to follow the
+        pad even when the feature is off, so the tilt can be seen before it is switched on."""
+        if self._preview != self.slot:
+            self.idle()
+            self._preview = self.slot
+            runner.set_preview(self.slot, True)
         snap = runner.snapshot(self.slot)
         self.view.set_data(self.cfg, snap)
         state, _zone, raw, _filt, xy, _mag, sprint, _driving = snap
@@ -208,32 +224,8 @@ class GyroStickPage(QWidget):
         else:
             self.status.setText(_(STATE_TEXT[state]))
 
-
-LIVE_MS = 33
-
-
-class TiltDrawer(SideDrawer):
-    """Right-hand drawer with the tilt settings of the pad selected in the window."""
-
-    width_px = 460
-
-    def __init__(self, host, slot):
-        self._slot = slot                                   # () -> the slot selected in the window
-        super().__init__(host, "gyro", _("PRZECHYŁ PADA"))
-        self.timer = QTimer(self)
-        self.timer.setInterval(LIVE_MS)
-        self.timer.timeout.connect(self.page.tick)
-
-    def _build(self, lay):
-        self.page = GyroStickPage()
-        self.page.changed.connect(lambda cfg: runner.set_config(self._slot(), cfg))
-        lay.addWidget(self.page, 1)
-
-    def _on_open(self):
-        self.page.set_slot(self._slot())
-        runner.set_preview(self.page.slot, True)
-        self.timer.start()
-
-    def _on_close(self):
-        self.timer.stop()
-        runner.set_preview(self.page.slot, False)
+    def idle(self):
+        """The section is not visible any more: the engine stops following the pad when the feature is off."""
+        if self._preview is not None:
+            runner.set_preview(self._preview, False)
+            self._preview = None
