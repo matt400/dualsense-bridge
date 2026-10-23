@@ -34,6 +34,9 @@ MAX_PROBE = 20_000              # drift measurement: a safeguard on the length o
 MAX_NET_US = 1_000_000          # a network time over 1 s = a bad clock (e.g. right after a restart), not a measurement
 SCFG_S = 5.0                    # Wake-on-LAN / event settings go to the sender this often (it has them after its own restart too)
 WSAETIMEDOUT = 10060
+STATE_HEAD = 11                 # state fields before the motion block: sticks + triggers (6), hat (2), buttons, battery, flags
+STATE_ACC, STATE_GYRO = slice(11, 14), slice(14, 17)   # accelerometer and gyroscope inside a state packet
+TOUCH_MAX_X, TOUCH_MAX_Y = 1919, 942   # the DualSense touchpad resolution (0-based)
 KEY_WARN_S = 60.0               # a warning about a different HMAC key in the sender at most this often
 
 
@@ -50,7 +53,7 @@ class LinkStats:
     MIN_JUMP = 1000                  # a smaller jump is always a loss (as before)
     RATE_MARGIN, RATE_MIN = 1.5, 50.0
 
-    def __init__(self, n):
+    def __init__(self, n) -> None:
         """Start empty counters for `n` pad slots."""
         self.last = None
         self.t_last = 0.0
@@ -59,7 +62,7 @@ class LinkStats:
         self.states = [0] * n
         self.t0 = time.monotonic()
 
-    def packet(self, sq, now=None):
+    def packet(self, sq, now=None) -> None:
         """Account for one packet by its sequence number: a gap within the plausible limit counts as lost packets, a duplicate or late one
         is ignored, a bigger jump is taken as a sender restart."""
         now = time.monotonic() if now is None else now
@@ -73,7 +76,7 @@ class LinkStats:
                 self.got += 1
         self.last, self.t_last = sq, now
 
-    def tick(self, now):
+    def tick(self, now) -> None:
         """Once per WINDOW: publish the loss percentage and the state packets per second, update the measured rate and reset the
         counters."""
         dt = now - self.t0
@@ -96,7 +99,7 @@ _digital = [None] * 4    # the last button state (mask, d-pad, triggers pressed)
 _pressed = [None] * 4    # (mask, d-pad, L2 >= TRIG_ON, R2 >= TRIG_ON) per slot - a change = a "button -> game" sample
 _key_warned = [float("-inf")]   # when we last warned about a different HMAC key
 _auth_warned = {"legacy": float("-inf"), "stale": float("-inf")}
-_first_ping = [None]     # when (monotonic) this process got the sender's first ping
+_first_ping: list[float | None] = [None]     # when (monotonic) this process got the sender's first ping
 CLOCK_SYNC_S = 1.0       # for this long after the first ping the sender may still stamp packets with the previous process's clock
 
 
@@ -108,7 +111,7 @@ def sender_token():
     return ((sc[0] + time.perf_counter_ns() - sc[1]) // 1_000_000) & 0xFFFFFFFF
 
 
-def note_ping(t0, arr):
+def note_ping(t0, arr) -> None:
     """The sender's clock from a ping. A v3 ping is not checked for freshness, so a replayed old recording
     must not turn the clock back: only a newer time is accepted, unless the sender was silent for > 1 s (a restart = a new clock)."""
     global _sender_clock
@@ -125,7 +128,7 @@ def make_codec():
                  state_path=os.path.join(os.path.dirname(C.REMAP_PATH), "auth.json"))
 
 
-def init():
+def init() -> None:
     """Create the codec and bind the UDP receiving socket (with a read timeout so that silence can be detected); warn when no HMAC key is
     set."""
     global codec, in_sock
@@ -137,14 +140,14 @@ def init():
     recv_timeout(in_sock, 0.1)   # lets us detect silence from the sender (the timeout is in the kernel - no select() per packet)
 
 
-def close():
+def close() -> None:
     """Close the receiving socket (after the network loop has stopped) - the port is free for a new process after a restart."""
     flush_repeats()
     if in_sock is not None:
         in_sock.close()
 
 
-def send_peer(pkt):
+def send_peer(pkt) -> None:
     """Send a packet to the sender (ignored while it is unknown or the packet is None); send errors are dropped."""
     p = S.peer
     if p is not None and pkt is not None:     # None: v3 without the sender's clock (before the first ping)
@@ -159,7 +162,7 @@ _repeats = set()                      # scheduled repeats (threading.Timer)
 _repeats_lock = threading.Lock()
 
 
-def _repeat_fire(pkt, timer):
+def _repeat_fire(pkt, timer) -> None:
     """Timer callback: send a scheduled repeat unless flush_repeats already did."""
     with _repeats_lock:
         if timer not in _repeats:
@@ -168,7 +171,7 @@ def _repeat_fire(pkt, timer):
     send_peer(pkt)
 
 
-def send_repeat(pkt, n):
+def send_repeat(pkt, n) -> None:
     """The same packet (the same number - the sender handles it once) now and n-1 times later, after REPEAT_DELAYS.
     Copies sent at once got lost together in one burst of losses, and each had its own number, so the sender ran the
     command several times (only its repeat locks protected it)."""
@@ -183,7 +186,7 @@ def send_repeat(pkt, n):
         timer.start()
 
 
-def flush_repeats():
+def flush_repeats() -> None:
     """Scheduled repeats at once (receiver shutdown - the socket is about to vanish; tests)."""
     with _repeats_lock:
         pending = list(_repeats)
@@ -193,17 +196,17 @@ def flush_repeats():
         send_peer(timer.args[0])
 
 
-def send_feedback(i, vals):
+def send_feedback(i, vals) -> None:
     """Send the rumble / lightbar values of slot i."""
     send_peer(codec.pack(T_FB, i, *vals))
 
 
-def send_cmd(i, cmd, arg=0):
+def send_cmd(i, cmd, arg=0) -> None:
     """A command to the sender (3x - UDP may drop a packet; the sender ignores repeats)."""
     send_repeat(codec.pack(T_CMD, i, cmd, arg), 3)
 
 
-def send_triggers(i, vals, repeat=1):
+def send_triggers(i, vals, repeat=1) -> None:
     """Trigger effects to the sender: 15 values = trig3 (with the game's effects), 12 = trig2, 4 = the old trig (resistance only);
     a change goes several times (a lost packet)."""
     t = T_TRIG3 if len(vals) > len(TRIG2_OFF) else T_TRIG2 if len(vals) == len(TRIG2_OFF) else T_TRIG
@@ -219,14 +222,14 @@ def scfg_values(s=None):
             PAD_KEYS.index(BUTTON_CODES[w.button]), w.hold_ms)
 
 
-def send_scfg(repeat=1):
+def send_scfg(repeat=1) -> None:
     """Send the settings packet (Wake-on-LAN, events) to the sender, `repeat` times."""
     if codec is None or S.peer is None:      # startup (settings loaded before the socket) / the sender not known yet
         return
     send_repeat(codec.pack(T_SCFG, 255, *scfg_values()), repeat)
 
 
-def _settings_changed(old, new):
+def _settings_changed(old, new) -> None:
     """A settings listener: when the Wake-on-LAN or sender-event settings change, push them to the sender."""
     if (old.wol, old.log.sender) != (new.wol, new.log.sender):
         send_scfg(3)
@@ -246,7 +249,7 @@ def batt_codes(pct, flags):
     return dsu, min(8, pct * 8 // 100)
 
 
-def clear_slot(i, forget_id=False):
+def clear_slot(i, forget_id=False) -> None:
     """Reset everything known about the pad in slot i (state, profile effects, shortcuts, latency, mouse); forget_id also forgets the pad
     identity - for a pad that really left."""
     S.alive[i] = False
@@ -291,18 +294,20 @@ def _latency(lat, arr):
     return arr, phone, bt, max(0, net)
 
 
-def handle(t, i, data, arr=0):
-    """A packet from the sender; arr = the arrival time (perf_counter_ns) - for latency measurement."""
-    if t == T_BYE:   # the sender: the pad disconnected -> unplug the virtual DS4
-        was = S.want[i].is_set() or S.alive[i]
-        clear_slot(i, forget_id=True)
-        S.want[i].clear()
-        S.wake[i].set()
-        S.ignore_until[i] = time.monotonic() + 1.0   # late packets must not recreate it
-        if was:
-            print(f"Controller {i}: disconnected by sender")
-            ev.info(_("{pad} rozłączony").format(pad=ev.pad_name(i)))
-        return
+def _on_bye(i) -> None:
+    """The sender reports that the pad disconnected: unplug the virtual pad and ignore late packets for a moment."""
+    was = S.want[i].is_set() or S.alive[i]
+    clear_slot(i, forget_id=True)
+    S.want[i].clear()
+    S.wake[i].set()
+    S.ignore_until[i] = time.monotonic() + 1.0   # late packets must not recreate it
+    if was:
+        print(f"Controller {i}: disconnected by sender")
+        ev.info(_("{pad} rozłączony").format(pad=ev.pad_name(i)))
+
+
+def _mark_alive(i) -> None:
+    """Any packet from a pad proves it is there: refresh the silence timer and ask the slot thread for a virtual pad."""
     S.last_seen[i] = time.monotonic()
     if not S.alive[i]:
         S.alive[i] = True
@@ -311,135 +316,174 @@ def handle(t, i, data, arr=0):
         ev.info(_("{pad} połączony").format(pad=ev.pad_name(i)))   # after a short silence the DS4 stayed - this is not a new connection
         S.want[i].set()   # the slot thread will create the virtual DS4
         rx_console.pad_connected(i)       # the master pad with an already known id -> auto-ON of the console mode
-    if t in STATES:
-        now_us = time.monotonic_ns() // 1000
-        v = BODY[t].unpack_from(data, 4)
-        lat = _latency(v[STATE_FIELDS:], arr) if t == T_STATE2 else None
-        v = v[:STATE_FIELDS]
-        if v == S.last_v[i]:
-            return      # a repeat (heartbeat) - nothing changed
-        S.last_v[i] = v
-        mask = v[8] & MASK_ALL
-        bd, b4 = batt_codes(v[9], v[10])
-        S.batt_info[i] = (v[9], v[10])
-        lx, ly, lt, rx, ry, rt = v[:6]
-        hx, hy = clamp(v[6], -1, 1), clamp(v[7], -1, 1)
-        dig = (mask, hx, hy, lt >> 5, rt >> 5)   # triggers to 1/8 precision (the trigger hysteresis in the console mode)
-        btn = (mask, hx, hy, lt >= TRIG_ON, rt >= TRIG_ON)
-        blocked = S.states[i]["blocked"]    # the Test view: the game gets a neutral state, shortcuts and the master do not work
-        pressed = (lat is not None and not blocked and _pressed[i] is not None   # the first state after connecting
-                   and btn != _pressed[i])                                       # is not a press
-        _pressed[i] = btn
-        if dig != _digital[i]:              # shortcuts / master / console mode only on a button change,
-            _digital[i] = dig               # not on every gyro and stick sample (250 Hz)
-            testmode.sync(i)                # the Test view opened / closed - the slot's shortcuts start from a clean state
-            # the master's Options + Create: leaving the test (also from the pad under test) -
-            if testmode.on_state(i, (mask, hx, hy, lt, rt)):
-                blocked = False                                 # the inputs have already been swallowed
-            elif not blocked and testmode.shortcuts_on():      # the Test view: no pad's shortcuts work
-                hotkeys.on_state(i, mask, hx, hy)          # PS shortcuts first (a new PS press), then the master,
-                master.on_state(i, mask, hx, hy, lt, rt)   # which may mark that PS as used in a combination
-                rx_console.on_state(i, mask, hx, hy, lt, rt)
-        with S.lock:
-            s = S.states[i]
-            s["raw"] = (mask, hx, hy, lt, rt)
-            s["fwd"] = hotkeys.forward(i, mask, hx, hy)
-            s["rawst"] = (lx, ly, rx, ry)
-            if (p := S.probe[i]) is not None and len(p) < MAX_PROBE:   # drift measurement (rx_drift)
-                p.append(s["rawst"])
-            s["acc"], s["gyro"] = v[11:14], v[14:17]      # before recompute - the gyro affects the right stick / the mouse
-            S.recompute(s, S.remap_maps[i])
-            s["batt_dsu"], s["batt_ds4"] = bd, b4
-            s["ts"] = now_us         # the arrival time of the sample - better for DSU than the packet build time (jitter)
-            if s["lat"] is None and not blocked:   # measuring the oldest change waiting for a report (rx_ds4 - ViGEm)
-                s["lat"] = lat
-            if pressed and s["blat"] is None:   # separately: the oldest waiting button / trigger change
-                s["blat"] = lat
+
+
+def _on_state(t, i, data, arr) -> None:
+    """A state / state2 packet (the hot path, up to ~1 kHz per pad): sticks, triggers, buttons, battery and motion.
+    Shortcuts run only on a button change, the latency measurement only when state2 carries one."""
+    v = BODY[t].unpack_from(data, 4)
+    lat = _latency(v[STATE_FIELDS:], arr) if t == T_STATE2 else None
+    v = v[:STATE_FIELDS]
+    if v == S.last_v[i]:
+        return      # a repeat (heartbeat) - nothing changed
+    S.last_v[i] = v
+    now_us = time.monotonic_ns() // 1000
+    lx, ly, lt, rx, ry, rt, hat_x, hat_y, buttons, batt_pct, batt_flags = v[:STATE_HEAD]
+    mask = buttons & MASK_ALL
+    batt_dsu, batt_ds4 = batt_codes(batt_pct, batt_flags)
+    S.batt_info[i] = (batt_pct, batt_flags)
+    hx, hy = clamp(hat_x, -1, 1), clamp(hat_y, -1, 1)
+    dig = (mask, hx, hy, lt >> 5, rt >> 5)   # triggers to 1/8 precision (the trigger hysteresis in the console mode)
+    btn = (mask, hx, hy, lt >= TRIG_ON, rt >= TRIG_ON)
+    blocked = S.states[i]["blocked"]    # the Test view: the game gets a neutral state, shortcuts and the master do not work
+    pressed = (lat is not None and not blocked and _pressed[i] is not None   # the first state after connecting
+               and btn != _pressed[i])                                       # is not a press
+    _pressed[i] = btn
+    if dig != _digital[i]:              # shortcuts / master / console mode only on a button change,
+        _digital[i] = dig               # not on every gyro and stick sample (250 Hz)
+        testmode.sync(i)                # the Test view opened / closed - the slot's shortcuts start from a clean state
+        # the master's Options + Create: leaving the test (also from the pad under test) -
+        if testmode.on_state(i, (mask, hx, hy, lt, rt)):
+            blocked = False                                 # the inputs have already been swallowed
+        elif not blocked and testmode.shortcuts_on():      # the Test view: no pad's shortcuts work
+            hotkeys.on_state(i, mask, hx, hy)          # PS shortcuts first (a new PS press), then the master,
+            master.on_state(i, mask, hx, hy, lt, rt)   # which may mark that PS as used in a combination
+            rx_console.on_state(i, mask, hx, hy, lt, rt)
+    with S.lock:
+        s = S.states[i]
+        s["raw"] = (mask, hx, hy, lt, rt)
+        s["fwd"] = hotkeys.forward(i, mask, hx, hy)
+        s["rawst"] = (lx, ly, rx, ry)
+        if (p := S.probe[i]) is not None and len(p) < MAX_PROBE:   # drift measurement (rx_drift)
+            p.append(s["rawst"])
+        s["acc"], s["gyro"] = v[STATE_ACC], v[STATE_GYRO]      # before recompute - the gyro affects the right stick / the mouse
+        S.recompute(s, S.remap_maps[i])
+        s["batt_dsu"], s["batt_ds4"] = batt_dsu, batt_ds4
+        s["ts"] = now_us         # the arrival time of the sample - better for DSU than the packet build time (jitter)
+        if s["lat"] is None and not blocked:   # measuring the oldest change waiting for a report (rx_ds4 - ViGEm)
+            s["lat"] = lat
+        if pressed and s["blat"] is None:   # separately: the oldest waiting button / trigger change
+            s["blat"] = lat
+        s["ver"] += 1
+    S.notify(i)
+    if s["gyro_vel"]:
+        S.gyro_wake.set()
+
+
+def _on_touch(i, data) -> None:
+    """Touchpad finger positions (two fingers); in the mouse mode they are only remembered, the pointer comes from T_MOUSE."""
+    v = ST_TOUCH.unpack_from(data, 4)
+    if v == S.last_touch[i]:
+        return
+    S.last_touch[i] = v
+    touch = ((v[0] & 1, v[1], min(v[2], TOUCH_MAX_X), min(v[3], TOUCH_MAX_Y)),
+             (v[4] & 1, v[5], min(v[6], TOUCH_MAX_X), min(v[7], TOUCH_MAX_Y)))
+    with S.lock:
+        s = S.states[i]
+        s["touch"] = touch
+        if not S.mouse_mode[i]:   # in the mouse mode the touch is only remembered
             s["ver"] += 1
+    if not S.mouse_mode[i]:
         S.notify(i)
-        if s["gyro_vel"]:
-            S.gyro_wake.set()
-    elif t == T_TOUCH:
-        v = ST_TOUCH.unpack_from(data, 4)
-        if v == S.last_touch[i]:
-            return
-        S.last_touch[i] = v
-        touch = ((v[0] & 1, v[1], min(v[2], 1919), min(v[3], 942)),
-                 (v[4] & 1, v[5], min(v[6], 1919), min(v[7], 942)))
-        with S.lock:
-            s = S.states[i]
-            s["touch"] = touch
-            if not S.mouse_mode[i]:   # in the mouse mode the touch is only remembered
-                s["ver"] += 1
+
+
+def _on_click(i, data) -> None:
+    """The touchpad click: PS + click toggles the mouse mode, otherwise it is a mouse button or the DS4 touchpad press."""
+    down = data[4] if data[4] <= 2 else 1     # 0 = released, 1 = click, 2 = a two-finger click (right button)
+    if down == S.tp_down[i]:
+        return
+    S.tp_down[i] = down
+    S.states[i]["rtp"] = down          # the Test view: the click is visible in the mouse mode and under the lock too
+    if S.states[i]["blocked"]:
+        S.swallow[i] = False
         if not S.mouse_mode[i]:
-            S.notify(i)
-    elif t == T_CLICK:
-        down = data[4] if data[4] <= 2 else 1     # 0 = released, 1 = click, 2 = a two-finger click (right button)
-        if down == S.tp_down[i]:
-            return
-        S.tp_down[i] = down
-        S.states[i]["rtp"] = down          # the Test view: the click is visible in the mouse mode and under the lock too
-        if S.states[i]["blocked"]:
-            S.swallow[i] = False
-            if not S.mouse_mode[i]:
-                # the live state also under the lock (the game gets a neutral report anyway): a click held before the test
-                # and released during it stayed "pressed" in the state - after the test the game saw a pressed touchpad
-                # until it was clicked once more (the sender's repeats are rejected by the comparison with tp_down)
-                with S.lock:
-                    S.states[i]["tp"] = bool(down)
-            return
-        shortcuts = testmode.shortcuts_on()           # the Test view: a click stays a click, no shortcuts
-        if down and shortcuts:
-            rx_console.on_touch_click(i)
-        if down and shortcuts and S.states[i]["raw"][0] & PS_BIT:   # PS + touchpad click = a mode change (raw PS)
-            S.swallow[i] = True
-            hotkeys.mark_used(i)
-            if not master.check(i, "mouse"):
-                return
-            mouse.set_mode(i, not S.mouse_mode[i])
-            F.pulse(i, "mouse" if S.mouse_mode[i] else "ds4")
-            print(f"Controller {i}: touchpad -> {'MOUSE' if S.mouse_mode[i] else 'DS4 touch'} mode")
-            return
-        if not down and S.swallow[i]:
-            S.swallow[i] = False
-            return
-        if S.mouse_mode[i]:
-            mouse.mouse_button(i, down)
-        else:
+            # the live state also under the lock (the game gets a neutral report anyway): a click held before the test
+            # and released during it stayed "pressed" in the state - after the test the game saw a pressed touchpad
+            # until it was clicked once more (the sender's repeats are rejected by the comparison with tp_down)
             with S.lock:
                 S.states[i]["tp"] = bool(down)
-                S.states[i]["ver"] += 1
-            S.notify(i)
-    elif t == T_MOUSE:
-        if S.mouse_mode[i] and not S.states[i]["blocked"]:
-            dx, dy, fl = ST_MOUSE.unpack_from(data, 4)
-            mouse.mouse_rel(i, dx, dy, fl)
-    elif t == T_IDENT:
-        pid = BODY[T_IDENT].unpack_from(data, 4)[0].rstrip(b"\0").decode("ascii", "replace").lower()
-        if pid and pid != S.pad_id[i]:
-            with S.profile_lock:              # the game thread (set_game) must not recompute the profile halfway through a pad change
-                S.pad_id[i] = pid
-                S.override[i] = None
-                S.reload_profile(i)
-            rx_console.pad_connected(i, ident=True)   # a new pad in the slot - if it is the master, auto-ON of the console mode
-            master.mouse_follows_master()  # touchpad as a mouse: the master pad (it may have just arrived or changed slot)
-            n = S.profile_changes(i)
-            print(f"Controller {i}: id {pid}, profile {S.profile_label(S.active[i])}"
-                  + (f" ({n} changes)" if n else ""))
-            ev.info(_("{pad}: pad {id}").format(pad=ev.pad_name(i), id=pid))
-    elif t == T_VERSION:
-        v = BODY[T_VERSION].unpack_from(data, 4)
-        if v != S.sender_info[i]:
-            S.sender_info[i] = v
-            print(f"Controller {i}: sender v{v[0]}, rumble methods {v[1]}, reason {v[2]}")
-    elif t == T_INFO:
-        rtt, pad_hz, motion_hz = ST_INFO.unpack_from(data, 4)
-        S.info[i] = (None if rtt == RTT_NONE else rtt / 10, pad_hz, motion_hz, time.monotonic())
+        return
+    shortcuts = testmode.shortcuts_on()           # the Test view: a click stays a click, no shortcuts
+    if down and shortcuts:
+        rx_console.on_touch_click(i)
+    if down and shortcuts and S.states[i]["raw"][0] & PS_BIT:   # PS + touchpad click = a mode change (raw PS)
+        S.swallow[i] = True
+        hotkeys.mark_used(i)
+        if not master.check(i, "mouse"):
+            return
+        mouse.set_mode(i, not S.mouse_mode[i])
+        F.pulse(i, "mouse" if S.mouse_mode[i] else "ds4")
+        print(f"Controller {i}: touchpad -> {'MOUSE' if S.mouse_mode[i] else 'DS4 touch'} mode")
+        return
+    if not down and S.swallow[i]:
+        S.swallow[i] = False
+        return
+    if S.mouse_mode[i]:
+        mouse.mouse_button(i, down)
+    else:
+        with S.lock:
+            S.states[i]["tp"] = bool(down)
+            S.states[i]["ver"] += 1
+        S.notify(i)
+
+
+def _on_mouse(i, data) -> None:
+    """Relative pointer movement from the touchpad (only meaningful in the mouse mode, never during the Test view)."""
+    if S.mouse_mode[i] and not S.states[i]["blocked"]:
+        dx, dy, fl = ST_MOUSE.unpack_from(data, 4)
+        mouse.mouse_rel(i, dx, dy, fl)
+
+
+def _on_ident(i, data) -> None:
+    """The pad's identity (its id): a new pad in the slot switches the per-pad profile and may enable the console mode."""
+    pid = BODY[T_IDENT].unpack_from(data, 4)[0].rstrip(b"\0").decode("ascii", "replace").lower()
+    if pid and pid != S.pad_id[i]:
+        with S.profile_lock:              # the game thread (set_game) must not recompute the profile halfway through a pad change
+            S.pad_id[i] = pid
+            S.override[i] = None
+            S.reload_profile(i)
+        rx_console.pad_connected(i, ident=True)   # a new pad in the slot - if it is the master, auto-ON of the console mode
+        master.mouse_follows_master()  # touchpad as a mouse: the master pad (it may have just arrived or changed slot)
+        n = S.profile_changes(i)
+        print(f"Controller {i}: id {pid}, profile {S.profile_label(S.active[i])}"
+              + (f" ({n} changes)" if n else ""))
+        ev.info(_("{pad}: pad {id}").format(pad=ev.pad_name(i), id=pid))
+
+
+def _on_version(i, data) -> None:
+    """The sender's version, the rumble methods it found and the reason for the choice - logged once per change."""
+    v = BODY[T_VERSION].unpack_from(data, 4)
+    if v != S.sender_info[i]:
+        S.sender_info[i] = v
+        print(f"Controller {i}: sender v{v[0]}, rumble methods {v[1]}, reason {v[2]}")
+
+
+def _on_info(i, data) -> None:
+    """The sender's periodic health report: round trip [0.1 ms], pad and motion rates."""
+    rtt, pad_hz, motion_hz = ST_INFO.unpack_from(data, 4)
+    S.info[i] = (None if rtt == RTT_NONE else rtt / 10, pad_hz, motion_hz, time.monotonic())
+
+
+# Per-pad packet types other than the state packets, which have their own fast path in handle().
+_HANDLERS = {T_TOUCH: _on_touch, T_CLICK: _on_click, T_MOUSE: _on_mouse, T_IDENT: _on_ident, T_VERSION: _on_version,
+             T_INFO: _on_info}
+
+
+def handle(t, i, data, arr=0) -> None:
+    """A packet from the sender for slot i; arr = the arrival time (perf_counter_ns) - for latency measurement."""
+    if t == T_BYE:   # the sender: the pad disconnected -> unplug the virtual DS4
+        _on_bye(i)
+        return
+    _mark_alive(i)
+    if t in STATES:
+        _on_state(t, i, data, arr)
     elif t == T_CALRES:
         on_calres(i, data)
+    elif (handler := _HANDLERS.get(t)) is not None:
+        handler(i, data)
 
 
-def on_calres(i, data):
+def on_calres(i, data) -> None:
     """The sender's answer to a gyro calibration -> S.gyro_cal (the window); the calibration result goes to the log too."""
     v = BODY[T_CALRES].unpack_from(data, 4)
     prev = S.gyro_cal[i]
@@ -454,7 +498,7 @@ def on_calres(i, data):
         ev.warn(_("{pad}: kalibracja żyroskopu przerwana - pad się ruszał").format(pad=ev.pad_name(i)))
 
 
-def on_build(data, now, t=T_BUILD):
+def on_build(data, now, t=T_BUILD) -> None:
     """A build / build2 packet: (the sender's commit, the commit time, the update state UPD_*) -> S.sender_build;
     build2 also the addresses the sender's Wake-on-LAN will use -> S.sender_wol."""
     v = BODY[t].unpack_from(data, 4)
@@ -473,7 +517,7 @@ def on_event(i, data):
     return None
 
 
-def check_stale(now):
+def check_stale(now) -> None:
     """Silence from the sender: first a state reset (stale_s), then unplugging the virtual DS4 (unplug_s)."""
     for i in range(C.NUM_PADS):
         silent = now - S.last_seen[i]
@@ -491,7 +535,7 @@ def check_stale(now):
             clear_slot(i, forget_id=True)
 
 
-def check_key(now):
+def check_key(now) -> None:
     """Sender packets rejected because of a different HMAC key setting (proto.Codec.mismatch_t) -> a warning in the log,
     at most every KEY_WARN_S. Without it the pads simply did not work, and the only hint was the sender's log."""
     if now - codec.mismatch_t < 1.0 and now - _key_warned[0] >= KEY_WARN_S:
@@ -517,11 +561,11 @@ def check_key(now):
 class SenderWatch:
     """The sender online / offline -> the log; the first contact and every SCFG_S -> the settings for the sender (scfg)."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Start as offline with no settings sent yet."""
         self.online, self.t_scfg = False, 0.0
 
-    def tick(self, now):
+    def tick(self, now) -> None:
         """Log a change of the sender's online state and, while online, send the settings every SCFG_S."""
         online = S.sender_online(now)
         if online != self.online:
@@ -536,7 +580,7 @@ class SenderWatch:
             send_scfg()
 
 
-def net_loop():
+def net_loop() -> None:
     """The network thread: receive a datagram (a timeout is the idle tick), run the periodic checks every 0.1 s, then authenticate / parse
     the packet and dispatch it by type; per-pad packets go to handle() after the freshness and slot checks."""
     boost_thread()

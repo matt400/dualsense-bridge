@@ -177,7 +177,7 @@ def active_sources():
     return out
 
 
-def set_topology(mode):
+def set_topology(mode) -> None:
     """The display layout ("extend" / "internal" / "tv") through SetDisplayConfig - the same as DisplaySwitch, but without
     launching a program and synchronously (it works while Windows is shutting down too). Windows remembers the layout,
     so after a restart the sign-in screen appears where it was set."""
@@ -232,7 +232,7 @@ def _gdi_resolution(u, device, best):
     return u.ChangeDisplaySettingsExW(device, ctypes.byref(dm), None, CDS_UPDATEREGISTRY, None)
 
 
-def set_resolution(device, w, h):
+def set_resolution(device, w, h) -> str:
     """-> a description of the change; does nothing when the display already has w×h. In turn: CCD with a w×h signal, CCD scaling
     the current signal, GDI. After each attempt it reads back - what counts is what is actually on the display."""
     u = _user32()
@@ -260,7 +260,7 @@ def set_resolution(device, w, h):
     raise OSError(f"{device}: cannot set {w}x{h} - " + "; ".join(errors))
 
 
-def set_scale(adapter, source_id, percent):
+def set_scale(adapter, source_id, percent) -> str:
     """Set the Windows scaling of a display source to `percent` (relative to its recommended scale; read first, then set). -> a
     description."""
     u = _user32()

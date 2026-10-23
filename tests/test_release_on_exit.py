@@ -30,7 +30,7 @@ check(out == [(0, (0, 0, 0, 0), F.TRIG_REPEAT)], "starszy nadajnik (pakiet trig)
 out.clear(); F.release_triggers(send)
 check(out == [], "drugi raz nic (już zwolnione)")
 src = open(os.path.join(RX, "receiver_controller.py"), encoding="utf-8").read()
-fin = src[src.index("    finally:\n        S.stop.set()"):]
+fin = src[src.index("def _shutdown("):src.index("def main(")]
 check(fin.index("release_triggers") < fin.index("rx_net.close()") and fin.index("fb_thread.join") < fin.index("release_triggers"),
       "receiver_controller: zwolnienie po zatrzymaniu wątku feedbacku, przed zamknięciem gniazda")
 

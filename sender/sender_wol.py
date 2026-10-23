@@ -51,7 +51,7 @@ _last_sent = 0.0
 
 
 # ---------------- settings ----------------
-def load(path=None):
+def load(path=None) -> None:
     """Load wol.json into cfg and learned. A missing or broken file = default values.
 
     Only known fields of WolCfg are taken from the file, and the result is passed through _valid(), so a hand-edited
@@ -75,7 +75,7 @@ def load(path=None):
     events.set_enabled(cfg.events)
 
 
-def save(path=None):
+def save(path=None) -> None:
     """Write the current settings plus the learned MAC to wol.json (atomically); errors are logged only."""
     path = path or C.WOL_FILE
     if not path:
@@ -101,7 +101,7 @@ def _valid(c):
                    hold_ms=min(HOLD_MS[1], max(HOLD_MS[0], int(c.hold_ms))) if isinstance(c.hold_ms, int) else d.hold_ms)
 
 
-def _is_ip(text):
+def _is_ip(text) -> bool:
     """True if text is a valid dotted IPv4 address."""
     try:
         ipaddress.IPv4Address(text)
@@ -110,7 +110,7 @@ def _is_ip(text):
     return True
 
 
-def apply_scfg(flags, mac, bcast, button, hold_ms):
+def apply_scfg(flags, mac, bcast, button, hold_ms) -> bool:
     """Apply an scfg packet from the receiver to cfg; the file is written only if something actually changed.
 
     Returns True when the configuration changed. The raw packet fields are converted (flag bits -> booleans, bytes ->
@@ -191,7 +191,7 @@ def auto_bcast():
 _bcast_pending = None         # the local IP whose broadcast is being read in a thread
 
 
-def _refresh_bcast(ip):
+def _refresh_bcast(ip) -> None:
     """Start reading the broadcast address for `ip` in a worker thread; the result lands in _bcast_cache.
 
     _bcast_pending marks a lookup in progress so that auto_bcast does not start duplicates. Without a running event
@@ -199,7 +199,7 @@ def _refresh_bcast(ip):
     """
     global _bcast_cache, _bcast_pending
 
-    def done(fut):
+    def done(fut) -> None:
         global _bcast_cache, _bcast_pending
         _bcast_pending = None
         try:
@@ -229,7 +229,7 @@ def targets():
     return list(dict.fromkeys([*out, C.PC_ADDR]))
 
 
-def learn():
+def learn() -> None:
     """While the PC answers: remember its MAC from the ARP table (it will be needed when the PC is off)."""
     global learned
     mac = arp_lookup(C.PC_ADDR)
@@ -262,7 +262,7 @@ def receiver_alive(now=None):
 
 
 # ---------------- the combination on the pad ----------------
-def on_mask(c):
+def on_mask(c) -> None:
     """Pad button state changed: PS + the chosen button held -> start the hold_ms countdown, released -> cancel it.
 
     The countdown is a call_later timer that fires fire() when it expires; keeping it in c.wol_timer lets a release
@@ -278,7 +278,7 @@ def on_mask(c):
         c.wol_timer = None
 
 
-def fire(c, now=None):
+def fire(c, now=None) -> bool:
     """The combination was held long enough: if the receiver is silent, send the magic packet. Returns True if sent.
 
     Guards: nothing happens while the receiver answers (the combination then belongs to the receiver) or within

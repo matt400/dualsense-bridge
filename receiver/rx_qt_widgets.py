@@ -121,7 +121,7 @@ class Combo(QComboBox):
 
     changed = Signal(object)     # the new value (userData)
 
-    def __init__(self, items=()):
+    def __init__(self, items=()) -> None:
         """Build the list from `items`; `changed` fires only on user selection (activated), the tooltip follows the current item."""
         super().__init__()
         self.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -133,7 +133,7 @@ class Combo(QComboBox):
         self.activated.connect(lambda i: self.changed.emit(self.itemData(i)))
         self.currentIndexChanged.connect(lambda i: self.setToolTip(self.itemData(i, Qt.ItemDataRole.ToolTipRole) or ""))
 
-    def set_items(self, items):
+    def set_items(self, items) -> None:
         """Replace all items without emitting signals; an item with an icon also gets that icon's tooltip."""
         from rx_qt_icons import icon, tip
         self.blockSignals(True)
@@ -147,7 +147,7 @@ class Combo(QComboBox):
         self.blockSignals(False)
         self.setToolTip(self.itemData(self.currentIndex(), Qt.ItemDataRole.ToolTipRole) or "")
 
-    def set_data(self, value):
+    def set_data(self, value) -> None:
         """Select the item with this value (the first one if absent) without emitting signals."""
         i = self.findData(value)
         self.blockSignals(True)
@@ -155,13 +155,13 @@ class Combo(QComboBox):
         self.blockSignals(False)
         self.setToolTip(self.itemData(self.currentIndex(), Qt.ItemDataRole.ToolTipRole) or "")
 
-    def wheelEvent(self, e):      # the wheel should scroll the panel, not change the list under the cursor
+    def wheelEvent(self, e) -> None:      # the wheel should scroll the panel, not change the list under the cursor
         e.ignore()
 
 
 class _Slider(QSlider):
     """A slider that reacts to the wheel only when focused, so scrolling a panel does not change values."""
-    def wheelEvent(self, e):
+    def wheelEvent(self, e) -> None:
         if self.hasFocus():
             super().wheelEvent(e)
         else:
@@ -173,7 +173,7 @@ class SliderRow(QWidget):
 
     changed = Signal(float)      # only after a user move, not after set()
 
-    def __init__(self, caption, lo, hi, step, unit="", fmt=None):
+    def __init__(self, caption, lo, hi, step, unit="", fmt=None) -> None:
         super().__init__()
         self.lo, self.step, self.unit, self.fmt = lo, step, unit, fmt   # fmt(v) -> the value text (instead of unit)
         self.title, self.val = label(caption, "dim", wrap=True), label("", "val")
@@ -200,14 +200,14 @@ class SliderRow(QWidget):
         """The current value in display units (lo + position * step)."""
         return self.lo + self.slider.value() * self.step
 
-    def set(self, v):
+    def set(self, v) -> None:
         """Set the value without emitting `changed` and refresh the label."""
         self.slider.blockSignals(True)
         self.slider.setValue(round((v - self.lo) / self.step))
         self.slider.blockSignals(False)
         self.val.setText(self._text(self.value()))
 
-    def _moved(self, _pos):
+    def _moved(self, _pos) -> None:
         """User moved the slider: refresh the label and emit `changed`."""
         v = self.value()
         self.val.setText(self._text(v))
@@ -220,7 +220,7 @@ class ConfirmButton(QPushButton):
 
     confirmed = Signal()
 
-    def __init__(self, text, armed="Sure?", timeout_ms=3000, small=False, iconic=None, tip=""):
+    def __init__(self, text, armed="Sure?", timeout_ms=3000, small=False, iconic=None, tip="") -> None:
         super().__init__("" if iconic else text)
         self._text, self._armed = ("" if iconic else text), armed
         self.setProperty("small", small)
@@ -238,7 +238,7 @@ class ConfirmButton(QPushButton):
         self._timer.timeout.connect(self.disarm)
         self.clicked.connect(self._click)
 
-    def _click(self):
+    def _click(self) -> None:
         """First click arms the button and starts the timer; a click while armed confirms."""
         if self._timer.isActive():
             self.disarm()
@@ -248,7 +248,7 @@ class ConfirmButton(QPushButton):
             set_prop(self, "armed", True)
             self._timer.start()
 
-    def disarm(self):
+    def disarm(self) -> None:
         """Back to the normal label and style (also called by the timeout)."""
         self._timer.stop()
         self.setText(self._text)
@@ -261,7 +261,7 @@ class Collapsible(QWidget):
 
     toggled = Signal(bool)
 
-    def __init__(self, title, *items, opened=False):
+    def __init__(self, title, *items, opened=False) -> None:
         super().__init__()
         self._title = title
         self.head = QPushButton()
@@ -289,7 +289,7 @@ class Collapsible(QWidget):
         """Whether the body is shown."""
         return self.body.isVisibleTo(self)
 
-    def set_open(self, on):
+    def set_open(self, on) -> None:
         """Show / hide the body, update the arrow in the header and emit `toggled`."""
         on = bool(on)
         self.body.setVisible(on)
@@ -300,7 +300,7 @@ class Collapsible(QWidget):
 class SegmentBar(QWidget):
     """A thin bar of coloured segments (latency components): a segment's width = its share of the total."""
 
-    def __init__(self, height=6):
+    def __init__(self, height=6) -> None:
         super().__init__()
         self.setFixedHeight(height)
         self.parts = ()
@@ -308,14 +308,14 @@ class SegmentBar(QWidget):
     def sizeHint(self):
         return QSize(120, self.height())
 
-    def set(self, parts):
+    def set(self, parts) -> None:
         """parts = [(value, colour)]; an empty list = the track only."""
         parts = tuple((max(0.0, v), c) for v, c in parts)
         if parts != self.parts:
             self.parts = parts
             self.update()
 
-    def paintEvent(self, _e):
+    def paintEvent(self, _e) -> None:
         """Clip to a rounded track, then paint each segment proportionally (a 1.5 px gap between segments)."""
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -336,7 +336,7 @@ class SegmentBar(QWidget):
 class BatteryBar(QWidget):
     """A rounded battery bar; pct = None -> an empty track (unknown state)."""
 
-    def __init__(self, height=10):
+    def __init__(self, height=10) -> None:
         super().__init__()
         self.setFixedHeight(height)
         self.pct, self.color = None, QColor(OK)
@@ -344,14 +344,14 @@ class BatteryBar(QWidget):
     def sizeHint(self):
         return QSize(120, self.height())
 
-    def set(self, pct, color):
+    def set(self, pct, color) -> None:
         """Update the percentage and colour; repaint only when something changed."""
         color = QColor(color)
         if (pct, color) != (self.pct, self.color):
             self.pct, self.color = pct, color
             self.update()
 
-    def paintEvent(self, _e):
+    def paintEvent(self, _e) -> None:
         """Paint the track, then the filled part (never narrower than its height)."""
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -371,7 +371,7 @@ class Segmented(QFrame):
     changed = Signal(str)
     GAP = 4
 
-    def __init__(self, options):
+    def __init__(self, options) -> None:
         super().__init__()
         self.setObjectName("segment")
         lay = QHBoxLayout(self)
@@ -390,7 +390,7 @@ class Segmented(QFrame):
             b.clicked.connect(lambda _c=False, k=key: self.changed.emit(k))
         self._equalize()
 
-    def _equalize(self):
+    def _equalize(self) -> None:
         """Equal option width (the width of the longest text, measured for the bold - selected - version)."""
         widths = []
         for b in self.buttons.values():
@@ -401,7 +401,7 @@ class Segmented(QFrame):
         for b in self.buttons.values():
             b.setMinimumWidth(w)
 
-    def set(self, key):
+    def set(self, key) -> None:
         """Check the option with this key."""
         self.buttons[key].setChecked(True)
 

@@ -291,7 +291,7 @@ class EpochClock:
     """perf_counter with a random per-process offset [ns]: v3 freshness tokens (and pings) from a previous
     run or from before a system restart (perf_counter counts from boot) do not fall into the freshness window."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.base = secrets.randbits(60)              # ~36 years in ns - the sum fits in the ping's "Q"
 
     def ns(self):
@@ -339,7 +339,7 @@ class Codec:
     now_ms() -> our clock (EpochClock.ms32) for checking incoming tokens; state_path - the file in which the key's
     fingerprint stays after the switch to v3 (without it the switch lasts only until the process ends)."""
 
-    def __init__(self, key=b"", token=None, now_ms=None, state_path=None):
+    def __init__(self, key=b"", token=None, now_ms=None, state_path=None) -> None:
         self.key = key
         self._seq = random.getrandbits(16)
         self._lock = threading.Lock()
@@ -363,7 +363,7 @@ class Codec:
         except (OSError, ValueError, AttributeError):
             return None
 
-    def _upgrade(self):
+    def _upgrade(self) -> None:
         """Switch to v3 for good: from now on only v3 is sent and v2 with the key is rejected; the fingerprint is saved so a restart keeps
         it."""
         self.v3 = True
@@ -480,11 +480,11 @@ class SeqFilter:
     """Drops late / duplicated packets. After `window` s of silence it accepts any number
     (the other side may have restarted and begun from a random seq)."""
 
-    def __init__(self, window=1.0):
+    def __init__(self, window=1.0) -> None:
         self.window = window
         self._seen = {}
 
-    def fresh(self, key, sq, now):
+    def fresh(self, key, sq, now) -> bool:
         """True if packet number `sq` of stream `key` is new (ahead of the last one, modulo 2**16, or after a silence)."""
         p = self._seen.get(key)
         if p is not None and now - p[1] < self.window and not 0 < ((sq - p[0]) & 0xFFFF) < 0x8000:
@@ -492,7 +492,7 @@ class SeqFilter:
         self._seen[key] = (sq, now)
         return True
 
-    def forget(self, match):
+    def forget(self, match) -> None:
         """Forget every stream whose key satisfies match(key) (e.g. when a pad disconnects)."""
         for k in [k for k in self._seen if match(k)]:
             del self._seen[k]
@@ -515,7 +515,7 @@ def load_config(path, defaults=None):
     return cfg
 
 
-def write_file(path, data):
+def write_file(path, data) -> None:
     """Atomic write (a temporary file + fsync + replace): an interrupted write, a power loss, or a PC sleep / shutdown
     right after the write (master actions) will not leave an empty or truncated file - without fsync os.replace could have swapped in
     a file whose data had not reached the disk yet. A failed write removes the temporary file. data: str (UTF-8) or bytes."""
@@ -534,7 +534,7 @@ def write_file(path, data):
         raise
 
 
-def write_json(path, obj, **kw):
+def write_json(path, obj, **kw) -> None:
     """write_file() for JSON (kw as in json.dumps, e.g. indent, sort_keys); with a newline at the end."""
     write_file(path, json.dumps(obj, **kw) + "\n")
 

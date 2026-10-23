@@ -23,7 +23,7 @@ class SideDrawer(QFrame):
     opened = Signal(bool)
     width_px = WIDTH
 
-    def __init__(self, host: QWidget, icon: str, title: str):
+    def __init__(self, host: QWidget, icon: str, title: str) -> None:
         super().__init__(host)
         self.host = host
         self.setObjectName("drawer")
@@ -52,8 +52,9 @@ class SideDrawer(QFrame):
         head.addWidget(self.close_btn)
         lay.addLayout(head)
         self._build(lay)
-        QShortcut(QKeySequence(Qt.Key.Key_Escape), self, activated=self.close_drawer,
-                  context=Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        esc = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
+        esc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        esc.activated.connect(self.close_drawer)
         self.hide()
 
     # ---------- for subclasses ----------

@@ -26,12 +26,13 @@ after UI changes and commit the updated PNGs.
 ## Tests
 
 ```
-pip install evdev ruff PySide6-Essentials
+pip install evdev ruff mypy PySide6-Essentials
 ./tests/run_tests.sh
 ```
 
-`ruff` (rules in `pyproject.toml`) checks all code before the tests. GitHub Actions runs the same on every push and
-PR (`.github/workflows/tests.yml`).
+`ruff` and `mypy` (rules in `pyproject.toml`) check all code before the tests; `mypy` runs once per package (the receiver
+as on Windows, the sender as on Linux) because the modules import each other by flat name. GitHub Actions runs the same on
+every push and PR (`.github/workflows/tests.yml`).
 
 The tests cover:
 - logic on both sides: touchpad, gestures, limiter, buffer overflow, shortcuts, profiles, gyro, stick shaping;

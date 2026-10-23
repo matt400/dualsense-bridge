@@ -100,7 +100,7 @@ def in_use():
     return os.path.normcase(os.path.dirname(os.path.abspath(path))) if path else None
 
 
-def cleanup(keep):
+def cleanup(keep) -> None:
     """Older versions and leftovers of interrupted downloads. The folder of the version loaded in this process stays until a restart:
     rmtree removed unlocked DLL dependencies from it (loaded lazily) - a HIDMaestro loaded before the update
     crashed on the next pad connection (a missing file). Locked files stay until next time."""
@@ -127,7 +127,7 @@ def _load_state():
         return 0.0, ""
 
 
-def _save_state(checked, latest):
+def _save_state(checked, latest) -> None:
     """Save the check state (best effort - an I/O error is ignored)."""
     try:
         os.makedirs(root(), exist_ok=True)
@@ -176,7 +176,7 @@ class HttpRange(io.RawIOBase):
     The address after GitHub's redirect (a signed link to the storage) is fixed once, the size comes from Content-Range.
     prefetch(start, end) fetches a range in one request; reads from it are served from memory."""
 
-    def __init__(self, url, opener=None):
+    def __init__(self, url, opener=None) -> None:
         """Probe the server with a 1-byte Range request: it must answer 206; the final URL and the total size are taken from it."""
         super().__init__()
         self._get = opener = opener or _get
@@ -200,7 +200,7 @@ class HttpRange(io.RawIOBase):
         self.fetched += len(data)
         return data
 
-    def prefetch(self, start, end):
+    def prefetch(self, start, end) -> None:
         """Bytes [start, end) in one request; a range that is too large (PREFETCH_MAX) is left to be read in pieces."""
         start, end = max(0, start), min(self.size, end)
         held = self._buf_at <= start and end <= self._buf_at + len(self._buf)
@@ -209,10 +209,10 @@ class HttpRange(io.RawIOBase):
         self._buf, self._buf_at = memoryview(b""), 0           # the previous entry is no longer needed (memory)
         self._buf, self._buf_at = memoryview(self._fetch(start, end - start)), start
 
-    def readable(self):
+    def readable(self) -> bool:
         return True
 
-    def seekable(self):
+    def seekable(self) -> bool:
         return True
 
     def tell(self):
@@ -300,7 +300,7 @@ def install(tag, url, opener=None):
     return final, raw.fetched
 
 
-def _set(**kw):
+def _set(**kw) -> None:
     """Replace fields of the immutable status object."""
     global status
     from dataclasses import replace
@@ -330,7 +330,7 @@ def check(force=False):
     return status
 
 
-def _check(force):
+def _check(force) -> None:
     """The check itself (under the lock): skip when checked recently, ask GitHub for the latest release, hold a fresh one
     until it is old enough (the first installation never waits), otherwise install it, clean up and notify."""
     refresh_status()
@@ -357,7 +357,7 @@ def _check(force):
         on_installed(tag)
 
 
-def thread(stop, enabled):
+def thread(stop, enabled) -> None:
     """The receiver thread. enabled() - whether downloading is allowed (the settings may change meanwhile)."""
     refresh_status()
     if status.version:

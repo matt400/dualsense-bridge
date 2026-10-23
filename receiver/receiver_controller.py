@@ -8,7 +8,8 @@ Files: proto.py (shared), rx_config.py, rx_state.py, rx_buttons.py (remap + rema
        rx_winapi.py, rx_mouse.py, rx_report.py, rx_net.py, rx_dsu.py, rx_ds4.py,
        rx_console.py + rx_audio.py (console mode: monitor / TV, console.json),
        rx_settings.py (settings.json: mouse, master pad), rx_master.py (master pad: permissions, PS + button),
-       window: rx_qt.py (window, tray), rx_qt_pad.py (pad drawing), rx_qt_panels.py, rx_qt_widgets.py, rx_qt_style.py,
+       window: rx_qt.py (window, tray), rx_qt_screens.py (screen, full screen, placement), rx_qt_pad.py (pad drawing),
+       rx_qt_panels.py, rx_qt_widgets.py, rx_qt_style.py,
        rx_qt_console.py (settings window: console, mouse, master, window), rx_qt_icons.py (button icons),
        rx_i18n.py (window language: Polish / English), rx_events.py + rx_qt_log.py (event log in the window),
        rx_lightbar.py (lightbar colour: fixed / by battery, blinking on low battery),
@@ -47,7 +48,7 @@ import rx_config
 from rx_config import C
 
 
-def _startup_events(rx_winapi):
+def _startup_events(rx_winapi) -> None:
     """Log: how long after logon (or Windows start) the receiver started (a delayed autostart = a late console mode) and, in the background,
     moving the old autostart from the Run entry to Task Scheduler (start right after logon)."""
     import threading
@@ -65,7 +66,7 @@ def _startup_events(rx_winapi):
     if os.name != "nt":
         return
 
-    def migrate():
+    def migrate() -> None:
         """Autostart housekeeping thread: migrate the old Run entry, then raise the task to the highest privileges and refresh the admin
         task."""
         import rx_autostart
@@ -82,7 +83,7 @@ def _startup_events(rx_winapi):
     threading.Thread(target=migrate, name="autostart", daemon=True).start()
 
 
-def _gamebar():
+def _gamebar() -> None:
     """The PS of the virtual DS4 / Win+G without Game Bar installed -> the "choose an app for ms-gamebar" window (rx_gamebar)."""
     import rx_gamebar
     try:
@@ -114,7 +115,7 @@ def _recent_try():
         return False
 
 
-def _clear_guard():
+def _clear_guard() -> None:
     """The process has privileges: the attempt worked - the next manual start (even right away) goes through the task again, without UAC."""
     try:
         os.remove(_guard_path())
@@ -122,7 +123,7 @@ def _clear_guard():
         pass
 
 
-def elevate():
+def elevate() -> None:
     """Windows without administrator rights: the receiver again as administrator, then exit. First through the
     DualSenseBridgeAdmin task (no UAC prompt; created by a receiver running as administrator), without it - a UAC prompt.
     A refusal in UAC / --no-elevate -> carry on without privileges (virtual pads through ViGEmBus). Before rx_config.init:
@@ -155,37 +156,46 @@ def elevate():
     print("Administrator rights declined (UAC) - running without them: virtual pads via ViGEmBus")
 
 
-def main():
-    """Start the receiver: elevate, load the configuration, initialise the modules, start the worker threads (slots, feedback,
-    gyro mouse, game watch, DSU, network) and run the GUI (or the network loop alone), then shut everything down in order -
-    optionally restarting the process."""
-    elevate()
-    rx_config.init()
-    sys.setswitchinterval(0.001)   # the default 5 ms is how long the network thread may wait while another one holds the GIL
+_restart_once = threading.Lock()      # a new process starts once: a normal shutdown or the restart guard
 
+
+def _restart_now(console_on, force=False) -> None:
+    """Start the new receiver process once (the guard calls it with force when cleanup hangs and then kills this process)."""
+    import rx_console
+    import rx_state as S
     import rx_winapi
-    rx_winapi.init_process()
-    rx_winapi.ensure_single_instance()
+    if not _restart_once.acquire(blocking=False):
+        return
+    if force:
+        print(f"Shutdown takes more than {RESTART_GUARD_S:g}s - restarting anyway")
+        rx_winapi.release_single_instance()
+    try:
+        rx_winapi.relaunch({rx_console.RESTART_ENV: "1" if console_on else "0"}, admin=S.restart == "admin")
+    except OSError as e:
+        print(f"Restart failed: {e!r} - start the receiver manually")
+    if force:
+        os._exit(0)          # the old process must not stay (ports, virtual pads)
 
+
+def _init_modules() -> None:
+    """Load the settings and initialise every module that holds per-pad state; nothing runs in the background yet."""
     import rx_buttons
     import rx_console
     import rx_ds4
     import rx_dsu
-    import rx_feedback
-    import rx_games
     import rx_gstick_io
-    import rx_gyro
     import rx_hotkeys
+    import rx_i18n
     import rx_master
     import rx_mouse
     import rx_net
     import rx_settings
     import rx_state as S
     import rx_testmode
+    import rx_winapi
 
     S.init(rx_buttons.RemapStore(C.REMAP_PATH))
     rx_settings.apply(rx_settings.load(C.SETTINGS_PATH, rx_settings.defaults(C.MOUSE_SENS, C.LOW_BATT)))
-    import rx_i18n
     rx_i18n.set_lang(rx_settings.cur.ui.lang)     # window and notification language (Settings -> Window)
     rx_mouse.init(C.NUM_PADS)
     rx_hotkeys.init(C.NUM_PADS)
@@ -199,6 +209,17 @@ def main():
     _gamebar()
     _startup_events(rx_winapi)
 
+
+def _start_workers() -> tuple[list[threading.Thread], threading.Thread]:
+    """Start the background threads (one per pad slot, feedback, HIDMaestro updates, gyro mouse, game watch).
+    Returns the slot threads and the feedback thread - the ones shutdown has to join."""
+    import rx_ds4
+    import rx_feedback
+    import rx_games
+    import rx_gyro
+    import rx_net
+    import rx_state as S
+
     gc.collect()
     gc.freeze()        # objects from startup are no longer scanned by the GC - shorter, rarer pauses in the real-time threads
     slot_threads = [S.start_thread(f"slot{i}", rx_ds4.slot_thread, i) for i in range(C.NUM_PADS)]
@@ -211,83 +232,110 @@ def main():
     # always (also without game profiles): a change of the foreground program stops game rumble
     # that ended during the rumble; game profiles are switched only with game_profiles (rx_state.reload_profile)
     S.start_thread("game watch", rx_games.watch_thread)
+    return slot_threads, fb_thread
 
+
+def _announce_listening() -> None:
+    """Print how the receiver listens: the port, the allowed source, authentication and DSU batching."""
     print(f"Virtual pads are created on demand (slots 0..{C.NUM_PADS - 1}).")
     print(f"Listening for events on UDP {C.IN_PORT}"
           + (f" (only from {C.ALLOWED_IP})" if C.ALLOWED_IP else " (any source - consider --allow IP)")
           + (", HMAC on" if C.KEY else ", NO authentication - consider --key")
           + (", DSU batching on" if C.DSU_BATCH else "") + "...")
 
-    use_gui = C.USE_GUI
-    if use_gui:
-        try:
-            import PySide6.QtWidgets  # noqa: F401
-        except ImportError:
-            print("PySide6 not installed (pip install -r requirements.txt) - running without GUI")
-            use_gui = False
 
-    restart_once = threading.Lock()      # a new process starts once: a normal shutdown or the restart guard
-
-    def restart_now(console_on, force=False):
-        """Start the new receiver process once (the guard calls it with force when cleanup hangs and then kills this process)."""
-        if not restart_once.acquire(blocking=False):
-            return
-        if force:
-            print(f"Shutdown takes more than {RESTART_GUARD_S:g}s - restarting anyway")
-            rx_winapi.release_single_instance()
-        try:
-            rx_winapi.relaunch({rx_console.RESTART_ENV: "1" if console_on else "0"}, admin=S.restart == "admin")
-        except OSError as e:
-            print(f"Restart failed: {e!r} - start the receiver manually")
-        if force:
-            os._exit(0)          # the old process must not stay (ports, virtual pads)
-
+def _gui_available() -> bool:
+    """The window is wanted (use_gui) and PySide6 is installed; otherwise the receiver runs headless."""
+    if not C.USE_GUI:
+        return False
     try:
-        if use_gui:
-            import rx_qt
-            net_thread = S.start_thread("net", rx_net.net_loop)
-            try:
-                rx_qt.run_gui()
-            except Exception as e:     # e.g. no display - carry on without the window
-                print(f"GUI unavailable: {e!r} - running without GUI")
-                while not S.stop.is_set() and net_thread.is_alive():
-                    S.stop.wait(0.5)
-            S.stop.set()
-            net_thread.join(2)
-        else:
-            S.run_forever("net", rx_net.net_loop)
+        import PySide6.QtWidgets  # noqa: F401
+    except ImportError:
+        print("PySide6 not installed (pip install -r requirements.txt) - running without GUI")
+        return False
+    return True
+
+
+def _run(use_gui) -> None:
+    """Block until the receiver is told to stop: the network loop runs in a thread next to the window, or alone without one."""
+    import rx_net
+    import rx_state as S
+    if not use_gui:
+        S.run_forever("net", rx_net.net_loop)
+        return
+    import rx_qt
+    net_thread = S.start_thread("net", rx_net.net_loop)
+    try:
+        rx_qt.run_gui()
+    except Exception as e:     # e.g. no display - carry on without the window
+        print(f"GUI unavailable: {e!r} - running without GUI")
+        while not S.stop.is_set() and net_thread.is_alive():
+            S.stop.wait(0.5)
+    S.stop.set()
+    net_thread.join(2)
+
+
+def _shutdown(slot_threads, fb_thread) -> None:
+    """Stop everything in the order that leaves no stuck state behind: release the pad triggers, disconnect the virtual pads,
+    restore the screens, close the sockets - then start the new process if a restart was requested."""
+    import rx_console
+    import rx_dsu
+    import rx_feedback
+    import rx_net
+    import rx_state as S
+    import rx_winapi
+
+    S.stop.set()
+    console_on = rx_console.is_on()
+    if S.restart:            # a hung cleanup (pad driver, screen switching) must not block the restart
+        guard = threading.Timer(RESTART_GUARD_S, _restart_now, (console_on, True))
+        guard.daemon = True
+        guard.start()
+    rx_feedback.fb_event.set()          # the feedback thread ends soon - afterwards the trigger effects would not come back
+    fb_thread.join(1.0)
+    rx_feedback.release_triggers(rx_net.send_triggers)   # the pad must not stay with a hard trigger after exit
+    for i in range(C.NUM_PADS):
+        S.want[i].clear()
+        rx_net.clear_slot(i)
+        S.wake[i].set()
+    deadline = time.monotonic() + 2.0
+    for t in slot_threads:      # slot threads disconnect the virtual DS4 from ViGEm (thread end = disconnected)
+        t.join(max(0.0, deadline - time.monotonic()))
+    rx_console.close(restart=S.restart)
+    rx_net.close()
+    rx_dsu.close()
+    rx_winapi.release_single_instance()
+    rx_winapi.end_timer()
+    if S.restart:               # ports, ViGEm and the instance lock are already released - the new process starts as from autostart
+        _restart_now(console_on)
+    if C.log_handle is not None:
+        try:
+            C.log_handle.flush()
+            C.log_handle.close()
+        except (OSError, ValueError):     # the log file is already gone or closed - nothing left to save
+            pass
+
+
+def main() -> None:
+    """Start the receiver: elevate, load the configuration, initialise the modules, start the worker threads and run the GUI
+    (or the network loop alone), then shut everything down in order - optionally restarting the process."""
+    elevate()
+    rx_config.init()
+    sys.setswitchinterval(0.001)   # the default 5 ms is how long the network thread may wait while another one holds the GIL
+
+    import rx_winapi
+    rx_winapi.init_process()
+    rx_winapi.ensure_single_instance()
+
+    _init_modules()
+    slot_threads, fb_thread = _start_workers()
+    _announce_listening()
+    try:
+        _run(_gui_available())
     except KeyboardInterrupt:
         print("\nStopped.")
     finally:
-        S.stop.set()
-        console_on = rx_console.is_on()
-        if S.restart:            # a hung cleanup (pad driver, screen switching) must not block the restart
-            guard = threading.Timer(RESTART_GUARD_S, restart_now, (console_on, True))
-            guard.daemon = True
-            guard.start()
-        rx_feedback.fb_event.set()          # the feedback thread ends soon - afterwards the trigger effects would not come back
-        fb_thread.join(1.0)
-        rx_feedback.release_triggers(rx_net.send_triggers)   # the pad must not stay with a hard trigger after exit
-        for i in range(C.NUM_PADS):
-            S.want[i].clear()
-            rx_net.clear_slot(i)
-            S.wake[i].set()
-        deadline = time.monotonic() + 2.0
-        for t in slot_threads:      # slot threads disconnect the virtual DS4 from ViGEm (thread end = disconnected)
-            t.join(max(0.0, deadline - time.monotonic()))
-        rx_console.close(restart=S.restart)
-        rx_net.close()
-        rx_dsu.close()
-        rx_winapi.release_single_instance()
-        rx_winapi.end_timer()
-        if S.restart:               # ports, ViGEm and the instance lock are already released - the new process starts as from autostart
-            restart_now(console_on)
-        if C.log_handle is not None:
-            try:
-                C.log_handle.flush()
-                C.log_handle.close()
-            except Exception:
-                pass
+        _shutdown(slot_threads, fb_thread)
 
 
 if __name__ == "__main__":

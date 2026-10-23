@@ -1,48 +1,48 @@
-# Receiver (Windows). Skopiuj jako receiver.toml, odkomentuj i zmień to, czego potrzebujesz.
-# receiver.toml obok receiver_controller.py wczytuje się sam; inny plik: python receiver_controller.py --config inny.toml
-# Wartości poniżej to ustawienia domyślne.
+# Receiver (Windows). Copy it as receiver.toml, uncomment and change what you need.
+# receiver.toml next to receiver_controller.py is loaded by itself; another file: python receiver_controller.py --config other.toml
+# The values below are the defaults.
 
 # in_port = 5005
 # dsu_port = 26760
-# dsu_bind = "127.0.0.1"   # serwer DSU tylko dla tego komputera; "0.0.0.0" = emulator na innym urządzeniu w sieci
-#   (wtedy każdy w sieci lokalnej widzi ruchy i przyciski padów, a podrobiony adres zamienia serwer w źródło ruchu)
-# dsu_max_clients = 4   # najwięcej subskrybentów DSU naraz
-# hm_min_age_days = 7   # nowa wersja HIDMaestro instaluje się dopiero tyle dni po publikacji (wydanie bez podpisu
-#   trafia do procesu administratora - podmienione wydania zwykle znikają w ciągu dni); 0 = od razu
-# pads = 2   # liczba slotów (max 4); wirtualne DS4 powstają tylko dla podłączonych
-# mouse_pads = [0]   # które kontrolery startują w trybie myszy (gdy jest pad master: mysz ma master)
-# pad_hz = 1000   # max częstotliwość raportów DS4 (zlewanie serii pakietów, jak pad_min_dt nadajnika = 1 ms); 0 = bez limitu
-# dsu_hz = 1000   # j.w. dla DSU; 0 = bez limitu
-# dsu_tx_interval = 0.5   # nie wysyłaj DSU bez zmian częściej niż to
-# dsu_batch = false   # wiele pakietów DSU w jednym datagramie - nie każdy klient to akceptuje
+# dsu_bind = "127.0.0.1"   # the DSU server for this computer only; "0.0.0.0" = an emulator on another device in the network
+#   (then anyone on the LAN sees the pads' movements and buttons, and a forged address turns the server into a traffic source)
+# dsu_max_clients = 4   # the most DSU subscribers at a time
+# hm_min_age_days = 7   # a new HIDMaestro version installs only this many days after its release (an unsigned release
+#   ends up in the administrator process - swapped releases usually disappear within days); 0 = at once
+# pads = 2   # the number of slots (max 4); virtual pads are created only for connected ones
+# mouse_pads = [0]   # which controllers start in the mouse mode (with a master pad: the master has the mouse)
+# pad_hz = 1000   # the highest DS4 report rate (merging bursts of packets, like the sender's pad_min_dt = 1 ms); 0 = no limit
+# dsu_hz = 1000   # same for DSU; 0 = no limit
+# dsu_tx_interval = 0.5   # do not send an unchanged DSU state more often than this
+# dsu_batch = false   # several DSU packets in one datagram - not every client accepts that
 # acc_res = 8192.0
 # gyro_res = 1024.0
 # acc_sign = [1, 1, 1]
 # gyro_sign = [1, 1, 1]
-# mouse_sens = 0.5   # wartość startowa 0.05-5 (za szybko -> 0.35, za wolno -> 0.8); potem Ustawienia -> Mysz (settings.json)
-# scroll_sens = 0.6   # przewijanie dwoma palcami (jednostki kółka na jednostkę touchpada); 120 = 1 działka
-# scroll_natural = false   # True = treść podąża za palcami (jak w telefonie)
-# stale_s = 0.5   # cisza dłuższa niż tyle -> reset stanu (anty "zablokowane przyciski")
-# unplug_s = 10.0   # cisza dłuższa niż tyle -> odłącz wirtualny DS4
-# allow = ""   # np. "192.168.1.50" - tylko pakiety z tego IP
-# key = ""   # wspólny klucz HMAC (lub zmienna środowiskowa PADKEY) - ten sam w nadajniku. Bez niego każdy w sieci
-#   lokalnej może sterować tym komputerem przez receiver (mysz, akcje pada master). Wygeneruj:
+# mouse_sens = 0.5   # the starting value 0.05-5 (too fast -> 0.35, too slow -> 0.8); afterwards Settings -> Mouse (settings.json)
+# scroll_sens = 0.6   # two-finger scrolling (wheel units per touchpad unit); 120 = 1 notch
+# scroll_natural = false   # True = the content follows the fingers (like on a phone)
+# stale_s = 0.5   # silence longer than this -> reset the state (against "stuck buttons")
+# unplug_s = 10.0   # silence longer than this -> unplug the virtual DS4
+# allow = ""   # e.g. "192.168.1.50" - only packets from this IP
+# key = ""   # a shared HMAC key (or the PADKEY environment variable) - the same in the sender. Without it anyone on the
+#   LAN can control this computer through the receiver (mouse, master pad actions). Generate one:
 #   python -c "import secrets; print(secrets.token_urlsafe(24))"
-# stats = false   # wypisuj statystyki pakietów co 1 s
-# log_file = ""   # np. "receiver.log" (przydatne z pythonw / autostartem)
-# remap_file = "remap.json"   # profile remapowania (przycisk Save w oknie)
-# gui = true   # okno (pady, bateria, remapowanie; --no-gui wyłącza)
-# tray = true   # minimalizacja do zasobnika systemowego
-# gui_topmost = false   # okno zawsze na wierzchu
-# gui_start_visible = false   # True = pokaż okno od razu po starcie
-# gui_wait_pad = false   # True = nie twórz okna ani ikony, dopóki żaden pad się nie połączy
-# low_batt = 15   # próg (%) niskiej baterii - tylko wartość startowa; potem Ustawienia -> Lightbar (settings.json)
-# low_batt_notify = true   # powiadomienie z zasobnika przy niskiej baterii
-# ps_modifier = true   # PS jako klawisz skrótów: krótkie PS trafia do gry po puszczeniu (+~0.1 s), PS + przycisk = skrót
-# ps_hold_s = 1.0   # tyle trzymania PS (bez innych przycisków) = ps_hold_action
+# stats = false   # print packet statistics every second
+# log_file = ""   # e.g. "receiver.log" (useful with pythonw / autostart)
+# remap_file = "remap.json"   # remap profiles (the Save button in the window)
+# gui = true   # the window (pads, battery, remapping; --no-gui turns it off)
+# tray = true   # minimise to the system tray
+# gui_topmost = false   # the window always on top
+# gui_start_visible = false   # True = show the window right after startup
+# gui_wait_pad = false   # True = create neither the window nor the icon until a pad connects
+# low_batt = 15   # the low battery threshold (%) - only the starting value; afterwards Settings -> Lightbar (settings.json)
+# low_batt_notify = true   # a tray notification on low battery
+# ps_modifier = true   # PS as a shortcut key: a short PS reaches the game on release (+~0.1 s), PS + a button = a shortcut
+# ps_hold_s = 1.0   # holding PS this long (with no other button) = ps_hold_action
 # ps_hold_action = "gamebar"   # gamebar (Win+G) | bigpicture (Steam Big Picture) | none
-# ps_share_action = "screenshot"   # screenshot (Win+PrtScr, do Obrazy\Zrzuty ekranu) | capture (Game Bar) | none
-# confirm = true   # potwierdzenia na padzie: krótka wibracja / mignięcie lightbara przy skrótach
-# idle_lightbar = [0, 0, 128]   # domyślny kolor lightbara, gdy gra sama go nie ustawia (Ustawienia -> Lightbar zmienia go per pad)
-# game_profiles = true   # automatyczny profil wg gry na pierwszym planie
-# game_ignore = []   # dodatkowe programy pomijane na liście "ostatnie gry" w edytorze (np. "obs64.exe")
+# ps_share_action = "screenshot"   # screenshot (Win+PrtScr, to Pictures\Screenshots) | capture (Game Bar) | none
+# confirm = true   # confirmations on the pad: a short rumble / a lightbar flash for shortcuts
+# idle_lightbar = [0, 0, 128]   # the default lightbar colour when the game does not set one (Settings -> Lightbar changes it per pad)
+# game_profiles = true   # an automatic profile by the foreground game
+# game_ignore = []   # extra programs left out of the "recent games" list in the editor (e.g. "obs64.exe")

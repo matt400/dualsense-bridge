@@ -51,7 +51,7 @@ def _font(size, bold=False):
     return f
 
 
-def pct(v, digits=0):
+def pct(v, digits=0) -> str:
     """A fraction 0..1 -> "6%" / "4.2%"."""
     return f"{v * 100:.{digits}f}%"
 
@@ -59,7 +59,7 @@ def pct(v, digits=0):
 class MotionChart(QWidget):
     """A scrolling chart of 3 axes (the last CHART_S s); a symmetric scale fitted to the largest value in the window."""
 
-    def __init__(self, title, unit, min_range, digits):
+    def __init__(self, title, unit, min_range, digits) -> None:
         """Set the title, unit, minimum scale range and number of digits; the buffer holds CHART_S seconds at ~30 samples/s."""
         super().__init__()
         self.title, self.unit, self.min_range, self.digits = title, unit, min_range, digits
@@ -70,22 +70,22 @@ class MotionChart(QWidget):
     def sizeHint(self):
         return QSize(px(300), px(96))
 
-    def rescale(self):
+    def rescale(self) -> None:
         """Re-apply the DPI-scaled size after a scale change."""
         self.setMinimumHeight(px(96))
         self.updateGeometry()
 
-    def push(self, values):
+    def push(self, values) -> None:
         """Append one sample (x, y, z) and repaint."""
         self.data.append(tuple(values))
         self.update()
 
-    def clear(self):
+    def clear(self) -> None:
         """Drop all samples."""
         self.data.clear()
         self.update()
 
-    def paintEvent(self, _e):
+    def paintEvent(self, _e) -> None:
         """Paint the frame, the zero line, the three axis traces (scale = the largest value rounded by _nice), the title, the latest
         values and the scale."""
         p = QPainter(self)
@@ -100,7 +100,7 @@ class MotionChart(QWidget):
         mid = plot.center().y()
         p.setPen(QPen(QColor(LINE), 1, Qt.PenStyle.DashLine))
         p.drawLine(QPointF(plot.left(), mid), QPointF(plot.right(), mid))
-        n = self.data.maxlen
+        n = self.data.maxlen or 1       # always set (see __init__); `or 1` only keeps the type an int
         if len(self.data) >= 2:
             step = plot.width() / (n - 1)
             x0 = plot.right() - (len(self.data) - 1) * step
@@ -134,9 +134,9 @@ class StickScope(QWidget):
 
     RINGS = (0.05, 0.25)
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
-        self.pos = {"left": (0.0, 0.0), "right": (0.0, 0.0)}
+        self.stick_pos = {"left": (0.0, 0.0), "right": (0.0, 0.0)}      # not `pos`: that would shadow QWidget.pos()
         self.trail = {"left": deque(maxlen=TRAIL), "right": deque(maxlen=TRAIL)}
         self.dz = {}                           # drift correction {stick: dz}
         self.peak = {}                         # the last measurement {stick: peak}
@@ -146,26 +146,26 @@ class StickScope(QWidget):
     def sizeHint(self):
         return QSize(px(300), px(132))
 
-    def rescale(self):
+    def rescale(self) -> None:
         self.setMinimumHeight(px(132))
         self.updateGeometry()
 
-    def set_pos(self, ls, rs):
+    def set_pos(self, ls, rs) -> None:
         """Set both stick positions (raw values -> unit range); the trail grows only when a position changed."""
         pos = {"left": (D.unit(ls[0]), D.unit(ls[1])), "right": (D.unit(rs[0]), D.unit(rs[1]))}
-        if pos != self.pos:
+        if pos != self.stick_pos:
             for k, v in pos.items():
                 self.trail[k].append(v)
-            self.pos = pos
+            self.stick_pos = pos
             self.update()
 
-    def set_marks(self, dz, peak):
+    def set_marks(self, dz, peak) -> None:
         """Set the dead zone circles and the measurement peaks; repaint on change."""
         if (dz, peak) != (self.dz, self.peak):
             self.dz, self.peak = dict(dz), dict(peak)
             self.update()
 
-    def clear(self):
+    def clear(self) -> None:
         """Drop the trails and the last peaks."""
         for t in self.trail.values():
             t.clear()
@@ -177,7 +177,7 @@ class StickScope(QWidget):
         """The square-root scale of a radius clamped to 0..1."""
         return math.sqrt(min(1.0, max(0.0, v)))
 
-    def paintEvent(self, _e):
+    def paintEvent(self, _e) -> None:
         """Paint each stick: the plate, reference rings, the dead zone and peak circles, the fading trail, the current position and its
         value."""
         p = QPainter(self)
@@ -208,7 +208,7 @@ class StickScope(QWidget):
             for j, (x, y) in enumerate(trail[:-1]):
                 p.setBrush(QColor(255, 255, 255, 25 + 120 * j // TRAIL))
                 p.drawEllipse(self._pt(c, rad, x, y), px(2), px(2))
-            x, y = self.pos[name]
+            x, y = self.stick_pos[name]
             p.setPen(QPen(QColor("#ffffff"), 1.5))
             p.setBrush(QColor(ACCENT))
             p.drawEllipse(self._pt(c, rad, x, y), px(5), px(5))
@@ -243,7 +243,7 @@ class TestPanel(QWidget):
 
     block_changed = Signal(bool)
 
-    def __init__(self, block_on=True):
+    def __init__(self, block_on=True) -> None:
         """Build the panel: the output lock, motion charts, the stick scope with drift measurement, and the gyro calibration."""
         super().__init__()
         self.slot = 0
@@ -325,31 +325,31 @@ class TestPanel(QWidget):
         self.reset_view()
 
     # ---------- pad choice / view ----------
-    def set_slot(self, slot):
+    def set_slot(self, slot) -> None:
         """Switch the panel to another pad and reset the view."""
         if slot != self.slot:
             self.slot = slot
             self.reset_view()
 
-    def activate(self, on):
+    def activate(self, on) -> None:
         """Entering the Test view (ask for the calibration state from the sender) / leaving it (cancel the measurement)."""
         if on:
             self._query(time.monotonic())
         else:
             self.cancel()
 
-    def _query(self, now):
+    def _query(self, now) -> None:
         """Ask the sender for the pad's gyro calibration state."""
         self.query_t = now
         P.query_gyro_cal(self.slot)
 
-    def cancel(self):
+    def cancel(self) -> None:
         """Abort a running drift measurement."""
         if self.run is not None:
             self.run.cancel()
             self.run = None
 
-    def reset_view(self):
+    def reset_view(self) -> None:
         """Clear charts, results and bars after a pad change, and ask for the calibration state."""
         self.cancel()
         self.result = None
@@ -364,19 +364,19 @@ class TestPanel(QWidget):
         self.refresh()
 
     @staticmethod
-    def _bar(bar, p):
+    def _bar(bar, p) -> None:
         """A progress bar: p = 0..1, None = hidden (nothing running)."""
         bar.setVisible(p is not None)
         if p is not None:
             bar.set([(p, ACCENT), (1 - p, LINE)])
 
-    def _result(self, text, level):
+    def _result(self, text, level) -> None:
         """Show a drift message (hidden when empty) with its level style."""
         self.drift_res.setText(text)
         self.drift_res.setVisible(bool(text))
         set_prop(self.drift_res, "level", level)
 
-    def rescale(self):
+    def rescale(self) -> None:
         """Apply the new DPI scale to the charts, icons and bars."""
         for w in (self.gyro_chart, self.acc_chart, self.scope):
             w.rescale()
@@ -386,7 +386,7 @@ class TestPanel(QWidget):
         self.cal_bar.setFixedHeight(px(5))
 
     # ---------- drift ----------
-    def start_drift(self):
+    def start_drift(self) -> None:
         """Start a drift measurement of the selected pad (needs it connected)."""
         if not S.alive[self.slot]:
             return
@@ -396,7 +396,7 @@ class TestPanel(QWidget):
         self.run = D.DriftRun(self.slot, time.monotonic(), P.raw_sticks if P.sender_calib(self.slot) else None)
         self.refresh()
 
-    def apply_drift(self):
+    def apply_drift(self) -> None:
         """Save the proposed dead zones as the pad's drift correction (not after a measurement with movement)."""
         if self.result is None or self.result.moved:
             return
@@ -407,13 +407,13 @@ class TestPanel(QWidget):
         self.result = None
         self.refresh()
 
-    def clear_drift(self):
+    def clear_drift(self) -> None:
         """Remove the pad's drift correction."""
         ok, msg = P.set_drift(self.slot, {"left": 0, "right": 0})
         self._result(("✓ " + _("Korekcja dryfu usunięta")) if ok else msg, "ok" if ok else "bad")
         self.refresh()
 
-    def _drift_tick(self, now):
+    def _drift_tick(self, now) -> None:
         """Advance a running measurement: show progress, and on completion keep and show the result (a disconnected pad aborts it)."""
         if self.run is None:
             return
@@ -432,7 +432,7 @@ class TestPanel(QWidget):
         self._show_result(res)
         self.refresh()
 
-    def _show_result(self, res):
+    def _show_result(self, res) -> None:
         """Describe a measurement: no samples, stick moved, or the drift and the proposed dead zone per stick."""
         if res is None:
             self._result(_("Brak próbek - pad niepodłączony?"), "bad")
@@ -448,13 +448,13 @@ class TestPanel(QWidget):
         self._result("\n".join(lines), "")
 
     # ---------- gyroscope ----------
-    def start_cal(self):
+    def start_cal(self) -> None:
         """Ask the sender to calibrate the gyro of the selected pad."""
         if P.calibrate_gyro(self.slot, CAL_S):
             self.cal_t0, self.cal_note = time.monotonic(), None
         self.refresh()
 
-    def _cal_tick(self, now):
+    def _cal_tick(self, now) -> None:
         """Follow a calibration: progress bar, the sender's answer (or a timeout) and its result note; without a calibration, re-ask for a
         lost state."""
         if self.cal_t0 is None:
@@ -504,7 +504,7 @@ class TestPanel(QWidget):
         return text, ""
 
     # ---------- refreshing ----------
-    def refresh(self):
+    def refresh(self) -> None:
         """Buttons and descriptions (on a state change, not every frame)."""
         i = self.slot
         alive = bool(S.alive[i])

@@ -30,7 +30,7 @@ drag = []     # movement [touchpad units] since the click was pressed; None = th
 BTN = {1: (LDOWN, LUP), 2: (RDOWN, RUP)}
 
 
-def init(n):
+def init(n) -> None:
     """Reset all per-slot mouse state for `n` pads (called at startup)."""
     mrem[:] = [[0.0, 0.0] for _ in range(n)]
     srem[:] = [[0.0, 0.0] for _ in range(n)]
@@ -42,7 +42,7 @@ def init(n):
     drag[:] = [None] * n
 
 
-def _settings_changed(old, new):
+def _settings_changed(old, new) -> None:
     """Settings listener: a changed mouse sensitivity is applied to every slot."""
     if new.mouse.sens != old.mouse.sens:
         sens[:] = [new.mouse.sens] * len(sens)     # the slider in the window sets all pads (PS + up / down changes one)
@@ -51,7 +51,7 @@ def _settings_changed(old, new):
 rx_settings.on_change(_settings_changed)
 
 
-def reset(i):
+def reset(i) -> None:
     """Release the button and clear the fractional remainders (pad disconnect, mode change)."""
     mouse_button(i, 0)
     mrem[i] = [0.0, 0.0]
@@ -61,7 +61,7 @@ def reset(i):
     drag[i] = None
 
 
-def set_mode(i, on):
+def set_mode(i, on) -> bool:
     """Pad i touchpad: mouse (on) or DS4 touch. Releases the button and resets the gesture; the game receives a released
     touchpad click. -> True when the mode changed."""
     if S.mouse_mode[i] == on:
@@ -75,7 +75,7 @@ def set_mode(i, on):
     return True
 
 
-def mouse_rel(i, dx, dy, flags):
+def mouse_rel(i, dx, dy, flags) -> None:
     """Handle a T_MOUSE packet of pad i: taps (once per tap number), two-finger scrolling or cursor movement.
 
     Movement is multiplied by the sensitivity and the fractional remainder is carried to the next packet. It is skipped right
@@ -126,7 +126,7 @@ def mouse_rel(i, dx, dy, flags):
             h.popleft()
 
 
-def _rewind(i, now):
+def _rewind(i, now) -> None:
     """Undo the cursor movement of the last click_rewind_ms (the steps in reverse order and with the opposite sign)."""
     h, limit = hist[i], now - rx_settings.cur.mouse.click_rewind_ms / 1000
     while h:
@@ -136,7 +136,7 @@ def _rewind(i, now):
     mrem[i] = [0.0, 0.0]
 
 
-def mouse_button(i, btn):
+def mouse_button(i, btn) -> None:
     """Physical touchpad click: 0 = release, 1 = left, 2 = right. Changing the button while one is held releases the previous one."""
     cur = mdown[i]
     if btn == cur:

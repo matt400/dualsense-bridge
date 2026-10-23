@@ -72,7 +72,7 @@ class DriftRun:
     (collect samples), then "done". tick(now) -> None (still running) or DriftResult; cancel() aborts (the pad left, another
     pad was picked). raw(slot, seconds) is the command to the sender (rx_profiles.raw_sticks); None = the sender does not know it."""
 
-    def __init__(self, slot, now, raw=None):
+    def __init__(self, slot, now, raw=None) -> None:
         self.slot, self.raw = slot, raw
         self.t0 = now
         self.phase = "settle"
@@ -106,7 +106,7 @@ class DriftRun:
         self.phase = "done"
         return samples
 
-    def cancel(self):
+    def cancel(self) -> None:
         """Abort a running measurement (no result); safe to call repeatedly."""
         if self.phase != "done":
             self._stop()

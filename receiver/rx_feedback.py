@@ -83,6 +83,7 @@ def make_cb(i):
     signature with the names and rejects any other (a TypeError = no rumble from games). led_number is either the lightbar colour
     DS4_LIGHTBAR_COLOR (registered through rx_ds4.register_feedback) or a meaningless number (registered through vgamepad, which
     declares this argument as a byte) - then the game colour is unknown and the lightbar keeps its own."""
+    # No annotations on purpose: vgamepad compares inspect.signature() with its own dummy_callback, return annotation included.
     def cb(client, target, large_motor, small_motor, led_number, user_data):
         try:
             f = fb[i]
@@ -93,13 +94,13 @@ def make_cb(i):
                 f["note"] = f["note"] or not f["rgb"]
                 f["rgb"] = True
             f["set"] = True
-        except Exception:
+        except Exception:  # driver thread: a malformed callback must never raise into ViGEm
             pass
         fb_event.set()
     return cb
 
 
-def game(i, large=None, small=None, rgb=None, trig=None):
+def game(i, large=None, small=None, rgb=None, trig=None) -> None:
     """Rumble / lightbar colour / trigger effects from the game for slot i (on the virtual pad backend thread); None = leave that
     part unchanged. A DualSense output report carries the motors, the colour and each trigger separately, with their own validity
     flags. trig = (L2, R2): the raw 11 B effect or None (that trigger unchanged)."""
@@ -141,7 +142,7 @@ def forget_ended_games(running):
     return out
 
 
-def stop_game_rumble(why):
+def stop_game_rumble(why) -> None:
     """The foreground program changed (left a game, alt-tab): game rumble -> 0. A game that ends mid-rumble (e.g. Forza
     Horizon on exit) no longer sends "motors 0", and the receiver kept refreshing the last value every 0.5 s - the pad vibrated
     forever. A game that returns to the foreground sends a fresh rumble itself."""
@@ -152,7 +153,7 @@ def stop_game_rumble(why):
             fb_event.set()
 
 
-def init():
+def init() -> None:
     """Create per-slot feedback state (motors, colour, trigger effects, timestamps) and callbacks; a remap change wakes the feedback
     thread."""
     n = C.NUM_PADS
@@ -169,7 +170,7 @@ def init():
 rx_settings.on_change(lambda _old, _new: fb_event.set())    # a new lightbar colour / mode takes effect at once
 
 
-def reset(i):
+def reset(i) -> None:
     """A new / disconnected virtual DS4 in the slot: the game has set nothing yet (without init() - nothing to clear)."""
     if i < len(fb):
         fb[i].update(set=False, small=0, large=0, t_other=0.0, rgb=False, note=False, trig=NO_GAME_TRIG,
@@ -177,7 +178,7 @@ def reset(i):
         fb_sent[i] = None
 
 
-def pulse(i, kind, force=False):
+def pulse(i, kind, force=False) -> None:
     """A short confirmation on the pad (rumble and/or colour), laid over the game feedback.
     force: also when confirm = false (the rumble test from the window)."""
     if (C.CONFIRM or force) and 0 <= i < len(pulses) and S.alive[i]:
@@ -192,7 +193,7 @@ def is_low(i, low_pct):
     return pct <= 100 and not flags & 1 and pct <= low_pct
 
 
-def _note_game_triggers(i):
+def _note_game_triggers(i) -> None:
     """The first game trigger effects after the virtual pad was created - a log entry saying what will happen to them."""
     import rx_master        # rx_master imports this module
     f = fb[i]
@@ -211,7 +212,7 @@ def _note_game_triggers(i):
     ev.info(text.format(pad=ev.pad_name(i), exe=who))
 
 
-def _note_game_color(i):
+def _note_game_color(i) -> None:
     """The first lightbar colour from a game / PC program after the virtual pad was created - a log entry."""
     f = fb[i]
     f["note"] = False
@@ -227,7 +228,7 @@ def _note_game_color(i):
     ev.info(text.format(pad=ev.pad_name(i), hex=L.rgb_hex(rgb)))
 
 
-def rumble_expired(f, now):
+def rumble_expired(f, now) -> str | None:
     """Game rumble is on but the game stopped driving it -> the reason (for the log), else None.
     The game sends only other reports (colour, triggers) - a menu; or no motor reports since STALE (a lost "motors 0",
     the game hung / minimised)."""
@@ -266,7 +267,7 @@ def _target(i, now):
     return (p[1], p[2], *(p[3] or base[2:])), True, blink
 
 
-def feedback_thread(send, send_trig=None):
+def feedback_thread(send, send_trig=None) -> None:
     """send(slot, (small, large, r, g, b)) - sending to the sender (rx_net.send_feedback);
     send_trig(slot, trig3 values (15), trig2 (12) or trig (4), repeats) - trigger effects (rx_net.send_triggers)."""
     _loop(send, send_trig)
@@ -307,7 +308,7 @@ def trigger_target(i):
     return vals if sender_fx(i) else legacy_values(vals)
 
 
-def triggers_tick(i, now, send_trig):
+def triggers_tick(i, now, send_trig) -> None:
     """Trigger effects of the slot's profile: a change -> at once (several times), constant effects -> refreshed every TRIG_REFRESH_S.
     The first pass after the pad connects always sends the state, "no effects" too: the sender and the pad may hold effects from
     a previous receiver run (a restart after an update, closing mid-game with a click on R2) - without this the trigger stayed hard
@@ -322,7 +323,7 @@ def triggers_tick(i, now, send_trig):
         send_trig(i, vals, 1)
 
 
-def release_triggers(send_trig):
+def release_triggers(send_trig) -> None:
     """Receiver shutdown (the feedback thread is already stopped): pads we set trigger effects on get "no effects".
     The sender keeps an effect until the next change, so without this the resistance / click stayed after leaving the receiver
     (before a restart and an update too) until the pad disconnected. The sender also has its own guard (sender_rumble)
@@ -334,7 +335,7 @@ def release_triggers(send_trig):
             trig_sent[i] = None
 
 
-def _loop(send, send_trig=None):
+def _loop(send, send_trig=None) -> None:
     """Send feedback on change, every 0.5 s while rumbling (refreshes its timeout on the sender)
     and every 5 s at rest (a lost packet will not leave a wrong lightbar colour)."""
     blink = False

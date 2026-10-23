@@ -100,7 +100,7 @@ def autostart_command(argv=None):
     return exe, subprocess.list2cmdline([os.path.abspath(sys.argv[0]), *extra])
 
 
-def set_autostart(on):
+def set_autostart(on) -> None:
     """Autostart with Windows: a Task Scheduler task at logon (no delay - rx_autostart)."""
     import rx_autostart
     if on:

@@ -108,7 +108,7 @@ def list_backups():
     return sorted(out, key=lambda b: (b.time, b.name), reverse=True)
 
 
-def prune(keep=KEEP):
+def prune(keep=KEEP) -> None:
     """Delete all but the newest `keep` backups."""
     for b in list_backups()[keep:]:
         shutil.rmtree(os.path.join(backup_dir(), b.name), ignore_errors=True)

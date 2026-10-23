@@ -42,7 +42,7 @@ class HMError(Exception):
     """HIDMaestro unavailable; missing = no DLL (in auto mode an ordinary situation, no warning);
     need_dotnet = no .NET 10 (the window offers to install it)."""
 
-    def __init__(self, msg, missing=False, need_dotnet=False):
+    def __init__(self, msg, missing=False, need_dotnet=False) -> None:
         super().__init__(msg)
         self.missing, self.need_dotnet = missing, need_dotnet
 
@@ -90,7 +90,7 @@ def loaded():
     return _loaded
 
 
-def reset():
+def reset() -> None:
     """Settings changed: the next get() tries again (e.g. after pointing to another DLL). A loaded backend stays."""
     with _lock:
         for k in [k for k, v in _cache.items() if isinstance(v, HMError)]:
@@ -132,7 +132,7 @@ _HM_HINTS = {
 }
 
 
-def describe_error(e):
+def describe_error(e) -> str:
     """A HIDMaestro error as one readable line: the .NET type, the message and (for 2.0 exceptions) a hint. The fields of
     HMProfileException / HMDriverVersionException (ProfileId, JsonPath, Reason, Problem) are already in the message - only the hint is
     added."""
@@ -264,7 +264,7 @@ def submit_delegate(clr, ctrl_type):
         raise HMError(f"cannot bind SubmitRawReport: {e!r}") from e
 
 
-def _type_error(path):
+def _type_error(path) -> str | None:
     """The DLL loaded but has no types: the first missing component from LoaderExceptions (a dependency, the runtime version)."""
     try:
         from System.Reflection import Assembly
@@ -280,7 +280,7 @@ class Backend:
     name = "hm"
     order_wait = ORDER_WAIT
 
-    def __init__(self, path):
+    def __init__(self, path) -> None:
         """Load the CLR and the DLL, install the driver, find the DualSense profile and bind the IL submit delegate; any failure is an
         HMError."""
         if not is_admin():
@@ -361,7 +361,7 @@ class Pad:
     kind = "hm"
     build = staticmethod(build_ds5_report)
 
-    def __init__(self, backend, ctrl, on_fb):
+    def __init__(self, backend, ctrl, on_fb) -> None:
         """Pin the report buffer, take its address for the delegate, subscribe to the output reports and send one report to test the
         path."""
         self.ctrl, self.on_fb = ctrl, on_fb
@@ -373,11 +373,11 @@ class Pad:
         ctrl.OutputReceived += self._handler
         self.submit()                          # try at once: a wrong submit path fails here, not in a game
 
-    def submit(self):
+    def submit(self) -> None:
         """Send the current contents of buf to the virtual device."""
         self._fn(self.ctrl, self._ptr, REPORT_LEN)
 
-    def _on_output(self, _ctrl, pkt):
+    def _on_output(self, _ctrl, pkt) -> None:
         """The HIDMaestro output thread: quick reads only (the SDK overwrites the oldest packets while the handler is busy)."""
         try:
             if int(pkt.Source) != HID_OUTPUT:
@@ -396,13 +396,13 @@ class Pad:
             motors, rgb, trig = parse_output(int(pkt.ReportId), data)
             if motors is not None or rgb is not None or trig is not None:
                 self.on_fb(motors, rgb, trig)
-        except Exception:
+        except Exception:  # the .NET event thread: an unparsable report must not raise into HIDMaestro
             pass
 
-    def close(self):
+    def close(self) -> None:
         """Unsubscribe from the output reports and dispose of the controller."""
         try:
             self.ctrl.OutputReceived -= self._handler
-        except Exception:
+        except Exception:  # best effort: the controller may already be disposed
             pass
         self.ctrl.Dispose()                    # removes the device from the system

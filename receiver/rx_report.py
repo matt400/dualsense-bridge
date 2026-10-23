@@ -22,7 +22,7 @@ def ds4_bits(mask):
     return r
 
 
-def put_touch(b, off, f):
+def put_touch(b, off, f) -> None:
     """Write one finger f = (active, id, x, y) at offset `off` in the DS4 touch format: byte 0 = id with an inverted "active"
     bit, then x and y packed as two 12-bit values over three bytes."""
     on, tid, x, y = f
@@ -83,7 +83,7 @@ def ds5_battery(b4):
     return level | _DS5_BATT[(2 if level >= 10 else 1) if cable else 0]
 
 
-def put_touch_ds5(b, off, f):
+def put_touch_ds5(b, off, f) -> None:
     """Like put_touch, but with y rescaled from the DS4 height (943 lines) to the DualSense height (1080)."""
     on, tid, x, y = f
     put_touch(b, off, (on, tid, x, y * DS5_TOUCH_H // 942))

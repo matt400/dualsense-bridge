@@ -1,14 +1,14 @@
 #!/bin/sh
-# Dostęp do prywatnego repozytorium dla aktualizacji nadajnika z okna na PC (przycisk "Aktualizuj").
+# Access to the private repository for updating the sender from the PC window (the "Update" button).
 #
-# Usługa nadajnika działa jako root i uruchamia git jako właściciel tego folderu, ale bez agenta SSH i bez terminala:
-# zwykły klucz SSH (z hasłem / w agencie) tam nie działa ("Could not read from remote repository"). Ten skrypt tworzy
-# osobny klucz wdrożeniowy (deploy key, tylko do odczytu, bez hasła) w .git/ - nigdy nie trafia do repozytorium,
-# a git pull go nie rusza.
+# The sender service runs as root and starts git as the owner of this folder, but without an SSH agent and without a terminal:
+# an ordinary SSH key (with a passphrase / in an agent) does not work there ("Could not read from remote repository"). This
+# script creates a separate deploy key (read-only, no passphrase) in .git/ - it never enters the repository,
+# and git pull leaves it alone.
 #
-#   ./setup-update-key.sh      (jako właściciel folderu - zwykle użytkownik BEZ doas; po --own-root: doas)
+#   ./setup-update-key.sh      (as the folder owner - usually the user WITHOUT doas; after --own-root: doas)
 #
-# Uruchom, dodaj wypisany klucz na GitHubie, uruchom ponownie - drugi raz tylko sprawdza dostęp. Można powtarzać.
+# Run it, add the printed key on GitHub, run it again - the second run only checks access. It can be repeated.
 set -eu
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 KEY="$REPO/.git/dualsense-deploy-key"
@@ -30,7 +30,7 @@ for cmd in git ssh ssh-keygen; do
 	command -v "$cmd" >/dev/null 2>&1 || { echo "Brak programu $cmd (doas apk add git openssh-client)" >&2; exit 1; }
 done
 
-# klucz wdrożeniowy działa tylko przez SSH - adres https://github.com/... zamieniamy na git@github.com:...
+# a deploy key works over SSH only - an https://github.com/... address is turned into git@github.com:...
 URL=$(git -C "$REPO" remote get-url origin)
 case $URL in
 	https://github.com/*)
@@ -53,7 +53,7 @@ if [ ! -f "$KEY" ]; then
 	echo "Utworzono klucz $KEY"
 fi
 
-# to samo polecenie ssh, którego używa nadajnik przy aktualizacji (proto.ssh_command)
+# the same ssh command the sender uses when updating (proto.ssh_command)
 if ERR=$(GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND="ssh -o BatchMode=yes -o ConnectTimeout=15 -i '$KEY' -o IdentitiesOnly=yes \
 -o UserKnownHostsFile='$KNOWN' -o StrictHostKeyChecking=accept-new" git -C "$REPO" ls-remote origin HEAD 2>&1 >/dev/null); then
 	echo "OK - nadajnik ma dostęp do $SLUG. Przycisk Aktualizuj w oknie na PC zaktualizuje też telefon."
@@ -61,7 +61,7 @@ if ERR=$(GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND="ssh -o BatchMode=yes -o ConnectT
 fi
 case $ERR in
 	*"Permission denied"* | *"publickey"* | *"Repository not found"* | *"not found"*) ;;
-	*)                                        # to nie brak klucza (sieć, DNS, host key...) - instrukcja nic nie da
+	*)                                        # not a missing key (network, DNS, host key...) - instructions would not help
 		echo "Nie udało się połączyć z GitHubem:" >&2
 		printf '%s\n' "$ERR" | grep -v '^$' | head -5 >&2
 		exit 1 ;;

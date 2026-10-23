@@ -7,13 +7,14 @@ import socket
 import struct
 import subprocess
 import sys
+from typing import Any
 
 k32 = ctypes.windll.kernel32
 user32 = ctypes.windll.user32
 _mutex = None
 
 
-def init_process():
+def init_process() -> None:
     """A 1 ms timer, high priority, QuickEdit switched off (selecting text in the console froze the program)."""
     try:
         ctypes.windll.winmm.timeBeginPeriod(1)
@@ -27,23 +28,23 @@ def init_process():
         m = wt.DWORD()
         if k32.GetConsoleMode(h, ctypes.byref(m)):
             k32.SetConsoleMode(h, (m.value & ~0x40) | 0x80)
-    except Exception:
+    except Exception:  # best effort: ANSI colours in the console are cosmetic
         pass
 
 
 APP_ID = "DualSenseBridge.Receiver"
 
 
-def set_app_id():
+def set_app_id() -> None:
     """A dedicated AppUserModelID: Windows treats the window as a separate application, so the taskbar shows the window's icon
     (the pad), not the python.exe / pythonw.exe icon. Call before creating the first window."""
     try:
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_ID)
-    except Exception:
+    except Exception:  # best effort: without it the taskbar shows the Python icon
         pass
 
 
-def _no_power_throttling():
+def _no_power_throttling() -> None:
     """Windows 10/11: a process with a hidden window (the tray) may be moved into the efficiency mode (EcoQoS) and lose
     timer resolution - that caused random latency spikes. Both mechanisms are switched off (errors ignored on older
     Windows versions)."""
@@ -53,25 +54,25 @@ def _no_power_throttling():
         k32.SetProcessInformation.argtypes = [wt.HANDLE, ctypes.c_int, ctypes.c_void_p, wt.DWORD]
         st = PPT(1, 0x1 | 0x4, 0)   # we control EXECUTION_SPEED and IGNORE_TIMER_RESOLUTION; StateMask 0 = switched off
         k32.SetProcessInformation(k32.GetCurrentProcess(), 4, ctypes.byref(st), ctypes.sizeof(st))  # 4 = ProcessPowerThrottling
-    except Exception:
+    except Exception:  # best effort: an older Windows without process power throttling control
         pass
 
 
-def boost_thread():
+def boost_thread() -> None:
     """Raise the priority of the calling thread (network, DS4 reports, DSU) - less waiting for the processor."""
     try:
         k32.GetCurrentThread.restype = wt.HANDLE
         k32.SetThreadPriority.argtypes = [wt.HANDLE, ctypes.c_int]
         k32.SetThreadPriority(k32.GetCurrentThread(), 2)   # THREAD_PRIORITY_HIGHEST
-    except Exception:
+    except Exception:  # best effort: the priority is only an optimisation
         pass
 
 
-def end_timer():
+def end_timer() -> None:
     """Give back the 1 ms timer resolution requested by init_process."""
     try:
         ctypes.windll.winmm.timeEndPeriod(1)
-    except Exception:
+    except Exception:  # best effort: the period ends with the process anyway
         pass
 
 
@@ -122,7 +123,7 @@ ERROR_ACCESS_DENIED, ERROR_ALREADY_EXISTS = 5, 183
 SYNCHRONIZE = 0x00100000
 
 
-def ensure_single_instance():
+def ensure_single_instance() -> None:
     """A second receiver copy (e.g. autostart + a manual launch) exits with a readable message.
     ERROR_ACCESS_DENIED also means "already running": the lock is held by a receiver started as administrator, and an unprivileged
     process does not get full access to it (CreateMutex then returns NULL instead of ERROR_ALREADY_EXISTS) -
@@ -157,13 +158,13 @@ def instance_running():
         return False
 
 
-def release_single_instance():
+def release_single_instance() -> None:
     """Release the single-instance lock - without this a new process after a restart would see "already running" and exit."""
     global _mutex
     if _mutex:
         try:
             k32.CloseHandle(_mutex)
-        except Exception:
+        except Exception:  # best effort: the handle is released with the process anyway
             pass
         _mutex = None
 
@@ -188,7 +189,7 @@ def relaunch_admin(cmd):
     return (r or 0) > 32
 
 
-def relaunch(env=None, admin=False):
+def relaunch(env=None, admin=False) -> None:
     """A new receiver process with the same arguments (as autostart). Call after releasing the ports and the instance lock.
     env: extra environment variables for the new process (e.g. the console mode state). admin: through UAC; a refusal = an ordinary
     restart (the receiver must not vanish)."""
@@ -198,7 +199,7 @@ def relaunch(env=None, admin=False):
             print("Restarting as administrator:", subprocess.list2cmdline(cmd))
             return
         print("Administrator restart declined - restarting normally")
-    kw = {"cwd": os.getcwd(), "close_fds": True, "env": {**os.environ, **(env or {})}}
+    kw: dict[str, Any] = {"cwd": os.getcwd(), "close_fds": True, "env": {**os.environ, **(env or {})}}
     if os.path.basename(sys.executable).lower().startswith("pythonw"):      # autostart: no console, independent of the old one
         kw.update(creationflags=0x00000008 | 0x00000200,                    # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
                   stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -232,7 +233,7 @@ class INPUT(ctypes.Structure):
 INPUT_SIZE = ctypes.sizeof(INPUT)
 
 
-def send_mouse(flags, dx=0, dy=0, data=0):
+def send_mouse(flags, dx=0, dy=0, data=0) -> None:
     # mouseData is a DWORD: a negative wheel delta must be passed in two's complement
     """Send one mouse event through SendInput: flags (move / button / wheel), a relative move dx, dy and the wheel data."""
     inp = INPUT(0, _INPUT_U(MOUSEINPUT(dx, dy, data & 0xFFFFFFFF, flags, 0, 0)))  # 0 = INPUT_MOUSE
@@ -244,7 +245,7 @@ KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP = 0x1, 0x2
 _EXTENDED = {VK_LWIN, VK_SNAPSHOT}
 
 
-def send_keys(*vks):
+def send_keys(*vks) -> None:
     """A key shortcut (e.g. Win+G): pressed in order, released in reverse order, in a single SendInput."""
     def key(vk, up):
         flags = (KEYEVENTF_EXTENDEDKEY if vk in _EXTENDED else 0) | (KEYEVENTF_KEYUP if up else 0)
@@ -336,7 +337,7 @@ def force_foreground(hwnd):
     return done
 
 
-def _declare_foreground_api():
+def _declare_foreground_api() -> None:
     """Declare argument and return types of the window APIs used above (without them ctypes truncates handles on x64)."""
     try:
         user32.GetForegroundWindow.restype = wt.HWND
@@ -366,19 +367,19 @@ def close_window(hwnd):
     return bool(hwnd) and bool(user32.PostMessageW(hwnd, 0x0010, 0, 0))     # WM_CLOSE
 
 
-def sleep_pc():
+def sleep_pc() -> None:
     """Sleep (S3 / modern standby); hibernation only if Windows is set up that way."""
     ctypes.windll.powrprof.SetSuspendState(False, False, False)
 
 
-def shutdown_pc(delay_s=10):
+def shutdown_pc(delay_s=10) -> None:
     """A delayed shutdown - until then "shutdown /a" in a console aborts it."""
     exe = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "shutdown.exe")
     subprocess.run([exe, "/s", "/t", str(int(delay_s))], timeout=15, check=False,
                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
 
-def send_click(down_flag, up_flag):
+def send_click(down_flag, up_flag) -> None:
     """Press and release in one SendInput call (atomic: nothing slips in between DOWN and UP)."""
     arr = (INPUT * 2)(INPUT(0, _INPUT_U(MOUSEINPUT(0, 0, 0, down_flag, 0, 0))),
                       INPUT(0, _INPUT_U(MOUSEINPUT(0, 0, 0, up_flag, 0, 0))))
@@ -386,15 +387,15 @@ def send_click(down_flag, up_flag):
 
 
 # ---------------- UDP sockets ----------------
-def no_connreset(sk):
+def no_connreset(sk) -> None:
     """Windows: an ICMP 'port unreachable' must not break recvfrom (WSAECONNRESET)."""
     try:
-        sk.ioctl(socket.SIO_UDP_CONNRESET, False)
-    except Exception:
+        sk.ioctl(socket.SIO_UDP_CONNRESET, False)  # type: ignore[attr-defined]  # missing from typeshed
+    except Exception:  # best effort: not every Windows / socket type supports it
         pass
 
 
-def recv_timeout(sk, seconds):
+def recv_timeout(sk, seconds) -> None:
     """A blocking socket with a receive timeout in the kernel (SO_RCVTIMEO): recvfrom is a single system call.
     Python's settimeout() does an extra select() before every receive (a non-blocking socket + waiting).
     On timeout: TimeoutError (Windows, WSAETIMEDOUT) or BlockingIOError (Linux, EAGAIN)."""

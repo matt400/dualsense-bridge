@@ -37,7 +37,7 @@ RUMBLE_ON = {"inherit": "Jak w profilu pada", "on": "Włączona", "off": "Wyłą
 RUMBLE_KEY = {None: "inherit", True: "on", False: "off"}
 
 
-def _of8(v):
+def _of8(v) -> str:
     """Slider text for a value out of TRIG_FORCE_MAX, e.g. "5 / 8"."""
     return f"{round(v)} / {TRIG_FORCE_MAX}"
 def targets():
@@ -77,7 +77,7 @@ class ProfileBar(QWidget):
     create = Signal(str, bool)        # (program name, start from the current settings)
     delete = Signal()
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Build the profile combo with the add / delete buttons, an info line and the hidden new-game-profile form."""
         super().__init__()
         self._sig = None
@@ -128,7 +128,7 @@ class ProfileBar(QWidget):
         self.form.hide()
         lay.addWidget(self.form)
 
-    def reload(self, profiles, key, info, recent):
+    def reload(self, profiles, key, info, recent) -> None:
         """profiles = [(key, name, in use)]; the list is rebuilt only when it changed (an open one is not closed)."""
         sig = tuple(profiles)
         if sig != self._sig:
@@ -142,18 +142,18 @@ class ProfileBar(QWidget):
             self.recent = recent
             self.completer_model.setStringList(recent)
 
-    def _open_new(self):
+    def _open_new(self) -> None:
         """Show the new profile form, pre-filled with the most recent program that has no profile yet."""
         self.exe.setText(next((x for x in self.recent if x not in self.existing), ""))
         self.form.show()
         self.exe.setFocus()
         self.exe.selectAll()
 
-    def _create(self):
+    def _create(self) -> None:
         """Emit `create` with the typed program name and the copy-current-settings flag."""
         self.create.emit(self.exe.text(), self.copy.isChecked())
 
-    def close_new(self):
+    def close_new(self) -> None:
         """Hide the new profile form."""
         self.form.hide()
 
@@ -163,7 +163,7 @@ class PartPage(QWidget):
 
     edited = Signal()
 
-    def __init__(self, ed):
+    def __init__(self, ed) -> None:
         """Stack three pages: a hint (nothing selected), a button / trigger page and a stick page."""
         super().__init__()
         self.ed, self.name = ed, None
@@ -292,29 +292,29 @@ class PartPage(QWidget):
         return scrolled(w)
 
     # ---------- changes ----------
-    def _set_button(self, src, value):
+    def _set_button(self, src, value) -> None:
         """Remap `src` to `value` (NONE = disabled) and report the edit."""
         self.ed.set_button(src, None if value == NONE else value)
         self.edited.emit()
 
-    def _reset_button(self, src):
+    def _reset_button(self, src) -> None:
         """Restore the default mapping of `src`."""
         self.ed.clear_button(src)
         self.refresh()
         self.edited.emit()
 
-    def _tune(self, name, **patch):
+    def _tune(self, name, **patch) -> None:
         """Patch the response tuning of a part (dead zone, curve...)."""
         self.ed.set_tuning(name, **patch)
         self.edited.emit()
 
-    def _reset_tuning(self, name):
+    def _reset_tuning(self, name) -> None:
         """Restore the default response of a part."""
         self.ed.clear_tuning(name)
         self.refresh()
         self.edited.emit()
 
-    def _trigger_fx(self, **patch):
+    def _trigger_fx(self, **patch) -> None:
         """Patch the trigger effect of the selected trigger; a mode change also re-shows the matching sliders."""
         if self.name in B.TRIGGERS:
             self.ed.set_trigger_fx(self.name, **patch)
@@ -322,14 +322,14 @@ class PartPage(QWidget):
                 self._show_fx(self.ed.trigger_fx(self.name))
             self.edited.emit()
 
-    def _rumble_fx(self, **patch):
+    def _rumble_fx(self, **patch) -> None:
         """Patch the game-rumble-on-triggers settings (shared by L2 and R2)."""
         self.ed.set_rumble_fx(**patch)
         if "on" in patch:
             self._show_rumble(self.ed.rumble_fx())
         self.edited.emit()
 
-    def _show_fx(self, fx):
+    def _show_fx(self, fx) -> None:
         """The sliders of the effect mode (the rest hidden) and the hint."""
         self.fx_hint.setText(_(FX_MODES[fx["mode"]][1]))
         shown = FX_SLIDERS.get(fx["mode"], ())
@@ -338,7 +338,7 @@ class PartPage(QWidget):
             row.set(fx[k] * (10 if k in ("start", "pos") else 1))
         self.update_caps()
 
-    def _show_rumble(self, rv):
+    def _show_rumble(self, rv) -> None:
         """Show the game rumble settings; the sliders only when it is on."""
         self.rv_gain.set(rv["gain"])
         self.rv_freq.set(rv["freq"])
@@ -346,14 +346,14 @@ class PartPage(QWidget):
         self.rv_freq.setVisible(bool(rv["on"]))
         self.update_caps()
 
-    def _stick(self, **patch):
+    def _stick(self, **patch) -> None:
         """Patch the stick mapping (source, inversion) of the selected stick."""
-        if self.name in STICK_OF:
+        if self.name is not None and self.name in STICK_OF:
             self.ed.set_stick(STICK_OF[self.name], **patch)
             self.edited.emit()
 
     # ---------- reading ----------
-    def show_part(self, name):
+    def show_part(self, name) -> None:
         """Select a part (a button, trigger or stick name) and load it."""
         self.name = name
         self.refresh()
@@ -363,7 +363,7 @@ class PartPage(QWidget):
         t = self.ed.target_of(src)
         return NONE if t is None else t
 
-    def refresh(self):
+    def refresh(self) -> None:
         """Load the selected part's values from the profile into the widgets (without triggering changes)."""
         name, ed = self.name, self.ed
         if name is None:
@@ -409,7 +409,7 @@ class PartPage(QWidget):
             self._show_rumble(rv)
         self.stack.setCurrentIndex(1)
 
-    def update_caps(self):
+    def update_caps(self) -> None:
         """A warning under the trigger effects when this pad's sender will not apply them (every 400 ms from the window - a cheap read)."""
         text, level = (ST.triggers_status(self.ed.slot, needs_fx(self.ed.prof["triggers"]))
                        if self.name in B.TRIGGERS else ("", ""))
@@ -424,7 +424,7 @@ class GyroPage(QWidget):
 
     edited = Signal()
 
-    def __init__(self, ed):
+    def __init__(self, ed) -> None:
         """Build the mode combo and the settings (activation, sensitivity, inversion, anti dead zone)."""
         super().__init__()
         self.ed = ed
@@ -468,14 +468,14 @@ class GyroPage(QWidget):
         lay.addWidget(self.tilt)
         lay.addStretch(1)
 
-    def _set(self, relayout=False, **patch):
+    def _set(self, relayout=False, **patch) -> None:
         """Patch the gyro settings; relayout reloads the widgets (a mode change shows / hides parts)."""
         self.ed.set_gyro(**patch)
         if relayout:
             self.refresh()
         self.edited.emit()
 
-    def refresh(self):
+    def refresh(self) -> None:
         """Load the gyro settings from the profile into the widgets (without triggering changes)."""
         g = self.ed.gyro()
         self.mode.set_data(g["mode"])
@@ -492,7 +492,7 @@ class GyroPage(QWidget):
         self.anti.setVisible(g["mode"] == "stick")
         self.tilt.set_slot(self.ed.slot)
 
-    def set_live(self, in_use, active):
+    def set_live(self, in_use, active) -> None:
         """The row under the settings: whether the gyro reacts now (only for the profile in use)."""
         g = self.ed.gyro()
         if g["mode"] == "off":
@@ -513,7 +513,7 @@ class ChangesPage(QWidget):
 
     undone = Signal()      # an item was undone - the window must refresh all panels
 
-    def __init__(self, ed):
+    def __init__(self, ed) -> None:
         """Build the scrollable list and the Delete all button."""
         super().__init__()
         self.ed, self._sig = ed, None
@@ -560,7 +560,7 @@ class ChangesPage(QWidget):
         hl.addWidget(x)
         return row
 
-    def _undo(self, undo):
+    def _undo(self, undo) -> None:
         """Run the undo of one item and tell the window to refresh everything."""
         undo()
         self.undone.emit()

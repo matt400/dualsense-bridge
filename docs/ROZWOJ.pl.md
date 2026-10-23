@@ -26,12 +26,13 @@ Uruchom po zmianach w oknie i dodaj nowe PNG do commita.
 ## Testy
 
 ```
-pip install evdev ruff PySide6-Essentials
+pip install evdev ruff mypy PySide6-Essentials
 ./tests/run_tests.sh
 ```
 
-`ruff` (reguły w `pyproject.toml`) sprawdza cały kod przed testami. GitHub Actions uruchamia to samo przy każdym
-pushu i PR (`.github/workflows/tests.yml`).
+`ruff` i `mypy` (reguły w `pyproject.toml`) sprawdzają cały kod przed testami; `mypy` działa osobno dla każdego pakietu
+(receiver jak na Windowsie, sender jak na Linuksie), bo moduły importują się po płaskich nazwach. GitHub Actions uruchamia
+to samo przy każdym pushu i PR (`.github/workflows/tests.yml`).
 
 Testy obejmują:
 - logikę obu stron: touchpad, gesty, limiter, przepełnienie bufora, skróty, profile, gyro, kształtowanie gałek;

@@ -30,19 +30,19 @@ CAL_TEXT = {True: "Środek ustawiony.", False: "Kalibracja nie wyszła - trzymaj
 class TiltView(QWidget):
     """2D preview: X axis = sideways tilt, Y = front down (up in the drawing). Scale: 1.0 = range (outer)."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.setFixedSize(VIEW_PX, VIEW_PX)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.cfg = G.Config()
         self.snap = (G.ST_OFF, G.Z_DEAD, (0.0, 0.0), (0.0, 0.0), (0.0, 0.0), 0.0, False, False)
 
-    def set_data(self, cfg, snap):
+    def set_data(self, cfg, snap) -> None:
         if cfg != self.cfg or snap != self.snap:
             self.cfg, self.snap = cfg, snap
             self.update()
 
-    def paintEvent(self, _e):
+    def paintEvent(self, _e) -> None:
         cfg, (_state, zone, raw, filt, xy, _mag, _sprint, driving) = self.cfg, self.snap
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -85,7 +85,7 @@ class TiltSection(QWidget):
 
     changed = Signal(object)         # the pad's new G.Config
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.slot = 0
         self._msg_until = 0.0
@@ -160,20 +160,20 @@ class TiltSection(QWidget):
             return lambda v: f"{v:.2f}×"
         return lambda v: f"{v:.1f}{unit}".replace(".0" + unit, unit)
 
-    def set_slot(self, slot):
+    def set_slot(self, slot) -> None:
         self.slot = slot
         self.refresh()
 
-    def _set(self, **patch):
+    def _set(self, **patch) -> None:
         cfg = G.normalize(G.to_raw(replace(self.cfg, **patch)))      # the same limits as when the file is loaded (outer > deadzone)
         self.cfg = cfg
         self.changed.emit(cfg)
         self.refresh(cfg, reload=False)
 
-    def _calibrate(self):
+    def _calibrate(self) -> None:
         runner.calibrate(self.slot)
 
-    def refresh(self, cfg=None, reload=True):
+    def refresh(self, cfg=None, reload=True) -> None:
         """Pad settings from the file (pad / tab change) or after an edit in this window (reload=False)."""
         if reload:
             self.cfg = cfg = runner.config(self.slot)
@@ -195,7 +195,7 @@ class TiltSection(QWidget):
         """Whether any tilt category is expanded - the window then shows the live preview over the pad."""
         return any(c.is_open() for c in self.cats)
 
-    def tick(self):
+    def tick(self) -> None:
         """Calibration outcome (30 Hz from the window timer while the Gyro tab is visible): shown under the button for a moment."""
         msg, now = runner.cal_result(self.slot), time.monotonic()
         if msg is not None and not self._msg_until:
@@ -213,7 +213,7 @@ class TiltPreview(QFrame):
     raw / filtered numbers and the engine state. While it is shown the engine follows the pad even if the feature is off, so the
     tilt can be seen before it is switched on."""
 
-    def __init__(self, pad):
+    def __init__(self, pad) -> None:
         super().__init__(pad)
         self.pad = pad
         self.setObjectName("group")
@@ -236,16 +236,16 @@ class TiltPreview(QFrame):
         pad.installEventFilter(self)       # keep the corner when the drawing is resized
         self.hide()
 
-    def eventFilter(self, obj, event):
+    def eventFilter(self, obj, event) -> bool:
         if obj is self.pad and event.type() == QEvent.Type.Resize:
             self.place()
         return False
 
-    def place(self):
+    def place(self) -> None:
         self.adjustSize()
         self.move(self.pad.width() - self.width() - PREVIEW_GAP, PREVIEW_GAP)
 
-    def tick(self, show, slot, cfg):
+    def tick(self, show, slot, cfg) -> None:
         """30 Hz from the window timer: show / hide, follow the pad, refresh the view and the texts."""
         if not show:
             self.idle()
@@ -268,7 +268,7 @@ class TiltPreview(QFrame):
             self.status.setText(_(STATE_TEXT[state]))
         self.place()
 
-    def idle(self):
+    def idle(self) -> None:
         """Hide the preview and let the engine go back to idle when the feature is off."""
         if self._slot is not None:
             runner.set_preview(self._slot, False)

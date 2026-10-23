@@ -69,7 +69,7 @@ class ConsoleSettings(QDialog):
     applied = Signal()          # mouse / master saved and in effect (no restart) - the window refreshes the pad cards
     captured = Signal(str)      # the button name from the network thread (Qt queues it to the window thread)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None) -> None:
         """Create the dialog: the capture timer (a pad button pick times out), the captured signal hookup and the tabs."""
         super().__init__(parent)
         self.setObjectName("root")
@@ -83,7 +83,7 @@ class ConsoleSettings(QDialog):
         self._build()
 
     # ---------- building ----------
-    def _build(self):
+    def _build(self) -> None:
         """Build the tab widget (one page per settings area) and the bottom row: Test (console tab only), the status, Cancel and Save."""
         lay = QVBoxLayout(self)
         lay.setContentsMargins(18, 12, 18, 12)
@@ -249,7 +249,7 @@ class ConsoleSettings(QDialog):
                             "dim", wrap=True))
         return [backend, order]
 
-    def _load_vpad(self, v):
+    def _load_vpad(self, v) -> None:
         """Fill the Pads tab from a VpadConfig."""
         self.vpad_backend.set_data(v.backend)
         self.vpad_dll.setText(v.hm_dll)
@@ -257,18 +257,18 @@ class ConsoleSettings(QDialog):
         self.vpad_auto.setChecked(v.hm_auto)
         self._vpad_state()
 
-    def _hm_check(self):
+    def _hm_check(self) -> None:
         """Check and possibly download in the background (up to several minutes - ~56 MB); the state is refreshed every 0.5 s."""
         import threading
         threading.Thread(target=rx_hm_update.check, kwargs={"force": True}, name="hidmaestro check", daemon=True).start()
         self._hm_timer.start()
         self._vpad_state(busy=True)
 
-    def _net_install(self):
+    def _net_install(self) -> None:
         """.NET 10 through winget in the background (several minutes); after the install HIDMaestro works from the next pad connection."""
         import threading
 
-        def run():
+        def run() -> None:
             ok, msg = rx_hm.install_dotnet()
             self._net_msg = _("✓ .NET 10 zainstalowany - HIDMaestro zadziała przy następnym połączeniu pada") if ok \
                 else _("Instalacja .NET 10 nie udała się: {err}").format(err=msg)
@@ -278,7 +278,7 @@ class ConsoleSettings(QDialog):
         self._hm_timer.start()
         self._vpad_state()
 
-    def _vpad_state(self, busy=False):
+    def _vpad_state(self, busy=False) -> None:
         """What works now: the kind of plugged pads, the HIDMaestro version (downloaded / newest / downloading / error), the reason
         for working without HIDMaestro, the restart-as-administrator button."""
         backend = self.vpad_backend.currentData()
@@ -358,27 +358,27 @@ class ConsoleSettings(QDialog):
         self._sec_state()
         return [box]
 
-    def _sec_state(self):
+    def _sec_state(self) -> None:
         """Show the current security findings (or that none were found) and the harden button only when the folder issue exists."""
         found = rx_security.issues()
         self.sec_now.setText("\n".join("• " + i.text for i in found) if found else _("✓ Nie wykryto problemów."))
         set_prop(self.sec_now, "level", "warn" if found else "ok")
         self.sec_harden.setVisible(any(i.code == "folder" for i in found))
 
-    def _sec_key(self):
+    def _sec_key(self) -> None:
         """Copy a freshly generated HMAC key to the clipboard."""
         from proto import generate_key
         QApplication.clipboard().setText(generate_key())
         self._status(_("✓ Nowy klucz w schowku - wpisz go jako key w receiver.toml i w sender.toml, potem uruchom "
                        "oba programy ponownie."), "ok")
 
-    def _sec_harden(self):
+    def _sec_harden(self) -> None:
         """Harden the receiver folder and show the result."""
         ok, msg = rx_security.harden()
         self._status(("✓ " if ok else "") + msg, "ok" if ok else "bad")
         self._sec_state()
 
-    def _load_backups(self):
+    def _load_backups(self) -> None:
         """The list of backups from the newest: the date, where it came from, the files; "Restore" needs a second click."""
         while self.backup_rows.count():
             w = self.backup_rows.takeAt(0).widget()
@@ -411,7 +411,7 @@ class ConsoleSettings(QDialog):
         hl.addWidget(restore, 0, Qt.AlignmentFlag.AlignVCenter)
         return row
 
-    def _backup_now(self):
+    def _backup_now(self) -> None:
         """Make a manual backup and refresh the list."""
         try:
             b = rx_backup.create("manual", rx_update.version()[0] or "")
@@ -422,7 +422,7 @@ class ConsoleSettings(QDialog):
         self._status(_("✓ Kopia zapisana.") if b else _("Nie ma jeszcze plików ustawień do skopiowania."),
                      "ok" if b else "warn")
 
-    def _restore(self, name):
+    def _restore(self, name) -> None:
         """Restore a backup; on success disable Save and restart the receiver shortly."""
         ok, msg = rx_backup.restore(name, rx_update.version()[0] or "")
         self._status(("✓ " if ok else "") + msg, "ok" if ok else "bad")
@@ -432,13 +432,13 @@ class ConsoleSettings(QDialog):
             self.save_btn.setEnabled(False)       # Save before the restart would overwrite the files just restored
             QTimer.singleShot(RESTORE_RESTART_MS, self.saved.emit)   # the settings are read at startup
 
-    def _load_screens(self):
+    def _load_screens(self) -> None:
         """Fill the screen choice with the connected screens (and the stored one if it is not connected now)."""
         from PySide6.QtGui import QGuiApplication
-        from rx_qt import screens
+        from rx_qt_screens import screens
         owner = self.parent()
         cur = owner.screen_choice() if hasattr(owner, "screen_choice") else ""
-        items = [("", _("Tam, gdzie okno było ostatnio"))]
+        items: list[tuple] = [("", _("Tam, gdzie okno było ostatnio"))]       # (key, label[, icon])
         for n, (key, sc) in enumerate(screens(), 1):
             g = sc.geometry()
             model = " ".join(x for x in (sc.manufacturer(), sc.model()) if x).strip()
@@ -559,12 +559,13 @@ class ConsoleSettings(QDialog):
         return [how, addr]
 
     # ---------- lightbar ----------
-    def _load_light(self, cfg):
+    def _load_light(self, cfg) -> None:
         """Fill the Lightbar tab from a LightbarConfig: the pad list (default, connected pads, remembered ones) and the first entry's
         values."""
         self.low_pct.setValue(cfg.low_pct)
         self._lights = dict(cfg.pads)
-        items, known = [(DEFAULT_PAD, _("Domyślne - pady bez własnego ustawienia"), "lightbar")], {DEFAULT_PAD}
+        items: list[tuple] = [(DEFAULT_PAD, _("Domyślne - pady bez własnego ustawienia"), "lightbar")]    # (key, label[, icon])
+        known = {DEFAULT_PAD}
         for i in range(C.NUM_PADS):
             key = S.profile_key(i)
             if key not in known and S.pad_id[i] and (S.alive[i] or S.want[i].is_set()):
@@ -575,7 +576,7 @@ class ConsoleSettings(QDialog):
         self.light_pad.set_data(DEFAULT_PAD)
         self._pick_light_pad(DEFAULT_PAD)
 
-    def _pick_light_pad(self, key):
+    def _pick_light_pad(self, key) -> None:
         """Show the lightbar settings of the chosen pad key (falling back to the default entry); loading does not count as an edit."""
         self._light_key = key
         light = self._lights.get(key) or self._lights.get(DEFAULT_PAD) or PadLight()
@@ -589,14 +590,14 @@ class ConsoleSettings(QDialog):
         self._loading = False
         self._light_enable()
 
-    def _light_enable(self):
+    def _light_enable(self) -> None:
         """Enable the lightbar fields only for an own setting; the colour only in the solid mode."""
         own = self.light_own.isChecked()
         for w in (self.light_mode, self.light_color, self.light_blink, self.light_game):
             w.setEnabled(own)
         self.light_color.setEnabled(own and self.light_mode.currentData() == "solid")
 
-    def _set_color(self, hex_color, store=True):
+    def _set_color(self, hex_color, store=True) -> None:
         """Set the chosen colour (empty = the default) and paint the button with it; store=False skips recording the edit."""
         self._color = hex_color
         rgb = rx_lightbar.hex_rgb(hex_color) if hex_color else C.IDLE_RGB
@@ -607,14 +608,14 @@ class ConsoleSettings(QDialog):
         if store:
             self._light_edited()
 
-    def _pick_color(self):
+    def _pick_color(self) -> None:
         """Open the colour dialog and apply the picked colour."""
         start = QColor(*(rx_lightbar.hex_rgb(self._color) if self._color else C.IDLE_RGB))
         c = QColorDialog.getColor(start, self, _("Kolor lightbara"))
         if c.isValid():
             self._set_color(c.name())
 
-    def _light_edited(self, *_args):
+    def _light_edited(self, *_args) -> None:
         """Record the edited fields for the current pad key (an own setting), or drop the entry when it uses the default."""
         if getattr(self, "_loading", False):
             return
@@ -627,7 +628,7 @@ class ConsoleSettings(QDialog):
         self._light_enable()
 
     # ---------- Wake-on-LAN ----------
-    def _load_wol(self, w):
+    def _load_wol(self, w) -> None:
         """Fill the Wake-on-LAN tab from a WolConfig."""
         self.wol_on.setChecked(w.enabled)
         self.wol_btn.set_data(w.button)
@@ -636,7 +637,7 @@ class ConsoleSettings(QDialog):
         self.wol_bcast.setText(w.bcast)
         self._wol_seen()
 
-    def _wol_seen(self):
+    def _wol_seen(self) -> None:
         """What the sender detected by itself (the build2 packet) - a hint in the empty fields."""
         seen = S.sender_wol
         mac, bcast = seen if seen else ("", "")
@@ -663,7 +664,7 @@ class ConsoleSettings(QDialog):
                          hold_ms=self.wol_hold.value())
 
     # ---------- data ----------
-    def present(self):
+    def present(self) -> None:
         """Show the window; a freshly opened one holds the running configuration's values (not a previous, cancelled edit)."""
         if not self.isVisible():
             self.reload()
@@ -674,7 +675,7 @@ class ConsoleSettings(QDialog):
         self.raise_()
         self.activateWindow()
 
-    def _fit(self):
+    def _fit(self) -> None:
         """Centre on the main window's screen and fully inside the work area (without the taskbar): a fixed 860x780 on
         1080p with 150 % scaling (720 px of height) went under the taskbar together with the Save buttons.
         The window frame (the title bar) is known only after showing - remembered, so later openings place
@@ -695,7 +696,7 @@ class ConsoleSettings(QDialog):
         if pos != self.pos():
             self.move(pos)
 
-    def reload(self):
+    def reload(self) -> None:
         """Reload every tab from the running configuration (used when the window opens)."""
         self.save_btn.setEnabled(True)
         self._load_screens()
@@ -724,7 +725,7 @@ class ConsoleSettings(QDialog):
         self.refresh(cfg.audio_tv, cfg.audio_pc)
         self._status("")
 
-    def refresh(self, tv=None, pc=None):
+    def refresh(self, tv=None, pc=None) -> None:
         """Read the active audio outputs; a device chosen earlier that is absent now (e.g. the TV is off)
         stays on the list as "unavailable", so that saving does not lose it."""
         tv = self.tv.currentData() if tv is None else tv
@@ -742,16 +743,17 @@ class ConsoleSettings(QDialog):
             combo.set_items(items)
             combo.set_data(current or "")
 
-    def _load_mouse(self, m):
+    def _load_mouse(self, m) -> None:
         """Fill the Mouse tab from a MouseConfig."""
         self.sens.set(m.sens)
         self.freeze.set(m.click_freeze_ms)
         self.rewind.set(m.click_rewind_ms)
         self.drag.set(m.drag_threshold)
 
-    def _load_master(self, m):
+    def _load_master(self, m) -> None:
         """Fill the Master tab from a MasterConfig; the pad list holds the identified pads and the configured one."""
-        items, known = [("", _("— brak mastera (każdy pad może wszystko) —"))], {""}
+        items: list[tuple] = [("", _("— brak mastera (każdy pad może wszystko) —"))]     # (key, label[, icon])
+        known = {""}
         for i in range(C.NUM_PADS):
             key = S.profile_key(i)
             # only a pad with an identifier (MAC) - a "slotN" key would be lost once the identifier arrives
@@ -798,7 +800,7 @@ class ConsoleSettings(QDialog):
                                                               if x.strip())))
 
     # ---------- pad button ----------
-    def set_button(self, name):
+    def set_button(self, name) -> None:
         """Show the chosen toggle button (name and icon) and leave the capture state."""
         self.toggle_button = name
         self.pick_name.setText(_(LABELS.get(name, name)))
@@ -806,7 +808,7 @@ class ConsoleSettings(QDialog):
         self.pick.setText(_("Wybierz na padzie"))
         set_prop(self.pick, "armed", False)
 
-    def _toggle_capture(self):
+    def _toggle_capture(self) -> None:
         """Start waiting for a pad button press (with a timeout), or cancel the wait."""
         if self._cap_timer.isActive():
             self._stop_capture()
@@ -816,21 +818,21 @@ class ConsoleSettings(QDialog):
         self.pick.setText(_("Naciśnij przycisk na padzie… (klik = anuluj)"))
         set_prop(self.pick, "armed", True)
 
-    def _stop_capture(self):
+    def _stop_capture(self) -> None:
         """Stop waiting for a pad button and restore the button caption."""
         self._cap_timer.stop()
         if rx_console.ctl:
             rx_console.ctl.cancel_capture()
         self.set_button(self.toggle_button)
 
-    def _on_captured(self, name):
+    def _on_captured(self, name) -> None:
         """A pad button arrived from the network thread: take it as the toggle button (only while still waiting)."""
         if self._cap_timer.isActive():                       # a late signal after cancelling changes nothing
             self._cap_timer.stop()
             self.set_button(name)
 
     # ---------- actions ----------
-    def _test(self):
+    def _test(self) -> None:
         """The Test button: switch the console mode on for a few seconds with the values in the window."""
         if rx_console.ctl is None:
             self._status(_("Tryb konsoli nie działa w tym uruchomieniu."), "bad")
@@ -841,7 +843,7 @@ class ConsoleSettings(QDialog):
         self.test_btn.setEnabled(False)
         QTimer.singleShot(int((rx_console.TEST_S + 5) * 1000), lambda: self.test_btn.setEnabled(True))
 
-    def _save(self):
+    def _save(self) -> None:
         """Validate and save everything: settings.json (in effect at once) and, when the console mode or the language changed,
         console.json plus a restart request."""
         try:
@@ -881,12 +883,12 @@ class ConsoleSettings(QDialog):
         self._stop_capture()
         self.saved.emit()
 
-    def _status(self, text, level=""):
+    def _status(self, text, level="") -> None:
         """Show a status message with a level style."""
         self.status.setText(text)
         set_prop(self.status, "level", level)
 
-    def hideEvent(self, e):
+    def hideEvent(self, e) -> None:
         """On hiding: stop a pending pad button capture and the HIDMaestro status timer."""
         super().hideEvent(e)
         if self._cap_timer.isActive():
@@ -934,7 +936,7 @@ def _scroll(w):
     return sa
 
 
-def _claim_s():
+def _claim_s() -> str:
     """The master claim hold time in seconds as text (imported lazily)."""
     import rx_master
     return f"{rx_master.CLAIM_S:g}"

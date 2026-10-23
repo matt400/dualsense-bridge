@@ -1,47 +1,47 @@
-# Nadajnik (telefon). Skopiuj jako sender.toml, odkomentuj i zmień to, czego potrzebujesz.
+# Sender (a Raspberry Pi, a phone - any Linux device the pads connect to). Copy it as sender.toml, uncomment and change what you need.
 # Uruchomienie: doas python3 sender_controller.py --config sender.toml
-# Wartości poniżej to ustawienia domyślne.
+# The values below are the defaults.
 
 # host = "192.168.1.4"
 # port = 5005
 # max_pads = 2
-# slots_file = "slots.json"   # pad (MAC) -> stały slot także po restarcie (gracz 1 / 2 w grze); "" = bez pamięci
-# wol_file = "wol.json"       # Wake-on-LAN i zdarzenia do dziennika: ustawienia z okna receivera zapisane na telefonie
-# gyro_cal_file = "gyro_cal.json"   # kalibracja żyroskopu z okna receivera per pad (MAC); "" = bez zapisu
-# bt_adapter = "auto"   # kontroler Bluetooth: auto (dongle USB przed wbudowanym, reszta wyłączona rfkill) | builtin |
-#   manual (nadajnik nic nie zmienia); wybór z okna (panel Bluetooth: Użyj / Auto / Ręcznie) zapisuje się w bt_file
-#   i ma pierwszeństwo
+# slots_file = "slots.json"   # pad (MAC) -> a fixed slot across restarts (player 1 / 2 in a game); "" = not remembered
+# wol_file = "wol.json"       # Wake-on-LAN and log events: the settings from the receiver window, saved on the sender
+# gyro_cal_file = "gyro_cal.json"   # gyro calibration from the receiver window, per pad (MAC); "" = not saved
+# bt_adapter = "auto"   # Bluetooth controller: auto (a USB dongle before the built-in one, the rest blocked with rfkill) | builtin |
+#   manual (the sender changes nothing); a choice made in the window (Bluetooth panel: Use / Auto / Manual) is saved in bt_file
+#   and takes precedence
 # bt_file = "bt.json"
-# auth_file = "auth.json"   # z kluczem: zapamiętane przejście na protokół v3 (ochrona przed powtórzeniem pakietów)
+# auth_file = "auth.json"   # with a key: the remembered switch to protocol v3 (protection against replayed packets)
 # grab_pad = true
 # grab_touch = true
 # tap_click = true
 # tap_max_s = 0.2
 # tap_max_move = 40
 # heartbeat_s = 0.05
-# pad_min_dt = 0.001   # min odstęp pakietów stanu (1 ms = 1000 Hz; było 4 ms - do 3 ms opóźnienia gałek); pierwszy po ciszy
-#   idzie od razu, zmiany w oknie zlewają się w jeden pakiet na końcu okna; 0 = bez limitu
-# motion_min_dt = 0.001   # j.w. dla ruchu; próbki gyro/acc w oknie są uśredniane
+# pad_min_dt = 0.001   # minimum gap between state packets (1 ms = 1000 Hz; it was 4 ms - up to 3 ms of stick latency); the first one after silence
+#   goes out at once, changes inside the window merge into one packet at the end of it; 0 = no limit
+# motion_min_dt = 0.001   # same for motion; the gyro/acc samples inside a window are averaged
 # motion_deadband_gyro = 128
 # motion_deadband_acc = 16
-# rescan_s = 2.0   # zapasowy skan padów; nowy pad wykrywany od razu (inotify na /dev/input)
+# rescan_s = 2.0   # fallback pad scan; a new pad is detected at once (inotify on /dev/input)
 # stick_deadzone = 3
-# calibrate_s = 1.0   # kalibracja gyro przy starcie - pomijana dla pada skalibrowanego z okna receivera
+# calibrate_s = 1.0   # gyro calibration at startup - skipped for a pad already calibrated from the receiver window
 # calibrate_max_range = 4096
 # autobias = true
 # autobias_s = 1.0
 # autobias_range = 1024
 # battery_poll_s = 5.0
-# touch_coalesce_ms = 2   # DS4/DSU dotyk: max 1 pakiet na tyle ms (0 = każda zmiana)
-# touch_deadzone = 2   # ignoruj zmiany palca mniejsze niż tyle jednostek (szum czujnika)
-# touch_start_move = 5   # mysz: kursor rusza dopiero po przesunięciu o tyle (brak drgania przy tapie)
-# gestures = true   # 2 palce = przewijanie, tap 2 palcami = prawy przycisk myszy
-# rumble = "auto"   # wibracja: auto (sterownik evdev i raport HID przez hidraw naraz) | evdev | hidraw | off
-# idle_off_min = 15   # wyłącz pada (rozłącz Bluetooth) po tylu minutach bez użycia; 0 = nigdy
-# rt_priority = 10   # SCHED_FIFO z tym priorytetem (1-99); 0 = zwykły planista; wymaga doas
-# low_latency = true   # procesor bez głębokiego uśpienia + najszybsze rdzenie (sender_rt); wymaga doas
-# cpu_latency_us = 50   # low_latency: max czas wybudzenia procesora [µs] (głębokie stany śpią do ~6.5 ms)
-# key = ""   # wspólny klucz HMAC (ten sam w receiverze); bez niego każdy w sieci lokalnej może wysyłać polecenia.
-#   Wygeneruj: python3 -c "import secrets; print(secrets.token_urlsafe(24))". Usługa: doas ./install-service.sh
-#   przenosi --key do /etc/dualsense-sender.env (niewidoczny w ps)
+# touch_coalesce_ms = 2   # DS4/DSU touch: at most 1 packet per this many ms (0 = every change)
+# touch_deadzone = 2   # ignore finger changes smaller than this many units (sensor noise)
+# touch_start_move = 5   # mouse: the cursor only starts moving after this much travel (no jitter on a tap)
+# gestures = true   # 2 fingers = scrolling, a 2-finger tap = the right mouse button
+# rumble = "auto"   # rumble: auto (the evdev driver and a HID report over hidraw at once) | evdev | hidraw | off
+# idle_off_min = 15   # switch the pad off (disconnect Bluetooth) after this many idle minutes; 0 = never
+# rt_priority = 10   # SCHED_FIFO with this priority (1-99); 0 = the normal scheduler; needs doas
+# low_latency = true   # no deep CPU sleep + the fastest cores (sender_rt); needs doas
+# cpu_latency_us = 50   # low_latency: the longest CPU wake-up time [µs] (deep states sleep for up to ~6.5 ms)
+# key = ""   # a shared HMAC key (the same in the receiver); without it anyone on the LAN can send commands.
+#   Generate one: python3 -c "import secrets; print(secrets.token_urlsafe(24))". The service: doas ./install-service.sh
+#   moves --key to /etc/dualsense-sender.env (not visible in ps)
 # stats = false

@@ -8,7 +8,7 @@ from PySide6.QtWidgets import QApplication
 
 C.cfg["tray"] = False
 C.CONSOLE_PATH = os.path.join(TMP, "console.json")
-import rx_audio, rx_console, rx_master, rx_qt, rx_settings
+import rx_audio, rx_console, rx_master, rx_qt, rx_qt_screens, rx_settings
 from proto import T_IDENT
 from rx_console import Console, ConsoleConfig
 ok = lambda msg: print("OK  ", msg)
@@ -156,7 +156,7 @@ assert area.contains(dlg.frameGeometry()) or dlg.size() == dlg.size().expandedTo
 assert area.contains(dlg.save_btn.mapToGlobal(dlg.save_btn.rect().bottomRight())), "przycisk Zapisz widoczny"
 ok("okno ustawień mieści się na ekranie, Zapisz widoczny")
 scr = [dlg.screen_box.itemData(i) for i in range(dlg.screen_box.count())]
-names = [k for k, _ in rx_qt.screens()]
+names = [k for k, _ in rx_qt_screens.screens()]
 assert scr == ["", *names], (scr, names)
 dlg.screen_box.set_data(names[0]); dlg.tabs.setCurrentIndex(6)
 dlg.save_btn.click(); pump()
@@ -177,7 +177,7 @@ from PySide6.QtCore import QSize
 pref = win._pref
 def fits():
     g, m = win.frameGeometry(), win.minimumSizeHint().expandedTo(win.minimumSize())
-    lim = area.size() - QSize(rx_qt.FIT_MARGIN, rx_qt.FIT_MARGIN)
+    lim = area.size() - QSize(rx_qt_screens.FIT_MARGIN, rx_qt_screens.FIT_MARGIN)
     assert g.left() >= area.left() and g.top() >= area.top(), (area, g)          # przyciski zawsze widoczne
     assert win.width() <= max(lim.width(), m.width()) and win.height() <= max(lim.height(), m.height()), (area, g, m)
 win._pref = area.size() + QSize(400, 400)

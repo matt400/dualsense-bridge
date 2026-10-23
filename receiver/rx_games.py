@@ -40,7 +40,7 @@ def in_game(exe=None):
     return exe not in apps and is_game(exe)
 
 
-def poll_once():
+def poll_once() -> None:
     """One foreground check. On a program change: stop game rumble, update the recent list, let S.set_game pick the profile
     for every connected pad (with a confirmation pulse on the pad), wake the feedback loop when the desktop <-> game state
     flips, and release trigger effects of programs that have exited."""
@@ -73,7 +73,7 @@ _procs = [0.0, None]           # (time, set of running programs) - at most one p
 PROCS_S = 2.0
 
 
-def release_closed(now=None):
+def release_closed(now=None) -> None:
     """Release trigger effects of games whose process no longer runs (rx_feedback.forget_ended_games). The process
     snapshot is taken (and cached for PROCS_S) only when some slot holds effects of a program that is not in the foreground
     - usually never."""
@@ -89,7 +89,7 @@ def release_closed(now=None):
     F.forget_ended_games(running)
 
 
-def watch_thread():
+def watch_thread() -> None:
     """Thread body: poll the foreground program every POLL_S until the receiver stops."""
     while not S.stop.is_set():
         poll_once()

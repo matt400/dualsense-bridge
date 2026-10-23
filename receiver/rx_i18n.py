@@ -11,7 +11,7 @@ LANGS = {"pl": "Polski", "en": "English"}
 lang = "pl"
 
 
-def set_lang(code):
+def set_lang(code) -> None:
     """Select the language (an unknown code falls back to Polish)."""
     global lang
     lang = code if code in LANGS else "pl"
@@ -943,7 +943,7 @@ EN = {
     "Tryb konsoli: błąd - {err}": "Console mode: error - {err}",
     "Tryb konsoli: Windows przywrócił oba ekrany - ponowne przełączenie na TV":
         "Console mode: Windows restored both screens - switching to the TV again",
-    # karta "Przechył" (rx_qt_gstick)
+    # the "Przechył" (tilt) card (rx_qt_gstick)
     "PRZECHYŁ: PODSTAWOWE": "TILT: BASICS",
     "PRZECHYŁ: ZAKRES I FILTR": "TILT: RANGE AND FILTER",
     "PRZECHYŁ: AUTOMATYKA": "TILT: AUTOMATION",

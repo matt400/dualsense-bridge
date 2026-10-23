@@ -57,7 +57,7 @@ def _tuning_defaults(name):
 class Editor:
     """The edited profile of one pad (slot). The window calls the methods and refreshes its widgets."""
 
-    def __init__(self, slot=0):
+    def __init__(self, slot=0) -> None:
         self.slot = slot
         self.base = None            # key of the pad profile the state was loaded for (changes when the pad id arrives)
         self.key = None
@@ -71,7 +71,7 @@ class Editor:
         active = S.active[self.slot]
         return [(k, profile_name(k), k == active) for k in S.store.keys_for(S.profile_key(self.slot))]
 
-    def select(self, key=None):
+    def select(self, key=None) -> None:
         """Load profile `key` (default: the one in use). The edited profile takes effect on the pad at once (preview and testing in a
         game)."""
         s = self.slot
@@ -83,12 +83,12 @@ class Editor:
         if key != S.active[s]:
             P.use(s, key)
 
-    def set_slot(self, slot):
+    def set_slot(self, slot) -> None:
         """Switch to another pad slot and load its profile."""
         self.slot = slot
         self.select()
 
-    def sync(self):
+    def sync(self) -> bool:
         """Periodic refresh. -> True when the selected profile changed (e.g. the pad id arrived)."""
         if S.profile_key(self.slot) != self.base or self.key not in S.store.keys_for(self.base):
             self.select()
@@ -101,14 +101,14 @@ class Editor:
         """What input `src` is replaced with (an input name, or None = disabled)."""
         return self.prof["buttons"].get(src, src)
 
-    def set_button(self, src, dst):
+    def set_button(self, src, dst) -> None:
         """Remap input `src` to `dst`; mapping an input to itself removes the entry."""
         if dst == src:
             self.prof["buttons"].pop(src, None)
         else:
             self.prof["buttons"][src] = dst
 
-    def clear_button(self, src):
+    def clear_button(self, src) -> None:
         """Remove the remap of button `src`."""
         self.prof["buttons"].pop(src, None)
 
@@ -116,7 +116,7 @@ class Editor:
         """The stick output `out` with defaults filled in: {"src", "inv_x", "inv_y"}."""
         return {"src": out, "inv_x": False, "inv_y": False, **self.prof["sticks"].get(out, {})}
 
-    def set_stick(self, out, **patch):
+    def set_stick(self, out, **patch) -> None:
         """Change fields of a stick output; an entry equal to the default is removed."""
         e = {**self.stick(out), **patch}
         if e == {"src": out, "inv_x": False, "inv_y": False}:
@@ -128,7 +128,7 @@ class Editor:
         """The tuning of a stick or trigger with defaults filled in."""
         return {**_tuning_defaults(name), **self.prof["tuning"].get(name, {})}
 
-    def set_tuning(self, name, **patch):
+    def set_tuning(self, name, **patch) -> None:
         """Change fields of a tuning entry; an entry equal to the defaults is removed."""
         e = {**self.tuning(name), **patch}
         if e == _tuning_defaults(name):
@@ -136,7 +136,7 @@ class Editor:
         else:
             self.prof["tuning"][name] = e
 
-    def clear_tuning(self, name):
+    def clear_tuning(self, name) -> None:
         """Remove the tuning entry."""
         self.prof["tuning"].pop(name, None)
 
@@ -151,7 +151,7 @@ class Editor:
         mode = e["mode"] if e else "inherit" if self.is_game() else "off"
         return {**self._fx_mem.get(name, TRIG_FX_DEF), **(e or {}), "mode": mode}
 
-    def set_trigger_fx(self, name, **patch):
+    def set_trigger_fx(self, name, **patch) -> None:
         """Change a trigger effect; the values of the sliders are remembered, and an "inherit" / default-off entry is removed from the
         profile."""
         e = {**self.trigger_fx(name), **patch}
@@ -162,7 +162,7 @@ class Editor:
         else:
             self.prof["triggers"][name] = {"mode": mode, **{k: e[k] for k in TRIG_PARAMS[mode]}}
 
-    def clear_trigger_fx(self, name):
+    def clear_trigger_fx(self, name) -> None:
         """Remove the trigger effect entry."""
         self.prof["triggers"].pop(name, None)
 
@@ -172,7 +172,7 @@ class Editor:
         on = e["on"] if e else None if self.is_game() else False
         return {**self._fx_mem.get("rumble", RUMBLE_DEF), **(e or {}), "on": on}
 
-    def set_rumble_fx(self, **patch):
+    def set_rumble_fx(self, **patch) -> None:
         """Change game rumble on the triggers; the same removal rules as for trigger effects."""
         e = {**self.rumble_fx(), **patch}
         self._fx_mem["rumble"] = {k: v for k, v in e.items() if k != "on"}
@@ -185,24 +185,24 @@ class Editor:
         """The gyro settings with defaults filled in."""
         return {**GYRO_DEF, **self.prof["gyro"]}
 
-    def set_gyro(self, **patch):
+    def set_gyro(self, **patch) -> None:
         """Change gyro settings; settings equal to the defaults are stored as an empty dict."""
         e = {**self.gyro(), **patch}
         self.prof["gyro"] = {} if e == GYRO_DEF else e
 
-    def clear_gyro(self):
+    def clear_gyro(self) -> None:
         """Disable gyro."""
         self.prof["gyro"] = {}
 
-    def reset_all(self):
+    def reset_all(self) -> None:
         """Reset the whole edited profile to empty."""
         self.prof = empty()
 
-    def revert(self):
+    def revert(self) -> None:
         """Throw away the unsaved changes (go back to the saved profile)."""
         self.prof = copy.deepcopy(self.saved)
 
-    def clear_stick(self, out):
+    def clear_stick(self, out) -> None:
         """Remove the stick output entry."""
         self.prof["sticks"].pop(out, None)
 

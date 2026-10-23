@@ -161,7 +161,7 @@ def load(path):
     return cfg
 
 
-def save(cfg, path):
+def save(cfg, path) -> None:
     """An atomic write (a temporary file + replace): an interrupted write will not leave an empty console.json."""
     write_json(path, asdict(cfg), indent=2, ensure_ascii=False)
 
@@ -178,7 +178,7 @@ def detector(name):
 
 
 # ---------------- system commands (each separate so that tests can replace them) ----------------
-def _display(mode):
+def _display(mode) -> None:
     """Set the screen topology (extend / internal / tv) through SetDisplayConfig, falling back to DisplaySwitch.exe."""
     try:
         rx_display.set_topology(mode)
@@ -198,7 +198,7 @@ def _screens():
         return None
 
 
-def _tv_mode(w, h, scale):
+def _tv_mode(w, h, scale) -> None:
     """Set the TV resolution and scaling and log the result."""
     print(f"Console: TV {rx_display.apply_tv(w, h, scale)}")
 
@@ -211,18 +211,18 @@ def _foreground():
         return None
 
 
-def _audio(name):
+def _audio(name) -> None:
     """Make the named device the default audio output."""
     rx_audio.set_default(name)
 
 
-def _toast(title, msg=""):
+def _toast(title, msg="") -> None:
     """Show a Windows notification."""
     from winotify import Notification
     Notification(app_id=APP_NAME, title=title, msg=msg, duration="short").show()
 
 
-def _step(what, fn, *args):
+def _step(what, fn, *args) -> None:
     """A step that may fail (no DisplaySwitch / pycaw / winotify, an absent device): log it and carry on."""
     try:
         fn(*args)
@@ -241,7 +241,7 @@ def auto_pad(i):
 
 
 class Console:
-    def __init__(self, cfg):
+    def __init__(self, cfg) -> None:
         """Set up the state: job queue, double-click tracking per pad, the pending auto-ON and the restart flags read from the
         environment."""
         self.cfg = cfg
@@ -264,7 +264,7 @@ class Console:
         self._skip_auto = restored == "0"   # a restart with the mode off -> the master reconnecting does not switch it on
 
     # ---------- network thread ----------
-    def on_state(self, i, mask, hx, hy, lt, rt):
+    def on_state(self, i, mask, hx, hy, lt, rt) -> None:
         """Called on every change of the pad's raw state. Comparisons only - no system commands."""
         if self._trigger:
             v = lt if self.cfg.toggle_button == "l2" else rt
@@ -296,7 +296,7 @@ class Console:
         else:
             self._last_click[i] = now
 
-    def pad_connected(self, i, ident=False):
+    def pad_connected(self, i, ident=False) -> None:
         """The pad in slot i has just connected (the first packet after silence) or sent a new identifier (ident).
         Without a master in the settings the connection alone decides: the identifier arrives right after the first packet and
         set auto-ON a second time - after a receiver restart with the mode off the first one used up the skip
@@ -327,7 +327,7 @@ class Console:
         exe = _foreground()
         return exe if exe and exe not in self.cfg.allowed_apps else None
 
-    def _auto_on(self, i):
+    def _auto_on(self, i) -> None:
         """Queued auto-ON: wait (pending) when a game is in the foreground, otherwise switch on."""
         if self.on or not auto_pad(i):             # the pad in the slot or the master may have changed while queued
             return
@@ -339,7 +339,7 @@ class Console:
             return
         self._apply(True, why=_("połączono pad master (pad {n})").format(n=i + 1))
 
-    def resync(self, i):
+    def resync(self, i) -> None:
         """A boundary of the Test view (the network thread, before on_state): during the test on_state is not called, so the mode
         button's state was from before the test - R2 held on entering and released during the test "stayed held" and the first click after
         the test was lost. The state is taken from the pad's current inputs, the click series starts over."""
@@ -350,13 +350,13 @@ class Console:
             self._down[i] = self._detect(mask, hx, hy, lt, rt)
         self._last_click[i] = 0.0
 
-    def combo(self, i):
+    def combo(self, i) -> None:
         """The mode button used together with another input (also the touchpad click, which is not in the mask): this press
         does not count as a click and breaks the series - two shortcuts from PS in a row do not switch the screen."""
         if self._down[i]:
             self._last_click[i] = 0.0
 
-    def _feed_capture(self, i, cb, *inputs):
+    def _feed_capture(self, i, cb, *inputs) -> None:
         """While capturing: the first newly pressed input is passed to the callback."""
         cur = pressed_inputs(*inputs)
         new, self._cap_prev[i] = cur - self._cap_prev[i], cur
@@ -364,22 +364,22 @@ class Console:
             self._capture = None
             cb(next(n for n in INPUTS if n in new))
 
-    def arm_capture(self, cb):
+    def arm_capture(self, cb) -> None:
         """The next newly pressed button (not the one held now) goes to cb(name) - from the network thread."""
         self._cap_prev = [pressed_inputs(*s["raw"]) for s in S.states]
         self._capture = cb
 
-    def cancel_capture(self):
+    def cancel_capture(self) -> None:
         """Stop waiting for a button press."""
         self._capture = None
 
     # ---------- worker thread ----------
-    def start(self):
+    def start(self) -> None:
         """Start the worker thread and queue the startup job."""
         self._thread = S.start_thread("console", self._run)
         self._jobs.put(self._startup)
 
-    def _run(self):
+    def _run(self) -> None:
         """The worker loop: run queued jobs, or a periodic _tick after 1 s of quiet, until _STOP; a failing job is logged."""
         while True:
             try:
@@ -394,7 +394,7 @@ class Console:
                 print(f"Console: job error:\n{traceback.format_exc()}")
                 ev.error(_("Tryb konsoli: błąd - {err}").format(err=repr(e)))   # otherwise auto-ON vanished without a trace in the window
 
-    def _tick(self):
+    def _tick(self) -> None:
         """Periodic work: release a waiting auto-ON, verify the TV layout, end a test, auto-OFF after silence."""
         now = time.monotonic()
         if self._pending is not None:
@@ -415,7 +415,7 @@ class Console:
             print(f"Console: no packets from the pad for {self.cfg.timeout_s}s - auto-OFF")
             self._apply(False, why=_("Brak sygnału z pada przez {s} s").format(s=self.cfg.timeout_s))
 
-    def _startup(self):
+    def _startup(self) -> None:
         """The first job: restore the mode after a restart, else set the startup screen mode and the PC sound."""
         if self._restore_on:
             self._apply(True, why=_("po restarcie receivera"), toast=False)
@@ -425,12 +425,12 @@ class Console:
             _step("audio", _audio, self.cfg.audio_pc)
         print(f"Console: startup mode {self.cfg.startup_mode}")
 
-    def _toggle(self):
+    def _toggle(self) -> None:
         """A double click: switch the mode over (cancelling a pending auto-ON)."""
         self._pending = None
         self._apply(not self.on)
 
-    def _apply(self, on, cfg=None, why="", toast=True):
+    def _apply(self, on, cfg=None, why="", toast=True) -> None:
         """Switch the mode on / off: the screen topology, the TV resolution, the audio device, the log / event and the toast (each step
         isolated by _step)."""
         cfg = cfg or self.cfg
@@ -446,7 +446,7 @@ class Console:
         if toast:
             _step("toast", _toast, _("Tryb konsoli włączony") if on else _("Tryb konsoli wyłączony"), why)
 
-    def _check_tv(self):
+    def _check_tv(self) -> None:
         """The mode is on but more than one screen is active (Windows restored "extend") -> switch again."""
         n = _screens()
         if n is None or n <= 1:
@@ -459,19 +459,19 @@ class Console:
         if (cfg.tv_width and cfg.tv_height) or cfg.tv_scale:
             _step("TV resolution / scaling", _tv_mode, cfg.tv_width, cfg.tv_height, cfg.tv_scale)
 
-    def _test(self, cfg):
+    def _test(self, cfg) -> None:
         """Switch ON with cfg and schedule the return to OFF after TEST_S."""
         self._apply(True, cfg)
         self._revert = (time.monotonic() + TEST_S, cfg)
 
-    def power_off(self, why):
+    def power_off(self, why) -> bool:
         """Before a PC shutdown / sleep (a Windows session end too): the console mode on -> OFF, and we wait for it to
         finish (POWER_WAIT_S at most). Windows remembers the screen layout, so without this the picture would be on the TV only after
         the computer starts. Callable from any thread; -> True when the mode was on."""
         if not self.on:
             return False
         done = threading.Event()
-        def job():
+        def job() -> None:
             try:
                 if self.on:
                     self._apply(False, why=why, toast=False)
@@ -485,11 +485,11 @@ class Console:
         return True
 
     # ---------- for the settings window ----------
-    def test(self, cfg):
+    def test(self, cfg) -> None:
         """ON with the given (not yet saved) settings, after TEST_S seconds OFF with the same ones."""
         self._jobs.put(lambda: self._test(cfg))
 
-    def close(self, restart=False):
+    def close(self, restart=False) -> None:
         """Closing the receiver. On a plain exit with the console mode on we return to extend (after a restart
         the start itself sets the screen by startup_mode, so we do not switch twice)."""
         if self.on and not restart:
@@ -502,7 +502,7 @@ class Console:
 ctl = None
 
 
-def init():
+def init() -> None:
     """Load console.json and start the worker thread (sets the screen and sound by startup_mode)."""
     global ctl
     ctl = Console(load(C.CONSOLE_PATH))
@@ -511,19 +511,19 @@ def init():
           f"auto-OFF after {ctl.cfg.timeout_s}s ({C.CONSOLE_PATH})")
 
 
-def on_state(i, mask, hx, hy, lt, rt):
+def on_state(i, mask, hx, hy, lt, rt) -> None:
     """Forward a pad state to the console mode (if initialised)."""
     if ctl is not None:
         ctl.on_state(i, mask, hx, hy, lt, rt)
 
 
-def pad_connected(i, ident=False):
+def pad_connected(i, ident=False) -> None:
     """Forward a pad connection to the console mode (if initialised)."""
     if ctl is not None:
         ctl.pad_connected(i, ident)
 
 
-def resync(i):
+def resync(i) -> None:
     """A boundary of the Test view - see Console.resync."""
     if ctl is not None:
         ctl.resync(i)
@@ -540,13 +540,13 @@ def power_off(why):
     return ctl is not None and ctl.power_off(why)
 
 
-def on_touch_click(i):
+def on_touch_click(i) -> None:
     """A touchpad click (the T_CLICK packet) - with the mode button held it is a shortcut, not a click."""
     if ctl is not None:
         ctl.combo(i)
 
 
-def close(restart=False):
+def close(restart=False) -> None:
     """Close the console mode (if initialised)."""
     if ctl is not None:
         ctl.close(restart)

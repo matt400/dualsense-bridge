@@ -67,7 +67,7 @@ def issues():
     return out
 
 
-def log_issues():
+def log_issues() -> None:
     """Print every current issue and add it to the event log as a warning (called once at receiver startup)."""
     import rx_events as ev
     for i in issues():

@@ -1,4 +1,5 @@
-# Konfiguracja narzędzi (projekt nie jest pakietem pip - receiver/ i sender/ uruchamia się bezpośrednio).
+# Tool configuration. This is not an installable package: receiver/ and sender/ are run directly
+# (their modules import each other by flat name), so ruff and mypy run from the repo root / per directory.
 [tool.ruff]
 target-version = "py311"
 line-length = 140
@@ -7,14 +8,32 @@ extend-exclude = ["tests/fakebin"]
 [tool.ruff.lint]
 select = ["E", "F", "W", "B", "UP", "SIM", "RUF", "PERF", "C4", "PIE", "ISC"]
 ignore = [
-    "RUF001", "RUF002", "RUF003",   # polskie komentarze i teksty (×, –, „”) są zamierzone
-    "SIM105",                       # try/except/pass czytelniejsze niż contextlib.suppress w gorących ścieżkach
-    "SIM108",                       # if/else zamiast wymuszonego wyrażenia warunkowego
-    "E741",                         # krótkie nazwy (l, i) w pętlach po danych pada
-    "RUF023",                       # __slots__ w kolejności pól, nie alfabetycznej
-    "SIM112",
-    "SIM905",                       # lista nazw programów jako tekst z .split() - czytelniej niż długa lista                       # %SystemRoot% - zmienne środowiska Windows nie rozróżniają wielkości liter
+    "RUF001", "RUF002", "RUF003",   # typographic characters (×, –, „”) in UI strings and comments are intended
+    "SIM105",                       # try/except/pass reads better than contextlib.suppress on hot paths
+    "SIM108",                       # plain if/else instead of a forced conditional expression
+    "E741",                         # short loop names (l, i) over pad data
+    "RUF023",                       # __slots__ follow the field order, not alphabetical order
+    "SIM112",                       # Windows environment variables (%SystemRoot%) are case-insensitive
+    "SIM905",                       # a program-name list as text + .split() is easier to read than a long list
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["E401", "E501", "F401", "E402", "E701", "E702", "E731", "B011", "F403", "F405", "SIM", "PERF", "RUF", "B"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true   # evdev, vgamepad, pythonnet, pycaw, PySide6 are optional or platform specific
+warn_unused_ignores = true
+warn_redundant_casts = true
+exclude = ["^tests/", "^tools/"]
+
+# Module-level state such as `states = None` is filled in by init() before any thread starts, so mypy sees an Optional it can
+# never narrow, and many empty containers carry no element type. Until those globals get real types, these error kinds are
+# off; everything else (arg-type, call-arg, attr-defined, return-value, ...) is enforced.
+disable_error_code = ["var-annotated", "has-type", "assignment", "union-attr"]
+
+# The window code is dynamic Qt (attributes like `self.sender` shadow QObject methods, signals connect by keyword), which the
+# PySide6 stubs reject, so Qt is seen as untyped; our own code around it is still checked.
+[[tool.mypy.overrides]]
+module = ["PySide6", "PySide6.*", "shiboken6", "shiboken6.*"]
+follow_imports = "skip"

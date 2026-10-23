@@ -343,7 +343,7 @@ def load(path, base=None):
                       for f in fields(Settings)))
 
 
-def save(s, path):
+def save(s, path) -> None:
     """Atomic write (a temporary file + replace)."""
     data = {"version": 1, "mouse": asdict(s.mouse), "master": {**asdict(s.master), "only_master": list(s.master.only_master)},
             "ui": asdict(s.ui), "lightbar": asdict(s.lightbar), "wol": asdict(s.wol), "log": asdict(s.log),
@@ -351,12 +351,12 @@ def save(s, path):
     write_json(path, data, indent=2, ensure_ascii=False)
 
 
-def on_change(fn):
+def on_change(fn) -> None:
     """Register fn(old, new), called after every apply() - e.g. rx_mouse sets the sensitivity of all pads."""
     _listeners.append(fn)
 
 
-def apply(s):
+def apply(s) -> None:
     """Make `s` the current settings with one assignment, then notify the listeners (a failing listener is only logged)."""
     global cur
     old, cur = cur, s

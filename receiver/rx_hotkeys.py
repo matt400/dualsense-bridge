@@ -32,7 +32,7 @@ class Slot:
     inputs and the hold timer."""
     __slots__ = ("down", "used", "out", "gen", "tap", "sup_share", "sup_dpad", "prev_mask", "prev_hat", "timer", "fresh")
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.down = self.used = self.out = self.sup_share = self.sup_dpad = False
         self.gen = 0                   # PS press number - a late timer of an old press does nothing
         self.tap = 0                   # PS pulse number - the end of an old pulse does not cut a new one short
@@ -44,12 +44,12 @@ class Slot:
 slots = []
 
 
-def init(n):
+def init(n) -> None:
     """Create `n` fresh slots."""
     slots[:] = [Slot() for _ in range(n)]
 
 
-def reset(i, keep=False):
+def reset(i, keep=False) -> None:
     """Slot disconnect / reset: ends all shortcuts in progress.
 
     keep: the pad stays connected (Test view boundary, output block) - the state is built from the inputs held right now
@@ -83,12 +83,12 @@ def forward(i, mask, hx, hy):
     return master.filter_inputs(i, mask, hx, hy)
 
 
-def mark_used(i):
+def mark_used(i) -> None:
     """PS served as a modifier (e.g. PS + touchpad click) - do not send PS to the game after it is released."""
     slots[i].used = True
 
 
-def on_state(i, mask, hx, hy):
+def on_state(i, mask, hx, hy) -> None:
     """Called from the network thread on every raw state change, BEFORE the output is recomputed."""
     if not C.PS_MODIFIER:
         return
@@ -132,18 +132,18 @@ def on_state(i, mask, hx, hy):
         h.sup_dpad = False
 
 
-def _combo(h, fn, *args):
+def _combo(h, fn, *args) -> None:
     """A PS + D-pad combination: mark PS as used, suppress the D-pad for the game and run the action in a thread."""
     h.used = h.sup_dpad = True
     _run(fn, *args)
 
 
-def _run(fn, *args):
+def _run(fn, *args) -> None:
     """Run actions in a separate thread: launching programs / SendInput must not stop packet reception."""
     threading.Thread(target=fn, args=args, daemon=True).start()
 
 
-def _refresh(i):
+def _refresh(i) -> None:
     """Recompute a slot's output after the shortcut state changed (the PS pulse)."""
     with S.lock:
         s = S.states[i]
@@ -153,7 +153,7 @@ def _refresh(i):
     S.notify(i)
 
 
-def _tap(i, refresh=True):
+def _tap(i, refresh=True) -> None:
     """Send a short PS pulse to the game (TAP_S long): set the output bit, recompute (optionally) and schedule its end."""
     h = slots[i]
     h.tap += 1
@@ -165,7 +165,7 @@ def _tap(i, refresh=True):
     t.start()
 
 
-def _untap(i, h, tap):
+def _untap(i, h, tap) -> None:
     """End of the PS pulse - ignored when a newer pulse started or the slot was reset in the meantime."""
     if slots[i] is not h or h.tap != tap:
         return                         # in the meantime a new pulse or a slot reset
@@ -173,7 +173,7 @@ def _untap(i, h, tap):
     _refresh(i)
 
 
-def _hold(i, gen):
+def _hold(i, gen) -> None:
     """Hold timer fired: run ps_hold_action (Game Bar via Win+G, or Steam Big Picture) unless PS was released, used or the action is
     none."""
     h = slots[i]
@@ -193,7 +193,7 @@ def _hold(i, gen):
     F.pulse(i, "action")
 
 
-def _share(i):
+def _share(i) -> None:
     """PS + Share: send the screenshot keys (Win+PrtScr, or Win+Alt+PrtScr for Game Bar capture)."""
     if not master.check(i, "screenshot"):
         return
@@ -207,7 +207,7 @@ def _share(i):
     F.pulse(i, "action")
 
 
-def _sens(i, factor):
+def _sens(i, factor) -> None:
     """PS + D-pad up / down: multiply the touchpad mouse sensitivity of this pad by `factor` within limits (not saved - Settings -> Mouse
     keeps it)."""
     if not master.check(i, "sens"):
@@ -218,7 +218,7 @@ def _sens(i, factor):
     F.pulse(i, "up" if new > old else "down")
 
 
-def _profile(i, step):
+def _profile(i, step) -> None:
     """PS + D-pad left / right: switch to the previous / next remap profile of this pad (until the game changes)."""
     if not master.check(i, "profile"):
         return

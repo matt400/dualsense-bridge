@@ -47,12 +47,12 @@ class PcClock:
     SYNC_N, SYNC_MAX_AGE_S = 12, 3.0
     JUMP_US = 1_000_000               # an offset that changed by this much = another receiver process (another PC clock)
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.samples = collections.deque(maxlen=self.SYNC_N)   # (rtt ns, offset µs)
         self.offset_us = None
         self.t_sync = 0.0
 
-    def pong(self, t0_ns, pc_us, t3_ns):
+    def pong(self, t0_ns, pc_us, t3_ns) -> None:
         """Feed one pong2 measurement into the estimator; implausible RTTs are discarded."""
         rtt = t3_ns - t0_ns
         if rtt < 0 or rtt > 1_000_000_000:
@@ -94,7 +94,7 @@ def rtt_x10():
     return min(RTT_NONE - 1, round(sorted(recent_rtt)[len(recent_rtt) // 2] * 10))
 
 
-def init():
+def init() -> None:
     """Create the packet codec (HMAC key, v3 freshness token from the PC clock, replay-state file) and warn if there is no key."""
     global codec
     codec = Codec(C.KEY, token=lambda: pc_clock.now_ms(), now_ms=clock.ms32,
@@ -104,7 +104,7 @@ def init():
               "(update, Bluetooth pairing, pad power-off). Set the same key on both sides (docs/SECURITY.md)")
 
 
-def open_sock(loop):
+def open_sock(loop) -> bool:
     """(Re)create the UDP socket connected to the receiver and register it with the event loop; True on success.
 
     The previous socket, if any, is unregistered and closed first. Two priority hints are set on a best-effort basis:
@@ -137,7 +137,7 @@ def open_sock(loop):
     return True
 
 
-def close_sock():
+def close_sock() -> None:
     """Unregister and close the socket (safe to call with no loop or no socket)."""
     global sock
     if sock is not None:
@@ -149,7 +149,7 @@ def close_sock():
         sock = None
 
 
-def send_raw(data):
+def send_raw(data) -> None:
     """Send an already packed datagram. A full buffer or a refused connection just drops the packet (UDP);
     any other OS error marks the socket as bad so that sock_keeper recreates it."""
     global sock_bad, tx_count
@@ -165,14 +165,14 @@ def send_raw(data):
         sock_bad = True
 
 
-def emit(ptype, idx, *vals):
+def emit(ptype, idx, *vals) -> None:
     """Pack a packet of type ptype for slot idx with the given field values and send it."""
     data = codec.pack(ptype, idx, *vals)
     if data is not None:              # None: v3 without the PC clock (before the first pong2) - the receiver would reject it anyway
         send_raw(data)
 
 
-def emit_repeat(ptype, idx, *vals, delays=REPEAT_DELAYS):
+def emit_repeat(ptype, idx, *vals, delays=REPEAT_DELAYS) -> None:
     """Send a packet that must not get lost (bye): the same one (same number - the receiver handles it once) now and
     repeated after each of `delays` seconds. Three copies at once were lost together in a single burst of losses
     (interference, a clogged queue), so the repeats are spread in time with loop.call_later."""
@@ -190,7 +190,7 @@ def emit_repeat(ptype, idx, *vals, delays=REPEAT_DELAYS):
         loop.call_later(d, send_raw, data)
 
 
-def on_readable():
+def on_readable() -> None:
     """Socket read callback: drain every waiting datagram and dispatch it by packet type.
 
     Packets that fail authentication/parsing (codec.parse returns None) are ignored. Commands, feedback, trigger
@@ -247,7 +247,7 @@ def new_receiver(now=None):
     return scfg_t and (time.monotonic() if now is None else now) - scfg_t < NEW_RECEIVER_S
 
 
-def _receiver_watch(alive, was):
+def _receiver_watch(alive, was) -> None:
     """On every ping: flush events to the receiver while it answers; losing the answer is itself an event (delivered after it returns)."""
     if alive:
         events.flush(emit)
@@ -255,7 +255,7 @@ def _receiver_watch(alive, was):
         events.warn(E_NO_RECEIVER)
 
 
-async def pinger():
+async def pinger() -> None:
     """Main housekeeping loop, four iterations per second.
 
     Each iteration sends a ping carrying the sender's clock (the pong gives the RTT), plus - while an HMAC key is set
@@ -308,7 +308,7 @@ async def pinger():
                 print("RTT: no pongs in last 5 s")
 
 
-async def sock_keeper():
+async def sock_keeper() -> None:
     """Once a second make sure a usable socket exists (create it, or recreate it after a send error).
 
     Logs only on transitions (network up -> down and back) so a long outage does not flood the log, and raises an
