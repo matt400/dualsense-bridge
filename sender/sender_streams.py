@@ -19,7 +19,7 @@ def _eviocgmtslots(nslots):
     return (2 << 30) | ((4 * (nslots + 1)) << 16) | (ord("E") << 8) | 0x0A
 
 
-def read_mt(dev, nslots=2):
+def read_mt(dev, nslots: int=2):
     """Read the current finger state straight from the kernel: [(tracking_id, x, y), ...] for slots 0..nslots-1.
 
     Needed after SYN_DROPPED - the events were lost, but the kernel still knows which fingers are down and where.

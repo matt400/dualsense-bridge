@@ -91,7 +91,7 @@ class GyroCal:
         return CAL_OK, [sum(a) / len(a) for a in axes]
 
 
-def report(c, status, repeat=False) -> None:
+def report(c, status, repeat: bool=False) -> None:
     """Send a calres packet to the receiver: status, the saved bias and the bias the sender is using right now.
 
     With repeat=True a calibration result is sent two more times (BURST_DELAYS) with the same values - a lost packet

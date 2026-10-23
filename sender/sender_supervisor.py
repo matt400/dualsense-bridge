@@ -232,7 +232,7 @@ def _reject(key) -> None:
     events.warn(E_NO_SLOT, 255, key)
 
 
-def incomplete(c):
+def incomplete(c) -> bool:
     """True while a pad still misses its motion or touchpad device (they can appear a moment after the pad)."""
     return c.motion_dev is None or c.touch_dev is None
 
@@ -321,7 +321,7 @@ class DevWatch:
         self.fd = None
         self.event = asyncio.Event()
 
-    def start(self, path=b"/dev/input") -> bool:
+    def start(self, path: bytes=b"/dev/input") -> bool:
         """Start watching the directory for created / changed nodes; returns False if inotify is unavailable."""
         try:
             import ctypes

@@ -21,7 +21,7 @@ _queue = collections.deque(maxlen=KEEP)      # [number, time, level, code, slot,
 _next = random.getrandbits(16)
 
 
-def add(level, code, idx=255, arg="") -> None:
+def add(level, code, idx: int=255, arg: str="") -> None:
     """Queue an event for the receiver (no-op while events are disabled).
 
     Every event gets a 16-bit sequence number (so the receiver can drop duplicates) and a monotonic timestamp (so the
@@ -35,17 +35,17 @@ def add(level, code, idx=255, arg="") -> None:
     _queue.append([_next, time.monotonic(), level, code, idx, utf8_field(arg, ARG_MAX, "…"), SENDS])   # cut on a character boundary
 
 
-def info(code, idx=255, arg="") -> None:
+def info(code, idx: int=255, arg: str="") -> None:
     """Queue an informational event."""
     add(EV_INFO, code, idx, arg)
 
 
-def warn(code, idx=255, arg="") -> None:
+def warn(code, idx: int=255, arg: str="") -> None:
     """Queue a warning event."""
     add(EV_WARN, code, idx, arg)
 
 
-def error(code, idx=255, arg="") -> None:
+def error(code, idx: int=255, arg: str="") -> None:
     """Queue an error event."""
     add(EV_ERROR, code, idx, arg)
 

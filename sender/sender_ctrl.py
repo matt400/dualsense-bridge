@@ -163,7 +163,7 @@ class Ctrl:
                 self.t_event = sec * 1_000_000 + e.usec
                 self.ev_bt = self.bt_us
 
-    def send_state(self, force=False) -> None:
+    def send_state(self, force: bool=False) -> None:
         """Pack and send the full pad state, unless nothing changed since the last packet (force=True sends anyway).
 
         The state key is a tuple of everything that goes into the packet. A repeat of an identical state (heartbeat,
@@ -211,7 +211,7 @@ class Ctrl:
         if self.pending:
             self.send_state()
 
-    def send_touch(self, force=False) -> None:
+    def send_touch(self, force: bool=False) -> None:
         """Touch is merged every touch_coalesce_ms; a change rejected by the window is not lost -
         it is sent late (trailing flush), so e.g. lifting a finger does not wait for the heartbeat."""
         now = time.monotonic()
@@ -262,7 +262,7 @@ class Ctrl:
         self.send_click()
 
     # ---- feedback from the PC ----
-    def apply_feedback(self, small, large, r, g, b, remember=True) -> None:
+    def apply_feedback(self, small, large, r, g, b, remember: bool=True) -> None:
         """Apply rumble (small and large motor) and the lightbar colour sent by the PC.
 
         With remember=True the values are stored as the "last PC state" (and cancel a running local flash, so the flash

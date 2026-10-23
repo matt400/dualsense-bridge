@@ -20,7 +20,7 @@ import struct
 _qos = None        # the open /dev/cpu_dma_latency - kept open until the process ends
 
 
-def hold_cpu_latency(us, path="/dev/cpu_dma_latency") -> str | None:
+def hold_cpu_latency(us, path: str="/dev/cpu_dma_latency") -> str | None:
     """PM QoS: cap the CPU wake-up latency at `us` microseconds. Returns a description, or None (no permission / no file).
 
     The kernel honours the request only while the file descriptor stays open, so the file is stored in a module
@@ -42,7 +42,7 @@ def hold_cpu_latency(us, path="/dev/cpu_dma_latency") -> str | None:
     return f"CPU wake-up latency <= {us} us"
 
 
-def fast_cpus(sys_root="/sys"):
+def fast_cpus(sys_root: str="/sys"):
     """Return the set of CPUs with the highest capacity (sysfs cpu_capacity).
 
     On big.LITTLE SoCs every core reports a relative capacity; the cores sharing the maximum value are the "big" ones.
@@ -61,7 +61,7 @@ def fast_cpus(sys_root="/sys"):
     return {cpu for cpu, c in cap.items() if c == top}
 
 
-def pin_fast_cpus(sys_root="/sys"):
+def pin_fast_cpus(sys_root: str="/sys"):
     """Restrict this process to the fast cores that it is allowed to use; returns a description or None.
 
     The fast set is intersected with the current affinity mask, so cgroup/cpuset limits are respected. Nothing is

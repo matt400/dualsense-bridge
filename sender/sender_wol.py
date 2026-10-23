@@ -130,7 +130,7 @@ def apply_scfg(flags, mac, bcast, button, hold_ms) -> bool:
 
 
 # ---------------- addresses ----------------
-def arp_lookup(ip, path="/proc/net/arp"):
+def arp_lookup(ip, path: str="/proc/net/arp"):
     """MAC for an IP from the kernel ARP table ("" = no entry / incomplete entry).
 
     Each row of /proc/net/arp is "IP  HW type  Flags  HW address ..."; the flag bit 0x2 (ATF_COM) marks a complete
