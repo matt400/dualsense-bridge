@@ -135,12 +135,13 @@ ok("klik w pad: wybór części, przycisk, spust, gałka (strefa, krzywa, zamian
 
 # ---------- gyro ----------
 win.tabs.setCurrentIndex(1)
-assert not win.gyro_page.body.isVisible() and win.gyro_page.off_hint.isVisible()
+gp = win.gyro_page   # the aiming settings sit in a collapsed category: visibility is checked relative to the page
+assert not gp.body.isVisibleTo(gp) and gp.off_hint.isVisibleTo(gp)
 win.gyro_page.mode.changed.emit("stick"); win.gyro_page.hold.changed.emit("l2"); pump(20)
-assert win.gyro_page.body.isVisible() and win.gyro_page.anti.isVisible()
+assert gp.body.isVisibleTo(gp) and gp.anti.isVisibleTo(gp)
 win.gyro_page.sens.slider.setValue(round((1.75 - 0.1) / 0.05)); pump(300)
 assert store.get(base)["gyro"]["mode"] == "stick" and store.get(base)["gyro"]["hold"] == "l2" and store.get(base)["gyro"]["sens"] == 1.75
-win.gyro_page.mode.changed.emit("mouse"); pump(20); assert not win.gyro_page.anti.isVisible()
+win.gyro_page.mode.changed.emit("mouse"); pump(20); assert not gp.anti.isVisibleTo(gp)
 win.gyro_page.mode.changed.emit("stick"); pump(300)
 state(0, lt=200, gyro=(0, -1024 * 40, 0)); win.live_tick()
 assert "Gyro active" in win.gyro_page.live.text(), win.gyro_page.live.text()
