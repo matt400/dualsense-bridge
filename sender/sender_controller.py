@@ -10,7 +10,8 @@ receiver on the PC; feedback (rumble, lightbar, adaptive triggers) travels back 
 Modules: proto.py (shared with the receiver), sender_config.py, sender_state.py, sender_net.py,
          sender_ctrl.py, sender_streams.py, sender_supervisor.py, sender_control.py, sender_rumble.py (rumble),
          sender_wol.py (Wake-on-LAN: PS + button while the receiver is silent), sender_events.py (events for the PC window),
-         sender_bt.py (phone Bluetooth driven from the receiver window: scan, pair, connect - busctl / bluetoothctl).
+         sender_bt.py (phone Bluetooth driven from the receiver window: scan, pair, connect - busctl / bluetoothctl),
+         sender_batt.py (the battery of the device the sender runs on, shown in the window).
 Configuration: --config file.toml|json (keys as in DEFAULTS); CLI flags override the file.
 --stats also prints the real pad report rate and traffic rate (Hz, p99/max gaps).
 Switching a pad off: the "Off" button in the receiver window, or automatically after idle_off_min minutes without

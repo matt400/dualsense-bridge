@@ -139,6 +139,7 @@ EN: Final[dict[str, str]] = {
     "●  Nadajnik online": "●  Sender online",
     "●  Nadajnik offline": "●  Sender offline",
     " (ładuje się)": " (charging)",
+    "Bateria nadajnika: {pct}%": "Sender battery: {pct}%",
     "Niska bateria": "Low battery",
     "DualSense bridge - NISKA BATERIA": "DualSense bridge - LOW BATTERY",
     "Nadajnik": "Sender",

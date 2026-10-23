@@ -53,7 +53,7 @@ from rx_qt_screens import ScreenPlacement
 from rx_qt_style import DIM, LEVEL, SEGMENT, TV_SCALE, apply_theme, px, set_prop
 from rx_qt_test import TestPanel
 from rx_qt_tv import PadNav
-from rx_qt_widgets import BatteryBar, ConfirmButton, Segmented, SegmentBar, button, icon_button, icon_label, label
+from rx_qt_widgets import BatteryBar, BatteryPill, ConfirmButton, Segmented, SegmentBar, button, icon_button, icon_label, label
 
 LIVE_MS, SLOW_MS, APPLY_MS = 33, 400, 150
 UPDATE_WAIT_S = 60.0       # how long at most we wait for the sender update result (git pull on the phone)
@@ -500,8 +500,7 @@ class MainWindow(ScreenPlacement):
         self.version_lbl = label(_("wersja {v}").format(v=rx_update.describe(commit, ts)), "small")
         self.version_lbl.setToolTip(_("Ostatnia zmiana: {s}").format(s=subject) if subject else
                                     _("Wersja nieznana - folder nie jest klonem git"))
-        self.sender = label("")
-        self.sender.setObjectName("pill")
+        self.sender = BatteryPill(lambda: not rx_games.in_game())     # no wave animation while a game is in the foreground
         self.bt_btn, self._bt_refresh = indicator_button(self.toggle_bt)   # the sender's Bluetooth: a status dot + the panel
         self.keys_btn = icon_button("keys", _("Skróty pada") + " - " + _("Wszystkie skróty pada w tym receiverze"))
         self.keys_btn.clicked.connect(self.toggle_keys)
@@ -813,17 +812,24 @@ class MainWindow(ScreenPlacement):
             self.settings_dlg.applied.connect(self.slow_tick)
         self.settings_dlg.present()
 
-    def _sender_label(self, online: bool, build: tuple[Any, ...] | None) -> None:
-        """"● Sender online (ip) · a1b2c3d"; a different version than the receiver -> yellow and a hint to update."""
+    def _sender_label(self, online: bool, build: tuple[Any, ...] | None, batt: tuple[int, bool] | None = None) -> None:
+        """"● Sender online (87%) · a1b2c3d"; a different version than the receiver -> yellow and a hint to update.
+
+        `batt` = (percent, charging) of the sender device's own battery, None when it has none (a Raspberry Pi) or is an
+        older sender: the pill then shows no percentage and no charge fill.
+        """
         if not online:
             self._sender_stale = None
             self.sender.setText(_("●  Nadajnik offline"))
             self.sender.setToolTip("")
+            self.sender.set_battery(None)
             set_prop(self.sender, "level", "bad")
             return
         src = S.peer[0] if S.peer else ""
         mine = rx_update.version()[0]
         text = _("●  Nadajnik online")                 # the address is in the tooltip - the text fits at 1000 px
+        if batt:
+            text += f" ({batt[0]}%)"
         if build and build[0]:
             text += f"  ·  {build[0]}"
         stale = bool(build and build[0] and mine and build[0] != mine)
@@ -832,6 +838,11 @@ class MainWindow(ScreenPlacement):
                    s=rx_update.describe(*build), r=rx_update.describe(*rx_update.version()[:2])) if build and stale else
                _("Nadajnik: wersja {s}").format(s=rx_update.describe(*build)) if build and build[0] else
                _("Nadajnik nie podaje wersji (starsza wersja albo nie klon git)"))
+        if batt:
+            tip = _("Bateria nadajnika: {pct}%").format(pct=batt[0]) + (_(" (ładuje się)") if batt[1] else "") + "\n" + tip
+            self.sender.set_battery(batt[0], LEVEL[ST.battery_level(batt[0], False, ST.low_pct())], batt[1])   # the fill: the level, not "charging"
+        else:
+            self.sender.set_battery(None)
         self.sender.setText(text)
         self.sender.setToolTip((_("Adres nadajnika: {ip}").format(ip=src) + "\n" if src else "") + tip)
         set_prop(self.sender, "level", "warn" if stale else "ok")
@@ -1187,9 +1198,10 @@ class MainWindow(ScreenPlacement):
         self._pads_connected()
         online = S.sender_online(now)
         build = S.sender_build[:2] if S.sender_build else None
-        if (online, build) != self.online:
-            self.online = (online, build)
-            self._sender_label(online, build)
+        batt = S.sender_batt if online else None
+        if (online, build, batt) != self.online:
+            self.online = (online, build, batt)
+            self._sender_label(online, build, batt)
         self._refresh_banner()
         self._bt_refresh(now)
         low_any, tips = False, []

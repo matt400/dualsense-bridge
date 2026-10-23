@@ -25,6 +25,10 @@
     nadajnika** (domyślnie wyłączone): połączenie pada z nadajnikiem, wysłany Wake-on-LAN, utrata kontaktu z receiverem,
     błędy - nadajnik trzyma je, póki receiver nie odpowiada, więc np. Wake-on-LAN pojawia się po starcie komputera
     z prawdziwą godziną. Dziennik jest tylko w pamięci (restart go czyści), wysokość panelu da się przeciągnąć;
+  - **pigułka nadajnika** w nagłówku („● Nadajnik online”): gdy urządzenie z nadajnikiem ma baterię (telefon, laptop),
+    w nawiasie widać procenty, a pigułka jest wypełniona do poziomu naładowania (zielona, bursztynowa do 30 %, czerwona
+    przy niskim); podczas ładowania po jej górnej krawędzi płynie fala. Raspberry Pi i inne urządzenia bez baterii
+    nie pokazują procentów; starszy nadajnik po prostu ich nie wysyła;
   - na środku rysunek pada na żywo: kliknij przycisk, spust albo gałkę, żeby ją zremapować lub dostroić;
   - po prawej profil (domyślny / per gra), zakładki **Selected**, **Gyro**, **Changes** i przycisk **Save** (Ctrl+S);
   - remapowanie przycisków i gałek, celowanie żyroskopem (prawa gałka / mysz); strefy martwe, krzywe i

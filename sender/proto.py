@@ -45,6 +45,9 @@ unknown length, so a variant only goes to a side that is known to understand it)
                          while the PC is off there is nowhere else to get it; an older sender rejects the length
   build2 (type 13) "7sIB6s4s" sender -> PC: build + the PC's MAC and broadcast that Wake-on-LAN will use (zeros = unknown);
                          only to a receiver from which scfg arrived (an older one would reject the length and would not know the version)
+  build3 (type 13) "7sIB6s4sB" build2 + the battery of the sender's own device (a phone, a laptop): bits 0-6 the percentage,
+                         bit 7 = charging (BATT_CHARGING). Only from a sender device that has a battery, and only to a receiver
+                         that announced SCFG_BATT in scfg; otherwise build2 / build as before
   calres (type 11) "BB3i3iI" sender -> PC: the answer to CMD_GYRO_CAL - state CAL_*, flags CALF_*, the saved gyro bias (x, y, z
                          in evdev units), the bias used now (from startup calibration / autobias), the save time (unix);
                          only in answer to a command (a v9+ receiver sends it, so it knows this variant)
@@ -157,11 +160,13 @@ KEY_MISMATCH_S: Final = 5.0     # for this long after a packet with a different 
  T_BUILD, T_UPDMSG, T_TRIG) = range(16)
 T_STATE2, T_PONG2, T_SCFG, T_CALRES, T_BUILD2, T_TRIG2 = 0x101, 0x107, 0x10A, 0x10B, 0x10D, 0x10F   # longer variants
 T_TRIG3 = 0x20F                                                     # trigger effects from the profile and from the game (v11+)
+T_BUILD3 = 0x30D                                                    # build2 + the sender device's battery
 T_BTDEV, T_BTSTATE, T_BTCMD = 0x109, 0x10C, 0x20A                                                 # Bluetooth (v10+)
 T_BTCTRL = 0x209                                                    # the sender's Bluetooth controllers (the choice from the window)
 WIRE: Final[dict[int, int]] = {
     T_STATE2: T_STATE, T_PONG2: T_PONG, T_SCFG: T_CMD, T_CALRES: T_INFO, T_BUILD2: T_BUILD, T_TRIG2: T_TRIG,
     T_BTDEV: T_IDENT, T_BTSTATE: T_VERSION, T_BTCMD: T_CMD, T_BTCTRL: T_IDENT, T_TRIG3: T_TRIG,
+    T_BUILD3: T_BUILD,
 }
 FRESH_EXEMPT = frozenset({T_PING})
 
@@ -189,6 +194,7 @@ NO_PAD: Final = 255                                     # controller idx of a pa
 IDENT_LEN: Final = 17                                   # the ident packet's text field: the pad's MAC (or a short hash)
 BATT_UNKNOWN: Final = 255                               # the state packet's battery %: unknown (USB pad, no power-supply entry)
 STATE_CHARGING: Final = 0x01                            # bit 0 of the state packet's flags byte: charging or full
+BATT_CHARGING: Final = 0x80                             # bit 7 of build3's battery byte: the sender device is charging (bits 0-6 = %)
 MOUSE_TAP: Final = 0x01                                 # mouse packet flags: tap = left button ...
 MOUSE_SCROLL: Final = 0x02                              # ... dx, dy are a two-finger scroll, not cursor movement ...
 MOUSE_TAP_RIGHT: Final = 0x04                           # ... two-finger tap = right button ...
@@ -209,7 +215,7 @@ CALF_STORED: Final = 1                                  # calres flag: the sende
 # the sender's update state (build packet): none, running, no change, updated (restart), errors
 UPD_NONE, UPD_RUNNING, UPD_NO_CHANGE, UPD_DONE, UPD_NOT_GIT, UPD_NO_GIT, UPD_FAILED = range(7)
 RTT_NONE: Final = 0xFFFF
-SCFG_WOL, SCFG_EVENTS = 1, 2                            # scfg packet flags: Wake-on-LAN, events for the log
+SCFG_WOL, SCFG_EVENTS, SCFG_BATT = 1, 2, 4                # scfg packet flags: Wake-on-LAN, events for the log, build3 understood
 EV_INFO, EV_WARN, EV_ERROR = range(3)                   # event level (event packet)
 # the sender's event codes (event packet) - the text in the receiver window (rx_events.SENDER_TEXT), the argument in {arg}
 (E_START, E_PAD_ON, E_PAD_OFF, E_POWER_OFF, E_WOL, E_WOL_FAIL, E_NO_RECEIVER, E_NET_DOWN, E_ERROR,
@@ -273,6 +279,7 @@ BODY: Final[dict[int, struct.Struct]] = {
     T_SCFG: struct.Struct("!B6s4sBH"),          # SCFG_* flags, the PC's MAC, broadcast, the combination button bit, the hold in ms
     T_CALRES: struct.Struct("!BB3i3iI"),        # state CAL_*, flags CALF_*, the saved bias xyz, the current bias xyz, the save time
     T_BUILD2: struct.Struct("!7sIB6s4s"),       # build + the PC's MAC and broadcast that Wake-on-LAN will use
+    T_BUILD3: struct.Struct("!7sIB6s4sB"),      # build2 + the sender device's battery (% | BATT_CHARGING)
     T_TRIG2: struct.Struct("!12B"),             # effects L2, R2 (mode, a, b, c) + game rumble (flags, %, Hz, 0)
     T_TRIG3: struct.Struct("!12B11s11sB"),      # trig2 from the profile + the raw game effects L2, R2 + TRG3_* flags
     T_BTCMD: struct.Struct("!BB6s"),            # operation BT_*, argument, MAC

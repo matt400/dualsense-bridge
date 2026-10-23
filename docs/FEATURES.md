@@ -26,6 +26,10 @@
     (off by default): pad connecting to the sender, Wake-on-LAN sent, lost contact with the receiver, errors - the
     sender keeps them while the receiver doesn't answer, so e.g. Wake-on-LAN appears after the PC starts with the real
     time. The log is in memory only (a restart clears it); the panel height can be dragged;
+  - the **sender pill** in the header ("● Sender online"): when the sender device has a battery (a phone, a laptop), the
+    percentage is shown in brackets and the pill is filled to the charge level (green, amber up to 30 %, red when low);
+    a wave runs along its top edge while the device charges. A Raspberry Pi or another device without a battery shows
+    no percentage; an older sender simply doesn't send it;
   - in the middle, a live pad drawing: click a button, trigger or stick to remap or tune it;
   - on the right, the profile (default / per game), the **Selected**, **Gyro**, **Changes** tabs and the **Save**
     button (Ctrl+S);

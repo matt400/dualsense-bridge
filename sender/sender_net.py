@@ -11,8 +11,8 @@ from typing import Any, Final
 
 import sender_events as events
 import sender_state as state
-from proto import (BODY, E_NET_DOWN, E_NO_RECEIVER, NS_PER_MS, RTT_NONE, UINT32_MASK, Codec, EpochClock, SeqFilter, T_BTCMD,
-                   T_CMD, T_FB, T_PING, T_PONG, T_PONG2, T_SCFG, T_TRIG, T_TRIG2, T_TRIG3)
+from proto import (BODY, E_NET_DOWN, E_NO_RECEIVER, NS_PER_MS, RTT_NONE, SCFG_BATT, UINT32_MASK, Codec, EpochClock, SeqFilter,
+                   T_BTCMD, T_CMD, T_FB, T_PING, T_PONG, T_PONG2, T_SCFG, T_TRIG, T_TRIG2, T_TRIG3)
 from sender_config import C
 
 # the packet header is 4 bytes (see proto.HDR); the body of every received packet is unpacked right after it
@@ -50,6 +50,7 @@ on_triggers: Callable[[int, tuple[Any, ...]], None] | None = None   # callback(i
 on_scfg: Callable[..., None] | None = None          # callback(flags, mac, broadcast, button, hold ms) set in main
 on_bt: Callable[..., None] | None = None            # callback(BT_* operation, argument, MAC 6 B) set in main (sender_bt)
 scfg_t = 0.0                          # when the scfg packet arrived - the receiver knows build2 and events
+batt_t = 0.0                          # when an scfg packet with SCFG_BATT arrived - the receiver knows build3
 recent_rtt: collections.deque[float] = collections.deque(maxlen=RTT_RECENT)   # latest measurements - for the info packet
 last_pong = 0.0
 
@@ -231,13 +232,19 @@ def _on_pong(data: bytes) -> None:
 
 
 def _on_scfg(sq: int, data: bytes) -> None:
-    """Take the Wake-on-LAN settings from the receiver; the arrival time also tells that it knows build2 and events."""
-    global scfg_t
+    """Take the Wake-on-LAN settings from the receiver; the arrival time also tells that it knows build2 and events.
+
+    The SCFG_BATT flag says the receiver also knows build3 (the sender device's battery); an older one never sets it.
+    """
+    global scfg_t, batt_t
     now = time.monotonic()
     if fb_filter.fresh(("scfg",), sq, now):
         scfg_t = now
+        values = BODY[T_SCFG].unpack_from(data, HEADER_LEN)
+        if values[0] & SCFG_BATT:
+            batt_t = now
         if on_scfg is not None:
-            on_scfg(*BODY[T_SCFG].unpack_from(data, HEADER_LEN))
+            on_scfg(*values)
 
 
 def _on_control(t: int, idx: int, sq: int, data: bytes) -> None:
@@ -294,6 +301,11 @@ def on_readable() -> None:
 def new_receiver(now: float | None = None) -> bool:
     """Return True if the receiver sent scfg recently - it then knows the build2 and event packets."""
     return bool(scfg_t) and (time.monotonic() if now is None else now) - scfg_t < NEW_RECEIVER_S
+
+
+def batt_receiver(now: float | None = None) -> bool:
+    """Return True if the receiver announced SCFG_BATT recently - it then knows the build3 packet (the device's battery)."""
+    return bool(batt_t) and (time.monotonic() if now is None else now) - batt_t < NEW_RECEIVER_S
 
 
 def _receiver_watch(alive: bool, was: bool) -> None:
