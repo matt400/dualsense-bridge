@@ -284,6 +284,9 @@ DS4_CABLE_BIT: Final = 0x10            # the DS4 battery byte: a cable is plugge
 DS4_CABLE_FULL_LEVEL: Final = 11       # ... and the level scale is 0..10, 11 = full
 DS4_CABLE_MAX_LEVEL: Final = 10
 DS4_BATT_MAX: Final = 8                # without a cable the level is 0..8
+DS5_BATT_FULL_LEVEL: Final = 10        # the DualSense battery byte: level 0..10 in the low nibble ...
+DS5_BATT_CHARGING: Final = 0x10        # ... state in the high nibble: discharging 0x00 / charging / full
+DS5_BATT_FULL: Final = 0x20
 DSU_BATT_STEPS: Final = ((90, 5), (60, 4), (30, 3), (10, 2))     # (battery % from, DSU level); below the last: 1
 
 
@@ -297,6 +300,21 @@ def batt_codes(pct: int, flags: int) -> tuple[int, int]:
         return (DSU_BATT_FULL if full else DSU_BATT_CHARGING), DS4_CABLE_BIT | level
     dsu = next((level for threshold, level in DSU_BATT_STEPS if pct >= threshold), 1)
     return dsu, min(DS4_BATT_MAX, pct * DS4_BATT_MAX // PCT_MAX)
+
+
+def ds5_batt_byte(pct: int, flags: int) -> int:
+    """Return the DualSense battery byte (level 0..10 + state) straight from the pad's percentage.
+
+    The pad itself reports a 0..10 level and the sender's value is level * 10 + 5 (hid-playstation), so pct // 10 gives
+    the level back exactly. Going through the DS4 0..8 scale (batt_codes) lost it: 35 % came out as 25 %, 75 % as 85 %.
+    An unknown level (a USB pad) looks like a full pad on a cable, as before.
+    """
+    if pct > PCT_MAX:
+        return DS5_BATT_FULL_LEVEL | DS5_BATT_FULL
+    level = min(DS5_BATT_FULL_LEVEL, pct // 10)
+    if not flags & STATE_CHARGING:
+        return level
+    return level | (DS5_BATT_FULL if pct >= PCT_MAX else DS5_BATT_CHARGING)
 
 
 def clear_slot(i: int, forget_id: bool = False) -> None:
@@ -385,6 +403,7 @@ def _on_state(t: int, i: int, data: bytes, arr: int) -> None:
     lx, ly, lt, rx, ry, rt, hat_x, hat_y, buttons, batt_pct, batt_flags = v[:STATE_HEAD]
     mask = buttons & MASK_ALL
     batt_dsu, batt_ds4 = batt_codes(batt_pct, batt_flags)
+    batt_ds5 = ds5_batt_byte(batt_pct, batt_flags)
     S.batt_info[i] = (batt_pct, batt_flags)
     hx, hy = clamp(hat_x, -1, 1), clamp(hat_y, -1, 1)
     dig = (mask, hx, hy, lt >> 5, rt >> 5)   # triggers to 1/8 precision (the trigger hysteresis in the console mode)
@@ -412,7 +431,7 @@ def _on_state(t: int, i: int, data: bytes, arr: int) -> None:
             p.append(s["rawst"])
         s["acc"], s["gyro"] = v[STATE_ACC], v[STATE_GYRO]      # before recompute - the gyro affects the right stick / the mouse
         S.recompute(s, S.remap_maps[i])
-        s["batt_dsu"], s["batt_ds4"] = batt_dsu, batt_ds4
+        s["batt_dsu"], s["batt_ds4"], s["batt_ds5"] = batt_dsu, batt_ds4, batt_ds5
         s["ts"] = now_us         # the arrival time of the sample - better for DSU than the packet build time (jitter)
         if s["lat"] is None and not blocked:   # measuring the oldest change waiting for a report (rx_ds4 - ViGEm)
             s["lat"] = lat

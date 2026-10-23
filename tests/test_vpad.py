@@ -214,7 +214,7 @@ check(rx_hm.find_dll(d) == os.path.join(d, rx_hm.DLL), "hm_dll może wskazywać 
 # ---------- raport DualSense ----------
 s = S.new_state()
 s.update(lx=1, ly=2, rx=3, ry=4, lt=5, rt=255, hx=1, hy=0, mask=BIT[304] | BIT[310] | R.PS_BIT,
-         gyro=(0, 0, 0), acc=(1, 2, 3), touch=((1, 7, 1919, 942), (0, 0, 0, 0)), tp=True, batt_ds4=0x10 | 5)
+         gyro=(0, 0, 0), acc=(1, 2, 3), touch=((1, 7, 1919, 942), (0, 0, 0, 0)), tp=True, batt_ds5=0x10 | 5)
 b = R.build_ds5_report(s, 300, False)
 check(len(b) == 63 and b[:7] == bytes((1, 2, 3, 4, 5, 255, 300 & 0xFF)), f"gałki, spusty, licznik: {b[:7].hex()}")
 check(b[7] == (2 | 0x20) and b[8] == (0x01 | 0x04 | 0x08) and b[9] == 0x03, f"D-pad + krzyżyk, L1 + L2 i R2 cyfrowe, PS + klik: {b[7:10].hex()}")
@@ -223,10 +223,13 @@ check(b[32] == 7 and b[33] == 0x7F and (b[34] & 0x0F) == 0x07 and ((b[34] >> 4) 
       "dotyk w skali DualSense (1920x1080)")
 check(b[36] & 0x80, "drugi palec nieaktywny")
 check(b[52] == 0x15, f"bateria: poziom 5, ładowanie: {b[52]:#x}")
-check(R.ds5_battery(0x10 | 11) == 0x2A, "pełna przy kablu")
 import rx_net as N
-check([R.ds5_battery(N.batt_codes(p, 0)[1]) for p in (100, 50, 0)] == [10, 5, 0],
-      "bez kabla skala DS4 0..8 -> DualSense 0..10 (100 % = poziom 10, nie 8 = 85 % w grze)")
+check(N.ds5_batt_byte(100, 1) == 0x2A, "pełna przy kablu")
+# bateria pada w krokach co 10 % (jądro: poziom * 10 + 5) wraca w grze bez zmian: 35 % nie spada do 25 %, 75 % nie rośnie do 85 %
+check([N.ds5_batt_byte(p, 0) & 0x0F for p in range(5, 100, 10)] == list(range(10)), "poziom = pct // 10 dla każdego kroku pada")
+check([N.ds5_batt_byte(p, 0) * 10 + 5 for p in (35, 75)] == [35, 75], "35 % i 75 % bez przekłamania")
+check(N.ds5_batt_byte(100, 0) == 10 and N.ds5_batt_byte(0, 0) == 0, "100 % = poziom 10, 0 % = poziom 0")
+check(N.ds5_batt_byte(55, 1) == 0x15 and N.ds5_batt_byte(255, 0) == 0x2A, "ładowanie; nieznany poziom (pad na USB) = pełny")
 b = R.build_ds5_report(s, 1, True)
 check(b[9] == 0x01 and b[32] & 0x80, "tryb myszy: bez kliku touchpada i dotyku w grze")
 

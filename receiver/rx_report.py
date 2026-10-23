@@ -80,22 +80,6 @@ def build_report(s: Mapping[str, Any], counter: int, mmode: bool, b: bytearray |
 # ---------------- DualSense (HIDMaestro) ----------------
 DS5_TOUCH_H: Final = 1079        # touch in the state uses the DS4 scale (1920x943) - the DualSense has 1920x1080
 DS4_TOUCH_MAX_Y: Final = 942    # the last line of the DS4 touchpad (943 lines)
-DS5_BATT_FULL_LEVEL: Final = 10
-_DS5_BATT: Final = {0: 0x00, 1: 0x10, 2: 0x20}    # battery state in the upper nibble: discharging / charging / full
-
-
-DS4_BATT_MAX: Final = 8          # DS4 battery byte without a cable: level 0..8 (rx_net.batt_codes), with a cable 0..10 (11 = full)
-
-
-def ds5_battery(b4: int) -> int:
-    """Convert the DS4 battery byte (level 0..8 without a cable, 0..11 with a cable, 0x10 = cable).
-
-    The result is the DualSense byte (level 0..10, state in bits 4..7). Without a cable the 0..8 scale is stretched to 0..10: copied as
-    is, a full pad would report level 8, i.e. 85 % in games and Steam (hid-playstation: level * 10 + 5).
-    """
-    level, cable = b4 & 0x0F, b4 & 0x10
-    level = min(level, DS5_BATT_FULL_LEVEL) if cable else min(DS5_BATT_FULL_LEVEL, round(level * 10 / DS4_BATT_MAX))
-    return level | _DS5_BATT[(2 if level >= DS5_BATT_FULL_LEVEL else 1) if cable else 0]
 
 
 def put_touch_ds5(b: bytearray, off: int, f: Touch) -> None:
@@ -135,5 +119,5 @@ def build_ds5_report(s: Mapping[str, Any], counter: int, mmode: bool, b: bytearr
     t1, t2 = (NO_TOUCH, NO_TOUCH) if mmode else s["touch"]
     put_touch_ds5(b, 32, t1)
     put_touch_ds5(b, 36, t2)
-    b[52] = ds5_battery(s["batt_ds4"])
+    b[52] = s["batt_ds5"]
     return b
