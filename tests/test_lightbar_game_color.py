@@ -1,7 +1,7 @@
 """Receiver: regresje z dwunastego przeglądu - kolor lightbara z gry / programu na PC (np. Steam) zasłaniał na stałe
 kolor z ustawień; opcja "Gra może zmienić kolor" per pad, wpis w dzienniku przy pierwszym kolorze z PC, zapis opcji;
 wibracja z gry zostawała po wyjściu z gry i w menu (np. Forza Horizon) - receiver odświeżał ją bez końca.
-    python3 tests/test_hunt12.py receiver"""
+    python3 tests/test_lightbar_game_color.py receiver"""
 import json, os, sys, time
 sys.path.insert(0, os.path.dirname(__file__))
 from rxenv import *                                              # noqa

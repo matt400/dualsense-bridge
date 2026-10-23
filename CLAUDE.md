@@ -43,7 +43,7 @@ pip install evdev ruff PySide6-Essentials
 - Tests are plain scripts (`python3 tests/test_x.py receiver|sender`), no pytest.
   `*_tx.py` = sender, the rest = receiver, `test_e2e*` / `test_bt` = both.
 - Add a new test file to the matching list in `tests/run_tests.sh`, otherwise it won't run in CI.
-- Regressions from bug reviews: `tests/test_hunt<N>.py` / `test_hunt<N>_tx.py`.
+- Regressions from bug reviews go into topic-named tests (e.g. `test_atomic_writes.py`, `test_bt_scan_lifecycle_tx.py`), not numbered ones.
 - Manual only (can't be done in CI): a real pad, ViGEm, HIDMaestro, DisplaySwitch, pycaw, notifications.
 
 ## Running
@@ -54,5 +54,5 @@ pip install evdev ruff PySide6-Essentials
 
 ## Git
 - Branches: `fix/…`, `feat/…`, `docs/…`, `security/…`; changes go through a PR merged with a merge commit into `main`.
-- Commits and PR descriptions are in English: a short summary with an area prefix (`Receiver: …`, `Sender BT: …`, `Bug hunt N: …`, `docs: …`).
+- Commits and PR descriptions are in English: a short summary with an area prefix (`Receiver: …`, `Sender BT: …`, `docs: …`).
 - Documentation: a change in EN (`docs/*.md`) needs a matching change in PL (`docs/*.pl.md`) and vice versa.

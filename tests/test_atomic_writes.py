@@ -1,6 +1,6 @@
 """Receiver: regresje z dziesiątego przeglądu - nowy klient DSU od razu dostaje stan padów, zapis plików ustawień
 atomowy z fsync (bez pliku .tmp po błędzie), wspólne funkcje sprawdzające ustawień i konsoli.
-    python3 tests/test_hunt10.py receiver"""
+    python3 tests/test_atomic_writes.py receiver"""
 import json, os, socket, struct, sys, time
 sys.path.insert(0, os.path.dirname(__file__))
 from rxenv import *                                              # noqa

@@ -47,17 +47,17 @@ The tests cover:
   profiles, master only (`test_trigfx.py`, `test_trigfx_tx.py`); trigger effects from games (HIDMaestro, trig3):
   reading from the output report, the profile wins per trigger, release after the program closes (`test_gametrig.py`,
   `test_gametrig_tx.py`);
-- regressions from bug reviews (`test_review.py`, `test_review_tx.py`, `test_hunt*.py`) - among others starting /
+- regressions from bug reviews (`test_review.py`, `test_review_tx.py`, and the topic-named tests below) - among others starting /
   stopping a Bluetooth scan at the same time, a finger resting on the touchpad when connecting, a touchpad click
   released in the Test view, PS shortcuts in TV mode, registering game rumble in ViGEm (callback signature from
   vgamepad, lightbar colour as a struct), receiver without ViGEmBus, COM audio objects released before
   CoUninitialize; shortcuts, master actions and the console mode button at the edge of the Test view computed from
   held inputs, sender Bluetooth without busctl / permissions, autobias after calibration from the window
-  (`test_hunt9.py`, `test_hunt9_tx.py`); a new DSU client gets the state immediately, atomic settings file writes
-  with fsync - `proto.write_file` / `write_json` (`test_hunt10.py`, `test_hunt10_tx.py`); HIDMaestro downloaded with
+  (`test_input_state_boundaries.py`, `test_bt_window_errors_tx.py`); a new DSU client gets the state immediately, atomic settings file writes
+  with fsync - `proto.write_file` / `write_json` (`test_atomic_writes.py`, `test_atomic_writes_tx.py`); HIDMaestro downloaded with
   a single Range request per file (a 200 response = error), starting as administrator without a UAC prompt for a
   second instance and without a loop for a read-only folder, the administrator receiver's lock seen from an
-  unelevated process, autostart tasks with custom arguments (`test_hunt11.py`);
+  unelevated process, autostart tasks with custom arguments (`test_hm_download_elevation.py`);
   without a master, a restart with console mode off doesn't turn it on via the pad identifier (`test_console.py`),
   the window returns to the centre after leaving a game that changed the resolution (`test_settings_gui.py`),
   Bluetooth commands as the same packet repeated (`test_bt.py`);
@@ -66,9 +66,9 @@ The tests cover:
   blocking the rest, a failed change retried (`test_btadapter_tx.py`);
   with several Bluetooth controllers (built-in blocked + dongle) a scan from the window on the selected controller
   (`select` in bluetoothctl, timeout on our side) and turning a pad off over D-Bus on the controller it is connected
-  to (`test_hunt15_tx.py`);
+  to (`test_bt_multi_adapter_tx.py`);
   Bluetooth controller selection and link policy without SNIFF also without the receiver (PC off, Wake-on-LAN), SNIFF
-  fixed after every controller power-on - `hci_dev_info` layout as in the kernel (`test_hunt16_tx.py`); window
+  fixed after every controller power-on - `hci_dev_info` layout as in the kernel (`test_bt_link_policy_tx.py`); window
   raised only on a new pad connection, not after a brief signal drop (`test_settings_gui.py`); a HIDMaestro update
   while running doesn't delete the folder of the version loaded in the process (DLL dependencies load lazily) - it is
   removed only after a restart (`test_hm_update.py`);

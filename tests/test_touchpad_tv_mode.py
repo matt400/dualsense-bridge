@@ -1,6 +1,6 @@
 """Receiver: regresje z siódmego przeglądu - klik touchpada puszczony w widoku Test nie zostaje wciśnięty w grze,
 licznik błędów wątku zerowany po spokojnej pracy, tryb TV: puszczenie PS przed przyciskiem skrótu to nie nawigacja.
-    python3 tests/test_hunt7.py receiver"""
+    python3 tests/test_touchpad_tv_mode.py receiver"""
 import contextlib, io, os, sys, time, types
 sys.path.insert(0, os.path.dirname(__file__))
 from rxenv import *                                              # noqa

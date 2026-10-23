@@ -1,6 +1,6 @@
 """Receiver: regresje z dziewiątego przeglądu - stan skrótów, akcji mastera i przycisku trybu konsoli na granicy widoku
 Test / blokady wyjścia liczony od wejść trzymanych w tej chwili (a nie "jak po połączeniu pada").
-    python3 tests/test_hunt9.py receiver"""
+    python3 tests/test_input_state_boundaries.py receiver"""
 import os, sys, threading, time
 sys.path.insert(0, os.path.dirname(__file__))
 from rxenv import *                                              # noqa

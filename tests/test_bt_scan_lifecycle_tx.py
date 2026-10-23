@@ -1,6 +1,6 @@
 """Nadajnik: regresje z siódmego przeglądu - start / stop skanu Bluetooth w trakcie startu (osierocony bluetoothctl),
 palec leżący na touchpadzie przy podłączeniu, licznik błędów pętli zerowany po spokojnej pracy.
-    python3 tests/test_hunt7_tx.py sender"""
+    python3 tests/test_bt_scan_lifecycle_tx.py sender"""
 import asyncio, contextlib, io, json, os, stat, sys, tempfile, time
 sys.path.insert(0, sys.argv[1])
 from evdev import ecodes as ec
