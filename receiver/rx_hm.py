@@ -1,4 +1,7 @@
 """Receiver: backend HIDMaestro - wirtualny DualSense (sterownik UMDF2 w trybie użytkownika, MIT, rozwijany).
+Zgodny z HIDMaestro 1.x i 2.0 (używane wywołania: LoadDefaultProfiles, InstallDriver, GetProfile, CreateControllerAt,
+SubmitRawReport, OutputReceived, Dispose - te same w obu; 2.0 dodaje tylko diagnostykę: ProfileLoadIssues,
+LastDriverInstall, TransportIndex i wyjątki wyprowadzone z InvalidOperationException - patrz describe_error).
 
 HIDMaestro to biblioteka .NET (HIDMaestro.Core.dll, .NET 10) - wołana z Pythona przez pythonnet (CoreCLR). Sterownik
 siedzi w samej DLL i instaluje się przy pierwszym użyciu (InstallDriver, idempotentne). Tworzenie urządzenia wymaga
@@ -111,6 +114,36 @@ def get(cfg_path=""):
                 raise err from e
             _cache[path] = _loaded = hit
         return hit
+
+
+# Wyjątki HIDMaestro 2.0 (wszystkie dziedziczą po InvalidOperationException) -> co zwykle oznaczają
+_HM_HINTS = {
+    "HMResourceInUseException": "another program or a second receiver holds this controller's index or identity",
+    "HMDriverVersionException": "the installed driver does not serve this HIDMaestro version",
+    "HMPayloadMissingException": "this HIDMaestro build lacks the driver it needs",
+    "HMProfileException": "the profile was refused",
+}
+
+
+def describe_error(e):
+    """Błąd z HIDMaestro jako jedna czytelna linia: typ .NET, komunikat i (dla wyjątków 2.0) wskazówka. Pola HMProfileException /
+    HMDriverVersionException (ProfileId, JsonPath, Reason, Problem) są już w komunikacie - tu tylko wskazówka."""
+    name = type(e).__name__
+    hint = _HM_HINTS.get(name)
+    return f"{name}: {e}" + (f" ({hint})" if hint else "")
+
+
+def profile_issues(ctx, limit=3):
+    """Odrzucone pliki profili (HIDMaestro 2.0: HMContext.ProfileLoadIssues; 1.x ich nie ma -> []) jako [\"plik: ścieżka: powód\"]."""
+    try:
+        issues = list(getattr(ctx, "ProfileLoadIssues", None) or ())
+    except Exception:
+        return []
+    out = []
+    for i in issues[:limit]:
+        parts = [str(getattr(i, k, "") or "") for k in ("File", "JsonPath", "Reason")]
+        out.append(": ".join(p for p in parts if p) or str(i))
+    return out + ([f"... +{len(issues) - limit} more"] if len(issues) > limit else [])
 
 
 def _major(version):
@@ -249,10 +282,17 @@ class Backend:
         self.IntPtr = IntPtr
         self.ctx = HMContext()
         self.ctx.LoadDefaultProfiles()
-        self.ctx.InstallDriver()               # idempotentne: ~50 ms, gdy sterownik jest aktualny
+        try:
+            self.ctx.InstallDriver()           # idempotentne: ~50 ms, gdy aktualny (2.0: po zmianie wersji raz pełna instalacja)
+        except Exception as e:
+            raise HMError(f"driver install: {describe_error(e)}") from e
+        last = getattr(self.ctx, "LastDriverInstall", None)          # 2.0: co zrobiła instalacja (AlreadyCurrent / Upgraded ...)
+        if last is not None:
+            print(f"HIDMaestro driver: {last}")
         self.profile = self.ctx.GetProfile(PROFILE)
         if self.profile is None:
-            raise HMError(f"HIDMaestro has no '{PROFILE}' profile")
+            why = "; ".join(profile_issues(self.ctx))                # 2.0 ładuje profile ściśle - powód odrzucenia jest w ProfileLoadIssues
+            raise HMError(f"HIDMaestro has no '{PROFILE}' profile" + (f" (refused: {why})" if why else ""))
         self.submit_fn = submit_delegate(clr, HMController)
         self.path = path
         print(f"HIDMaestro loaded: {path}")
@@ -265,6 +305,9 @@ class Backend:
             ctrl = self.ctx.CreateControllerAt(slot, self.profile, key)
         except TypeError:
             ctrl = self.ctx.CreateControllerAt(slot, self.profile)
+        ti = getattr(ctrl, "TransportIndex", None)                   # 2.0: gdy indeks zajmuje inny program, kontroler dostaje inny
+        if ti is not None and int(ti) != slot:
+            print(f"Controller {slot}: HIDMaestro transport index {int(ti)} (slot {slot} is used by another program)")
         try:
             return Pad(self, ctrl, on_fb)
         except Exception:

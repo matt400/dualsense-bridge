@@ -268,7 +268,7 @@ def create_pad(idx):
         try:
             return hm.create(idx, on_fb), "hm"
         except Exception as e:
-            _note_hm(_("tworzenie pada: {err}").format(err=repr(e)), warn=True)
+            _note_hm(_("tworzenie pada: {err}").format(err=rx_hm.describe_error(e)), warn=True)
     return vigem_pad(idx), "vigem"
 
 

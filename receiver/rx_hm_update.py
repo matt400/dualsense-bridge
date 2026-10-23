@@ -1,7 +1,8 @@
 """Receiver: HIDMaestro pobierany i aktualizowany sam z GitHub Releases (hifihedgehog/HIDMaestro).
 
 Wydanie to zip ~160 MB (SDK + aplikacje testowe), a receiverowi wystarczy HIDMaestro.Core.dll (sterownik jest w niej)
-i dwie DLL projekcji Windows SDK. Zip czytany jest przez HTTP Range: katalog zip z końca pliku, potem tylko te wpisy -
+i dwie DLL projekcji Windows SDK (plus LICENSE z jej folderu - licencja jedzie z każdą wersją).
+Zip czytany jest przez HTTP Range: katalog zip z końca pliku, potem tylko te wpisy -
 pobiera się ~56 MB zamiast 160, każdy wpis jednym zapytaniem (prefetch). Wcześniej każde 64 KiB było osobnym zapytaniem
 HTTPS (~900 połączeń z TLS), a podpisany link GitHuba do magazynu wygasa po ~5 min - wolne łącze nie zdążało.
 CRC32 każdego wpisu sprawdza zipfile, a cała wersja trafia do folderu atomowo (tmp + rename).
@@ -11,7 +12,7 @@ sterownik, a wydanie nie ma podpisu Authenticode ani sum kontrolnych. Nowa wersj
 publikacji (hm_min_age_days w receiver.toml, 0 = od razu) - podmienione wydania zwykle znikają w ciągu dni. Pierwsza
 instalacja (brak jakiejkolwiek wersji) nie czeka.
 
-  receiver/hidmaestro/v1.12.0/HIDMaestro.Core.dll   wersja w swoim folderze: nowsza nie nadpisuje DLL załadowanej
+  receiver/hidmaestro/v2.0.0/HIDMaestro.Core.dll   wersja w swoim folderze: nowsza nie nadpisuje DLL załadowanej
                                                     w działającym procesie (CLR trzyma plik) - działa po restarcie
   receiver/hidmaestro/state.json                    kiedy ostatnio sprawdzano i jaki był wynik
 
@@ -35,6 +36,7 @@ REPO = "hifihedgehog/HIDMaestro"
 API = f"https://api.github.com/repos/{REPO}/releases/latest"
 DLL = "HIDMaestro.Core.dll"
 DEPS = ("Microsoft.Windows.SDK.NET.dll", "WinRT.Runtime.dll")   # projekcje Windows SDK (TFM net10.0-windows10.0.26100)
+LICENSE = "LICENSE"                  # licencja HIDMaestro z folderu DLL w zipie (opcjonalna - starsze wydania mogą jej nie mieć)
 CHECK_S = 24 * 3600
 MIN_AGE_DAYS = 7                     # nowa wersja instaluje się dopiero tyle dni po publikacji (patrz wyżej)
 START_DELAY_S = 20                   # po starcie receivera: najpierw pady i okno, potem sieć
@@ -237,7 +239,10 @@ def pick(infos):
         by_name.setdefault(posixpath.basename(_name(i)), i)
     if DLL not in by_name:
         raise OSError(f"{DLL} not in the release zip")
-    return [by_name[n] for n in (DLL, *DEPS) if n in by_name]
+    picked = [by_name[n] for n in (DLL, *DEPS) if n in by_name]
+    folder = posixpath.dirname(_name(picked[0]))
+    lic = next((i for i in files if _name(i) == posixpath.join(folder, LICENSE)), None)    # tylko z folderu DLL, nie cudza z podfolderu
+    return picked + ([lic] if lic else [])
 
 
 def entry_span(info):
