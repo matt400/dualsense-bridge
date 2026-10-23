@@ -53,7 +53,8 @@ class ScreenPlacement(QMainWindow):
 
     def set_fullscreen(self, on) -> None:
         """Full screen / window (remembered). Full screen = the TV mode: a bigger interface and pad control; it takes
-        the chosen screen (Settings -> Window) or the current one."""
+        the chosen screen (Settings -> Window) or the current one.
+        """
         self.settings.setValue("fullscreen", bool(on))
         self.settings.sync()
         self.fs_btn.setToolTip(_("Wyjdź z pełnego ekranu (F11)") if on else _("Pełny ekran (F11)"))
@@ -67,14 +68,16 @@ class ScreenPlacement(QMainWindow):
 
     def target_screen(self):
         """The screen chosen in Settings -> Window; when it is absent (the monitor off in the console mode) or nothing was
-        chosen - the one the window is on now (Windows moves windows from a disconnected screen to the remaining one)."""
+        chosen - the one the window is on now (Windows moves windows from a disconnected screen to the remaining one).
+        """
         name = self.screen_choice()
         return (dict(screens()).get(name) if name else None) or self.screen() or QApplication.primaryScreen()
 
     def place_on_screen(self):
         """The window always in the centre of the screen (target_screen) and entirely on it: one bigger than the work area (a TV
         1280x720 at 200 % scaling) is shrunk, and on a bigger screen it returns to the size chosen by the user.
-        It does not show the window (one hidden in the tray stays hidden). -> the screen."""
+        It does not show the window (one hidden in the tray stays hidden). -> the screen.
+        """
         target = self.target_screen()
         area = target.availableGeometry()
         self._fitting = True
@@ -109,7 +112,8 @@ class ScreenPlacement(QMainWindow):
 
     def _watch_screens(self) -> None:
         """The console mode switches the picture monitor <-> TV and changes the TV resolution and scaling - after every such
-        change the window returns to the centre and fits on the screen (without being pulled to the front)."""
+        change the window returns to the centre and fits on the screen (without being pulled to the front).
+        """
         self._screen_timer = QTimer(self)
         self._screen_timer.setSingleShot(True)
         self._screen_timer.setInterval(SCREEN_SETTLE_MS)
@@ -151,7 +155,8 @@ class ScreenPlacement(QMainWindow):
 
     def bring_to_front(self) -> None:
         """Show the window on its screen (centred, in the right mode) and take the foreground, which a background process needs extra help
-        for."""
+        for.
+        """
         if self.isFullScreen() and not self.fullscreen():
             self.showNormal()
         self.place_on_screen()

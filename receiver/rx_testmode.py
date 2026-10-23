@@ -80,7 +80,8 @@ def rearm() -> None:
 def sync(i: int) -> None:
     """Network thread, before the shortcuts: after the test state changes, the pad shortcut slots start from a clean state
     (no combinations in progress, no hold timers, no PS waiting for a pulse) - computed from the inputs held
-    before the change (S.states[i]["raw"] still has the previous state), so a new press works at once."""
+    before the change (S.states[i]["raw"] still has the previous state), so a new press works at once.
+    """
     if _seen[_slot(i)] != _gen:
         _seen[i] = _gen
         hotkeys.reset(i, keep=True)
@@ -105,7 +106,8 @@ def may_escape(i: int) -> bool:
 
 def on_state(i: int, raw: tuple) -> bool:
     """Raw buttons of slot i changed (network thread), raw = (mask, hx, hy, lt, rt) before they are stored in the state.
-    Detects the rising edge of Options + Create on a pad that may escape. -> True when the exit has just been performed."""
+    Detects the rising edge of Options + Create on a pad that may escape. -> True when the exit has just been performed.
+    """
     if not active:
         return False
     _slot(i)
@@ -120,7 +122,8 @@ def on_state(i: int, raw: tuple) -> bool:
 def escape(i: int, raw: tuple | None = None) -> None:
     """Forced exit from the Test view through pad i: end the block, neutral inputs until released, the window leaves.
     raw: the state of pad i from the packet that triggered the exit - stored at once because the combination is in it for the first time
-    (earlier the state in S.states was from before the press and Options + Create would not be swallowed)."""
+    (earlier the state in S.states was from before the press and Options + Create would not be swallowed).
+    """
     global active, escaped, _gen
     if raw is not None:
         with S.lock:
@@ -140,7 +143,8 @@ def escape(i: int, raw: tuple | None = None) -> None:
 
 def _release(s: int) -> None:
     """The slot returns to the game with a neutral report: the inputs held now are consumed (the game gets them as released
-    until they are released), only then is the block lifted - no report to the virtual DS4 carries Options + Create."""
+    until they are released), only then is the block lifted - no report to the virtual DS4 carries Options + Create.
+    """
     import rx_console                   # rx_console imports rx_master - import here
     hotkeys.reset(s, keep=True)
     master.reset(s, keep=True)

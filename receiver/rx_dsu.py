@@ -56,7 +56,8 @@ def dsu_bits(mask):
 
 def dsu_pkt(event, payload):
     """Wrap a payload into a DSU server packet: the "DSUS" header (protocol 1001, length, server id) + the event number + the payload; the
-    CRC32 is computed over the whole packet with the CRC field zeroed."""
+    CRC32 is computed over the whole packet with the CRC field zeroed.
+    """
     body = struct.pack("<I", event) + payload
     pkt = bytearray(DSU_HDR.pack(b"DSUS", 1001, len(body), 0, SERVER_ID) + body)
     struct.pack_into("<I", pkt, 8, zlib.crc32(pkt) & 0xFFFFFFFF)
@@ -65,7 +66,8 @@ def dsu_pkt(event, payload):
 
 def shared(slot):
     """The shared part of a slot description (slot, connection state, model, connection type, MAC, battery); slots beyond NUM_PADS look
-    like "not connected"."""
+    like "not connected".
+    """
     if slot < C.NUM_PADS:
         return DSU_INFO.pack(slot, 2 if S.alive[slot] else 0, 2, 2, S.MACS[slot], S.states[slot]["batt_dsu"])
     return DSU_INFO.pack(slot, 0, 0, 0, bytes(6), 0)
@@ -73,7 +75,8 @@ def shared(slot):
 
 def dsu_data(slot, s, counter):
     """Build the DSU data packet (event 0x100002) for a slot: buttons, sticks, analog buttons, two touch points, timestamp, accelerometer
-    in g and gyro in deg/s (with the configured signs)."""
+    in g and gyro in deg/s (with the configured signs).
+    """
     mask = s["mask"]
     mm = S.mouse_mode[slot]
     bb1, bb2 = dsu_bits(mask)

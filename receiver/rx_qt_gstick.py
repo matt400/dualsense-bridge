@@ -5,7 +5,8 @@ It lives next to the pad drawing on purpose: while the tilt drives a stick, the 
   TiltSection      settings (sliders, lists, switches), center calibration, raw / filtered output numbers
 
 Setting changes go through the `changed(Config)` signal to rx_gstick_io.runner (a slot in the window); the 250 Hz thread never
-touches Qt, and the preview is refreshed by the window timer (tick) from an engine snapshot."""
+touches Qt, and the preview is refreshed by the window timer (tick) from an engine snapshot.
+"""
 import time
 from dataclasses import replace
 
@@ -211,7 +212,8 @@ class TiltSection(QWidget):
 class TiltPreview(QFrame):
     """The live preview, floating over the top-right corner of the pad drawing while a tilt category is expanded: the 2D view,
     raw / filtered numbers and the engine state. While it is shown the engine follows the pad even if the feature is off, so the
-    tilt can be seen before it is switched on."""
+    tilt can be seen before it is switched on.
+    """
 
     def __init__(self, pad) -> None:
         super().__init__(pad)

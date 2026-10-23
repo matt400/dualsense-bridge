@@ -54,7 +54,8 @@ def delete(slot, key):
 
 def use(slot, key):
     """A manually chosen profile takes effect on the pad at once (until the next change of the active window). -> False when it does not
-    exist."""
+    exist.
+    """
     return S.use_profile(slot, key)
 
 
@@ -90,7 +91,8 @@ def test_live(i):
 def block(slot, on) -> bool:
     """Block (on) or unblock the slot's output: while blocked, games get a neutral state and the touchpad / gyro mouse and
     the pad shortcuts do nothing; off restores everything. Shortcuts and master start from a clean state - a PS button
-    held from before the block will not fire a combination after it."""
+    held from before the block will not fire a combination after it.
+    """
     if not S.set_blocked(slot, on):
         return False
     hotkeys.reset(slot, keep=True)          # start from the inputs held right now - a new PS press after the test goes to the game
@@ -114,7 +116,8 @@ def raw_sticks(slot, secs) -> None:
 
 def calibrate_gyro(slot, secs) -> bool:
     """Ask the sender to calibrate the gyro of a pad lying still (the result arrives in S.gyro_cal) -> False when the pad / sender
-    cannot."""
+    cannot.
+    """
     if not (S.alive[slot] and sender_calib(slot)):
         return False
     S.gyro_cal[slot] = None

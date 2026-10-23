@@ -84,7 +84,8 @@ def describe(commit, ts):
 def sender_state(build, old_commit=""):
     """The sender update state from the build packet. After downloading code the sender restarts (os.execv) and the new process
     reports UPD_NONE - when the receiver updated for longer (e.g. pip install), the window saw only that state and wrote
-    "the sender did not answer". A commit different from the one before the update (old_commit) = updated."""
+    "the sender did not answer". A commit different from the one before the update (old_commit) = updated.
+    """
     if build is None:
         return None
     if old_commit and build[0] and build[0] != old_commit and build[2] in (UPD_NONE, UPD_RUNNING):
@@ -94,7 +95,8 @@ def sender_state(build, old_commit=""):
 
 def sender_text(build, msg="", old_commit=""):
     """The sender update result from the build packet (None = a sender older than this feature); msg = the failure reason (updmsg);
-    old_commit = the sender commit before the update (see sender_state)."""
+    old_commit = the sender commit before the update (see sender_state).
+    """
     if build is None:
         return _("nadajnik w starej wersji - zaktualizuj go raz ręcznie (git pull na telefonie)")
     state = sender_state(build, old_commit)
@@ -129,8 +131,9 @@ _git_lock = threading.Lock()
 
 
 def check_available(root=ROOT, git=None):
-    """git fetch (no file changes) and a comparison with the branch on GitHub. -> Available or None (no git / network /
-    tracking branch - the window then simply shows nothing)."""
+    """Git fetch (no file changes) and a comparison with the branch on GitHub. -> Available or None (no git / network /
+    tracking branch - the window then simply shows nothing).
+    """
     git = git or find_git()
     if git is None or not os.path.isdir(os.path.join(root, ".git")):
         return None
@@ -144,7 +147,8 @@ def check_available(root=ROOT, git=None):
 
 def _check(root, git):
     """Fetch the upstream and count the commits between the running version and the upstream tip; Available(0) when up to date, None on
-    any failure."""
+    any failure.
+    """
     try:
         if proto.git(root, "fetch", "--quiet", git_exe=git, timeout=60, env=QUIET_ENV).returncode:
             return None
@@ -164,7 +168,8 @@ def _check(root, git):
 
 def _checker(stop) -> None:
     """Thread body: wait CHECK_FIRST_S, then check every CHECK_EVERY_S, store the result in `available` and log a newly found update
-    once."""
+    once.
+    """
     global available
     if stop.wait(CHECK_FIRST_S):
         return
@@ -244,7 +249,7 @@ def _last_lines(text, n=3):
 
 
 def _install_requirements(root):
-    """pip install -r requirements.txt with the receiver's Python -> a message (success, or what to run by hand when it fails)."""
+    """Pip install -r requirements.txt with the receiver's Python -> a message (success, or what to run by hand when it fails)."""
     try:
         p = _run([sys.executable, "-m", "pip", "install", "-r", os.path.join(root, *REQUIREMENTS.split("/"))], root, 600)
     except (OSError, subprocess.TimeoutExpired) as e:

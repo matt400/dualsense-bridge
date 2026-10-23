@@ -167,7 +167,8 @@ def is_game_key(key):
 
 def _inv(v):
     """Mirror an axis around the centre 128: 0 <-> 255, 128 stays 128 (like _unit/_byte in rx_shape - a full deflection
-    in both directions gives a full deflection, not 1)."""
+    in both directions gives a full deflection, not 1).
+    """
     return _byte(-_unit(v))
 
 
@@ -192,7 +193,8 @@ class RemapStore:
     """Remap profiles: `saved` (from the file) and `live` (currently used, may be unsaved).
 
     A profile key = the pad identifier (the MAC from the sender, lower case) or "slotN" when the sender
-    did not send it (an old version)."""
+    did not send it (an old version).
+    """
 
     def __init__(self, path) -> None:
         self.path = path

@@ -1,6 +1,7 @@
 """Receiver: foreground program -> automatic choice of the remap profile (profile "<pad>@<game.exe>")
 and stopping game rumble when the program changes (leaving the game / alt-tab - rx_feedback.stop_game_rumble).
-Trigger effects survive a program change; they are released only when the program that set them closes (release_closed)."""
+Trigger effects survive a program change; they are released only when the program that set them closes (release_closed).
+"""
 import time
 
 import rx_feedback as F
@@ -31,7 +32,8 @@ def is_game(exe):
 def in_game(exe=None):
     """Whether a game is in the foreground: a program outside the console-mode app list (desktop, Steam / Big Picture,
     launchers, this receiver - Settings -> Console mode) and outside NOT_GAMES. exe=None -> the program read last
-    (S.game, refreshed every POLL_S). An empty console-mode list leaves NOT_GAMES alone."""
+    (S.game, refreshed every POLL_S). An empty console-mode list leaves NOT_GAMES alone.
+    """
     exe = S.game if exe is None else exe
     if not exe:
         return False
@@ -43,7 +45,8 @@ def in_game(exe=None):
 def poll_once() -> None:
     """One foreground check. On a program change: stop game rumble, update the recent list, let S.set_game pick the profile
     for every connected pad (with a confirmation pulse on the pad), wake the feedback loop when the desktop <-> game state
-    flips, and release trigger effects of programs that have exited."""
+    flips, and release trigger effects of programs that have exited.
+    """
     try:
         exe = W.foreground_exe()
     except OSError:
@@ -76,7 +79,8 @@ PROCS_S = 2.0
 def release_closed(now=None) -> None:
     """Release trigger effects of games whose process no longer runs (rx_feedback.forget_ended_games). The process
     snapshot is taken (and cached for PROCS_S) only when some slot holds effects of a program that is not in the foreground
-    - usually never."""
+    - usually never.
+    """
     now = time.monotonic() if now is None else now
 
     def running(exe):

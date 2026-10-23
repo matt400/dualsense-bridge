@@ -117,7 +117,8 @@ def run_forever(name, fn, *args) -> None:
     """A background thread loop whose unexpected exception does not disable it for good: the error is printed
     (the first one with a full trace) and the loop starts again after a moment. It ends when fn returns on S.stop.
     The error counter resets after STABLE_S of calm work - rare errors do not grow into a 5 s pause (network thread:
-    5 s without pads)."""
+    5 s without pads).
+    """
     errors = 0
     while not stop.is_set():
         t0 = time.monotonic()
@@ -164,7 +165,8 @@ def notify(i) -> None:
 
 def recompute(s, prof) -> None:
     """Recompute the output state from the raw inputs according to the profile (call under lock):
-    button remap -> stick swap / inversion -> stick and trigger shaping -> gyro."""
+    button remap -> stick swap / inversion -> stick and trigger shaping -> gyro.
+    """
     tun, g = prof["tuning"], prof["gyro"]
     lt, rt = s["raw"][3:5]
     fwd_mask, fwd_hx, fwd_hy = s["fwd"]
@@ -229,7 +231,8 @@ def active_key(i):
 def effective_profile(i, key, drift=True):
     """The profile to use on a pad: a game profile inherits from the pad profile the trigger effects it does not set itself
     (the other parts of a game profile replace the pad profile as a whole, as before); this pad's stick drift correction
-    (rx_padcal) works in every profile as a minimum deadzone (drift=False - without it: the number of profile changes)."""
+    (rx_padcal) works in every profile as a minimum deadzone (drift=False - without it: the number of profile changes).
+    """
     prof = store.get(key)
     base = profile_key(i)
     if key != base:
@@ -247,7 +250,8 @@ NEUTRAL_OUT = {**new_state(), "ver": None}
 
 def output(i):
     """The state of a slot for the game (DS4 report, DSU) - call under lock. A blocked slot (Test view) = a neutral state: released
-    buttons, sticks centred, no motion and touch; battery and sample time as they really are."""
+    buttons, sticks centred, no motion and touch; battery and sample time as they really are.
+    """
     s = states[i]
     if not s["blocked"]:
         return s

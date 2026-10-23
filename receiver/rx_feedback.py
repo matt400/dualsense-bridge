@@ -8,7 +8,8 @@ a launcher) and the pad has "Game may change colour" (PadLight.game). Outside a 
 from the pad settings (solid / by battery, rx_lightbar). Steam sets the virtual pad's colour on the desktop too - it used to cover
 the own colour until the pad disconnected. The PC colour is remembered, so it returns at once when the game comes back. The first
 such colour goes to the log - otherwise "my colour does not work" would leave no trace. Low battery blinks red
-also over the game colour; confirmations (e.g. the master's golden flash) are always on top."""
+also over the game colour; confirmations (e.g. the master's golden flash) are always on top.
+"""
 import threading
 import time
 
@@ -82,7 +83,8 @@ def make_cb(i):
     """ViGEm callback (on the ViGEm thread) for slot i. The parameter names match vgamepad.dummy_callback - vgamepad compares the
     signature with the names and rejects any other (a TypeError = no rumble from games). led_number is either the lightbar colour
     DS4_LIGHTBAR_COLOR (registered through rx_ds4.register_feedback) or a meaningless number (registered through vgamepad, which
-    declares this argument as a byte) - then the game colour is unknown and the lightbar keeps its own."""
+    declares this argument as a byte) - then the game colour is unknown and the lightbar keeps its own.
+    """
     # No annotations on purpose: vgamepad compares inspect.signature() with its own dummy_callback, return annotation included.
     def cb(client, target, large_motor, small_motor, led_number, user_data):
         try:
@@ -103,7 +105,8 @@ def make_cb(i):
 def game(i, large=None, small=None, rgb=None, trig=None) -> None:
     """Rumble / lightbar colour / trigger effects from the game for slot i (on the virtual pad backend thread); None = leave that
     part unchanged. A DualSense output report carries the motors, the colour and each trigger separately, with their own validity
-    flags. trig = (L2, R2): the raw 11 B effect or None (that trigger unchanged)."""
+    flags. trig = (L2, R2): the raw 11 B effect or None (that trigger unchanged).
+    """
     try:
         f = fb[i]
     except IndexError:
@@ -129,7 +132,8 @@ def game(i, large=None, small=None, rgb=None, trig=None) -> None:
 def forget_ended_games(running):
     """Trigger effects set by a program that is gone (a game closed without releasing the triggers - like the rumble in
     Forza Horizon) -> released. running(exe) -> whether the program is running. Effects of an unknown program (None) stay until changed
-    by the game or until the pad disconnects. -> the slots whose triggers were released."""
+    by the game or until the pad disconnects. -> the slots whose triggers were released.
+    """
     out = []
     for i, f in enumerate(fb):
         owner = f["trig_owner"]
@@ -145,7 +149,8 @@ def forget_ended_games(running):
 def stop_game_rumble(why) -> None:
     """The foreground program changed (left a game, alt-tab): game rumble -> 0. A game that ends mid-rumble (e.g. Forza
     Horizon on exit) no longer sends "motors 0", and the receiver kept refreshing the last value every 0.5 s - the pad vibrated
-    forever. A game that returns to the foreground sends a fresh rumble itself."""
+    forever. A game that returns to the foreground sends a fresh rumble itself.
+    """
     for i, f in enumerate(fb):
         if f["large"] or f["small"]:
             f["large"] = f["small"] = 0
@@ -155,7 +160,8 @@ def stop_game_rumble(why) -> None:
 
 def init() -> None:
     """Create per-slot feedback state (motors, colour, trigger effects, timestamps) and callbacks; a remap change wakes the feedback
-    thread."""
+    thread.
+    """
     n = C.NUM_PADS
     fb[:] = [{"small": 0, "large": 0, "r": 0, "g": 0, "b": 0, "set": False, "rgb": False, "note": False,
               "t": 0.0, "t_other": 0.0, "trig": NO_GAME_TRIG, "trig_owner": None, "trig_note": False}
@@ -180,7 +186,8 @@ def reset(i) -> None:
 
 def pulse(i, kind, force=False) -> None:
     """A short confirmation on the pad (rumble and/or colour), laid over the game feedback.
-    force: also when confirm = false (the rumble test from the window)."""
+    force: also when confirm = false (the rumble test from the window).
+    """
     if (C.CONFIRM or force) and 0 <= i < len(pulses) and S.alive[i]:
         d, small, large, rgb = PULSES[kind]
         pulses[i] = (time.monotonic() + d, small, large, rgb)
@@ -231,7 +238,8 @@ def _note_game_color(i) -> None:
 def rumble_expired(f, now) -> str | None:
     """Game rumble is on but the game stopped driving it -> the reason (for the log), else None.
     The game sends only other reports (colour, triggers) - a menu; or no motor reports since STALE (a lost "motors 0",
-    the game hung / minimised)."""
+    the game hung / minimised).
+    """
     if not (f["large"] or f["small"]):
         return None
     if f["t_other"] - f["t"] > GAME_RUMBLE_GAP_S:
@@ -269,7 +277,8 @@ def _target(i, now):
 
 def feedback_thread(send, send_trig=None) -> None:
     """send(slot, (small, large, r, g, b)) - sending to the sender (rx_net.send_feedback);
-    send_trig(slot, trig3 values (15), trig2 (12) or trig (4), repeats) - trigger effects (rx_net.send_triggers)."""
+    send_trig(slot, trig3 values (15), trig2 (12) or trig (4), repeats) - trigger effects (rx_net.send_triggers).
+    """
     _loop(send, send_trig)
 
 
@@ -294,7 +303,8 @@ def trigger_target(i):
     """Values to send: trig3 (profile + the game's trigger effects) when the game set them and the sender knows them, else
     trig2 for a new sender, trig (resistance only) for an older one; no effects (game ones too) when trigger effects are master-only
     and this is not the master. On a trigger with a profile effect the profile wins (the sender decides - any mode other than
-    TFX_OFF); when the game itself drives the triggers, game rumble on the profile's triggers is switched off."""
+    TFX_OFF); when the game itself drives the triggers, game rumble on the profile's triggers is switched off.
+    """
     import rx_master        # rx_master imports this module
     if not rx_master.allowed(i, "triggers"):
         vals, game = TRIG2_OFF, NO_GAME_TRIG
@@ -312,7 +322,8 @@ def triggers_tick(i, now, send_trig) -> None:
     """Trigger effects of the slot's profile: a change -> at once (several times), constant effects -> refreshed every TRIG_REFRESH_S.
     The first pass after the pad connects always sends the state, "no effects" too: the sender and the pad may hold effects from
     a previous receiver run (a restart after an update, closing mid-game with a click on R2) - without this the trigger stayed hard
-    when the profile in use after startup has no effects. Afterwards nothing is refreshed while there are no effects."""
+    when the profile in use after startup has no effects. Afterwards nothing is refreshed while there are no effects.
+    """
     vals = trigger_target(i)
     last = trig_sent[i]
     if last is None or last[0] != vals:
@@ -327,7 +338,8 @@ def release_triggers(send_trig) -> None:
     """Receiver shutdown (the feedback thread is already stopped): pads we set trigger effects on get "no effects".
     The sender keeps an effect until the next change, so without this the resistance / click stayed after leaving the receiver
     (before a restart and an update too) until the pad disconnected. The sender also has its own guard (sender_rumble)
-    that releases the triggers when the PC refreshes stop (PC sleep / crash)."""
+    that releases the triggers when the PC refreshes stop (PC sleep / crash).
+    """
     for i, last in enumerate(trig_sent):
         if last is not None and any(last[0]):
             # trig3 (game effects) also releases trig2 - a v11 sender then forgets the game effects
@@ -337,7 +349,8 @@ def release_triggers(send_trig) -> None:
 
 def _loop(send, send_trig=None) -> None:
     """Send feedback on change, every 0.5 s while rumbling (refreshes its timeout on the sender)
-    and every 5 s at rest (a lost packet will not leave a wrong lightbar colour)."""
+    and every 5 s at rest (a lost packet will not leave a wrong lightbar colour).
+    """
     blink = False
     while not S.stop.is_set():
         now = time.monotonic()

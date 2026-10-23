@@ -51,7 +51,8 @@ def find(name, devices):
 
 def set_default(name, wait_s=6.0) -> None:
     """Set the default audio output (all roles) by device name. Polls the device list for up to wait_s until the device
-    appears - a TV's HDMI audio only becomes active after its screen is switched on. Device not found -> LookupError."""
+    appears - a TV's HDMI audio only becomes active after its screen is switched on. Device not found -> LookupError.
+    """
     from pycaw.constants import ERole
     from pycaw.utils import AudioUtilities
     deadline = time.monotonic() + wait_s

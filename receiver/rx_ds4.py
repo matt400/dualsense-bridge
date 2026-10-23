@@ -7,7 +7,8 @@ still serves as a fallback); vigem = always ViGEm. Changing the backend in the w
 
 Fixed player order (fixed_slots): games, Steam and Windows number pads by the order in which devices appear.
 When the pad of slot 2 connects and slot 1 is empty, slot 1 first gets a placeholder pad (a neutral state), so pad 2
-never becomes player 1. The placeholder disappears together with the last pad of a higher slot."""
+never becomes player 1. The placeholder disappears together with the last pad of a higher slot.
+"""
 import ctypes
 import gc
 import threading
@@ -54,14 +55,16 @@ class Out:
     """A slot's plugged virtual pad and the buffer of its report. The report is sent by the thread that changed the state (push - without
     waking the slot thread), or by the slot thread (a top-up after the pad_hz limit); lock: one report at a time.
     A pad with submit() (HIDMaestro) has its own buffer at a fixed address and its own report format (build); without it this is
-    vgamepad: the DS4 report is copied into a DS4_REPORT_EX structure."""
+    vgamepad: the DS4 report is copied into a DS4_REPORT_EX structure.
+    """
     __slots__ = ("pad", "raw", "build", "rep", "ba", "view", "counter", "last", "lock")
     rep: Any       # a DS4_REPORT_EX for a vgamepad pad, None for a pad with its own buffer (HIDMaestro)
     view: Any      # a ctypes view of `ba` used to copy the report into `rep`, None as above
 
     def __init__(self, pad) -> None:
         """Wrap a created pad: pick the report builder and set up the buffer (the pad's own one, or a bytearray + a ctypes view for
-        vgamepad)."""
+        vgamepad).
+        """
         self.pad = pad
         self.raw = hasattr(pad, "submit")
         self.build = getattr(pad, "build", build_report)
@@ -110,7 +113,8 @@ LABELS = {"hm": "DualSense (HIDMaestro)", "vigem": "DS4 (ViGEmBus)"}
 
 def init() -> None:
     """Prepare the per-slot lists, the minimum report interval (1 / pad_hz) and hook push into S.notify; warn about a missing vgamepad /
-    ViGEmBus."""
+    ViGEmBus.
+    """
     global interval
     F.init()
     n = C.NUM_PADS
@@ -129,7 +133,8 @@ def init() -> None:
 def push(idx) -> None:
     """A slot state change (S.notify): the report to ViGEm at once in the thread that brought it (usually the network thread) -
     without switching to the slot thread. Too early per pad_hz, the DS4 not plugged or busy with another report ->
-    the slot thread sends the freshest state (changes within the pad_hz window merge into one report, nothing is lost)."""
+    the slot thread sends the freshest state (changes within the pad_hz window merge into one report, nothing is lost).
+    """
     o = outs[idx] if idx < len(outs) else None
     if o is None or not o.lock.acquire(blocking=False):
         S.wake[idx].set()
@@ -148,7 +153,8 @@ def push(idx) -> None:
 
 def notification_type(lightbar_type):
     """The ViGEm callback type for a DS4 as in ViGEmClient.h: (client, target, large motor, small motor, DS4_LIGHTBAR_COLOR
-    by value, data). vgamepad declares the colour as a byte - ctypes then passed a number instead of the colour."""
+    by value, data). vgamepad declares the colour as a byte - ctypes then passed a number instead of the colour.
+    """
     factory = getattr(ctypes, "WINFUNCTYPE", ctypes.CFUNCTYPE)      # CALLBACK = __stdcall (on x64 the same as cdecl)
     return factory(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_ubyte, ctypes.c_ubyte, lightbar_type, ctypes.c_void_p)
 
@@ -156,7 +162,8 @@ def notification_type(lightbar_type):
 def register_feedback(pad, cb, vcli=None, lightbar_type=None) -> None:
     """Rumble and lightbar colour from the game -> cb. Directly through ViGEmClient with the real colour type; without access
     to it - through vgamepad (rumble works, the game colour is unknown). The reference to the callback stays in pad.cmp_func
-    (collected by the GC = a process crash on the first rumble)."""
+    (collected by the GC = a process crash on the first rumble).
+    """
     vcli = vcli or _vcli
     lightbar_type = lightbar_type or DS4_LIGHTBAR_COLOR
     if vcli is None or lightbar_type is None or not hasattr(pad, "_devicep"):
@@ -176,7 +183,8 @@ def fixed_slots():
 
 def needed(idx):
     """The slot should have a virtual pad: its pad is connected or (fixed order) a pad of a higher slot is connected -
-    then this slot holds the place with a placeholder pad, so that the player numbering in the game matches the slot number."""
+    then this slot holds the place with a placeholder pad, so that the player numbering in the game matches the slot number.
+    """
     if S.want[idx].is_set():
         return True
     return fixed_slots() and any(w.is_set() for w in S.want[idx + 1:])
@@ -185,7 +193,8 @@ def needed(idx):
 def wait_turn(idx, timeout=PLUG_ORDER_WAIT) -> bool:
     """Virtual pads are plugged in slot order: Windows / Steam / XInput number players by the order in which devices
     appear, so slot 0 (the same pad thanks to the sender's slots.json) stays player 1 even when the packets of slot 1
-    arrived a fraction of a second earlier. It waits only for slots that also need a pad (and have no backend error), at most timeout."""
+    arrived a fraction of a second earlier. It waits only for slots that also need a pad (and have no backend error), at most timeout.
+    """
     end = time.monotonic() + timeout
     while not S.stop.is_set() and time.monotonic() < end:
         if not any(needed(j) and not S.plugged[j] and not failing[j] for j in range(idx)):
@@ -228,7 +237,8 @@ def hm_auto_enabled():
 
 def hm_installed(tag) -> None:
     """rx_hm_update downloaded a new version. Nothing was loaded -> the next pad connection already goes through HIDMaestro
-    (plugged pads stay - no switching during a game); an older one is loaded -> the new one after a restart."""
+    (plugged pads stay - no switching during a game); an older one is loaded -> the new one after a restart.
+    """
     global _hm_warned
     if rx_hm.loaded() is None:
         rx_hm.reset()
@@ -269,7 +279,8 @@ def vigem_pad(idx):
 
 def create_pad(idx):
     """-> (pad, kind). HIDMaestro when available; its creation error = this pad through ViGEm (log), the next
-    connection tries HIDMaestro again (PnP errors can be transient)."""
+    connection tries HIDMaestro again (PnP errors can be transient).
+    """
     hm = hm_backend()
     if hm is not None:
         def on_fb(motors, rgb, trig=None) -> None:
@@ -285,7 +296,8 @@ def create_pad(idx):
 def close_pad(pad) -> None:
     """HIDMaestro: Dispose removes the device. vgamepad: unregister the callback; the device is unplugged by the destructor (the last
     reference
-    disappears at the caller, then gc.collect)."""
+    disappears at the caller, then gc.collect).
+    """
     if hasattr(pad, "close"):
         pad.close()
         return
@@ -298,7 +310,8 @@ def close_pad(pad) -> None:
 def slot_thread(idx) -> None:
     """The virtual pad exists while needed(idx) (the physical pad is connected or a placeholder for the fixed order).
     Event-driven: sleeps until data arrives, sends the freshest state, at most pad_hz. On any error the pad is unplugged and retried
-    after a second; the pad is always unplugged and the game feedback reset in the end."""
+    after a second; the pad is always unplugged and the game feedback reset in the end.
+    """
     last_err = None
     while len(outs) <= idx:                   # without init() (tests) - the slot thread must not fail on an empty list
         outs.append(None)

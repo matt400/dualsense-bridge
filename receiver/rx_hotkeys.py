@@ -29,7 +29,8 @@ SENS_STEP, SENS_MIN, SENS_MAX = 1.15, 0.05, 5.0
 
 class Slot:
     """Per-pad PS shortcut state: whether PS is down / consumed, the PS pulse for the game, suppressed Share / D-pad, the previous raw
-    inputs and the hold timer."""
+    inputs and the hold timer.
+    """
     __slots__ = ("down", "used", "out", "gen", "tap", "sup_share", "sup_dpad", "prev_mask", "prev_hat", "timer", "fresh")
 
     def __init__(self) -> None:
@@ -56,7 +57,8 @@ def reset(i, keep=False) -> None:
     (S.states[i]["raw"]), not as after a pad connects. A PS held across the boundary reaches neither the game nor
     Game Bar, but it is a shortcut with a new button; a fresh PS after the boundary is an ordinary PS for the game. Earlier, a reset
     "as after connecting" took the first PS after leaving the test for one held since the pad was switched on (the game did not get it),
-    and a PS held across the boundary + Share gave Share in the game instead of a screenshot."""
+    and a PS held across the boundary + Share gave Share in the game instead of a screenshot.
+    """
     if slots[i].timer is not None:
         slots[i].timer.cancel()
     h = slots[i] = Slot()
@@ -175,7 +177,8 @@ def _untap(i, h, tap) -> None:
 
 def _hold(i, gen) -> None:
     """Hold timer fired: run ps_hold_action (Game Bar via Win+G, or Steam Big Picture) unless PS was released, used or the action is
-    none."""
+    none.
+    """
     h = slots[i]
     if h.gen != gen or not h.down or h.used or C.PS_HOLD_ACTION == "none":
         return                         # "none": a long PS stays an ordinary PS for the game (a pulse on release)
@@ -209,7 +212,8 @@ def _share(i) -> None:
 
 def _sens(i, factor) -> None:
     """PS + D-pad up / down: multiply the touchpad mouse sensitivity of this pad by `factor` within limits (not saved - Settings -> Mouse
-    keeps it)."""
+    keeps it).
+    """
     if not master.check(i, "sens"):
         return
     old = rx_mouse.sens[i]

@@ -62,14 +62,16 @@ DEFAULT_CONFIG = "receiver.toml"     # loaded without --config when it lies next
 
 def default_config(folder=None):
     """receiver.toml next to the receiver, or None. Without this the file worked only with --config: entries in receiver.toml
-    (e.g. log_file) were silently ignored on a normal start and on an autostart without that argument."""
+    (e.g. log_file) were silently ignored on a normal start and on an autostart without that argument.
+    """
     path = os.path.join(folder or HERE, DEFAULT_CONFIG)
     return path if os.path.isfile(path) else None
 
 
 def autostart_command(argv=None):
     """(program, arguments) for autostart: pythonw instead of python (no console), the script and the arguments without --autostart,
-    the --config path made absolute."""
+    the --config path made absolute.
+    """
     import subprocess
 
     exe = sys.executable

@@ -144,7 +144,8 @@ QMessageBox {{ background: {CARD}; }}
 
 def apply_theme(app: QApplication, k=1.0) -> None:
     """Fusion style + a dark palette (for elements the QSS does not cover: dialogs, tooltips) + the QSS.
-    k = scale (TV mode); a scale change only swaps the QSS, the palette stays."""
+    k = scale (TV mode); a scale change only swaps the QSS, the palette stays.
+    """
     global scale, _palette
     scale = k
     if not _palette:

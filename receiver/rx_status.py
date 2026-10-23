@@ -60,7 +60,8 @@ def latency(i):
 
 def button_latency(i):
     """Button -> game latency over the last presses (rx_latency.Summary) or None (pad disconnected / no presses).
-    It survives a short silence of the pad - it restarts only when the pad in the slot changes or on a reset from the window."""
+    It survives a short silence of the pad - it restarts only when the pad in the slot changes or on a reset from the window.
+    """
     return rx_latency.buttons(i) if S.alive[i] else None
 
 
@@ -79,7 +80,8 @@ def latency_level(summary, i, now):
 
 def stats_text(summary):
     """"usually <= 3.1 · max 4.0" - the second, small part of the latency label on the pad card. "usually" = the 95th percentile
-    (95 of 100 measurements no slower) - "p95" meant nothing to the user; the explanation is in the tooltip."""
+    (95 of 100 measurements no slower) - "p95" meant nothing to the user; the explanation is in the tooltip.
+    """
     return _("zwykle ≤ {p95} · max {max}").format(p95=f"{summary.p95:.1f}", max=f"{summary.max:.1f}")
 
 
@@ -133,7 +135,8 @@ def rumble_status(i):
 
 def triggers_status(i, fx=False):
     """Whether the sender will set trigger effects for this pad -> (text, level); ("", "") = works or the pad is disconnected.
-    fx: the profile uses click / trigger vibration / game vibration (needs a sender with CAP_TRIG_FX)."""
+    fx: the profile uses click / trigger vibration / game vibration (needs a sender with CAP_TRIG_FX).
+    """
     if not S.alive[i]:
         return "", ""
     info = S.sender_info[i]

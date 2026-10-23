@@ -123,7 +123,8 @@ class ConsoleSettings(QDialog):
 
     def _console_tab(self):
         """The Console mode tab: the toggle button pick, the double click interval, auto-OFF, auto-ON, the TV / audio, and the program
-        list that blocks switching in a game."""
+        list that blocks switching in a game.
+        """
         self.pick = button("", small=True)
         self.pick.clicked.connect(self._toggle_capture)
         self.pick_icon = label("")
@@ -280,7 +281,8 @@ class ConsoleSettings(QDialog):
 
     def _vpad_state(self, busy=False) -> None:
         """What works now: the kind of plugged pads, the HIDMaestro version (downloaded / newest / downloading / error), the reason
-        for working without HIDMaestro, the restart-as-administrator button."""
+        for working without HIDMaestro, the restart-as-administrator button.
+        """
         backend = self.vpad_backend.currentData()
         used = sorted({rx_ds4.LABELS[k] for k in rx_ds4.kinds if k})
         lines = [_("Teraz: {kinds}").format(kinds=", ".join(used)) if used else _("Teraz: żaden wirtualny pad nie jest podłączony")]
@@ -452,7 +454,8 @@ class ConsoleSettings(QDialog):
 
     def _master_tab(self):
         """The Master tab: the master pad, claiming with PS + R3, the master-only features, the behaviour without a master and the PS +
-        button actions."""
+        button actions.
+        """
         self.master_pad = Combo()
         self._master_touched = False
         self.master_pad.changed.connect(lambda _v: setattr(self, "_master_touched", True))
@@ -561,7 +564,8 @@ class ConsoleSettings(QDialog):
     # ---------- lightbar ----------
     def _load_light(self, cfg) -> None:
         """Fill the Lightbar tab from a LightbarConfig: the pad list (default, connected pads, remembered ones) and the first entry's
-        values."""
+        values.
+        """
         self.low_pct.setValue(cfg.low_pct)
         self._lights = dict(cfg.pads)
         items: list[tuple] = [(DEFAULT_PAD, _("Domyślne - pady bez własnego ustawienia"), "lightbar")]    # (key, label[, icon])
@@ -679,7 +683,8 @@ class ConsoleSettings(QDialog):
         """Centre on the main window's screen and fully inside the work area (without the taskbar): a fixed 860x780 on
         1080p with 150 % scaling (720 px of height) went under the taskbar together with the Save buttons.
         The window frame (the title bar) is known only after showing - remembered, so later openings place
-        the window once, before showing it (without moving a visible window)."""
+        the window once, before showing it (without moving a visible window).
+        """
         if self.isVisible():
             self._frame = self.frameGeometry().size() - self.geometry().size()
         frame = getattr(self, "_frame", FRAME_GUESS)
@@ -727,7 +732,8 @@ class ConsoleSettings(QDialog):
 
     def refresh(self, tv=None, pc=None) -> None:
         """Read the active audio outputs; a device chosen earlier that is absent now (e.g. the TV is off)
-        stays on the list as "unavailable", so that saving does not lose it."""
+        stays on the list as "unavailable", so that saving does not lose it.
+        """
         tv = self.tv.currentData() if tv is None else tv
         pc = self.pc.currentData() if pc is None else pc
         try:
@@ -775,7 +781,8 @@ class ConsoleSettings(QDialog):
 
     def collect_settings(self):
         """-> the Settings described by the window (mouse, master, language, lightbar, Wake-on-LAN, pads); the log settings stay as they
-        are."""
+        are.
+        """
         mouse = MouseConfig(sens=round(self.sens.value(), 2), click_freeze_ms=round(self.freeze.value()),
                             click_rewind_ms=round(self.rewind.value()), drag_threshold=round(self.drag.value()))
         # a master left unchanged in this window stays the current one: the crown on the pad card or PS + R3 while Settings is open
@@ -845,7 +852,8 @@ class ConsoleSettings(QDialog):
 
     def _save(self) -> None:
         """Validate and save everything: settings.json (in effect at once) and, when the console mode or the language changed,
-        console.json plus a restart request."""
+        console.json plus a restart request.
+        """
         try:
             new = self.collect_settings()
         except ValueError as e:

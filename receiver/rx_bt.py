@@ -119,7 +119,8 @@ class Controller:
 @dataclass(frozen=True, slots=True)
 class Status:
     """The last btstate: adapter state BTS_*, flags, seconds of scan left, connected devices, the last operation with its result and MAC,
-    and the receive time."""
+    and the receive time.
+    """
     state: int
     flags: int
     scan_left: int

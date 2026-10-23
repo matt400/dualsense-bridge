@@ -40,7 +40,8 @@ WINGET_NET = "Microsoft.DotNet.Runtime.10"
 
 class HMError(Exception):
     """HIDMaestro unavailable; missing = no DLL (in auto mode an ordinary situation, no warning);
-    need_dotnet = no .NET 10 (the window offers to install it)."""
+    need_dotnet = no .NET 10 (the window offers to install it).
+    """
 
     def __init__(self, msg, missing=False, need_dotnet=False) -> None:
         super().__init__(msg)
@@ -61,7 +62,8 @@ def here():
 
 def candidates(cfg_path=""):
     """DLL paths to try, in order: the configured path (a folder gets the DLL name appended), else the newest downloaded version,
-    hidmaestro/ and the receiver folder."""
+    hidmaestro/ and the receiver folder.
+    """
     if cfg_path:
         p = os.path.expandvars(os.path.expanduser(cfg_path))
         return [os.path.join(p, DLL) if os.path.isdir(p) else p]
@@ -135,7 +137,8 @@ _HM_HINTS = {
 def describe_error(e) -> str:
     """A HIDMaestro error as one readable line: the .NET type, the message and (for 2.0 exceptions) a hint. The fields of
     HMProfileException / HMDriverVersionException (ProfileId, JsonPath, Reason, Problem) are already in the message - only the hint is
-    added."""
+    added.
+    """
     name = type(e).__name__
     hint = _HM_HINTS.get(name)
     return f"{name}: {e}" + (f" ({hint})" if hint else "")
@@ -164,7 +167,8 @@ def _major(version):
 
 def net_runtimes():
     """Installed Microsoft.NETCore.App versions (clr_loader looks for them like dotnet: DOTNET_ROOT, Program Files).
-    None = unknown (no pythonnet / clr_loader) - not the same as no .NET."""
+    None = unknown (no pythonnet / clr_loader) - not the same as no .NET.
+    """
     try:
         from clr_loader import find_runtimes
     except ImportError:
@@ -191,7 +195,8 @@ def need_dotnet():
 
 def install_dotnet():
     """Install .NET 10 through winget (the receiver runs as administrator - no windows). -> (ok, description). Call in the background (up
-    to several min)."""
+    to several min).
+    """
     import subprocess
     cmd = ["winget", "install", "--id", WINGET_NET, "--exact", "--silent", "--accept-package-agreements",
            "--accept-source-agreements", "--disable-interactivity"]
@@ -209,7 +214,8 @@ def install_dotnet():
 def _load_clr(path):
     """CoreCLR through pythonnet (once per process) and a reference to HIDMaestro.Core.dll from its folder (dependencies next to it).
     The runtime is chosen explicitly (>= .NET 10): without a choice clr_loader takes the newest installed, and one older than 10
-    loaded the DLL with no types at all - the import ended with "No module named 'HIDMaestro'"."""
+    loaded the DLL with no types at all - the import ended with "No module named 'HIDMaestro'".
+    """
     global _clr_ready
     if not _clr_ready:
         rts = net_runtimes()                    # check .NET first: a specific error instead of the generic "pythonnet missing"
@@ -238,7 +244,8 @@ def _load_clr(path):
 
 def submit_delegate(clr, ctrl_type):
     """A delegate (controller, IntPtr, int) -> SubmitRawReport(new ReadOnlySpan<byte>((void*)ptr, len)) built as an IL method.
-    pythonnet does not pass bytes / arrays as a ReadOnlySpan, so without this delegate there is no way to send a report."""
+    pythonnet does not pass bytes / arrays as a ReadOnlySpan, so without this delegate there is no way to send a report.
+    """
     try:
         from System import Action, Array, Byte, Int32, IntPtr, Type, Void
         from System.Reflection.Emit import DynamicMethod, OpCodes
@@ -282,7 +289,8 @@ class Backend:
 
     def __init__(self, path) -> None:
         """Load the CLR and the DLL, install the driver, find the DualSense profile and bind the IL submit delegate; any failure is an
-        HMError."""
+        HMError.
+        """
         if not is_admin():
             raise HMError("administrator rights required (Windows needs them to create a virtual device)")
         clr = _load_clr(path)
@@ -312,7 +320,8 @@ class Backend:
 
     def create(self, slot, on_fb):
         """A virtual DualSense on a fixed index and with a fixed slot identity: the same device paths after every
-        recreation (Steam / games remember the pad's settings). An old SDK without the identity key - the index alone."""
+        recreation (Steam / games remember the pad's settings). An old SDK without the identity key - the index alone.
+        """
         key = f"dualsense-bridge:{slot}"
         try:
             ctrl = self.ctx.CreateControllerAt(slot, self.profile, key)
@@ -344,7 +353,8 @@ def out_used(f0, f1):
 def parse_output(report_id, data):
     """A DualSense output report (without the ID byte) -> ((large, small) | None, (r, g, b) | None, (L2, R2) | None).
     The validity flags decide which parts the game sets: bit 0/1 of flag 0 = motors, bit 2 / 3 of flag 0 = the right / left trigger
-    effect (raw 11 B; a trigger without its flag = None), bit 2 of flag 1 = the lightbar colour."""
+    effect (raw 11 B; a trigger without its flag = None), bit 2 of flag 1 = the lightbar colour.
+    """
     if report_id != OUT_REPORT or len(data) < OUT_LEN:
         return None, None, None
     f0 = data[0]
@@ -357,13 +367,15 @@ def parse_output(report_id, data):
 
 class Pad:
     """One virtual DualSense. buf has a fixed address (the ctypes export blocks resizing) - the report is built
-    in place and sent through the delegate without a copy on the Python side."""
+    in place and sent through the delegate without a copy on the Python side.
+    """
     kind = "hm"
     build = staticmethod(build_ds5_report)
 
     def __init__(self, backend, ctrl, on_fb) -> None:
         """Pin the report buffer, take its address for the delegate, subscribe to the output reports and send one report to test the
-        path."""
+        path.
+        """
         self.ctrl, self.on_fb = ctrl, on_fb
         self.buf = bytearray(REPORT_LEN)
         self._view = (ctypes.c_char * REPORT_LEN).from_buffer(self.buf)

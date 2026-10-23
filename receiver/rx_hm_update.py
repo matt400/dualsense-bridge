@@ -93,7 +93,8 @@ def newest_dll():
 
 def in_use():
     """The folder of the HIDMaestro version loaded in this process, or None. The CLR locks only files already loaded - the dependencies
-    (Microsoft.Windows.SDK.NET.dll, WinRT.Runtime.dll) are loaded only on the first use of their types."""
+    (Microsoft.Windows.SDK.NET.dll, WinRT.Runtime.dll) are loaded only on the first use of their types.
+    """
     import rx_hm                              # rx_hm imports this module - import here
     b = rx_hm.loaded()
     path = getattr(b, "path", None)
@@ -103,7 +104,8 @@ def in_use():
 def cleanup(keep) -> None:
     """Older versions and leftovers of interrupted downloads. The folder of the version loaded in this process stays until a restart:
     rmtree removed unlocked DLL dependencies from it (loaded lazily) - a HIDMaestro loaded before the update
-    crashed on the next pad connection (a missing file). Locked files stay until next time."""
+    crashed on the next pad connection (a missing file). Locked files stay until next time.
+    """
     busy = in_use()
     for n in os.listdir(root()) if os.path.isdir(root()) else ():
         p = os.path.join(root(), n)
@@ -174,7 +176,8 @@ def min_age_s():
 class HttpRange(io.RawIOBase):
     """A remote file readable with seeking (HTTP Range) - zipfile reads the directory from the end and single entries.
     The address after GitHub's redirect (a signed link to the storage) is fixed once, the size comes from Content-Range.
-    prefetch(start, end) fetches a range in one request; reads from it are served from memory."""
+    prefetch(start, end) fetches a range in one request; reads from it are served from memory.
+    """
 
     def __init__(self, url, opener=None) -> None:
         """Probe the server with a 1-byte Range request: it must answer 206; the final URL and the total size are taken from it."""
@@ -244,7 +247,8 @@ def _name(info):
 
 def pick(infos):
     """The entries to extract: the DLL from the zip root (or the first one found) and its WinRT dependencies from the folder of the
-    application that ships it (HIDMaestroTest) - without test applications, samples and second copies of the DLL."""
+    application that ships it (HIDMaestroTest) - without test applications, samples and second copies of the DLL.
+    """
     files = [i for i in infos if not i.is_dir()]
     by_name = {}
     for i in sorted(files, key=lambda i: _name(i).count("/")):     # the shallowest first: the DLL from the root directory
@@ -332,7 +336,8 @@ def check(force=False):
 
 def _check(force) -> None:
     """The check itself (under the lock): skip when checked recently, ask GitHub for the latest release, hold a fresh one
-    until it is old enough (the first installation never waits), otherwise install it, clean up and notify."""
+    until it is old enough (the first installation never waits), otherwise install it, clean up and notify.
+    """
     refresh_status()
     # 0 <=: a clock set back (a check "in the future") must not stop checking until that date
     if not force and 0 <= time.time() - status.checked < CHECK_S and status.version:

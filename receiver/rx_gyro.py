@@ -2,7 +2,8 @@
 
 rx_state.recompute computes the velocity [px/s] on every state packet and stores it in the pad state as "gyro_vel".
 This thread integrates that velocity every ~2 ms, independently of the packet rhythm, so the cursor glides
-instead of jumping in 4 ms batches of movement."""
+instead of jumping in 4 ms batches of movement.
+"""
 import time
 
 import rx_state as S

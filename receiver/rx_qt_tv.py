@@ -43,7 +43,8 @@ def _focusable(w, root, scope=None):
 
 def move_focus(root, forward, scope=None):
     """Next / previous element in the focus chain of window `root` (like Tab), scrolling the panel so that it is visible.
-    scope: only elements inside this widget (an open Bluetooth drawer)."""
+    scope: only elements inside this widget (an open Bluetooth drawer).
+    """
     start = QApplication.focusWidget()
     if start is None or start.window() is not root:
         start = root
@@ -94,7 +95,8 @@ class PadNav:
 
     def tick(self, now) -> None:
         """One navigation step: compute the new press edges against the previous state, drop released directions from the
-        repeat table, act on every new press and repeat the held directions when their time comes."""
+        repeat table, act on every new press and repeat the held directions when their time comes.
+        """
         root = self.target()
         pressed = self._pressed() if root is not None else frozenset()
         prev, self.prev = self.prev, pressed
@@ -118,7 +120,8 @@ class PadNav:
 
     def act(self, root, name) -> None:
         """Perform one pad input as a UI action: with an open popup it is translated to keys; otherwise D-pad moves the focus
-        (or changes a slider / combo / tab), cross activates, circle goes back and L1 / R1 switch the pad."""
+        (or changes a slider / combo / tab), cross activates, circle goes back and L1 / R1 switch the pad.
+        """
         popup = QApplication.activePopupWidget()
         if popup is not None:                                   # an expanded list: arrows, cross selects, circle collapses
             w = popup.focusWidget() or popup
@@ -148,7 +151,8 @@ class PadNav:
 
     def _direction(self, root, fw, name, scope=None) -> None:
         """A D-pad direction: left / right adjust sliders, tabs, the pad drawing and combo boxes; up / down scroll item views and
-        shortcut lists; everything else (and the edges) moves the focus in the focus chain."""
+        shortcut lists; everything else (and the edges) moves the focus in the focus chain.
+        """
         side = name in ("dpad_left", "dpad_right")
         from rx_qt_pad import PadView
         if side and isinstance(fw, (QAbstractSlider, QTabBar, PadView)):

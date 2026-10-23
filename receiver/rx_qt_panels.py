@@ -129,7 +129,7 @@ class ProfileBar(QWidget):
         lay.addWidget(self.form)
 
     def reload(self, profiles, key, info, recent) -> None:
-        """profiles = [(key, name, in use)]; the list is rebuilt only when it changed (an open one is not closed)."""
+        """Profiles = [(key, name, in use)]; the list is rebuilt only when it changed (an open one is not closed)."""
         sig = tuple(profiles)
         if sig != self._sig:
             self._sig = sig
@@ -185,7 +185,8 @@ class PartPage(QWidget):
 
     def _button_page(self):
         """The page for a button or trigger: the target combo and reset; for L2 / R2 also the trigger effect, game rumble and the response
-        tuning."""
+        tuning.
+        """
         w = QWidget()
         lay = _vbox(w)
         head = QHBoxLayout()

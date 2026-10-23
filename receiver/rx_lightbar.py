@@ -43,7 +43,8 @@ def battery_rgb(pct, low_pct):
 
 def own_color(light: PadLight, pct, low_pct, idle_rgb):
     """The pad's own colour from the settings (used while the game has set nothing) -> (rgb, whether it differs from the
-    default idle_lightbar). Unknown battery (pct > 100) in battery mode falls back to the fixed colour."""
+    default idle_lightbar). Unknown battery (pct > 100) in battery mode falls back to the fixed colour.
+    """
     if light.mode == "battery" and pct <= 100:
         return battery_rgb(pct, low_pct), True
     if light.color:
@@ -64,7 +65,8 @@ def blink_on(now):
 
 def blink_rgb(base, now):
     """Colour for the current blink phase: red or the base colour. When the base is itself red (e.g. the battery colour at a
-    low level) the phases are red and lightbar off, so that the blinking stays visible."""
+    low level) the phases are red and lightbar off, so that the blinking stays visible.
+    """
     if blink_on(now):
         return LOW_RGB
     return (0, 0, 0) if tuple(base) == LOW_RGB else tuple(base)

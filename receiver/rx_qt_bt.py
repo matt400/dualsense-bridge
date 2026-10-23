@@ -57,7 +57,8 @@ def status_icon(level: str) -> QIcon:
 class ElidedLabel(QLabel):
     """A label that elides long text with an ellipsis instead of widening the panel (the full text in the tooltip).
     Plain text: Bluetooth device names are set by every device in range - a QLabel in AutoText mode would show a name
-    with HTML tags as formatted content (impersonating window elements)."""
+    with HTML tags as formatted content (impersonating window elements).
+    """
 
     def __init__(self, role: str) -> None:
         super().__init__()
@@ -153,7 +154,8 @@ class DeviceRow(QFrame):
 
     def update_from(self, dev: BT.Device, busy: int | None, other_busy: bool) -> None:
         """Refresh the row from the device state: name, signal, state text, and the action button (pair / connect / disconnect by state;
-        busy = the running operation code, other_busy disables the row while another device is busy)."""
+        busy = the running operation code, other_busy disables the row while another device is busy).
+        """
         self.name.set_full(dev.name)
         self.bars.set(dev.bars())
         self.bars.setToolTip(f"{dev.rssi} dBm" if dev.rssi is not None else _("Sygnał widać w trakcie skanowania"))
@@ -235,7 +237,8 @@ class BtDrawer(SideDrawer):
     # ---------- building ----------
     def _build(self, lay: QVBoxLayout) -> None:
         """Build the panel: status, controller choice, power / scan buttons, hint, the scrollable device list and the last operation
-        result."""
+        result.
+        """
         self.rows: dict[str, DeviceRow] = {}
         self.status = label("", wrap=True)
         lay.addWidget(self.status)
@@ -335,7 +338,8 @@ class BtDrawer(SideDrawer):
     # ---------- refreshing ----------
     def refresh(self) -> None:
         """Every REFRESH_MS while the panel is open: state, scan, the result of the last operation, rows; every KEEPALIVE_S
-        BT_LIST (the sender sends the list while the panel is open)."""
+        BT_LIST (the sender sends the list while the panel is open).
+        """
         now = time.monotonic()
         if self._open and self.window().isVisible() and now - self._keepalive >= BT.KEEPALIVE_S:
             self._keepalive = now
@@ -359,7 +363,8 @@ class BtDrawer(SideDrawer):
 
     def _adapter(self, s: BT.Status | None, busy: bool, now: float) -> None:
         """Controller choice: the mode (not during our own change - no flash of the old mode), the list of controllers
-        with names and a Use button, the description."""
+        with names and a Use button, the description.
+        """
         shown = s is not None and s.mode != 0
         self.adapter_box.setVisible(shown)
         if not shown:
@@ -408,7 +413,8 @@ class BtDrawer(SideDrawer):
 
     def _rows(self, now: float, busy: bool, enabled: bool) -> None:
         """Sync the device rows with the list: drop the vanished ones (moving the focus off a removed row), add new ones, update all and
-        fix the order."""
+        fix the order.
+        """
         devs = BT.devices if enabled else ()
         order = [d.mac for d in devs]
         for mac in [m for m in self.rows if m not in order]:

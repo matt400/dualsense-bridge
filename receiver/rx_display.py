@@ -34,7 +34,7 @@ TOPOLOGY = {"internal": 0x1, "clone": 0x2, "extend": 0x4, "tv": 0x8}     # SDC_T
 
 # ---------------- pure logic (testable without Windows) ----------------
 def pick_mode(modes, w, h):
-    """modes = [(w, h, bpp, Hz[, flags])] -> the best w×h mode (32 bpp, not interlaced, the highest Hz) or None."""
+    """Modes = [(w, h, bpp, Hz[, flags])] -> the best w×h mode (32 bpp, not interlaced, the highest Hz) or None."""
     ok = [m for m in modes if m[0] == w and m[1] == h and m[2] >= 32 and not (m[4:5] and m[4] & DM_INTERLACED)]
     return max(ok, key=lambda m: m[3]) if ok else None
 
@@ -63,7 +63,8 @@ def compact_modes(paths, modes):
 
 def scale_relative(percent, min_rel, cur_rel, max_rel):
     """Scale in % -> (the relative value for DPI_SET, whether it is already set). The recommended scale has index -min_rel in DPI_VALUES.
-    A scale outside the display's range -> ValueError."""
+    A scale outside the display's range -> ValueError.
+    """
     if percent not in DPI_VALUES:
         raise ValueError(f"scale {percent}% is not one of {DPI_VALUES}")
     rel = DPI_VALUES.index(percent) - (-min_rel)
@@ -144,7 +145,8 @@ def _user32():
 
 def _query(u):
     """Active display paths -> (paths, modes) as ctypes arrays; the layout may change while we read
-    (TV switching) - then retry."""
+    (TV switching) - then retry.
+    """
     for _ in range(5):
         n_paths, n_modes = ctypes.c_uint32(), ctypes.c_uint32()
         if u.GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, ctypes.byref(n_paths), ctypes.byref(n_modes)):
@@ -180,7 +182,8 @@ def active_sources():
 def set_topology(mode) -> None:
     """The display layout ("extend" / "internal" / "tv") through SetDisplayConfig - the same as DisplaySwitch, but without
     launching a program and synchronously (it works while Windows is shutting down too). Windows remembers the layout,
-    so after a restart the sign-in screen appears where it was set."""
+    so after a restart the sign-in screen appears where it was set.
+    """
     r = _user32().SetDisplayConfig(0, None, 0, None, SDC_APPLY | TOPOLOGY[mode])
     if r:
         raise OSError(f"SetDisplayConfig({mode}) = {r}")
@@ -207,7 +210,8 @@ def _modes(u, device):
 
 def _ccd_resolution(u, w, h, rate, keep_target):
     """The source mode w×h through SetDisplayConfig. keep_target=False: Windows picks a signal for the TV (w×h at `rate`),
-    True: the current signal stays, the graphics card scales the picture. -> a Windows error code (0 = OK)."""
+    True: the current signal stays, the graphics card scales the picture. -> a Windows error code (0 = OK).
+    """
     paths, modes = _query(u)
     for p in paths:
         if p.sourceInfo.modeInfoIdx == MODE_IDX_INVALID or modes[p.sourceInfo.modeInfoIdx].infoType != MODE_SOURCE:
@@ -234,7 +238,8 @@ def _gdi_resolution(u, device, best):
 
 def set_resolution(device, w, h) -> str:
     """-> a description of the change; does nothing when the display already has w×h. In turn: CCD with a w×h signal, CCD scaling
-    the current signal, GDI. After each attempt it reads back - what counts is what is actually on the display."""
+    the current signal, GDI. After each attempt it reads back - what counts is what is actually on the display.
+    """
     u = _user32()
     if (cur := _current(u, device)) and cur[:2] == (w, h):
         return f"{w}x{h} already set"
@@ -262,7 +267,8 @@ def set_resolution(device, w, h) -> str:
 
 def set_scale(adapter, source_id, percent) -> str:
     """Set the Windows scaling of a display source to `percent` (relative to its recommended scale; read first, then set). -> a
-    description."""
+    description.
+    """
     u = _user32()
     get = DPI_GET_INFO()
     get.header = HEADER(DPI_GET, ctypes.sizeof(DPI_GET_INFO), adapter, source_id)

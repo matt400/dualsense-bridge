@@ -31,7 +31,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 def files():
     """{name in the backup: path of the current file} - paths come from the configuration (remap_file can be changed); without
-    a configuration (update.bat: rx_update run without starting the receiver) the defaults next to the script are used."""
+    a configuration (update.bat: rx_update run without starting the receiver) the defaults next to the script are used.
+    """
     def path(attr, name):
         return getattr(C, attr, None) or os.path.join(HERE, name)
     remap = path("REMAP_PATH", "remap.json")
@@ -56,7 +57,8 @@ class Backup:
 
 def create(reason="update", commit="", new=""):
     """Copy the current settings files into a new backup folder named "<timestamp>[_<commit>]" -> Backup, or None when none of
-    the files exists yet. Backups beyond the newest KEEP are deleted."""
+    the files exists yet. Backups beyond the newest KEEP are deleted.
+    """
     present = {n: p for n, p in files().items() if os.path.isfile(p)}
     if not present:
         return None

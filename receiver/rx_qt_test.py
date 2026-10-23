@@ -87,7 +87,8 @@ class MotionChart(QWidget):
 
     def paintEvent(self, _e) -> None:
         """Paint the frame, the zero line, the three axis traces (scale = the largest value rounded by _nice), the title, the latest
-        values and the scale."""
+        values and the scale.
+        """
         p = QPainter(self)
         p.setRenderHints(QPainter.RenderHint.Antialiasing | QPainter.RenderHint.TextAntialiasing)
         r = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
@@ -130,7 +131,8 @@ class MotionChart(QWidget):
 class StickScope(QWidget):
     """Both sticks live. A square-root scale (r -> √r): a 1 % deviation takes 10 % of the radius, so drift is visible, and
     a full deflection still reaches the edge. A dashed circle = the dead zone from the drift correction, yellow = the peak of
-    the last measurement."""
+    the last measurement.
+    """
 
     RINGS = (0.05, 0.25)
 
@@ -179,7 +181,8 @@ class StickScope(QWidget):
 
     def paintEvent(self, _e) -> None:
         """Paint each stick: the plate, reference rings, the dead zone and peak circles, the fading trail, the current position and its
-        value."""
+        value.
+        """
         p = QPainter(self)
         p.setRenderHints(QPainter.RenderHint.Antialiasing | QPainter.RenderHint.TextAntialiasing)
         w, h = self.width(), self.height()
@@ -456,7 +459,8 @@ class TestPanel(QWidget):
 
     def _cal_tick(self, now) -> None:
         """Follow a calibration: progress bar, the sender's answer (or a timeout) and its result note; without a calibration, re-ask for a
-        lost state."""
+        lost state.
+        """
         if self.cal_t0 is None:
             if (S.gyro_cal[self.slot] is None and now - self.query_t >= QUERY_S and S.alive[self.slot]
                     and P.sender_calib(self.slot)):
@@ -527,7 +531,8 @@ class TestPanel(QWidget):
 
     def tick(self, now, live):
         """From the window clock (30 Hz): charts, sticks, the progress of the measurement and calibration. live = rx_profiles.live() of
-        the pad."""
+        the pad.
+        """
         t = P.test_live(self.slot)
         self.gyro_chart.push(v / C.GYRO_RES for v in t["gyro"])
         self.acc_chart.push(v / C.ACC_RES for v in t["acc"])

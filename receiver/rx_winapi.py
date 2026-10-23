@@ -37,7 +37,8 @@ APP_ID = "DualSenseBridge.Receiver"
 
 def set_app_id() -> None:
     """A dedicated AppUserModelID: Windows treats the window as a separate application, so the taskbar shows the window's icon
-    (the pad), not the python.exe / pythonw.exe icon. Call before creating the first window."""
+    (the pad), not the python.exe / pythonw.exe icon. Call before creating the first window.
+    """
     try:
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_ID)
     except Exception:  # best effort: without it the taskbar shows the Python icon
@@ -47,7 +48,8 @@ def set_app_id() -> None:
 def _no_power_throttling() -> None:
     """Windows 10/11: a process with a hidden window (the tray) may be moved into the efficiency mode (EcoQoS) and lose
     timer resolution - that caused random latency spikes. Both mechanisms are switched off (errors ignored on older
-    Windows versions)."""
+    Windows versions).
+    """
     class PPT(ctypes.Structure):
         _fields_ = [("Version", wt.DWORD), ("ControlMask", wt.DWORD), ("StateMask", wt.DWORD)]
     try:
@@ -99,7 +101,8 @@ WTS_CURRENT_SESSION, WTS_SESSION_INFO = 0xFFFFFFFF, 24
 def since_logon_s():
     """Seconds since logon to the current Windows session, or None. The time since Windows started (uptime_s) misleads: with
     Fast Startup "Shut down" does not restart the kernel, and sleep counts too - it gave an hour even though the receiver
-    started right after logon."""
+    started right after logon.
+    """
     try:
         wts = ctypes.windll.wtsapi32
         buf, size = ctypes.c_void_p(), wt.DWORD()
@@ -127,7 +130,8 @@ def ensure_single_instance() -> None:
     """A second receiver copy (e.g. autostart + a manual launch) exits with a readable message.
     ERROR_ACCESS_DENIED also means "already running": the lock is held by a receiver started as administrator, and an unprivileged
     process does not get full access to it (CreateMutex then returns NULL instead of ERROR_ALREADY_EXISTS) -
-    the second copy used to start and fail only on the busy UDP port with a misleading message."""
+    the second copy used to start and fail only on the busy UDP port with a misleading message.
+    """
     global _mutex
     try:
         k = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -144,7 +148,8 @@ def ensure_single_instance() -> None:
 
 def instance_running():
     """Whether a receiver is already running (the single-instance lock exists) - without creating it. Before elevating:
-    a second copy must not show a UAC prompt just to exit right after."""
+    a second copy must not show a UAC prompt just to exit right after.
+    """
     try:
         k = ctypes.WinDLL("kernel32", use_last_error=True)
         k.OpenMutexW.argtypes = [wt.DWORD, wt.BOOL, wt.LPCWSTR]
@@ -179,7 +184,8 @@ def is_admin():
 
 def relaunch_admin(cmd):
     """Run cmd as administrator (ShellExecute "runas" = a UAC prompt). -> True when it started; a refusal in UAC -> False.
-    Environment variables do not pass through UAC (the new process gets the user's environment)."""
+    Environment variables do not pass through UAC (the new process gets the user's environment).
+    """
     sh = ctypes.windll.shell32
     sh.ShellExecuteW.argtypes = [wt.HWND, wt.LPCWSTR, wt.LPCWSTR, wt.LPCWSTR, wt.LPCWSTR, ctypes.c_int]
     sh.ShellExecuteW.restype = ctypes.c_void_p
@@ -192,7 +198,8 @@ def relaunch_admin(cmd):
 def relaunch(env=None, admin=False) -> None:
     """A new receiver process with the same arguments (as autostart). Call after releasing the ports and the instance lock.
     env: extra environment variables for the new process (e.g. the console mode state). admin: through UAC; a refusal = an ordinary
-    restart (the receiver must not vanish)."""
+    restart (the receiver must not vanish).
+    """
     cmd = [sys.executable, os.path.abspath(sys.argv[0]), *sys.argv[1:]]
     if admin:
         if relaunch_admin(cmd):
@@ -294,7 +301,8 @@ INVALID_HANDLE = ctypes.c_void_p(-1).value
 
 def running_exes():
     """Program names (lower case, e.g. "forzahorizon5.exe") of all running processes - one Toolhelp
-    snapshot (without opening the processes). An error -> OSError."""
+    snapshot (without opening the processes). An error -> OSError.
+    """
     k = ctypes.WinDLL("kernel32", use_last_error=True)
     k.CreateToolhelp32Snapshot.restype = wt.HANDLE
     k.CreateToolhelp32Snapshot.argtypes = [wt.DWORD, wt.DWORD]
@@ -318,7 +326,8 @@ def force_foreground(hwnd):
     """Bring a window to the foreground from a background process. Windows blocks SetForegroundWindow for programs that have
     no active window (the taskbar button flashes instead), so: first attach to the input queue of the active window's thread
     (AttachThreadInput), and when that is not enough - tap Alt (the last keyboard input
-    "belongs" to us). -> True when the window is in the foreground."""
+    "belongs" to us). -> True when the window is in the foreground.
+    """
     fg = user32.GetForegroundWindow()
     if not hwnd or fg == hwnd:
         return bool(hwnd)
@@ -398,7 +407,8 @@ def no_connreset(sk) -> None:
 def recv_timeout(sk, seconds) -> None:
     """A blocking socket with a receive timeout in the kernel (SO_RCVTIMEO): recvfrom is a single system call.
     Python's settimeout() does an extra select() before every receive (a non-blocking socket + waiting).
-    On timeout: TimeoutError (Windows, WSAETIMEDOUT) or BlockingIOError (Linux, EAGAIN)."""
+    On timeout: TimeoutError (Windows, WSAETIMEDOUT) or BlockingIOError (Linux, EAGAIN).
+    """
     try:
         sk.settimeout(None)
         if os.name == "nt":
@@ -432,7 +442,8 @@ ADMIN_OWNERS = frozenset({ADMINS, SYSTEM, TRUSTED_INSTALLER})
 
 def owner_sid(path):
     """The SID of a file / folder owner ("S-1-5-...") or None (an error, not Windows). The owner can always change
-    permissions, so an ordinary user's folder = code that this user (and any of their programs) can replace."""
+    permissions, so an ordinary user's folder = code that this user (and any of their programs) can replace.
+    """
     try:
         adv = ctypes.windll.advapi32
         adv.GetNamedSecurityInfoW.argtypes = [wt.LPCWSTR, ctypes.c_int, wt.DWORD, ctypes.POINTER(ctypes.c_void_p),
@@ -469,7 +480,8 @@ def harden_dir(path):
     """Make a folder writable only by administrators: the owner is Administrators, permissions without inheritance from the user
     profile (Administrators and SYSTEM - full, Users - read and execute), files inside inherit
     from the folder. The receiver (administrator) can still save settings and update itself; an ordinary program can no longer replace
-    the code that runs with elevated rights. -> (ok, error description)."""
+    the code that runs with elevated rights. -> (ok, error description).
+    """
     icacls = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "icacls.exe")
     steps = ([path, "/setowner", f"*{ADMINS}", "/T", "/C", "/Q"],
              [path, "/reset", "/T", "/C", "/Q"],

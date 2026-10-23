@@ -1,5 +1,6 @@
 """Receiver: small window widgets - a slider with a value, a button with confirmation, a battery bar, a switch,
-a collapsible "Advanced" section, a latency segment bar."""
+a collapsible "Advanced" section, a latency segment bar.
+"""
 from PySide6.QtCore import QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPainterPath
 from PySide6.QtWidgets import (QButtonGroup, QComboBox, QFrame, QHBoxLayout, QLabel, QPushButton, QSlider, QSpinBox, QVBoxLayout,
@@ -10,7 +11,8 @@ from rx_qt_style import LINE, OK, TRACK, px, set_prop
 
 def label(text="", role=None, wrap=False):
     """A label with plain text: part of the content comes from the network (the sender, Bluetooth names, the pad id) -
-    the default AutoText would render HTML tags in it."""
+    the default AutoText would render HTML tags in it.
+    """
     lb = QLabel(text)
     lb.setTextFormat(Qt.TextFormat.PlainText)
     if role:
@@ -42,7 +44,8 @@ def icon_button(name, tip_text, size=20):
 
 def spinbox(lo, hi, step=1, suffix=""):
     """A number field. The style sheet's padding does not move the QSpinBox text field (the text sticks to the left
-    edge, unlike QLineEdit / QComboBox) - the left gap is made through the inner field's text margins."""
+    edge, unlike QLineEdit / QComboBox) - the left gap is made through the inner field's text margins.
+    """
     box = QSpinBox()
     box.setRange(lo, hi)
     box.setSingleStep(step)
@@ -117,7 +120,8 @@ def input_items(names, text=False):
 
 class Combo(QComboBox):
     """A list with values (userData) - selecting by value, not by index; set_data emits no signals.
-    An item: (value, text) or (value, text, icon) - the icon is a name from rx_qt_icons (a pad button etc.)."""
+    An item: (value, text) or (value, text, icon) - the icon is a name from rx_qt_icons (a pad button etc.).
+    """
 
     changed = Signal(object)     # the new value (userData)
 
@@ -216,7 +220,8 @@ class SliderRow(QWidget):
 
 class ConfirmButton(QPushButton):
     """A button that needs a second click within a few seconds (instead of a dialog): the first click changes
-    the label and turns it red, the second emits `confirmed`. iconic: icon only, the label appears once armed."""
+    the label and turns it red, the second emits `confirmed`. iconic: icon only, the label appears once armed.
+    """
 
     confirmed = Signal()
 
@@ -257,7 +262,8 @@ class ConfirmButton(QPushButton):
 
 class Collapsible(QWidget):
     """A collapsible section ("▸ ADVANCED"): rarely changed settings tucked away so the panel does not overwhelm.
-    set_open(True) from code when something inside has been changed (so it is visible that the setting is in effect)."""
+    set_open(True) from code when something inside has been changed (so it is visible that the setting is in effect).
+    """
 
     toggled = Signal(bool)
 
@@ -309,7 +315,7 @@ class SegmentBar(QWidget):
         return QSize(120, self.height())
 
     def set(self, parts) -> None:
-        """parts = [(value, colour)]; an empty list = the track only."""
+        """Parts = [(value, colour)]; an empty list = the track only."""
         parts = tuple((max(0.0, v), c) for v, c in parts)
         if parts != self.parts:
             self.parts = parts
@@ -366,7 +372,8 @@ class BatteryBar(QWidget):
 
 class Segmented(QFrame):
     """An option switch in one "rail" ([ Result ][ Physical ]): the selected option is a raised pill, the options have
-    equal width and spacing, so they do not merge into one button."""
+    equal width and spacing, so they do not merge into one button.
+    """
 
     changed = Signal(str)
     GAP = 4

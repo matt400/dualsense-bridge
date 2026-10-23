@@ -70,7 +70,8 @@ def analyze(samples):
 class DriftRun:
     """One measurement for a slot, a two-phase state machine: "settle" (let the raw-stick mode reach the pad), "measure"
     (collect samples), then "done". tick(now) -> None (still running) or DriftResult; cancel() aborts (the pad left, another
-    pad was picked). raw(slot, seconds) is the command to the sender (rx_profiles.raw_sticks); None = the sender does not know it."""
+    pad was picked). raw(slot, seconds) is the command to the sender (rx_profiles.raw_sticks); None = the sender does not know it.
+    """
 
     def __init__(self, slot, now, raw=None) -> None:
         self.slot, self.raw = slot, raw

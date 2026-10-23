@@ -234,7 +234,8 @@ def _step(what, fn, *args) -> None:
 def auto_pad(i):
     """A pad connected in slot i switches the console mode on: the master pad, and without a set master (any pad may do
     everything) - the first connected pad. Before, without a master auto-ON never worked (after the PC started the mode
-    stayed off); a second pad arriving later does not switch on a mode that was switched off by hand."""
+    stayed off); a second pad arriving later does not switch on a mode that was switched off by hand.
+    """
     if rx_settings.cur.master.pad:
         return master.is_master(i)
     return not any(S.alive[k] for k in range(len(S.alive)) if k != i)
@@ -243,7 +244,8 @@ def auto_pad(i):
 class Console:
     def __init__(self, cfg) -> None:
         """Set up the state: job queue, double-click tracking per pad, the pending auto-ON and the restart flags read from the
-        environment."""
+        environment.
+        """
         self.cfg = cfg
         self.on = False
         self._jobs = queue.SimpleQueue()
@@ -300,7 +302,8 @@ class Console:
         """The pad in slot i has just connected (the first packet after silence) or sent a new identifier (ident).
         Without a master in the settings the connection alone decides: the identifier arrives right after the first packet and
         set auto-ON a second time - after a receiver restart with the mode off the first one used up the skip
-        (_skip_auto) and the second switched the mode on anyway; with a game in the foreground the warning went out twice."""
+        (_skip_auto) and the second switched the mode on anyway; with a game in the foreground the warning went out twice.
+        """
         if not self.cfg.auto_on_master:
             return
         if ident and not rx_settings.cur.master.pad:
@@ -321,7 +324,8 @@ class Console:
 
     def blocked_by(self):
         """The foreground program that blocks switching (a game), or None. An empty allowed_apps = no
-        blocking (otherwise a cleared field in Settings blocked switching everywhere, the desktop too)."""
+        blocking (otherwise a cleared field in Settings blocked switching everywhere, the desktop too).
+        """
         if not self.cfg.allowed_apps:
             return None
         exe = _foreground()
@@ -342,7 +346,8 @@ class Console:
     def resync(self, i) -> None:
         """A boundary of the Test view (the network thread, before on_state): during the test on_state is not called, so the mode
         button's state was from before the test - R2 held on entering and released during the test "stayed held" and the first click after
-        the test was lost. The state is taken from the pad's current inputs, the click series starts over."""
+        the test was lost. The state is taken from the pad's current inputs, the click series starts over.
+        """
         mask, hx, hy, lt, rt = S.states[i]["raw"]
         if self._trigger:
             self._down[i] = (lt if self.cfg.toggle_button == "l2" else rt) >= TRIG_HI
@@ -352,7 +357,8 @@ class Console:
 
     def combo(self, i) -> None:
         """The mode button used together with another input (also the touchpad click, which is not in the mask): this press
-        does not count as a click and breaks the series - two shortcuts from PS in a row do not switch the screen."""
+        does not count as a click and breaks the series - two shortcuts from PS in a row do not switch the screen.
+        """
         if self._down[i]:
             self._last_click[i] = 0.0
 
@@ -432,7 +438,8 @@ class Console:
 
     def _apply(self, on, cfg=None, why="", toast=True) -> None:
         """Switch the mode on / off: the screen topology, the TV resolution, the audio device, the log / event and the toast (each step
-        isolated by _step)."""
+        isolated by _step).
+        """
         cfg = cfg or self.cfg
         self.on, self._since, self._revert = on, time.monotonic(), None
         self._verify = [self._since + d for d in VERIFY_AFTER_S] if on else []
@@ -467,7 +474,8 @@ class Console:
     def power_off(self, why) -> bool:
         """Before a PC shutdown / sleep (a Windows session end too): the console mode on -> OFF, and we wait for it to
         finish (POWER_WAIT_S at most). Windows remembers the screen layout, so without this the picture would be on the TV only after
-        the computer starts. Callable from any thread; -> True when the mode was on."""
+        the computer starts. Callable from any thread; -> True when the mode was on.
+        """
         if not self.on:
             return False
         done = threading.Event()
@@ -491,7 +499,8 @@ class Console:
 
     def close(self, restart=False) -> None:
         """Closing the receiver. On a plain exit with the console mode on we return to extend (after a restart
-        the start itself sets the screen by startup_mode, so we do not switch twice)."""
+        the start itself sets the screen by startup_mode, so we do not switch twice).
+        """
         if self.on and not restart:
             self._jobs.put(lambda: self._apply(False, why=_("zamknięcie receivera"), toast=False))
         self._jobs.put(_STOP)
@@ -531,7 +540,8 @@ def resync(i) -> None:
 
 def is_on():
     """The console mode is on permanently - without a running "Test" (the test returns to OFF by itself, so a restart during it,
-    e.g. Save in Settings, must not leave the mode on forever)."""
+    e.g. Save in Settings, must not leave the mode on forever).
+    """
     return ctl is not None and ctl.on and ctl._revert is None
 
 

@@ -19,7 +19,8 @@ def set_lang(code) -> None:
 
 def _(text):
     """Translate a Polish UI text: the EN dictionary entry in English mode, otherwise the text itself (the Polish text is the lookup
-    key)."""
+    key).
+    """
     return EN.get(text, text) if lang == "en" else text
 
 

@@ -6,7 +6,8 @@
   runner       the instance used by the window (rx_qt_gstick) and receiver_controller (starts the thread)
 
 The thread knows nothing about Qt: the window polls snapshot() with a timer and passes setting changes via set_config() (signal -> slot).
-Force release: disabling the feature, a profile / foreground game change, losing the pad, stopping."""
+Force release: disabling the feature, a profile / foreground game change, losing the pad, stopping.
+"""
 import json
 import os
 import threading
@@ -77,7 +78,8 @@ class Store:
 
 class StateSink(Sink):
     """Sink for the receiver's virtual pad (ViGEm DS4 / HIDMaestro DualSense read the slot state). Other sinks
-    (vJoy, uinput) = further Sink subclasses; Runner knows only this interface."""
+    (vJoy, uinput) = further Sink subclasses; Runner knows only this interface.
+    """
 
     def drive(self, slot, target, x, y, button) -> None:
         self._set(slot, (target, x, y, button))
@@ -218,7 +220,8 @@ class Runner:
 
     def _feedback(self, slot, event, mode, now) -> None:
         """Rumble / lightbar pulse on a zone crossing: full tilt reached (edge) or back in the deadzone (center). Only these two
-        crossings are signalled - leaving the deadzone and leaving the outer zone would tick on every small move."""
+        crossings are signalled - leaving the deadzone and leaving the outer zone would tick on every small move.
+        """
         kind = "edge" if event == EV_OUTER_IN else "center" if event == EV_DEAD_IN else None
         if kind is None or now - self._fb_t[slot] < FEEDBACK_GAP_S:
             return

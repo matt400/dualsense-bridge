@@ -47,7 +47,7 @@ class Summary:
 
 
 def _row(lat, done_ns):
-    """lat = (receive ns, phone µs, bt µs, net µs) from rx_net -> (bt | None, phone, net, pc) or None.
+    """Lat = (receive ns, phone µs, bt µs, net µs) from rx_net -> (bt | None, phone, net, pc) or None.
 
     The PC segment is the time from the packet receive to `done_ns`. A sample whose PC time is negative or above
     MAX_PC_US is dropped. bt is None when the sender sent no pad timestamp (LAT_NONE).
@@ -92,7 +92,8 @@ def _mean(xs):
 
 def _summarize(rows):
     """[(bt | None, phone, net, pc) µs] -> Summary. The total of a row is the sum of its segments (a missing bt counts as 0);
-    p95 uses the nearest-rank method on the sorted totals."""
+    p95 uses the nearest-rank method on the sorted totals.
+    """
     bt, phone, net, pc = zip(*rows, strict=True)
     totals = sorted((b or 0) + p + n + c for b, p, n, c in rows)
     n = len(totals)
@@ -102,7 +103,8 @@ def _summarize(rows):
 
 def summary(i, now_ns=None):
     """-> Summary of all changes from the last WINDOW_S or None (too few samples: the pad is idle, an older sender,
-    no PC clock)."""
+    no PC clock).
+    """
     start = (now_ns or time.perf_counter_ns()) - int(WINDOW_S * 1e9)
     with _lock:
         d = _samples.get(i)

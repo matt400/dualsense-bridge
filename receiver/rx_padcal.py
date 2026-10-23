@@ -43,7 +43,8 @@ def _clean(e):
 
 def _load():
     """Lazily load the file into _pads (a missing file = no corrections, an unreadable one is reported and ignored). Call with _lock
-    held."""
+    held.
+    """
     global _pads
     if _pads is None:
         _pads = {}

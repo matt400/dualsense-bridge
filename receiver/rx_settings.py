@@ -318,7 +318,8 @@ _listeners = []
 
 def defaults(mouse_sens=0.5, low_batt=15):
     """Built-in Settings, seeded with the mouse sensitivity and low-battery threshold from receiver.toml (the threshold is clamped to
-    LOW_PCT)."""
+    LOW_PCT).
+    """
     return Settings(MouseConfig(sens=mouse_sens), MasterConfig(),
                     lightbar=LightbarConfig(low_pct=min(LOW_PCT[1], max(LOW_PCT[0], int(low_batt)))))
 
@@ -369,7 +370,8 @@ def apply(s) -> None:
 
 def update(path=None, **sections):
     """Change part of the settings (e.g. update(master=...)), effective at once and saved when path is given.
-    -> (ok, message)."""
+    -> (ok, message).
+    """
     s = replace(cur, **sections)
     apply(s)
     if path:
