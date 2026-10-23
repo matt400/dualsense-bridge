@@ -12,30 +12,39 @@
 A missing file / a bad value -> the default (a message in the log, the file is repaired on save). A change from the window
 takes effect at once: apply() replaces the `cur` object (a single assignment - the network threads always read a consistent whole).
 """
-from rx_i18n import _
+from __future__ import annotations
+
+import ipaddress
 import json
 import os
 import string
+from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass, field, fields, replace
+from typing import Any, ClassVar, Final, TypeAlias
 
 from proto import mac_bytes, mac_text, write_json
 from rx_buttons import BUTTON_CODES
+from rx_i18n import _
+
+Validator: TypeAlias = Callable[[Any], Any]     # a JSON value -> the checked value, or ValueError
+Validators: TypeAlias = dict[str, Validator]
+HEX_COLOR_LEN: Final = 7        # "#rrggbb"
 
 # ---------------- validators (a JSON value -> a checked value or ValueError) ----------------
 
 
-def _num(lo, hi, kind=int):
+def _num(lo: float, hi: float, kind: Callable[[float], float] = int) -> Validator:
     """Build a validator: a number (not a bool) within lo..hi, converted with `kind`."""
-    def check(v):
+    def check(v: Any) -> float:
         if isinstance(v, bool) or not isinstance(v, (int, float)) or not lo <= v <= hi:
             raise ValueError(f"expected a number {lo}..{hi}")
         return kind(v)
     return check
 
 
-def _choice(options):
+def _choice(options: Iterable[Any]) -> Validator:
     """Build a validator: the value must be one of `options` (a dict's keys or a tuple)."""
-    def check(v):
+    def check(v: Any) -> Any:
         try:
             known = v in options
         # a list / object from JSON used as a lookup in the options dict (unhashable) - a bad value, not a crash
@@ -47,14 +56,14 @@ def _choice(options):
     return check
 
 
-def _bool(v):
+def _bool(v: Any) -> bool:
     """Accept only a real JSON true / false."""
     if not isinstance(v, bool):
         raise ValueError("expected true / false")
     return v
 
 
-def _text(v):
+def _text(v: Any) -> str:
     """Accept text; normalise to stripped lower case."""
     if not isinstance(v, str):
         raise ValueError("expected text")
@@ -64,23 +73,25 @@ def _text(v):
 # ---------------- mouse ----------------
 @dataclass(frozen=True, slots=True)
 class MouseConfig:
+    """Touchpad click and cursor tuning."""
+
     sens: float = 0.5               # pixels per touchpad unit (initially mouse_sens from receiver.toml)
     # after a click press / release the cursor stays still for this many ms (the finger "presses down" and slides)
     click_freeze_ms: int = 150
     click_rewind_ms: int = 80       # movement from the last this-many ms before the click is undone (the cursor returns to where you aimed)
     drag_threshold: int = 60        # while a click is held the cursor starts moving (a drag) only after this many touchpad units
 
-    V = None                        # validators - assigned below (a class attribute, not an instance field)
+    V: ClassVar[Validators] = None   # validators - assigned below (a class attribute, not an instance field)
 
 
 # ranges shared by settings.json validation and the sliders in the settings window (a slider narrower than the validation would clip the
 # saved value)
-MOUSE_LIMITS = {"sens": (0.05, 5.0), "click_freeze_ms": (0, 600), "click_rewind_ms": (0, 300), "drag_threshold": (0, 600)}
+MOUSE_LIMITS: Final = {"sens": (0.05, 5.0), "click_freeze_ms": (0, 600), "click_rewind_ms": (0, 300), "drag_threshold": (0, 600)}
 MouseConfig.V = {k: _num(lo, hi, float if k == "sens" else int) for k, (lo, hi) in MOUSE_LIMITS.items()}
 
 # ---------------- master pad ----------------
 # what can be reserved for the master only: key -> (label in the window, icon from rx_qt_icons); order = order in the window
-MASTER_FEATURES = {
+MASTER_FEATURES: Final = {
     "console": ("Tryb konsoli (ekran i dźwięk)", "tv"),   # labels are Polish i18n keys - shown in the window through rx_i18n._()
     "actions": ("Akcje systemowe (PS + przycisk)", "ps"),
     "ps_hold": ("Przytrzymanie PS: Game Bar / Big Picture", "ps"),
@@ -92,29 +103,30 @@ MASTER_FEATURES = {
     "triggers": ("Efekty spustów (opór, klik, wibracja)", "r2"),
 }
 # master actions: key -> (label, needs a HOLD_S hold - protection against accidents)
-MASTER_ACTIONS = {
+MASTER_ACTIONS: Final = {
     "pause": ("Pauza gry (Esc)", False),
     "close_game": ("Zamknij grę", True),
     "sleep": ("Uśpij komputer", True),
     "shutdown": ("Wyłącz komputer", True),
 }
-ABSENT = {"all": "każdy pad może wszystko", "nobody": "zastrzeżone funkcje są wyłączone"}
+ABSENT: Final = {"all": "każdy pad może wszystko", "nobody": "zastrzeżone funkcje są wyłączone"}
 # buttons that can pair with PS: without the PS shortcut buttons (Share, D-pad) and R3 (PS + R3 = claiming the master)
-COMBO_BUTTONS = tuple(n for n in BUTTON_CODES if n not in ("ps", "share", "r3"))
+COMBO_BUTTONS: Final = tuple(n for n in BUTTON_CODES if n not in ("ps", "share", "r3"))
 
 
-def _features(v):
+def _features(v: Any) -> tuple[str, ...]:
     """Keep the known master features from a list, without repeats and in the window order."""
     if not isinstance(v, (list, tuple)):
         raise ValueError("expected a list")
     return tuple(k for k in MASTER_FEATURES if k in v)          # known keys only, no repeats, fixed order
 
 
-def _actions(v):
+def _actions(v: Any) -> dict[str, str]:
     """Check {action: button}: each button must be a valid combo button used by at most one action (else cleared with a log line)."""
     if not isinstance(v, dict):
         raise ValueError("expected {action: button}")
-    out, used = {}, set()
+    out: dict[str, str] = {}
+    used: set[str] = set()
     for k in MASTER_ACTIONS:
         b = v.get(k, "")
         if b and (b not in COMBO_BUTTONS or b in used):
@@ -127,14 +139,16 @@ def _actions(v):
 
 @dataclass(frozen=True, slots=True)
 class MasterConfig:
+    """Which pad is the master and what only it may do."""
+
     pad: str = ""                   # pad id (a MAC as in remap.json or "slotN"); "" = no master
     when_absent: str = "all"        # the master is not connected: all | nobody
-    only_master: tuple = ("console", "actions", "ps_hold")
-    actions: dict = field(default_factory=lambda: {"pause": "options", "close_game": "triangle",
+    only_master: tuple[str, ...] = ("console", "actions", "ps_hold")
+    actions: dict[str, str] = field(default_factory=lambda: {"pause": "options", "close_game": "triangle",
                                                    "sleep": "", "shutdown": ""})
     claim_hold: bool = True         # PS + R3 held for CLAIM_S seconds on a pad = that pad becomes the master
 
-    V = None
+    V: ClassVar[Validators] = None
 
 
 MasterConfig.V = {"pad": _text, "when_absent": _choice(ABSENT), "only_master": _features, "actions": _actions,
@@ -143,43 +157,47 @@ MasterConfig.V = {"pad": _text, "when_absent": _choice(ABSENT), "only_master": _
 
 @dataclass(frozen=True, slots=True)
 class UiConfig:
+    """Window preferences."""
+
     lang: str = "pl"                # window language: pl | en (applied after a restart)
 
-    V = None
+    V: ClassVar[Validators] = None
 
 
 UiConfig.V = {"lang": _choice(("pl", "en"))}
 
 
 # ---------------- lightbar ----------------
-LIGHT_MODES = {"solid": "Stały kolor", "battery": "Kolor wg stanu baterii"}
-DEFAULT_PAD = "*"                 # the lightbar setting for pads without their own entry
+LIGHT_MODES: Final = {"solid": "Stały kolor", "battery": "Kolor wg stanu baterii"}
+DEFAULT_PAD: Final = "*"                 # the lightbar setting for pads without their own entry
 
 
 @dataclass(frozen=True, slots=True)
 class PadLight:
+    """Lightbar behaviour of one pad."""
+
     mode: str = "solid"           # solid | battery - only when the game has not set a colour
     color: str = ""               # "#rrggbb" for the solid mode; "" = idle_lightbar from receiver.toml
     blink: bool = True            # low battery: red blinking (also over the colour set by the game)
     game: bool = True             # a game / PC program may change the colour (False = always the colour from the pad settings)
 
 
-def _color(v):
-    """Accept \"\" or \"#rrggbb\" (lower-cased)."""
+def _color(v: Any) -> str:
+    """Accept "" or "#rrggbb" (lower-cased)."""
     if v == "":
         return ""
     # exactly 6 hex digits: int(..., 16) let through "#0x1234", "# 12345" and "#12_345", and then
     # rx_lightbar.hex_rgb crashed the feedback thread on every refresh
-    if not (isinstance(v, str) and len(v) == 7 and v[0] == "#" and all(c in string.hexdigits for c in v[1:])):
+    if not (isinstance(v, str) and len(v) == HEX_COLOR_LEN and v[0] == "#" and all(c in string.hexdigits for c in v[1:])):
         raise ValueError("expected #rrggbb")
     return v.lower()
 
 
-def _pads(v):
-    """{"*" | MAC: {"mode", "color", "blink", "game"}} -> {key: PadLight}; bad entries are skipped."""
+def _pads(v: Any) -> dict[str, PadLight]:
+    """Turn {"*" | MAC: {"mode", "color", "blink", "game"}} into {key: PadLight}; bad entries are skipped."""
     if not isinstance(v, dict):
         raise ValueError("expected {pad: {mode, color, blink}}")
-    out = {}
+    out: dict[str, PadLight] = {}
     for k, raw in v.items():
         try:
             if not isinstance(raw, dict):
@@ -193,38 +211,40 @@ def _pads(v):
 
 @dataclass(frozen=True, slots=True)
 class LightbarConfig:
+    """Lightbar defaults, per-pad overrides and the low-battery threshold."""
+
     low_pct: int = 15             # low battery threshold [%] - blinking and the warning on the card (initially low_batt from the toml)
-    pads: dict = field(default_factory=dict)
+    pads: dict[str, PadLight] = field(default_factory=dict)
 
-    V = None
+    V: ClassVar[Validators] = None
 
-    def get(self, key):
-        """The lightbar setting for a pad key: its own entry, else the \"*\" default, else the built-in default."""
+    def get(self, key: str) -> PadLight:
+        """Return the lightbar setting for a pad key: its own entry, else the "*" default, else the built-in default."""
         return self.pads.get(key) or self.pads.get(DEFAULT_PAD) or PadLight()
 
 
-LOW_PCT = (5, 50)
+LOW_PCT: Final = (5, 50)
 LightbarConfig.V = {"low_pct": _num(*LOW_PCT), "pads": _pads}
 
 # ---------------- Wake-on-LAN ----------------
-WOL_BUTTONS = ("options", "share", "cross", "circle", "triangle", "square", "l1", "r1", "l3", "r3")
-WOL_HOLD_MS = (300, 5000)
+WOL_BUTTONS: Final = ("options", "share", "cross", "circle", "triangle", "square", "l1", "r1", "l3", "r3")
+WOL_HOLD_MS: Final = (300, 5000)
 
 
-def _mac(v):
-    """Accept \"\" or a MAC address; return it in the canonical text form."""
+def _mac(v: Any) -> str:
+    """Accept "" or a MAC address; return it in the canonical text form."""
     if v == "":
         return ""
     if not isinstance(v, str) or mac_bytes(v) is None:
         raise ValueError("expected a MAC address aa:bb:cc:dd:ee:ff")
-    return mac_text(mac_bytes(v))
+    raw = mac_bytes(v)
+    return mac_text(raw)
 
 
-def _ipv4(v):
-    """Accept \"\" or a valid IPv4 address."""
+def _ipv4(v: Any) -> str:
+    """Accept "" or a valid IPv4 address."""
     if v == "":
         return ""
-    import ipaddress
     try:
         return str(ipaddress.IPv4Address(v))
     except (ValueError, TypeError):
@@ -233,41 +253,45 @@ def _ipv4(v):
 
 @dataclass(frozen=True, slots=True)
 class WolConfig:
+    """Wake-on-LAN from the pad."""
+
     enabled: bool = True
     mac: str = ""                 # MAC of the PC's network card; "" = the sender works it out itself (the phone's ARP table)
     bcast: str = ""               # broadcast address; "" = the sender works it out itself (the network to the PC + 255.255.255.255)
     button: str = "options"       # PS + this button held while the receiver does not answer
     hold_ms: int = 1000
 
-    V = None
+    V: ClassVar[Validators] = None
 
 
 WolConfig.V = {"enabled": _bool, "mac": _mac, "bcast": _ipv4, "button": _choice(WOL_BUTTONS), "hold_ms": _num(*WOL_HOLD_MS)}
 
 # ---------------- event log ----------------
-LOG_LEVELS = {"info": "Wszystko", "warn": "Ostrzeżenia i błędy", "error": "Tylko błędy"}
-LOG_LINES = (50, 5000)
+LOG_LEVELS: Final = {"info": "Wszystko", "warn": "Ostrzeżenia i błędy", "error": "Tylko błędy"}
+LOG_LINES: Final = (50, 5000)
 
 
 @dataclass(frozen=True, slots=True)
 class LogConfig:
+    """The event log panel."""
+
     level: str = "info"           # the lowest level shown
     max_lines: int = 500          # this many last lines in the panel
     sender: bool = False          # events from the sender (the event packet) - the sender sends them only when this is on
 
-    V = None
+    V: ClassVar[Validators] = None
 
 
 LogConfig.V = {"level": _choice(LOG_LEVELS), "max_lines": _num(*LOG_LINES), "sender": _bool}
 
 
 # ---------------- virtual pads ----------------
-VPAD_BACKENDS = {"auto": "Automatycznie: HIDMaestro, gdy jest, inaczej ViGEmBus",
+VPAD_BACKENDS: Final = {"auto": "Automatycznie: HIDMaestro, gdy jest, inaczej ViGEmBus",
                  "hidmaestro": "HIDMaestro - DualSense (zapas: ViGEmBus)",
                  "vigem": "ViGEmBus - DualShock 4"}
 
 
-def _path(v):
+def _path(v: Any) -> str:
     """Accept a path string, stripped."""
     if not isinstance(v, str):
         raise ValueError("expected a path")
@@ -276,13 +300,15 @@ def _path(v):
 
 @dataclass(frozen=True, slots=True)
 class VpadConfig:
+    """Virtual pad backend."""
+
     backend: str = "auto"         # auto | hidmaestro | vigem
     fixed_slots: bool = True      # a placeholder pad in empty lower slots: pad 2 never becomes player 1
     # path to HIDMaestro.Core.dll (or its folder); "" = downloaded automatically / hidmaestro\ next to the script
     hm_dll: str = ""
     hm_auto: bool = True          # download and update HIDMaestro from GitHub (only without an own hm_dll path)
 
-    V = None
+    V: ClassVar[Validators] = None
 
 
 VpadConfig.V = {"backend": _choice(VPAD_BACKENDS), "fixed_slots": _bool, "hm_dll": _path, "hm_auto": _bool}
@@ -290,6 +316,8 @@ VpadConfig.V = {"backend": _choice(VPAD_BACKENDS), "fixed_slots": _bool, "hm_dll
 
 @dataclass(frozen=True, slots=True)
 class Settings:
+    """All settings sections; replaced as a whole by apply()."""
+
     mouse: MouseConfig = field(default_factory=MouseConfig)
     master: MasterConfig = field(default_factory=MasterConfig)
     ui: UiConfig = field(default_factory=UiConfig)
@@ -299,11 +327,12 @@ class Settings:
     vpad: VpadConfig = field(default_factory=VpadConfig)
 
 
-def _section(cls, raw, base, name):
-    """A JSON dict -> a dataclass; a missing key = the value from `base`, a bad value = the value from `base` + a message."""
-    values = {}
+def _section(cls: Any, raw: dict[str, Any] | None, base: Any, name: str) -> Any:
+    """Build a section dataclass from a JSON dict; a missing key or a bad value (plus a message) keeps the value from `base`."""
+    values: dict[str, Any] = {}
+    raw = raw or {}
     for f in fields(cls):
-        if f.name not in (raw or {}):
+        if f.name not in raw:
             continue
         try:
             values[f.name] = cls.V[f.name](raw[f.name])
@@ -313,11 +342,11 @@ def _section(cls, raw, base, name):
 
 
 cur = Settings()
-_listeners = []
+_listeners: list[Callable[[Settings, Settings], None]] = []
 
 
-def defaults(mouse_sens: float = 0.5, low_batt: int = 15):
-    """Built-in Settings.
+def defaults(mouse_sens: float = 0.5, low_batt: int = 15) -> Settings:
+    """Return the built-in Settings.
 
     Seeded with the mouse sensitivity and low-battery threshold from receiver.toml (the threshold is clamped to
     LOW_PCT).
@@ -326,8 +355,8 @@ def defaults(mouse_sens: float = 0.5, low_batt: int = 15):
                     lightbar=LightbarConfig(low_pct=min(LOW_PCT[1], max(LOW_PCT[0], int(low_batt)))))
 
 
-def load(path, base=None):
-    """settings.json -> Settings (a missing / corrupt file = `base`, by default defaults())."""
+def load(path: str, base: Settings | None = None) -> Settings:
+    """Read settings.json into Settings; a missing or corrupt file gives `base` (by default defaults())."""
     base = base or defaults()
     try:
         with open(path, encoding="utf-8") as f:
@@ -339,41 +368,43 @@ def load(path, base=None):
         return base
     raw = raw if isinstance(raw, dict) else {}
 
-    def sec(k):
-        return raw.get(k) if isinstance(raw.get(k), dict) else {}
+    def sec(k: str) -> dict[str, Any]:
+        section = raw.get(k)
+        return section if isinstance(section, dict) else {}
 
     return Settings(*(_section(type(getattr(base, f.name)), sec(f.name), getattr(base, f.name), f.name)
                       for f in fields(Settings)))
 
 
-def save(s, path) -> None:
-    """Atomic write (a temporary file + replace)."""
+def save(s: Settings, path: str) -> None:
+    """Write the settings atomically (a temporary file + replace)."""
     data = {"version": 1, "mouse": asdict(s.mouse), "master": {**asdict(s.master), "only_master": list(s.master.only_master)},
             "ui": asdict(s.ui), "lightbar": asdict(s.lightbar), "wol": asdict(s.wol), "log": asdict(s.log),
             "vpad": asdict(s.vpad)}
     write_json(path, data, indent=2, ensure_ascii=False)
 
 
-def on_change(fn) -> None:
+def on_change(fn: Callable[[Settings, Settings], None]) -> None:
     """Register fn(old, new), called after every apply() - e.g. rx_mouse sets the sensitivity of all pads."""
     _listeners.append(fn)
 
 
-def apply(s) -> None:
+def apply(s: Settings) -> None:
     """Make `s` the current settings with one assignment, then notify the listeners (a failing listener is only logged)."""
     global cur
     old, cur = cur, s
     for fn in _listeners:
         try:
             fn(old, s)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - one broken listener must not stop the others or the change
             print(f"Settings listener error: {e!r}")
 
 
-def update(path=None, **sections):
-    """Change part of the settings (e.g. update(master=...)), effective at once and saved when path is given.
+def update(path: str | None = None, **sections: Any) -> tuple[bool, str]:
+    """Change part of the settings at once (``update(master=...)``) and save them when path is given.
 
-    -> (ok, message).
+    Returns:
+        (ok, message).
     """
     s = replace(cur, **sections)
     apply(s)
