@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+TRIANGLE_FROM = 140               # frame from which the triangle button is held in the animation
 OUT = Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / "docs" / "img").resolve()
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ["PATH"] = f"{ROOT / 'tests' / 'fakebin'}{os.pathsep}{os.environ['PATH']}"   # bez prawdziwego bluetoothctl
@@ -31,6 +32,7 @@ from proto import (BTD_CONNECTED, BTD_PAD, BTD_PAIRED, BTD_TRUSTED, BTS_OK, CAP_
                    RUMBLE_HIDRAW, T_BTDEV, T_BTSTATE, T_IDENT, T_TOUCH, mac_bytes)
 from rx_console import Console, ConsoleConfig                     # noqa: E402
 from PySide6.QtTest import QTest                                  # noqa: E402
+from PySide6.QtWidgets import QWidget                               # noqa: E402
 
 BTF_LIST = 4                                                      # sender_bt.BTF_LIST: a device list round
 PADS = "a0:5a:5c:8e:12:41", "a0:5a:5c:3b:77:c2"
@@ -42,14 +44,15 @@ rx_console.ctl = Console(ConsoleConfig())
 F.pulse = lambda i, kind: None
 
 
-def save(widget, name) -> None:
+def save(widget: QWidget, name: str) -> None:
+    """Grab the widget and write it to OUT/<name>.png."""
     OUT.mkdir(parents=True, exist_ok=True)
     path = OUT / f"{name}.png"
     widget.grab().save(str(path), "PNG", 0)                        # 0 = najmocniejsza kompresja (bezstratnie)
     print(f"saved {path} ({path.stat().st_size // 1024} KB)")
 
 
-def link(i, batt, ping) -> None:
+def link(i: int, batt: int, ping: int) -> None:
     """A 'connected' pad: the sender's state, battery, ping, packets/s and fresh pad -> game latency samples."""
     state(i, batt=batt)
     now = time.monotonic()
@@ -69,6 +72,7 @@ def link(i, batt, ping) -> None:
 
 
 def online() -> None:
+    """Mark the sender as online (fresh packet, no loss)."""
     S.last_pkt, S.link_loss, S.peer = time.monotonic(), 0.0, ("192.168.1.50", 5005)
 
 
@@ -91,6 +95,7 @@ pump(200)
 
 
 def tick() -> None:
+    """Refresh the fake link of both pads."""
     online()
     for i, b in ((0, 78), (1, 41)):
         S.alive[i] = True
@@ -125,7 +130,7 @@ panel.refresh()
 for k in range(160):                                              # then a few seconds of live pad movement
     a = k / 9
     gyro = (round(2600 * math.sin(a)), round(-1700 * math.sin(a * 0.7 + 1)), round(900 * math.cos(a * 1.3)))
-    state(0, mask=BIT[304] if k > 140 else 0, lt=min(255, k * 2), rt=round(127 + 127 * math.sin(a / 2)),
+    state(0, mask=BIT[304] if k > TRIANGLE_FROM else 0, lt=min(255, k * 2), rt=round(127 + 127 * math.sin(a / 2)),
           sticks=(128 + round(60 * math.sin(a)), 128 + round(40 * math.cos(a)), 130, 127), gyro=gyro, batt=78)
     win.live_tick()
 feed(T_TOUCH, 0, 1, 1, 1180, 520, 0, 0, 0, 0)
