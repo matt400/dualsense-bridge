@@ -40,13 +40,13 @@ def _key(widget: QWidget, key: Qt.Key) -> None:
         QApplication.sendEvent(widget, QKeyEvent(kind, key, Qt.KeyboardModifier.NoModifier))
 
 
-def _focusable(w: QWidget, root: QWidget, scope: QWidget | None=None) -> bool:
+def _focusable(w: QWidget, root: QWidget, scope: QWidget | None = None) -> bool:
     """Whether widget w can take focus by Tab in window `root` (and, optionally, lies inside `scope`)."""
     return (w.window() is root and w.isVisible() and w.isEnabled()
             and bool(w.focusPolicy() & Qt.FocusPolicy.TabFocus) and (scope is None or scope.isAncestorOf(w)))
 
 
-def move_focus(root: QWidget, forward: bool, scope: QWidget | None=None) -> QWidget | None:
+def move_focus(root: QWidget, forward: bool, scope: QWidget | None = None) -> QWidget | None:
     """Next / previous element in the focus chain of window `root` (like Tab), scrolling the panel so that it is visible.
 
     scope: only elements inside this widget (an open Bluetooth drawer).
@@ -163,7 +163,7 @@ class PadNav:
             return None
         return next((s for d in getattr(self.win, "drawers", ()) if (s := d.focus_scope()) is not None), None)
 
-    def _direction(self, root: QWidget, fw: QWidget | None, name: str, scope: QWidget | None=None) -> None:
+    def _direction(self, root: QWidget, fw: QWidget | None, name: str, scope: QWidget | None = None) -> None:
         """A D-pad direction.
 
         Left / right adjust sliders, tabs, the pad drawing and combo boxes; up / down scroll item views and shortcut lists;
@@ -201,7 +201,7 @@ class PadNav:
         elif isinstance(fw, PadView):
             _key(fw, Qt.Key.Key_Return)
 
-    def _back(self, root: QWidget, scope: QWidget | None=None) -> None:
+    def _back(self, root: QWidget, scope: QWidget | None = None) -> None:
         """Circle: close the open drawer, else close Settings, else leave full screen."""
         if scope is not None:
             scope.close_drawer()                                # Bluetooth / shortcuts drawer

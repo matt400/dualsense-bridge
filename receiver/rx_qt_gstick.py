@@ -10,10 +10,12 @@ Setting changes go through the `changed(Config)` signal to rx_gstick_io.runner (
 touches Qt, and the preview is refreshed by the window timer (tick) from an engine snapshot.
 """
 import time
+from collections.abc import Callable
 from dataclasses import replace
+from typing import Any
 
-from PySide6.QtCore import QEvent, QPointF, Qt, Signal
-from PySide6.QtGui import QColor, QPainter, QPen
+from PySide6.QtCore import QEvent, QObject, QPointF, Qt, Signal
+from PySide6.QtGui import QColor, QPainter, QPaintEvent, QPen
 from PySide6.QtWidgets import QCheckBox, QFrame, QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget
 
 import rx_buttons as B
@@ -34,18 +36,21 @@ class TiltView(QWidget):
     """2D preview: X axis = sideways tilt, Y = front down (up in the drawing). Scale: 1.0 = range (outer)."""
 
     def __init__(self) -> None:
+        """A fixed-size square view, initially showing an idle engine."""
         super().__init__()
         self.setFixedSize(VIEW_PX, VIEW_PX)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.cfg = G.Config()
-        self.snap = (G.ST_OFF, G.Z_DEAD, (0.0, 0.0), (0.0, 0.0), (0.0, 0.0), 0.0, False, False)
+        self.snap: G.Snapshot = (G.ST_OFF, G.Z_DEAD, (0.0, 0.0), (0.0, 0.0), (0.0, 0.0), 0.0, False, False)
 
-    def set_data(self, cfg, snap) -> None:
+    def set_data(self, cfg: G.Config, snap: G.Snapshot) -> None:
+        """Show a new config / engine snapshot; repaint only when something changed."""
         if cfg != self.cfg or snap != self.snap:
             self.cfg, self.snap = cfg, snap
             self.update()
 
-    def paintEvent(self, _e) -> None:
+    def paintEvent(self, _e: QPaintEvent) -> None:
+        """Draw the range and deadzone circles, the raw and filtered tilt and the output crosshair."""
         cfg, (_state, zone, raw, filt, xy, _mag, _sprint, driving) = self.cfg, self.snap
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -65,7 +70,7 @@ class TiltView(QWidget):
         p.setPen(QPen(QColor(BAD if zone == G.Z_OUTER else LINE), 2))
         p.drawEllipse(c, r, r)
 
-        def at(v):                                                   # degrees -> pixels (y up), clipped to the frame
+        def at(v: G.Vec2) -> QPointF:      # degrees -> pixels (y up), clipped to the frame
             x, y = v[0] / cfg.outer * r, -v[1] / cfg.outer * r
             k = max(1.0, (x * x + y * y) ** 0.5 / r)
             return QPointF(c.x() + x / k, c.y() + y / k)
@@ -89,6 +94,7 @@ class TiltSection(QWidget):
     changed = Signal(object)         # the pad's new G.Config
 
     def __init__(self) -> None:
+        """Build the collapsible categories for slot 0 and load its settings."""
         super().__init__()
         self.slot = 0
         self._msg_until = 0.0
@@ -119,7 +125,7 @@ class TiltSection(QWidget):
         cal_row.addWidget(self.cal, 1)
         cal_row.addWidget(self.cal_reset)
         self.cal_note = label("", "dim", wrap=True)
-        self.sl = {}
+        self.sl: dict[str, SliderRow] = {}
         self.curve = Combo([(k, _(v)) for k, v in G.CURVES.items()])
         self.curve.changed.connect(lambda v: self._set(curve=v))
         self.sprint = Combo([("none", _("Brak")), *input_items([n for n in G.SPRINTS if n != "none"], text=True)])
@@ -145,7 +151,7 @@ class TiltSection(QWidget):
             lay.addWidget(c)
         self.refresh()
 
-    def _slider(self, name):
+    def _slider(self, name: str) -> SliderRow:
         captions = {"deadzone": (_("Martwa strefa"), "°", 0.5), "outer": (_("Maksymalne wychylenie"), "°", 1),
                     "smoothing": (_("Wygładzanie"), "%", 1), "ratio": (_("Czułość pionu względem poziomu"), "x", 0.05),
                     "idle_s": (_("Uśpienie po bezruchu (0 = wyłączone)"), " s", 0.1),
@@ -158,16 +164,17 @@ class TiltSection(QWidget):
         return row
 
     @staticmethod
-    def _fmt(unit):
+    def _fmt(unit: str) -> Callable[[float], str]:
         if unit == "x":
             return lambda v: f"{v:.2f}×"
         return lambda v: f"{v:.1f}{unit}".replace(".0" + unit, unit)
 
-    def set_slot(self, slot) -> None:
+    def set_slot(self, slot: int) -> None:
+        """Edit the settings of another pad."""
         self.slot = slot
         self.refresh()
 
-    def _set(self, **patch) -> None:
+    def _set(self, **patch: Any) -> None:
         cfg = G.normalize(G.to_raw(replace(self.cfg, **patch)))      # the same limits as when the file is loaded (outer > deadzone)
         self.cfg = cfg
         self.changed.emit(cfg)
@@ -176,7 +183,7 @@ class TiltSection(QWidget):
     def _calibrate(self) -> None:
         runner.calibrate(self.slot)
 
-    def refresh(self, cfg=None, reload: bool = True) -> None:
+    def refresh(self, cfg: G.Config | None = None, reload: bool = True) -> None:
         """Pad settings from the file (pad / tab change) or after an edit in this window (reload=False)."""
         if reload:
             self.cfg = cfg = runner.config(self.slot)
@@ -194,7 +201,7 @@ class TiltSection(QWidget):
         self.sl["sprint_at"].setEnabled(cfg.sprint != "none")
         self.cal_reset.setEnabled(cfg.center is not None)
 
-    def any_open(self):
+    def any_open(self) -> bool:
         """Whether any tilt category is expanded - the window then shows the live preview over the pad."""
         return any(c.is_open() for c in self.cats)
 
@@ -219,11 +226,12 @@ class TiltPreview(QFrame):
     can be seen before it is switched on.
     """
 
-    def __init__(self, pad) -> None:
+    def __init__(self, pad: QWidget) -> None:
+        """Create the (hidden) preview floating over the pad drawing `pad`."""
         super().__init__(pad)
         self.pad = pad
         self.setObjectName("group")
-        self._slot = None                  # the slot whose engine we asked to follow the pad, None = none
+        self._slot: int | None = None                  # the slot whose engine we asked to follow the pad, None = none
         lay = QHBoxLayout(self)             # compact: the view on the left, the texts on the right - fits above the pad drawing
         lay.setContentsMargins(10, 8, 12, 8)
         lay.setSpacing(10)
@@ -242,16 +250,18 @@ class TiltPreview(QFrame):
         pad.installEventFilter(self)       # keep the corner when the drawing is resized
         self.hide()
 
-    def eventFilter(self, obj, event) -> bool:
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
+        """Keep the preview in the corner when the pad drawing is resized."""
         if obj is self.pad and event.type() == QEvent.Type.Resize:
             self.place()
         return False
 
     def place(self) -> None:
+        """Fit to its content and move to the top-right corner of the pad drawing."""
         self.adjustSize()
         self.move(self.pad.width() - self.width() - PREVIEW_GAP, PREVIEW_GAP)
 
-    def tick(self, show, slot, cfg) -> None:
+    def tick(self, show: bool, slot: int, cfg: G.Config) -> None:
         """30 Hz from the window timer: show / hide, follow the pad, refresh the view and the texts."""
         if not show:
             self.idle()
