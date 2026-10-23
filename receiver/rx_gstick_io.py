@@ -152,6 +152,14 @@ class Runner:
     def reset_center(self, slot):
         self.set_config(slot, replace(self.config(slot), center=None))
 
+    def cal_result(self, slot, clear=False):
+        """The last calibration outcome of the slot (None / True / False); clear=True forgets it."""
+        self._ready()
+        msg = self.cal_msg[slot]
+        if clear:
+            self.cal_msg[slot] = None
+        return msg
+
     def set_preview(self, slot, on):
         """The tilt window is open for the slot: the preview follows the pad even while the feature is switched off."""
         self._ready()

@@ -201,13 +201,14 @@ class TiltSection(QWidget):
     def tick(self):
         """Live preview (30 Hz from the window timer, only while this section is visible). Also asks the engine to follow the
         pad even when the feature is off, so the tilt can be seen before it is switched on."""
-        msg, now = runner.cal_msg[self.slot], time.monotonic()
+        msg, now = runner.cal_result(self.slot), time.monotonic()
         if msg is not None and not self._msg_until:
             self._msg_until = now + MSG_S                    # the calibration result shows for a moment
             self.refresh()                                   # the new center was saved by the thread
             self.cal_note.setText(_(CAL_TEXT[msg]))
         elif msg is not None and now > self._msg_until:
-            runner.cal_msg[self.slot], self._msg_until, msg = None, 0.0, None
+            runner.cal_result(self.slot, clear=True)
+            self._msg_until, msg = 0.0, None
             self.cal_note.setText("")
         if not self.preview_cat.is_open():       # a collapsed preview costs nothing: the engine is not asked to follow the pad
             self.idle()
