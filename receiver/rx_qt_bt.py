@@ -15,7 +15,7 @@ from functools import cache
 from itertools import pairwise
 
 from PySide6.QtCore import QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
+from PySide6.QtGui import QColor, QIcon, QPainter, QPaintEvent, QPixmap, QResizeEvent
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
 
 import rx_bt as BT
@@ -64,6 +64,7 @@ class ElidedLabel(QLabel):
     """
 
     def __init__(self, role: str) -> None:
+        """A plain-text label; `role` is the QSS role property (name, dim, ...)."""
         super().__init__()
         self.setTextFormat(Qt.TextFormat.PlainText)
         self.setProperty("role", role)
@@ -77,7 +78,7 @@ class ElidedLabel(QLabel):
             self.setToolTip(f"<qt>{html.escape(text)}</qt>" if text else "")   # a tooltip also interprets HTML
             self._elide()
 
-    def resizeEvent(self, e) -> None:
+    def resizeEvent(self, e: QResizeEvent) -> None:
         """Re-elide the text for the new width."""
         super().resizeEvent(e)
         self._elide()
@@ -92,6 +93,7 @@ class SignalBars(QWidget):
     """Signal strength as 0-4 bars (0 = no measurement - RSSI exists only during a scan)."""
 
     def __init__(self) -> None:
+        """Start with no lit bars."""
         super().__init__()
         self.n = 0
         self.setFixedSize(px(18), px(14))
@@ -102,7 +104,7 @@ class SignalBars(QWidget):
             self.n = n
             self.update()
 
-    def paintEvent(self, _e) -> None:
+    def paintEvent(self, _e: QPaintEvent) -> None:
         """Draw four bars of rising height; the first `n` in the OK colour, the rest dim."""
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -121,6 +123,7 @@ class DeviceRow(QFrame):
     action = Signal(str, str)        # (MAC, "pair" | "connect" | "disconnect" | "remove")
 
     def __init__(self, dev: BT.Device) -> None:
+        """Build the row for `dev`: icon, name, details and the action buttons."""
         super().__init__()
         self.setObjectName("row")
         self.mac = dev.mac
@@ -190,6 +193,7 @@ class ControllerRow(QFrame):
     use = Signal(int)                # N from hciN
 
     def __init__(self, c: BT.Controller) -> None:
+        """Build the row for the Bluetooth controller `c`."""
         super().__init__()
         self.setObjectName("row")
         self.index = c.index

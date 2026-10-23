@@ -3,8 +3,10 @@
 Scale: TV mode (full screen) enlarges fonts, spacing and fixed widths (MainWindow.apply_scale) - a window
 readable from the couch. The QSS is generated for a given scale (qss(scale)); px(n) converts dimensions used in the window code.
 """
+from typing import Any
+
 from PySide6.QtGui import QColor, QPalette
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QWidget
 
 BG, CARD, CARD_HI, BORDER, TRACK, LINE = "#0e1016", "#161922", "#1b1f2a", "#252a36", "#1f2430", "#323849"
 FG, DIM, MUTED = "#eceef4", "#8d93a5", "#5a6072"
@@ -19,14 +21,14 @@ scale = 1.0
 _palette = False      # dark palette already set (once - a scale change only swaps the QSS)
 
 
-def px(n):
+def px(n: float) -> int:
     """A dimension in pixels at the current scale (TV mode)."""
     return round(n * scale)
 
 
 def qss(k: float = 1.0) -> str:
     """The whole application stylesheet with every pixel size multiplied by `k` (the TV-mode scale)."""
-    def p(n) -> str:
+    def p(n: float) -> str:
         return f"{round(n * k)}px"
     return f"""
 * {{ font-family: "Segoe UI Variable Text", "Segoe UI", "Noto Sans", sans-serif; font-size: {p(13)}; color: {FG}; outline: none; }}
@@ -164,7 +166,7 @@ def apply_theme(app: QApplication, k: float = 1.0) -> None:
     app.setStyleSheet(qss(k))
 
 
-def set_prop(widget, name, value) -> None:
+def set_prop(widget: QWidget, name: str, value: Any) -> None:
     """Set a property used in the QSS ([level="ok"], [selected="true"]...) and repolish the style only when it changed."""
     if widget.property(name) != value:
         widget.setProperty(name, value)

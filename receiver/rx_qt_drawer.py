@@ -25,6 +25,7 @@ class SideDrawer(QFrame):
     width_px = WIDTH
 
     def __init__(self, host: QWidget, icon: str, title: str) -> None:
+        """Create the drawer (closed) over `host`; subclasses fill the body in _build."""
         super().__init__(host)
         self.host = host
         self.setObjectName("drawer")

@@ -7,8 +7,10 @@ Where it sits and how big it is - the chosen screen, full screen (the TV mode), 
 full screen button and `apply_scale`; everything about the screen lives here.
 """
 import os
+from typing import Any
 
 from PySide6.QtCore import QSettings, QSize, Qt, QTimer
+from PySide6.QtGui import QResizeEvent, QScreen
 from PySide6.QtWidgets import QApplication, QMainWindow, QToolButton
 
 import rx_games
@@ -20,7 +22,7 @@ FIT_MARGIN = 24        # a window fitted to the screen: this many px of slack fr
 SCREEN_SETTLE_MS = 800 # screen changes (console mode, TV resolution) arrive in bursts - the window is placed after quiet
 
 
-def screens():
+def screens() -> list[tuple[str, QScreen]]:
     """[(key, QScreen)] - the key is the screen name from Windows (e.g. DISPLAY2), or its number when it has none."""
     return [(sc.name() or f"#{n}", sc) for n, sc in enumerate(QApplication.screens(), 1)]
 
@@ -35,25 +37,25 @@ class ScreenPlacement(QMainWindow):
     _screen_timer: QTimer      # fires once the screens stopped changing
     _place_pending: bool       # the screens changed during a game - the window is placed after it
 
-    def apply_scale(self, k) -> None:
+    def apply_scale(self, k: float) -> None:
         """The interface scale; implemented by the main window, which owns the widgets that have to be resized."""
         raise NotImplementedError
 
-    def screen_choice(self):
+    def screen_choice(self) -> str:
         """The screen name chosen in Settings (QScreen.name()), or "" = where the window was last."""
         return str(self.settings.value("screen", "") or "")
 
-    def set_screen_choice(self, name) -> None:
+    def set_screen_choice(self, name: str) -> None:
         """Remember the chosen screen and move the window there."""
         self.settings.setValue("screen", name)
         self.settings.sync()
         self.place_on_screen()
 
-    def fullscreen(self):
+    def fullscreen(self) -> bool:
         """Whether full screen (TV mode) is the saved choice."""
         return str(self.settings.value("fullscreen", "false")).lower() == "true"
 
-    def set_fullscreen(self, on) -> None:
+    def set_fullscreen(self, on: bool) -> None:
         """Full screen / window (remembered).
 
         Full screen = the TV mode: a bigger interface and pad control; it takes the chosen screen (Settings -> Window) or
@@ -70,7 +72,7 @@ class ScreenPlacement(QMainWindow):
         """F11 / the header button: switch between the window and full screen."""
         self.set_fullscreen(not self.fullscreen())
 
-    def target_screen(self):
+    def target_screen(self) -> QScreen:
         """The screen chosen in Settings -> Window.
 
         When it is absent (the monitor off in the console mode) or nothing was chosen - the one the window is on now
@@ -79,7 +81,7 @@ class ScreenPlacement(QMainWindow):
         name = self.screen_choice()
         return (dict(screens()).get(name) if name else None) or self.screen() or QApplication.primaryScreen()
 
-    def place_on_screen(self):
+    def place_on_screen(self) -> QScreen:
         """The window always in the centre of the screen (target_screen) and entirely on it.
 
         One bigger than the work area (a TV 1280x720 at 200 % scaling) is shrunk, and on a bigger screen it returns to the
@@ -106,7 +108,7 @@ class ScreenPlacement(QMainWindow):
             self._fitting = False
         return target
 
-    def resizeEvent(self, e) -> None:
+    def resizeEvent(self, e: QResizeEvent) -> None:
         """A size changed by the user (not a fit to the screen) = the new window size for big screens."""
         super().resizeEvent(e)
         if self._fitting or not self.isVisible() or self.windowState() != Qt.WindowState.WindowNoState:
@@ -133,7 +135,7 @@ class ScreenPlacement(QMainWindow):
         for sc in app.screens():
             self._screen_added(sc, settle=False)
 
-    def _screen_added(self, sc, settle: bool = True) -> None:
+    def _screen_added(self, sc: QScreen, settle: bool = True) -> None:
         """Watch a screen's geometry and DPI; a new screen counts as a change."""
         sc.geometryChanged.connect(self._screens_changed)
         sc.availableGeometryChanged.connect(self._screens_changed)
@@ -141,7 +143,7 @@ class ScreenPlacement(QMainWindow):
         if settle:
             self._screens_changed()
 
-    def _screens_changed(self, *_args) -> None:
+    def _screens_changed(self, *_args: Any) -> None:
         """A screen changed: (re)start the settle timer, since changes arrive in bursts."""
         self._screen_timer.start()
 

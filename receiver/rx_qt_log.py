@@ -6,7 +6,9 @@ The panel settings live in settings.json (log). A hidden panel appends nothing -
 """
 import html
 from dataclasses import replace
+from typing import Any
 
+from PySide6.QtGui import QShowEvent
 from PySide6.QtWidgets import QApplication, QFrame, QHBoxLayout, QPlainTextEdit, QVBoxLayout
 
 import rx_events as ev
@@ -20,7 +22,7 @@ from rx_settings import LOG_LEVELS, LOG_LINES
 COLOR = {"info": FG, "warn": WARN, "error": BAD}
 
 
-def _order(e):
+def _order(e: ev.Event) -> tuple[float, int]:
     """Panel order: the entry time (the sender supplies its own), the order of adding on equal times."""
     return e.t, e.seq
 
@@ -29,6 +31,7 @@ class LogPanel(QFrame):
     """The log panel widget: a toolbar (level, sender events, line limit, copy, clear) above a read-only text view."""
 
     def __init__(self) -> None:
+        """Build the toolbar and the view, and load the saved log settings."""
         super().__init__()
         self.setObjectName("logpanel")
         self._seq, self._last = 0, (0.0, 0)
@@ -64,7 +67,7 @@ class LogPanel(QFrame):
         self.load(rx_settings.cur.log)
 
     # ---------- settings ----------
-    def load(self, cfg) -> None:
+    def load(self, cfg: rx_settings.LogConfig) -> None:
         """Show the settings from `cfg` in the toolbar controls (signals blocked where needed so loading does not save)."""
         self.level.set_data(cfg.level)
         self.sender_btn.blockSignals(True)
@@ -73,12 +76,12 @@ class LogPanel(QFrame):
         self._sender_tip(cfg.sender)
         self.limit.setValue(cfg.max_lines)
 
-    def _sender_tip(self, on) -> None:
+    def _sender_tip(self, on: bool) -> None:
         """Set the tooltip of the sender-events toggle according to its state."""
         self.sender_btn.setToolTip((_("Zdarzenia z nadajnika: włączone") if on else _("Zdarzenia z nadajnika: wyłączone"))
                                    + " - " + _("połączenia padów z telefonem, Wake-on-LAN, błędy nadajnika"))
 
-    def _save(self, **changes) -> None:
+    def _save(self, **changes: Any) -> None:
         """Persist changed log settings (no-op when nothing differs), then rebuild the view so the new filter applies."""
         cfg = replace(rx_settings.cur.log, **changes)
         if cfg == rx_settings.cur.log:
@@ -90,7 +93,7 @@ class LogPanel(QFrame):
         self.rebuild()
 
     # ---------- entries ----------
-    def _shown(self, e, cfg):
+    def _shown(self, e: ev.Event, cfg: rx_settings.LogConfig) -> bool:
         """Whether an entry passes the level filter and the sender-events switch."""
         return ev.visible(e, cfg.level) and (cfg.sender or not e.sender)
 
@@ -139,7 +142,7 @@ class LogPanel(QFrame):
         ev.clear()
         self.rebuild()
 
-    def showEvent(self, e) -> None:
+    def showEvent(self, e: QShowEvent) -> None:
         """Entries are not appended while hidden, so rebuild the view when the panel is shown."""
         super().showEvent(e)
         self.rebuild()
