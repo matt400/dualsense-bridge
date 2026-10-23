@@ -1,6 +1,6 @@
 """Nadajnik: regresje z dziewiątego przeglądu - Bluetooth z okna odporny na każdy błąd uruchomienia busctl /
 bluetoothctl (operacja nie zostaje "w toku" na zawsze) i autobias żyroskopu nie psuje świeżej kalibracji z okna.
-    python3 tests/test_hunt9_tx.py sender"""
+    python3 tests/test_bt_window_errors_tx.py sender"""
 import asyncio, sys, types
 sys.path.insert(0, sys.argv[1])
 import sender_config; sender_config.init(["127.0.0.1"])

@@ -1,9 +1,9 @@
-"""Bug hunt 18 (nadajnik):
+"""Sender: pad limit and scan regressions:
   - pad ponad max_pads: wpis w _first_seen zostawał na zawsze, next_scan_s() zwracało 0,05 s i supervisor budził się
     ~17 razy na sekundę bez końca (także po odejściu pada); pad znikał bez śladu w logu i w dzienniku okna
   - przy pełnych slotach nowy pad nie był w ogóle zauważany - skan po zmianie w /dev/input daje komunikat
   - adres broadcast do Wake-on-LAN (`ip addr`) liczony w pętli asyncio zatrzymywał ją, także odczyt pada
-python3 tests/test_hunt18_tx.py sender"""
+python3 tests/test_pad_limit_tx.py sender"""
 import asyncio, sys, time
 sys.path.insert(0, sys.argv[1])
 import sender_config; sender_config.init(["127.0.0.1"])

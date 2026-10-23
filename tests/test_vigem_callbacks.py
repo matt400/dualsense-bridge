@@ -1,6 +1,6 @@
 """Receiver: regresje z ósmego przeglądu - rejestracja wibracji z gry w ViGEm (sygnatura callbacku sprawdzana przez
 vgamepad, kolor lightbara jako struktura), receiver bez ViGEmBus, zwalnianie obiektów COM audio przed CoUninitialize.
-    python3 tests/test_hunt8.py receiver"""
+    python3 tests/test_vigem_callbacks.py receiver"""
 import ctypes, importlib, inspect, os, sys, threading, time, types
 sys.path.insert(0, os.path.dirname(__file__))
 from rxenv import *                                              # noqa

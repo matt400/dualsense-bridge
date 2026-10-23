@@ -3,7 +3,7 @@
     właśnie przy największych zanikach; restart (nowy losowy numer) dalej nie jest stratą
   - szybki restart receivera (< 3 s): pakiety v3 ze znacznikiem zegara starego procesu dawały w dzienniku fałszywe
     "przeterminowane pakiety (powtórzone nagranie)"; prawdziwe nagranie po synchronizacji zegara dalej ostrzega
-    python3 tests/test_hunt18.py receiver"""
+    python3 tests/test_loss_indicator_restart.py receiver"""
 import os, sys
 sys.path.insert(0, os.path.dirname(__file__))
 from rxenv import *                                              # noqa
