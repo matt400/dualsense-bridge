@@ -1,6 +1,6 @@
-"""Receiver: autostart with Windows through Task Scheduler - starts right after logon.
+r"""Receiver: autostart with Windows through Task Scheduler - starts right after logon.
 
-Autostart used to be an entry in HKCU\\...\\Run. Windows launches such programs with a delay and one after another once the desktop
+Autostart used to be an entry in HKCU\...\Run. Windows launches such programs with a delay and one after another once the desktop
 settles down - the receiver started up to a minute after logon, so a pad switched on right after the PC booted did not
 switch the screen to console mode for a long time. A "at logon" task starts without that delay, without a run time limit
 (a default task is killed after 72 h) and also on battery.
@@ -16,29 +16,38 @@ switch the screen to console mode for a long time. A "at logon" task starts with
                      process can change it, so a receiver running as administrator does it; the task command
                      stays its own
 """
+from __future__ import annotations
+
+import contextlib
 import os
 import re
 import subprocess
 import tempfile
 from xml.sax.saxutils import escape, unescape
+from typing import Final
 
-NAME = "DualSenseBridge"
-ADMIN_NAME = "DualSenseBridgeAdmin"     # start on demand as administrator (no UAC) - no trigger
-RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
-NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+NAME: Final = "DualSenseBridge"
+ADMIN_NAME: Final = "DualSenseBridgeAdmin"     # start on demand as administrator (no UAC) - no trigger
+RUN_KEY: Final = r"Software\Microsoft\Windows\CurrentVersion\Run"
+NO_WINDOW: Final = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+# what a failing schtasks / registry call raises: the program is missing or not allowed to run
+_TASK_ERRORS: Final = (OSError, subprocess.SubprocessError)
+SCHTASKS_TIMEOUT_S: Final = 20
 
 
-def user_id():
-    """The current user as "DOMAIN\\user" (just the user name when there is no domain)."""
+def user_id() -> str:
+    r"""Return the current user as "DOMAIN\user" (just the user name when there is no domain)."""
     dom, user = os.environ.get("USERDOMAIN", ""), os.environ.get("USERNAME", "")
     return f"{dom}\\{user}" if dom else user
 
 
-LEAST, HIGHEST = "<RunLevel>LeastPrivilege</RunLevel>", "<RunLevel>HighestAvailable</RunLevel>"
+LEAST: Final = "<RunLevel>LeastPrivilege</RunLevel>"
+HIGHEST: Final = "<RunLevel>HighestAvailable</RunLevel>"
 
 
-def task_xml(exe, args, workdir, user, elevated: bool = False, logon: bool = True) -> str:
-    """Task definition: at this user's logon, no delay and no time limit, normal priority.
+def task_xml(exe: str, args: str, workdir: str, user: str, elevated: bool = False, logon: bool = True) -> str:
+    """Build the task definition: at this user's logon, no delay and no time limit, normal priority.
 
     elevated: the highest privileges (administrator without a UAC prompt); logon=False: no trigger (start on demand).
     """
@@ -71,13 +80,14 @@ def task_xml(exe, args, workdir, user, elevated: bool = False, logon: bool = Tru
 """
 
 
-def _schtasks(*args):
+def _schtasks(*args: str) -> subprocess.CompletedProcess[str]:
     """Run schtasks.exe with the arguments, without a console window; returns the CompletedProcess."""
-    return subprocess.run(["schtasks", *args], capture_output=True, text=True, timeout=20, creationflags=NO_WINDOW)
+    return subprocess.run(["schtasks", *args], capture_output=True, text=True, timeout=SCHTASKS_TIMEOUT_S, creationflags=NO_WINDOW,
+                          check=False)
 
 
-def _run_value():
-    """The old autostart entry (the command) or None."""
+def _run_value() -> str | None:
+    """Return the old autostart entry (the command) or None."""
     import winreg
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as k:
@@ -86,25 +96,23 @@ def _run_value():
         return None
 
 
-def _set_run(cmd) -> None:
-    """Cmd = a command -> the Run entry; None -> remove the entry (a missing entry is not an error)."""
+def _set_run(cmd: str | None) -> None:
+    """Write cmd to the Run entry, or remove the entry for None (a missing entry is not an error)."""
     import winreg
     with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as k:
         if cmd is not None:
             winreg.SetValueEx(k, NAME, 0, winreg.REG_SZ, cmd)
             return
-        try:
+        with contextlib.suppress(FileNotFoundError):
             winreg.DeleteValue(k, NAME)
-        except FileNotFoundError:
-            pass
 
 
-_ACTION = re.compile(r"<Command>(.*?)</Command>\s*(?:<Arguments>(.*?)</Arguments>)?", re.S)
-_XML_QUOTES = {"&quot;": '"', "&apos;": "'"}
+_ACTION: Final = re.compile(r"<Command>(.*?)</Command>\s*(?:<Arguments>(.*?)</Arguments>)?", re.S)
+_XML_QUOTES: Final = {"&quot;": '"', "&apos;": "'"}
 
 
-def task_action(xml):
-    """(program, arguments) from a task definition (schtasks /query /xml), or None.
+def task_action(xml: str | None) -> tuple[str, str] | None:
+    """Return (program, arguments) from a task definition (schtasks /query /xml), or None.
 
     Only when the script from the arguments exists: schtasks returns the XML in the console code page, so a path with
     non-ASCII characters may come back garbled - then None (the caller keeps its own command).
@@ -117,8 +125,8 @@ def task_action(xml):
     return (exe, args) if os.path.isfile(script) else None
 
 
-def split_command(cmd):
-    """A command from a Run entry -> (program, arguments): the program is quoted or ends at the first space."""
+def split_command(cmd: str) -> tuple[str, str]:
+    """Split a command from a Run entry into (program, arguments): the program is quoted or ends at the first space."""
     cmd = cmd.strip()
     if cmd.startswith('"'):
         end = cmd.find('"', 1)
@@ -128,14 +136,14 @@ def split_command(cmd):
     return exe, args.strip()
 
 
-def create_task(exe, args, elevated: bool = False, name=NAME, logon: bool = True):
-    """Create the task for `exe args` (the working folder is the script's folder) -> (ok, error description)."""
+def create_task(exe: str, args: str, elevated: bool = False, name: str = NAME, logon: bool = True) -> tuple[bool, str]:
+    """Create the task for `exe args` (the working folder is the script's folder); returns (ok, error description)."""
     script = split_command(args)[0] if args else exe
     return _create_xml(task_xml(exe, args, os.path.dirname(os.path.abspath(script)), user_id(), elevated, logon), name)
 
 
-def _create_xml(xml, name=NAME):
-    """Create a task from an XML definition -> (ok, error description).
+def _create_xml(xml: str, name: str = NAME) -> tuple[bool, str]:
+    """Create a task from an XML definition; returns (ok, error description).
 
     The XML is UTF-16 (that is how schtasks reads it); the temporary file is always removed.
     """
@@ -148,13 +156,11 @@ def _create_xml(xml, name=NAME):
     except (OSError, subprocess.SubprocessError) as e:
         return False, repr(e)
     finally:
-        try:
+        with contextlib.suppress(OSError):
             os.remove(path)
-        except OSError:
-            pass
 
 
-def enable(exe, args, elevated: bool = False) -> str:
+def enable(exe: str, args: str, elevated: bool = False) -> str:
     """Enable autostart.
 
     Create the logon task and drop the old Run entry; when the task cannot be created, fall back to the Run entry.
@@ -177,8 +183,8 @@ def disable() -> str:
     return "Autostart disabled." if removed or had_run else "Autostart was not enabled."
 
 
-def migrate() -> bool | None:
-    """The old Run entry -> a task at logon. -> True when replaced. On error the Run entry stays (autostart keeps working)."""
+def migrate() -> bool:
+    """Replace the old Run entry with a task at logon; True when replaced. On error the Run entry stays (autostart keeps working)."""
     try:
         cmd = _run_value()
         if not cmd:
@@ -190,13 +196,13 @@ def migrate() -> bool | None:
         _set_run(None)
         print("Autostart: moved from the Run key to Task Scheduler (starts right after logon)")
         return True
-    except Exception as e:          # migration must not stop the receiver
+    except _TASK_ERRORS as e:          # migration must not stop the receiver
         print(f"Autostart: migration failed: {e!r}")
         return False
 
 
-def elevate(exe, args):
-    """An existing autostart task without elevated privileges -> the same task with the highest ones. -> True when changed.
+def elevate(exe: str, args: str) -> bool:
+    """Raise an existing autostart task without elevated privileges to the highest ones; True when changed.
 
     No task / already elevated / an error -> False (the receiver carries on). The definition is rebuilt (the XML from
     schtasks /query comes in the console code page), but with the task's own command (task_action) - the exe, args of
@@ -213,31 +219,30 @@ def elevate(exe, args):
         if not ok:
             print(f"Autostart: cannot raise to highest privileges ({err})")
         return ok
-    except Exception as e:
+    except _TASK_ERRORS as e:
         print(f"Autostart: elevation failed: {e!r}")
         return False
 
 
-def ensure_admin_task(exe, args):
-    """The start-on-demand task with the highest privileges.
+def ensure_admin_task(exe: str, args: str) -> bool:
+    """Create the start-on-demand task with the highest privileges; True when it exists.
 
     Refreshed on every start as administrator (the same command as the autostart; the receiver folder may have moved).
-    -> True when it exists.
     """
     try:
         ok, err = create_task(exe, args, elevated=True, name=ADMIN_NAME, logon=False)
         if not ok:
             print(f"Admin start task: cannot create ({err})")
         return ok
-    except Exception as e:
+    except _TASK_ERRORS as e:
         print(f"Admin start task: {e!r}")
         return False
 
 
-def run_admin_task(args=None):
-    """The receiver as administrator without UAC: an existing ADMIN_NAME task with the highest privileges -> schtasks /run.
+def run_admin_task(args: str | None = None) -> bool:
+    """Start the receiver as administrator without UAC: an existing ADMIN_NAME task with the highest privileges -> schtasks /run.
 
-    -> True when it started. No task / ordinary privileges in the task -> False (then the UAC prompt). args: the
+    True when it started. No task / ordinary privileges in the task -> False (then the UAC prompt). args: the
     arguments of this start (rx_config.autostart_command) - a task with different ones -> False: the task would run the
     receiver with its own, and the --config / --pads of this start would be lost silently.
     """
@@ -250,6 +255,6 @@ def run_admin_task(args=None):
             print("Admin start task has other arguments than this start - asking through UAC instead")
             return False
         return _schtasks("/run", "/tn", ADMIN_NAME).returncode == 0
-    except Exception as e:
+    except _TASK_ERRORS as e:
         print(f"Admin start task: cannot run ({e!r})")
         return False
