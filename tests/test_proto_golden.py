@@ -340,8 +340,7 @@ CONSTANTS = {'BODY_LEN': {0: 62,
  'WHY_OK': 0,
  'WHY_OPEN': 5,
  'WIRE': {257: 1, 263: 7, 265: 9, 266: 10, 267: 11, 268: 12, 269: 13, 271: 15, 521: 9, 522: 10, 527: 15},
- 'WOL_PORTS': (9, 7),
- '_MASK32': 4294967295}
+ 'WOL_PORTS': (9, 7)}
 
 HELPERS = {'mac_bytes': [['aa:bb:cc:dd:ee:ff', 'aabbccddeeff'],
                ['AA-BB-CC-DD-EE-FF', 'aabbccddeeff'],
