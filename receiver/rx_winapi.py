@@ -26,6 +26,7 @@ SW_SHOWNORMAL: Final = 1
 SHELLEXECUTE_MIN_OK: Final = 32               # ShellExecute returns a value above 32 on success
 DETACHED_PROCESS: Final = 0x00000008
 CREATE_NEW_PROCESS_GROUP: Final = 0x00000200
+CREATE_BREAKAWAY_FROM_JOB: Final = 0x01000000
 PROCESS_QUERY_LIMITED_INFORMATION: Final = 0x1000
 WM_CLOSE: Final = 0x0010
 SE_FILE_OBJECT: Final = 1
@@ -242,8 +243,25 @@ def relaunch(env: dict[str, str] | None = None, admin: bool = False) -> None:
     if os.path.basename(sys.executable).lower().startswith("pythonw"):      # autostart: no console, independent of the old one
         kw.update(creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
                   stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    subprocess.Popen(cmd, **kw)
+    _spawn(cmd, kw)
     print("Restarting:", subprocess.list2cmdline(cmd))
+
+
+def _spawn(cmd: Sequence[str], kw: dict[str, Any]) -> None:
+    """Start the new receiver outside this process's job object, so it survives the exit of the old one.
+
+    A receiver started by Task Scheduler (autostart) runs inside the task's job object. When the old process exits the
+    task ends and Windows kills everything left in the job - the freshly started copy included, so after an update the
+    receiver just vanished and had to be started by hand. CREATE_BREAKAWAY_FROM_JOB detaches the child from the job. If
+    the job does not allow breakaway, CreateProcess fails with "access denied": then start it the old way (inside the
+    job) rather than not at all - this is logged, because such a copy may still be killed.
+    """
+    flags = kw.get("creationflags", 0)
+    try:
+        subprocess.Popen(cmd, **{**kw, "creationflags": flags | CREATE_BREAKAWAY_FROM_JOB})
+    except OSError as e:
+        print(f"Restart: breakaway from the job refused ({e!r}) - starting inside it")
+        subprocess.Popen(cmd, **kw)
 
 
 # ---------------- Mouse (SendInput) ----------------

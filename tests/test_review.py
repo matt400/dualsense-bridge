@@ -109,9 +109,9 @@ except Exception as e:                              # bez PySide6 - pomijamy tyl
 else:
     import rx_update
     out = []
-    win = types.SimpleNamespace(update_done=types.SimpleNamespace(emit=out.append))
+    win = types.SimpleNamespace(update_done=types.SimpleNamespace(emit=out.append), update_progress=types.SimpleNamespace(emit=lambda _p: None))
     real_update = rx_update.update
-    rx_update.update = lambda: (_ for _ in ()).throw(OSError("git zawieszony"))
+    rx_update.update = lambda **_: (_ for _ in ()).throw(OSError("git zawieszony"))
     try:
         rx_qt.MainWindow._update_thread(win)
     finally:

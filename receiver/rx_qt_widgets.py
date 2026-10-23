@@ -1,19 +1,19 @@
 """Receiver: small window widgets.
 
-A slider with a value, a button with confirmation, a battery bar, a switch, a collapsible "Advanced" section, a
-latency segment bar, the sender pill that shows the sender device's battery.
+A slider with a value, a button with confirmation, an animated progress ring, a battery bar, a switch, a collapsible
+"Advanced" section, a latency segment bar, the sender pill that shows the sender device's battery.
 """
 import math
 import time
 from collections.abc import Callable, Iterable
 from typing import Any
 
-from PySide6.QtCore import QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPainterPath, QPaintEvent, QWheelEvent
+from PySide6.QtCore import QObject, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QFontMetrics, QIcon, QPainter, QPainterPath, QPaintEvent, QPen, QPixmap, QWheelEvent
 from PySide6.QtWidgets import (QButtonGroup, QComboBox, QFrame, QHBoxLayout, QLabel, QLayout, QPushButton, QSlider, QSpinBox,
                                QVBoxLayout, QWidget)
 
-from rx_qt_style import CHARGE, LINE, OK, TRACK, px, set_prop
+from rx_qt_style import ACCENT_HI, CHARGE, LINE, OK, TRACK, px, set_prop
 
 
 def label(text: str = "", role: str | None = None, wrap: bool = False) -> QLabel:
@@ -276,6 +276,76 @@ class ConfirmButton(QPushButton):
         self._timer.stop()
         self.setText(self._text)
         set_prop(self, "armed", False)
+
+
+class ProgressRing(QObject):
+    """An animated ring as a button's icon: a track, an arc for the percent and a bright head that keeps turning.
+
+    The percent only moves at fixed stages (the update), so the turning head is what shows that the work has not hung.
+    The icon is redrawn by a timer (a pixmap per frame, cheap at this size); stop() puts the original icon back.
+    """
+
+    FRAME_MS = 33
+    STEP_DEG = 10          # the head's turn per frame
+    HEAD_DEG = 50          # the head's length
+
+    def __init__(self, btn: QPushButton) -> None:
+        """Attach to `btn` (the ring is drawn at its icon size); nothing changes until start()."""
+        super().__init__(btn)
+        self.btn, self._saved, self._pct, self._angle = btn, QIcon(), 0, 0
+        self._timer = QTimer(self)
+        self._timer.setInterval(self.FRAME_MS)
+        self._timer.timeout.connect(self._tick)
+
+    def running(self) -> bool:
+        """Whether the ring is shown (between start() and stop())."""
+        return self._timer.isActive()
+
+    def start(self) -> None:
+        """Replace the button's icon with the ring; a second call only restarts the percent (the original icon is kept)."""
+        if not self.running():
+            self._saved = self.btn.icon()
+            self._timer.start()
+        self._pct = 0
+        self._tick()
+
+    def stop(self) -> None:
+        """Back to the button's own icon."""
+        if self.running():
+            self._timer.stop()
+            self.btn.setIcon(self._saved)
+
+    def set_value(self, pct: int) -> None:
+        """The percent (0-100) the arc covers."""
+        self._pct = max(0, min(100, pct))
+
+    def _tick(self) -> None:
+        """Turn the head one step and draw the next frame."""
+        self._angle = (self._angle + self.STEP_DEG) % 360
+        self.btn.setIcon(QIcon(self._frame(self.btn.iconSize().width())))
+
+    def _frame(self, size: int) -> QPixmap:
+        """Draw one frame at 2x so it stays sharp on scaled screens: the track, the percent arc, the turning head."""
+        pm = QPixmap(size * 2, size * 2)
+        pm.setDevicePixelRatio(2)
+        pm.fill(Qt.GlobalColor.transparent)
+        p = QPainter(pm)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        w = max(2.0, size / 7)
+        rect = QRectF(w / 2, w / 2, size - w, size - w)
+        pen = QPen(QColor(TRACK), w)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        p.setPen(pen)
+        p.drawEllipse(rect)
+        pen.setColor(QColor(ACCENT_HI))
+        p.setPen(pen)
+        if self._pct:                                        # Qt angles: 1/16 degree, 0 = 3 o'clock, positive = counter-clockwise
+            p.drawArc(rect, 90 * 16, -round(self._pct * 3.6 * 16))
+        pen.setColor(QColor(OK))
+        p.setPen(pen)
+        p.drawArc(rect, (90 - self._angle) * 16, -self.HEAD_DEG * 16)
+        p.end()
+        return pm
 
 
 class Collapsible(QWidget):
