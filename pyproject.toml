@@ -21,7 +21,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"receiver/*" = ["D", "ANN", "BLE001","RUF100", "S110", "S112", "PLR2004", "PLR0912", "PLR0915", "C901", "N", "A", "E722"]   # TODO(refactor): drop as the receiver is cleaned up
+"receiver/rx_qt*.py" = ["N802"]   # Qt virtual overrides (closeEvent, paintEvent...) keep their camelCase names
 "tests/*" = ["D", "ANN", "BLE", "S", "PLR", "C901", "N", "A", "E401", "E501", "F401", "E402", "E701", "E702", "E731", "B011", "F403", "F405", "SIM", "PERF", "RUF", "B"]
 
 [tool.ruff.lint.pydocstyle]

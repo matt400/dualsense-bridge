@@ -45,14 +45,16 @@ import os
 import sys
 import threading
 import time
+from types import ModuleType
 
 import rx_config
 from rx_config import C
 
 
-def _startup_events(rx_winapi) -> None:
-    """Log: how long after logon (or Windows start) the receiver started (a delayed autostart = a late console mode) and, in the background,
-    moving the old autostart from the Run entry to Task Scheduler (start right after logon).
+def _startup_events(rx_winapi: ModuleType) -> None:
+    """Log how long after logon (or Windows start) the receiver started (a delayed autostart = a late console mode).
+
+    In the background also moves the old autostart from the Run entry to Task Scheduler (start right after logon).
     """
     import threading
 
@@ -94,7 +96,7 @@ def _gamebar() -> None:
     try:
         for change in rx_gamebar.suppress():
             print(f"Game Bar: {change}")
-    except Exception as e:
+    except Exception as e:      # noqa: BLE001 - registry trouble must not stop the startup
         print(f"Game Bar: cannot update registry ({e!r})")
 
 
@@ -105,7 +107,7 @@ RESTART_GUARD_S = 20.0     # restart: cleanup longer than this -> the new proces
 ELEVATE_GUARD_S = 60       # the admin task was started a moment ago and the process again has no privileges -> UAC (no loop)
 
 
-def _guard_path():
+def _guard_path() -> str:
     """The marker of an attempt through the task - in the user's temp folder.
 
     The receiver folder can be read-only (e.g. Program Files), and without a marker a task that gives no privileges
@@ -115,7 +117,7 @@ def _guard_path():
     return os.path.join(tempfile.gettempdir(), "dualsense-bridge-elevate_try")
 
 
-def _recent_try():
+def _recent_try() -> bool:
     """This start is the result of our schtasks /run from a moment ago (the task gave no privileges, e.g. a non-admin account)."""
     try:
         return 0 <= time.time() - os.path.getmtime(_guard_path()) < ELEVATE_GUARD_S
@@ -170,7 +172,7 @@ def elevate() -> None:
 _restart_once = threading.Lock()      # a new process starts once: a normal shutdown or the restart guard
 
 
-def _restart_now(console_on, force: bool = False) -> None:
+def _restart_now(console_on: bool, force: bool = False) -> None:
     """Start the new receiver process once (the guard calls it with force when cleanup hangs and then kills this process)."""
     import rx_console
     import rx_state as S
@@ -271,7 +273,7 @@ def _gui_available() -> bool:
     return True
 
 
-def _run(use_gui) -> None:
+def _run(use_gui: bool) -> None:
     """Block until the receiver is told to stop: the network loop runs in a thread next to the window, or alone without one."""
     import rx_net
     import rx_state as S
@@ -282,7 +284,7 @@ def _run(use_gui) -> None:
     net_thread = S.start_thread("net", rx_net.net_loop)
     try:
         rx_qt.run_gui()
-    except Exception as e:     # e.g. no display - carry on without the window
+    except Exception as e:     # noqa: BLE001 - e.g. no display - carry on without the window
         print(f"GUI unavailable: {e!r} - running without GUI")
         while not S.stop.is_set() and net_thread.is_alive():
             S.stop.wait(0.5)
@@ -290,7 +292,7 @@ def _run(use_gui) -> None:
     net_thread.join(2)
 
 
-def _shutdown(slot_threads, fb_thread) -> None:
+def _shutdown(slot_threads: list[threading.Thread], fb_thread: threading.Thread) -> None:
     """Stop everything in the order that leaves no stuck state behind.
 
     Release the pad triggers, disconnect the virtual pads, restore the screens, close the sockets - then start the new
