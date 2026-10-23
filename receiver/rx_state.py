@@ -76,7 +76,7 @@ def new_state() -> PadState:
         "touch": ((0, 0, 0, 0), (0, 0, 0, 0)), "tp": False,
         "rtp": 0,                            # live touchpad click (0/1/2), also in mouse mode - the Test view
         "blocked": False,                    # Test view: the game gets a neutral state, the mouse and shortcuts do not work
-        "batt_dsu": 5, "batt_ds4": 0x1B,
+        "batt_dsu": 5, "batt_ds4": 0x1B, "batt_ds5": 0x2A,
         "ver": 0,
         "ts": 0,                                                         # when (us) the last state change arrived
         "gyro_on": False,                    # gyro active (stick or mouse mode and the "hold" condition is met)
@@ -274,7 +274,7 @@ def output(i: int) -> PadState:
     s = states[i]
     if not s["blocked"]:
         return s
-    return {**NEUTRAL_OUT, "batt_dsu": s["batt_dsu"], "batt_ds4": s["batt_ds4"], "ts": s["ts"], "ver": s["ver"]}
+    return {**NEUTRAL_OUT, "batt_dsu": s["batt_dsu"], "batt_ds4": s["batt_ds4"], "batt_ds5": s["batt_ds5"], "ts": s["ts"], "ver": s["ver"]}
 
 
 def set_blocked(i: int, on: bool) -> bool:
