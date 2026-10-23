@@ -1,7 +1,7 @@
-"""Bug hunt 15 (nadajnik): Bluetooth przy kilku kontrolerach (wbudowany zablokowany + dongle USB).
+"""Sender: Bluetooth przy kilku kontrolerach (wbudowany zablokowany + dongle USB).
   - skan z okna: bluetoothctl skanował domyślnym kontrolerem (hci0 - zablokowany wbudowany), a nie wybranym donglem
   - wyłączenie pada (okno / bezczynność): `bluetoothctl disconnect` szukał pada tylko na domyślnym kontrolerze
-python3 tests/test_hunt15_tx.py sender"""
+python3 tests/test_bt_multi_adapter_tx.py sender"""
 import asyncio, json, os, stat, sys, tempfile, time
 sys.path.insert(0, sys.argv[1])
 import sender_config; sender_config.init(["127.0.0.1"])

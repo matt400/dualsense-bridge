@@ -1,9 +1,9 @@
-"""Bug hunt 16 (nadajnik): kontroler Bluetooth i link policy bez SNIFF.
+"""Sender: kontroler Bluetooth i link policy bez SNIFF.
   - wybór kontrolera (dongle USB zamiast wbudowanego) i brak SNIFF działały tylko przy działającym receiverze: telefon
     startujący przy wyłączonym PC (pad budzi PC przez Wake-on-LAN) łączył pady przez wbudowane radio / z SNIFF
   - jądro przywraca SNIFF przy każdym włączeniu kontrolera (Write Default Link Policy) - jednorazowe ustawienie przy
     wyborze znikało, gdy BlueZ włączał kontroler chwilę później (odblokowanie rfkill, Powered, restart bluetoothd)
-python3 tests/test_hunt16_tx.py sender"""
+python3 tests/test_bt_link_policy_tx.py sender"""
 import asyncio, ctypes, os, sys, tempfile
 from pathlib import Path
 sys.path.insert(0, sys.argv[1])

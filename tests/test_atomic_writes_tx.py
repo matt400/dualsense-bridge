@@ -1,6 +1,6 @@
 """Nadajnik: regresje z dziesiątego przeglądu - zapis plików (sloty, kalibracja, Wake-on-LAN) atomowy z fsync,
 wspólne zadania w tle i wyszukiwanie pada po slocie, efekt "Off" spustu bez zmian.
-    python3 tests/test_hunt10_tx.py sender"""
+    python3 tests/test_atomic_writes_tx.py sender"""
 import asyncio, json, os, sys, tempfile, types
 sys.path.insert(0, sys.argv[1])
 import sender_config; sender_config.init(["127.0.0.1"])

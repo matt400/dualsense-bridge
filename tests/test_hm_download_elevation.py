@@ -1,7 +1,7 @@
 """Receiver: regresje z jedenastego przeglądu - pobieranie HIDMaestro jednym zapytaniem na plik (zamiast setek po 64 KiB),
 uruchamianie jako administrator (znacznik w folderze tymczasowym, druga kopia bez okna UAC, blokada administratora
 widziana z procesu bez uprawnień), zadania autostartu z własnymi argumentami.
-    python3 tests/test_hunt11.py receiver"""
+    python3 tests/test_hm_download_elevation.py receiver"""
 import io, json, os, sys, tempfile, time, types, zipfile
 sys.path.insert(0, os.path.dirname(__file__))
 from rxenv import *                                              # noqa

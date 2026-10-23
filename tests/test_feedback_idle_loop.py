@@ -1,7 +1,7 @@
 """Receiver: regresje z dziewiętnastego przeglądu.
   - wątek feedbacku: pad bez sygnału (alive = False, wirtualny DS4 jeszcze podłączony) z niezerową wibracją z gry
     liczył czas oczekiwania z ujemnej wartości -> pętla bez snu (100 % procesora, wątek sieci traci GIL) do odłączenia
-    python3 tests/test_hunt19.py receiver"""
+    python3 tests/test_feedback_idle_loop.py receiver"""
 import os, sys, threading, time
 sys.path.insert(0, os.path.dirname(__file__))
 from rxenv import *                                              # noqa

@@ -46,16 +46,16 @@ Testy obejmują:
 - efekty spustów: klik, drgania, wibracja z gry, trig2 / trig wg wersji nadajnika, dziedziczenie w profilu gry,
   tylko master (`test_trigfx.py`, `test_trigfx_tx.py`); efekty spustów z gry (HIDMaestro, trig3): odczyt z raportu
   wyjściowego, profil wygrywa per spust, zwolnienie po zamknięciu programu (`test_gametrig.py`, `test_gametrig_tx.py`);
-- regresje z przeglądu bugów (`test_review.py`, `test_review_tx.py`, `test_hunt*.py`) - m.in. start / stop skanu
+- regresje z przeglądu bugów (`test_review.py`, `test_review_tx.py` i testy nazwane tematem poniżej) - m.in. start / stop skanu
   Bluetooth naraz, palec leżący na touchpadzie przy połączeniu, klik touchpada puszczony w widoku Test, skróty z PS
   w trybie TV, rejestracja wibracji z gry w ViGEm (sygnatura callbacku z vgamepad, kolor lightbara jako struktura),
   receiver bez ViGEmBus, obiekty COM audio zwalniane przed CoUninitialize; skróty, akcje mastera i przycisk trybu
   konsoli na granicy widoku Test liczone od trzymanych wejść, Bluetooth nadajnika bez busctl / uprawnień, autobias
-  po kalibracji z okna (`test_hunt9.py`, `test_hunt9_tx.py`); nowy klient DSU od razu dostaje stan, zapis plików
-  ustawień atomowy z fsync - `proto.write_file` / `write_json` (`test_hunt10.py`, `test_hunt10_tx.py`); HIDMaestro
+  po kalibracji z okna (`test_input_state_boundaries.py`, `test_bt_window_errors_tx.py`); nowy klient DSU od razu dostaje stan, zapis plików
+  ustawień atomowy z fsync - `proto.write_file` / `write_json` (`test_atomic_writes.py`, `test_atomic_writes_tx.py`); HIDMaestro
   pobierany jednym zapytaniem Range na plik (odpowiedź 200 = błąd), start jako administrator bez okna UAC dla drugiej
   kopii i bez pętli przy folderze tylko do odczytu, blokada receivera-administratora widziana z procesu bez uprawnień,
-  zadania autostartu z własnymi argumentami (`test_hunt11.py`);
+  zadania autostartu z własnymi argumentami (`test_hm_download_elevation.py`);
   bez mastera restart przy wyłączonym trybie konsoli nie włącza go identyfikatorem pada (`test_console.py`), okno
   wraca na środek po wyjściu z gry, która zmieniła rozdzielczość (`test_settings_gui.py`), polecenia Bluetooth jako
   ten sam pakiet powtórzony (`test_bt.py`);
@@ -64,9 +64,9 @@ Testy obejmują:
   zmiana ponawiana (`test_btadapter_tx.py`);
   przy kilku kontrolerach Bluetooth (wbudowany zablokowany + dongle) skan z okna na wybranym kontrolerze
   (`select` w bluetoothctl, limit czasu po naszej stronie) i wyłączanie pada przez D-Bus na kontrolerze, z którym
-  jest połączony (`test_hunt15_tx.py`);
+  jest połączony (`test_bt_multi_adapter_tx.py`);
   wybór kontrolera Bluetooth i link policy bez SNIFF także bez receivera (PC wyłączony, Wake-on-LAN), SNIFF
-  poprawiany po każdym włączeniu kontrolera - układ `hci_dev_info` jak w jądrze (`test_hunt16_tx.py`); okno na wierzch
+  poprawiany po każdym włączeniu kontrolera - układ `hci_dev_info` jak w jądrze (`test_bt_link_policy_tx.py`); okno na wierzch
   tylko przy nowym połączeniu pada, nie po chwilowej przerwie w sygnale (`test_settings_gui.py`); aktualizacja
   HIDMaestro w trakcie pracy nie usuwa folderu wersji załadowanej w procesie (zależności DLL wczytują się leniwie) -
   znika dopiero po restarcie (`test_hm_update.py`);

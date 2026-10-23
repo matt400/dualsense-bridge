@@ -49,7 +49,7 @@ pkt = tx.pack(T_STATE, 0, *ST)
 check(codec.parse(pkt)[0] == T_STATE and codec.parse(pkt) is None, "stan v3 przyjęty raz, dokładna powtórka odrzucona")
 check(codec.parse(Codec(b"sekret").pack(T_STATE, 0, *ST)) is None and codec.legacy_t > 0,
       "po przejściu podpisany v2 odrzucony (nagranie kombinacji pada sprzed aktualizacji)")
-rx_net._first_ping[0] -= 5        # nagranie przychodzi po synchronizacji zegara (tuż po starcie - bez wpisu, test_hunt18)
+rx_net._first_ping[0] -= 5        # nagranie przychodzi po synchronizacji zegara (tuż po starcie - bez wpisu, test_loss_indicator_restart)
 stale = Codec(b"sekret", token=lambda: (rx_net.clock.ms32() - FRESH_PAST_MS - 1000) & 0xFFFFFFFF); stale.v3 = True
 check(codec.parse(stale.pack(T_STATE, 0, *ST)) is None and codec.stale == 1, "przeterminowany znacznik odrzucony")
 rx_net.codec = codec
