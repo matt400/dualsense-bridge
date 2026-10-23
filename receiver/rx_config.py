@@ -2,14 +2,18 @@
 
 The computed values end up in the object C; call init() once at startup.
 """
+from __future__ import annotations
+
 import argparse
 import os
 import sys
+from collections.abc import Sequence
 from types import SimpleNamespace
+from typing import Any, Final
 
 from proto import load_config
 
-DEFAULTS = {
+DEFAULTS: dict[str, Any] = {
     "in_port": 5005,
     "dsu_port": 26760,
     "dsu_bind": "127.0.0.1", # DSU server address: this computer only; "0.0.0.0" = the emulator runs on another device in the network
@@ -53,36 +57,51 @@ DEFAULTS = {
     "game_ignore": [],       # extra programs skipped in the "recent games" list in the editor (e.g. "obs64.exe")
 }
 
-CHOICES = {"ps_hold_action": ("gamebar", "bigpicture", "none"), "ps_share_action": ("screenshot", "capture", "none")}
+CHOICES: Final = {"ps_hold_action": ("gamebar", "bigpicture", "none"), "ps_share_action": ("screenshot", "capture", "none")}
 
 C = SimpleNamespace()
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_CONFIG = "receiver.toml"     # loaded without --config when it lies next to the receiver
 
 
-def default_config(folder=None):
-    """receiver.toml next to the receiver, or None. Without this the file worked only with --config: entries in receiver.toml
-    (e.g. log_file) were silently ignored on a normal start and on an autostart without that argument."""
+LOG_ROTATE_BYTES: Final = 1_000_000   # a log larger than this is moved to <log>.1 at startup
+MAX_PADS: Final = 4
+MIN_PS_HOLD_S: Final = 0.3            # a shorter PS hold would fire by accident
+RGB_LEN: Final = 3
+COLOR_MAX: Final = 255
+DEFAULT_DSU_BIND: Final = "127.0.0.1"
+GYRO_DS4_RAW: Final = 16.0            # raw gyro counts per DS4 report unit at gyro_res 1.0 (see GYRO_TO_DS4)
+
+
+def default_config(folder: str | None = None) -> str | None:
+    """Return the receiver.toml next to the receiver, or None.
+
+    Without this the file worked only with --config: entries in receiver.toml (e.g. log_file) were silently ignored on a
+    normal start and on an autostart without that argument.
+    """
     path = os.path.join(folder or HERE, DEFAULT_CONFIG)
     return path if os.path.isfile(path) else None
 
 
-def autostart_command(argv=None):
-    """(program, arguments) for autostart: pythonw instead of python (no console), the script and the arguments without --autostart,
-    the --config path made absolute."""
+def autostart_command(argv: Sequence[str] | None = None) -> tuple[str, str]:
+    """Return (program, arguments) for autostart.
+
+    Pythonw instead of python (no console), the script and the arguments without --autostart, the --config path made
+    absolute.
+    """
     import subprocess
 
     exe = sys.executable
     pyw = os.path.join(os.path.dirname(exe), "pythonw.exe")
     if os.path.exists(pyw):
         exe = pyw
-    argv = list(sys.argv[1:] if argv is None else argv)
-    extra = []
+    args = list(sys.argv[1:] if argv is None else argv)
+    extra: list[str] = []
     i = 0
-    while i < len(argv):
-        a = argv[i]
+    while i < len(args):
+        a = args[i]
         if a == "--autostart":
-            i += 2
+            i += 2                    # the flag and its on/off value
             continue
         if a.startswith("--autostart="):
             i += 1
@@ -91,8 +110,8 @@ def autostart_command(argv=None):
             extra.append("--config=" + os.path.abspath(a.split("=", 1)[1]))
             i += 1
             continue
-        if a == "--config" and i + 1 < len(argv):
-            extra += [a, os.path.abspath(argv[i + 1])]
+        if a == "--config" and i + 1 < len(args):
+            extra += [a, os.path.abspath(args[i + 1])]
             i += 2
             continue
         extra.append(a)
@@ -100,8 +119,8 @@ def autostart_command(argv=None):
     return exe, subprocess.list2cmdline([os.path.abspath(sys.argv[0]), *extra])
 
 
-def set_autostart(on) -> None:
-    """Autostart with Windows: a Task Scheduler task at logon (no delay - rx_autostart)."""
+def set_autostart(on: bool) -> None:
+    """Enable or disable autostart with Windows: a Task Scheduler task at logon (no delay - rx_autostart)."""
     import rx_autostart
     if on:
         import rx_winapi
@@ -111,12 +130,8 @@ def set_autostart(on) -> None:
         print(rx_autostart.disable())
 
 
-def init(argv=None):
-    """Parse the command line, merge DEFAULTS <- config file <- CLI flags, validate and convert the values into the namespace C.
-
-    Also opens the log file (rotating it past 1 MB) and redirects stdout / stderr to it when log_file is set. With
-    --autostart it only enables / disables autostart and exits. Returns C.
-    """
+def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
+    """Define and parse the command line (the help texts are the user-facing Polish ones)."""
     ap = argparse.ArgumentParser(description="DualSense UDP receiver -> ViGEm DS4 + DSU")
     ap.add_argument("--config", help=f"plik konfiguracji .toml / .json (domyślnie {DEFAULT_CONFIG} obok receivera, "
                                      "jeśli jest; --config \"\" = bez pliku)")
@@ -128,12 +143,15 @@ def init(argv=None):
     ap.add_argument("--no-gui", action="store_true", default=None, help="bez okna")
     ap.add_argument("--no-elevate", action="store_true", help="bez ponownego uruchomienia jako administrator (UAC)")
     ap.add_argument("--autostart", choices=["on", "off"], help="włącz/wyłącz uruchamianie z Windows i wyjdź")
-    args = ap.parse_args(argv)
+    return ap.parse_args(argv)
 
-    if args.autostart:
-        set_autostart(args.autostart == "on")
-        sys.exit(0)
 
+def _merge_settings(args: argparse.Namespace) -> tuple[dict[str, Any], str | None]:
+    """Merge DEFAULTS <- config file <- CLI flags (and the PADKEY variable for an empty key).
+
+    Returns:
+        The merged settings and the config file that was used (None = defaults only).
+    """
     cfg = dict(DEFAULTS)
     config = default_config() if args.config is None else args.config
     cfg.update(load_config(config, DEFAULTS))
@@ -145,32 +163,37 @@ def init(argv=None):
         cfg["gui"] = False
     if not cfg["key"]:
         cfg["key"] = os.environ.get("PADKEY", "")
+    return cfg, config
 
-    script_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+
+def _open_log(log_file: str, script_dir: str) -> None:
+    """Log to a file (rotated at startup) and redirect stdout / stderr to it; pythonw has no console."""
     C.log_handle = None
-    if cfg["log_file"]:   # logs to a file (rotated at startup); pythonw has no console
-        lf = os.path.join(script_dir, cfg["log_file"])
-        try:
-            if os.path.exists(lf) and os.path.getsize(lf) > 1_000_000:
-                os.replace(lf, lf + ".1")
-        except OSError:
-            # Windows: another process still holds the file (the old receiver right after a restart from the settings, a log viewer) -
-            # no rotation, but logging has to keep working
-            pass
-        try:
-            C.log_handle = open(lf, "a", buffering=1, encoding="utf-8")  # noqa: SIM115 - the log stays open until the process ends
-            sys.stdout = sys.stderr = C.log_handle
-        except OSError:
-            C.log_handle = None
-    print(f"Config: {config or 'defaults (no config file)'}")
+    if not log_file:
+        return
+    path = os.path.join(script_dir, log_file)
+    try:
+        if os.path.exists(path) and os.path.getsize(path) > LOG_ROTATE_BYTES:
+            os.replace(path, path + ".1")
+    except OSError:
+        # Windows: another process still holds the file (the old receiver right after a restart from the settings, a log
+        # viewer) - no rotation, but logging has to keep working
+        pass
+    try:
+        C.log_handle = open(path, "a", buffering=1, encoding="utf-8")  # noqa: SIM115 - the log stays open until the process ends
+        sys.stdout = sys.stderr = C.log_handle
+    except OSError:
+        C.log_handle = None
 
-    C.cfg = cfg
+
+def _apply_network(cfg: dict[str, Any]) -> None:
+    """Fill C with the network, DSU and report-rate settings."""
     C.IN_PORT = int(cfg["in_port"])
     C.DSU_PORT = int(cfg["dsu_port"])
-    C.DSU_BIND = str(cfg["dsu_bind"] or "127.0.0.1")
+    C.DSU_BIND = str(cfg["dsu_bind"] or DEFAULT_DSU_BIND)
     C.DSU_MAX_CLIENTS = max(1, int(cfg["dsu_max_clients"]))
     C.HM_MIN_AGE_DAYS = max(0.0, float(cfg["hm_min_age_days"]))
-    C.NUM_PADS = max(1, min(4, int(cfg["pads"])))
+    C.NUM_PADS = max(1, min(MAX_PADS, int(cfg["pads"])))
     C.MOUSE_PADS = {int(p) for p in cfg["mouse_pads"] if 0 <= int(p) < C.NUM_PADS}
     if len(C.MOUSE_PADS) != len(set(cfg["mouse_pads"])):
         print(f"Note: mouse_pads restricted to slots 0..{C.NUM_PADS - 1} -> {sorted(C.MOUSE_PADS)}")
@@ -178,9 +201,13 @@ def init(argv=None):
     C.DSU_HZ = max(0.0, float(cfg["dsu_hz"]))
     C.DSU_TX_INTERVAL = float(cfg["dsu_tx_interval"])
     C.DSU_BATCH = bool(cfg["dsu_batch"])
+
+
+def _apply_motion(cfg: dict[str, Any]) -> None:
+    """Fill C with the motion-sensor scaling, mouse and timeout settings."""
     C.ACC_RES = float(cfg["acc_res"])
     C.GYRO_RES = float(cfg["gyro_res"])
-    C.GYRO_TO_DS4 = 16.0 / C.GYRO_RES          # raw gyro -> DS4 report units
+    C.GYRO_TO_DS4 = GYRO_DS4_RAW / C.GYRO_RES          # raw gyro -> DS4 report units
     C.ACC_SIGN = tuple(cfg["acc_sign"])
     C.GYRO_SIGN = tuple(cfg["gyro_sign"])
     C.MOUSE_SENS = float(cfg["mouse_sens"])
@@ -188,6 +215,10 @@ def init(argv=None):
     C.SCROLL_NATURAL = bool(cfg["scroll_natural"])
     C.STALE_S = float(cfg["stale_s"])
     C.UNPLUG_S = float(cfg["unplug_s"])
+
+
+def _apply_paths_and_ui(cfg: dict[str, Any], script_dir: str) -> None:
+    """Fill C with the key, window and file-path settings."""
     C.ALLOWED_IP = cfg["allow"]
     C.KEY = str(cfg["key"]).encode() if cfg["key"] else b""     # key = 1234 (a number in .toml) - same as in the sender
     C.DEBUG = bool(cfg["stats"])
@@ -196,15 +227,43 @@ def init(argv=None):
     C.REMAP_PATH = os.path.join(script_dir, cfg["remap_file"])
     C.CONSOLE_PATH = os.path.join(script_dir, "console.json")   # console mode settings (rx_console.py)
     C.SETTINGS_PATH = os.path.join(script_dir, "settings.json")  # mouse and master pad settings (rx_settings.py, window -> Settings)
+
+
+def _apply_shortcuts(cfg: dict[str, Any]) -> None:
+    """Validate the PS-shortcut choices (an unknown value falls back to the default) and fill C with them."""
     for k, allowed in CHOICES.items():
         if cfg[k] not in allowed:
             print(f"WARNING: {k} = {cfg[k]!r} is not one of {allowed} - using {DEFAULTS[k]!r}")
             cfg[k] = DEFAULTS[k]
     C.PS_MODIFIER = bool(cfg["ps_modifier"])
-    C.PS_HOLD_S = max(0.3, float(cfg["ps_hold_s"]))
+    C.PS_HOLD_S = max(MIN_PS_HOLD_S, float(cfg["ps_hold_s"]))
     C.PS_HOLD_ACTION, C.PS_SHARE_ACTION = cfg["ps_hold_action"], cfg["ps_share_action"]
     C.CONFIRM = bool(cfg["confirm"])
-    C.IDLE_RGB = tuple(max(0, min(255, int(v))) for v in ([*list(cfg["idle_lightbar"]), 0, 0, 0])[:3])
+    C.IDLE_RGB = tuple(max(0, min(COLOR_MAX, int(v))) for v in ([*list(cfg["idle_lightbar"]), 0, 0, 0])[:RGB_LEN])
     C.GAME_PROFILES = bool(cfg["game_profiles"])
     C.GAME_IGNORE = {str(x).lower() for x in cfg["game_ignore"]}
+
+
+def init(argv: Sequence[str] | None = None) -> SimpleNamespace:
+    """Parse the command line, merge DEFAULTS <- config file <- CLI flags, validate and convert the values into C.
+
+    Also opens the log file (rotating it past 1 MB) and redirects stdout / stderr to it when log_file is set. With
+    --autostart it only enables / disables autostart and exits.
+
+    Returns:
+        The namespace C.
+    """
+    args = _parse_args(argv)
+    if args.autostart:
+        set_autostart(args.autostart == "on")
+        sys.exit(0)
+    cfg, config = _merge_settings(args)
+    script_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+    _open_log(cfg["log_file"], script_dir)
+    print(f"Config: {config or 'defaults (no config file)'}")
+    C.cfg = cfg
+    _apply_network(cfg)
+    _apply_motion(cfg)
+    _apply_paths_and_ui(cfg, script_dir)
+    _apply_shortcuts(cfg)
     return C

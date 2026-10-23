@@ -17,6 +17,8 @@ Switching a pad off: the "Off" button in the receiver window, or automatically a
 input (bluetoothctl disconnect - needs bluez). Every second the sender pings the receiver and reports the real pad Hz.
 Touchpad gestures (gestures, touch_start_move) and touch latency (touch_coalesce_ms) - see sender_config.DEFAULTS.
 """
+from __future__ import annotations
+
 import asyncio
 import gc
 import os
@@ -25,26 +27,31 @@ import socket
 import sys
 import time
 import traceback
+from collections.abc import Awaitable, Callable
+from typing import Final
 
-import sender_config
 import sender_bt
+import sender_config
 import sender_control as control
 import sender_events as events
 import sender_net as net
 import sender_rt
-import sender_streams as streams
 import sender_state as state
+import sender_streams as streams
 import sender_supervisor as sup
 import sender_update
 import sender_wol as wol
 from proto import E_ERROR, E_START
 from sender_config import C
 
+BROADCAST_IDX: Final = 255         # the idx of events that belong to no pad
+STABLE_S: Final = 60.0             # a loop that ran this long without an error resets its error counter (full traceback, short pause)
+RESTART_PAUSE_STEP_S: Final = 0.2  # pause before a restart grows by this much per consecutive error ...
+RESTART_PAUSE_MAX_S: Final = 5.0   # ... up to this
+LOCK_NAME: Final = b"\0dualsense-bridge-sender"    # abstract-namespace socket name (leading NUL)
 
-STABLE_S = 60.0       # a loop that ran this long without an error resets its error counter (full traceback, short pause)
 
-
-async def forever(name, fn) -> None:
+async def forever(name: str, fn: Callable[[], Awaitable[None]]) -> None:
     """Supervise a long-running coroutine so that one unexpected exception cannot take the whole sender down.
 
     The coroutine is awaited in a loop: if it raises, the error is logged (the first one with a full traceback and
@@ -61,16 +68,16 @@ async def forever(name, fn) -> None:
             return
         except asyncio.CancelledError:
             raise
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - the whole point: nothing may take a service loop down for good
             if time.monotonic() - t0 >= STABLE_S:
                 errors = 0
             errors += 1
             if errors == 1:
                 print(f"{name} error - restarting:\n{traceback.format_exc()}")
-                events.error(E_ERROR, 255, f"{name}: {e!r}")
+                events.error(E_ERROR, BROADCAST_IDX, f"{name}: {e!r}")
             else:
                 print(f"{name} error #{errors} - restarting: {e!r}")
-            await asyncio.sleep(min(5.0, 0.2 * errors))
+            await asyncio.sleep(min(RESTART_PAUSE_MAX_S, RESTART_PAUSE_STEP_S * errors))
 
 
 async def main() -> None:
@@ -81,12 +88,14 @@ async def main() -> None:
     cleanup sends a neutral state and a "bye" packet, which still needs a working socket; only then is the socket closed.
     """
     print(f"Sending to {C.HOST}:{C.PORT}" + (" (HMAC on)" if C.KEY else " (NO authentication - consider --key)"))
-    state.main_task = asyncio.current_task()
-    try:
-        # SIGTERM (systemd stop) cancels main(), which runs the orderly cleanup in the finally block below
-        asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, asyncio.current_task().cancel)
-    except (NotImplementedError, RuntimeError):
-        pass
+    task = asyncio.current_task()
+    state.main_task = task
+    if task is not None:
+        try:
+            # SIGTERM (systemd stop) cancels main(), which runs the orderly cleanup in the finally block below
+            asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, task.cancel)
+        except (NotImplementedError, RuntimeError):
+            pass                   # no signal handlers on this platform / loop: Ctrl+C still works
     try:
         await asyncio.gather(*(forever(name, fn) for name, fn in (
             ("socket", net.sock_keeper), ("heartbeat", streams.heartbeat), ("supervisor", sup.supervisor),
@@ -105,16 +114,18 @@ async def main() -> None:
             net.close_sock()
 
 
-LOCK_NAME = b"\0dualsense-bridge-sender"
-_lock = None
+_lock: socket.socket | None = None
 
 
-def single_instance(name=LOCK_NAME) -> bool:
-    """Allow only one sender per machine; returns True if this process got the lock.
+def single_instance(name: bytes = LOCK_NAME) -> bool:
+    """Allow only one sender per machine.
 
     Two senders (e.g. the root service plus an old user autostart) would fight over the same pads. The lock is an
     abstract-namespace Unix socket: it is shared by all users, needs no file, and disappears by itself when the
     process ends. Binding fails if another process already holds the name.
+
+    Returns:
+        True if this process got the lock.
     """
     global _lock
     s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
@@ -143,7 +154,7 @@ if __name__ == "__main__":
     gc.collect()
     gc.freeze()   # objects created at startup are moved out of the GC's reach - shorter GC pauses
     sender_update.init()
-    events.info(E_START, 255, sender_update.version[0] or "?")
+    events.info(E_START, BROADCAST_IDX, sender_update.version[0] or "?")
     try:
         asyncio.run(main())
     except (KeyboardInterrupt, asyncio.CancelledError):

@@ -7,23 +7,29 @@ The language is chosen in the window (Settings -> Window), saved in settings.jso
 (the window is built once). Console logs stay in English. tests/test_i18n.py checks that every text
 from _("...") in the code has a translation.
 """
-LANGS = {"pl": "Polski", "en": "English"}
+from __future__ import annotations
+
+from typing import Final
+
+LANGS: Final = {"pl": "Polski", "en": "English"}
 lang = "pl"
 
 
-def set_lang(code) -> None:
+def set_lang(code: str) -> None:
     """Select the language (an unknown code falls back to Polish)."""
     global lang
     lang = code if code in LANGS else "pl"
 
 
-def _(text):
-    """Translate a Polish UI text: the EN dictionary entry in English mode, otherwise the text itself (the Polish text is the lookup
-    key)."""
+def _(text: str) -> str:
+    """Translate a Polish UI text.
+
+    The EN dictionary entry in English mode, otherwise the text itself (the Polish text is the lookup key).
+    """
     return EN.get(text, text) if lang == "en" else text
 
 
-EN = {
+EN: Final[dict[str, str]] = {
     "Odrzucono pakiety nadajnika: inny klucz HMAC (key) w nadajniku i w receiverze - ustaw ten sam albo usuń go z obu":
         "Sender packets rejected: the HMAC key differs between the sender and the receiver - set the same key on both "
         "or remove it from both",

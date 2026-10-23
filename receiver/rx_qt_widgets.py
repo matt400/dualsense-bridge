@@ -1,16 +1,25 @@
-"""Receiver: small window widgets - a slider with a value, a button with confirmation, a battery bar, a switch,
-a collapsible "Advanced" section, a latency segment bar."""
+"""Receiver: small window widgets.
+
+A slider with a value, a button with confirmation, a battery bar, a switch, a collapsible "Advanced" section, a
+latency segment bar.
+"""
+from collections.abc import Callable, Iterable
+from typing import Any
+
 from PySide6.QtCore import QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPainterPath
-from PySide6.QtWidgets import (QButtonGroup, QComboBox, QFrame, QHBoxLayout, QLabel, QPushButton, QSlider, QSpinBox, QVBoxLayout,
-                               QWidget)
+from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPainterPath, QPaintEvent, QWheelEvent
+from PySide6.QtWidgets import (QButtonGroup, QComboBox, QFrame, QHBoxLayout, QLabel, QLayout, QPushButton, QSlider, QSpinBox,
+                               QVBoxLayout, QWidget)
 
 from rx_qt_style import LINE, OK, TRACK, px, set_prop
 
 
-def label(text="", role=None, wrap=False):
-    """A label with plain text: part of the content comes from the network (the sender, Bluetooth names, the pad id) -
-    the default AutoText would render HTML tags in it."""
+def label(text: str = "", role: str | None = None, wrap: bool = False) -> QLabel:
+    """A label with plain text.
+
+    Part of the content comes from the network (the sender, Bluetooth names, the pad id) - the default AutoText would
+    render HTML tags in it.
+    """
     lb = QLabel(text)
     lb.setTextFormat(Qt.TextFormat.PlainText)
     if role:
@@ -19,7 +28,7 @@ def label(text="", role=None, wrap=False):
     return lb
 
 
-def button(text, primary=False, small=False):
+def button(text: str, primary: bool = False, small: bool = False) -> QPushButton:
     """A push button with the `primary` / `small` style properties and a pointing-hand cursor."""
     b = QPushButton(text)
     b.setProperty("primary", primary)
@@ -29,7 +38,7 @@ def button(text, primary=False, small=False):
     return b
 
 
-def icon_button(name, tip_text, size=20):
+def icon_button(name: str, tip_text: str, size: int = 20) -> QPushButton:
     """A button with only an icon (rx_qt_icons) and a tooltip - the window header, the pad card."""
     from rx_qt_icons import icon
     b = button("")
@@ -40,9 +49,12 @@ def icon_button(name, tip_text, size=20):
     return b
 
 
-def spinbox(lo, hi, step=1, suffix=""):
-    """A number field. The style sheet's padding does not move the QSpinBox text field (the text sticks to the left
-    edge, unlike QLineEdit / QComboBox) - the left gap is made through the inner field's text margins."""
+def spinbox(lo: int, hi: int, step: int = 1, suffix: str = "") -> QSpinBox:
+    """A number field.
+
+    The style sheet's padding does not move the QSpinBox text field (the text sticks to the left edge, unlike QLineEdit
+    / QComboBox) - the left gap is made through the inner field's text margins.
+    """
     box = QSpinBox()
     box.setRange(lo, hi)
     box.setSingleStep(step)
@@ -51,7 +63,7 @@ def spinbox(lo, hi, step=1, suffix=""):
     return box
 
 
-def icon_label(name, size=22):
+def icon_label(name: str, size: int = 22) -> QLabel:
     """A pad button icon as a QLabel (the full name in the tooltip)."""
     from rx_qt_icons import pixmap, tip
     lb = QLabel()
@@ -63,7 +75,7 @@ def icon_label(name, size=22):
     return lb
 
 
-def group(title, *items):
+def group(title: str, *items: QWidget | QLayout) -> QFrame:
     """A settings window section: a frame with a title and its content (widgets or layouts) one under another."""
     box = QFrame()
     box.setObjectName("group")
@@ -80,7 +92,7 @@ def group(title, *items):
     return box
 
 
-def pair(a, b):
+def pair(a: QWidget, b: QWidget) -> QHBoxLayout:
     """Two fields side by side, equal width."""
     row = QHBoxLayout()
     row.setSpacing(12)
@@ -89,7 +101,7 @@ def pair(a, b):
     return row
 
 
-def left(widget):
+def left(widget: QWidget) -> QHBoxLayout:
     """A widget (e.g. a small button) at its natural width, at the left edge - not stretched over the whole row."""
     row = QHBoxLayout()
     row.setContentsMargins(0, 0, 0, 0)
@@ -98,7 +110,7 @@ def left(widget):
     return row
 
 
-def field(caption, widget):
+def field(caption: str, widget: QWidget) -> QWidget:
     """A small caption above a widget (as in the browser editor)."""
     w = QWidget()
     lay = QVBoxLayout(w)
@@ -109,7 +121,7 @@ def field(caption, widget):
     return w
 
 
-def input_items(names, text=False):
+def input_items(names: Iterable[str], text: bool = False) -> list[tuple[str, str, str]]:
     """Pad inputs as list items: the button icon (the full name in the tooltip); text=True adds the name next to it."""
     from rx_qt_icons import tip
     return [(n, tip(n) if text else "", n) for n in names]
@@ -117,11 +129,13 @@ def input_items(names, text=False):
 
 class Combo(QComboBox):
     """A list with values (userData) - selecting by value, not by index; set_data emits no signals.
-    An item: (value, text) or (value, text, icon) - the icon is a name from rx_qt_icons (a pad button etc.)."""
+
+    An item: (value, text) or (value, text, icon) - the icon is a name from rx_qt_icons (a pad button etc.).
+    """
 
     changed = Signal(object)     # the new value (userData)
 
-    def __init__(self, items=()) -> None:
+    def __init__(self, items: Iterable[tuple[Any, ...]] = ()) -> None:
         """Build the list from `items`; `changed` fires only on user selection (activated), the tooltip follows the current item."""
         super().__init__()
         self.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -133,7 +147,7 @@ class Combo(QComboBox):
         self.activated.connect(lambda i: self.changed.emit(self.itemData(i)))
         self.currentIndexChanged.connect(lambda i: self.setToolTip(self.itemData(i, Qt.ItemDataRole.ToolTipRole) or ""))
 
-    def set_items(self, items) -> None:
+    def set_items(self, items: Iterable[tuple[Any, ...]]) -> None:
         """Replace all items without emitting signals; an item with an icon also gets that icon's tooltip."""
         from rx_qt_icons import icon, tip
         self.blockSignals(True)
@@ -147,7 +161,7 @@ class Combo(QComboBox):
         self.blockSignals(False)
         self.setToolTip(self.itemData(self.currentIndex(), Qt.ItemDataRole.ToolTipRole) or "")
 
-    def set_data(self, value) -> None:
+    def set_data(self, value: Any) -> None:
         """Select the item with this value (the first one if absent) without emitting signals."""
         i = self.findData(value)
         self.blockSignals(True)
@@ -155,13 +169,14 @@ class Combo(QComboBox):
         self.blockSignals(False)
         self.setToolTip(self.itemData(self.currentIndex(), Qt.ItemDataRole.ToolTipRole) or "")
 
-    def wheelEvent(self, e) -> None:      # the wheel should scroll the panel, not change the list under the cursor
+    def wheelEvent(self, e: QWheelEvent) -> None:
+        """Ignore the wheel: it should scroll the panel, not change the list under the cursor."""
         e.ignore()
 
 
 class _Slider(QSlider):
     """A slider that reacts to the wheel only when focused, so scrolling a panel does not change values."""
-    def wheelEvent(self, e) -> None:
+    def wheelEvent(self, e: QWheelEvent) -> None:
         if self.hasFocus():
             super().wheelEvent(e)
         else:
@@ -173,7 +188,8 @@ class SliderRow(QWidget):
 
     changed = Signal(float)      # only after a user move, not after set()
 
-    def __init__(self, caption, lo, hi, step, unit="", fmt=None) -> None:
+    def __init__(self, caption: str, lo: float, hi: float, step: float, unit: str = "", fmt: Callable[[float], str] | None = None) -> None:
+        """A slider over lo..hi (display units) in steps of `step`; `fmt` replaces the unit in the value text."""
         super().__init__()
         self.lo, self.step, self.unit, self.fmt = lo, step, unit, fmt   # fmt(v) -> the value text (instead of unit)
         self.title, self.val = label(caption, "dim", wrap=True), label("", "val")
@@ -190,24 +206,24 @@ class SliderRow(QWidget):
         lay.addLayout(top)
         lay.addWidget(self.slider)
 
-    def _text(self, v):
+    def _text(self, v: float) -> str:
         """The displayed value text: from fmt, or by unit."""
         if self.fmt is not None:
             return self.fmt(v)
         return f"{round(v)}%" if self.unit == "%" else f"{v:.2f}×" if self.unit == "x" else str(round(v))
 
-    def value(self):
+    def value(self) -> float:
         """The current value in display units (lo + position * step)."""
         return self.lo + self.slider.value() * self.step
 
-    def set(self, v) -> None:
+    def set(self, v: float) -> None:
         """Set the value without emitting `changed` and refresh the label."""
         self.slider.blockSignals(True)
         self.slider.setValue(round((v - self.lo) / self.step))
         self.slider.blockSignals(False)
         self.val.setText(self._text(self.value()))
 
-    def _moved(self, _pos) -> None:
+    def _moved(self, _pos: int) -> None:
         """User moved the slider: refresh the label and emit `changed`."""
         v = self.value()
         self.val.setText(self._text(v))
@@ -215,12 +231,17 @@ class SliderRow(QWidget):
 
 
 class ConfirmButton(QPushButton):
-    """A button that needs a second click within a few seconds (instead of a dialog): the first click changes
-    the label and turns it red, the second emits `confirmed`. iconic: icon only, the label appears once armed."""
+    """A button that needs a second click within a few seconds (instead of a dialog).
+
+    The first click changes the label and turns it red, the second emits `confirmed`. iconic: icon only, the label
+    appears once armed.
+    """
 
     confirmed = Signal()
 
-    def __init__(self, text, armed="Sure?", timeout_ms=3000, small=False, iconic=None, tip="") -> None:
+    def __init__(self, text: str, armed: str = "Sure?", timeout_ms: int = 3000, small: bool = False,
+                 iconic: str | None = None, tip: str = "") -> None:
+        """`iconic` = an icon name: an icon-only button whose text becomes the tooltip (`tip` overrides it)."""
         super().__init__("" if iconic else text)
         self._text, self._armed = ("" if iconic else text), armed
         self.setProperty("small", small)
@@ -257,11 +278,14 @@ class ConfirmButton(QPushButton):
 
 class Collapsible(QWidget):
     """A collapsible section ("▸ ADVANCED"): rarely changed settings tucked away so the panel does not overwhelm.
-    set_open(True) from code when something inside has been changed (so it is visible that the setting is in effect)."""
+
+    set_open(True) from code when something inside has been changed (so it is visible that the setting is in effect).
+    """
 
     toggled = Signal(bool)
 
-    def __init__(self, title, *items, opened=False) -> None:
+    def __init__(self, title: str, *items: QWidget | QLayout, opened: bool = False) -> None:
+        """Wrap `items` (widgets or layouts) under a clickable header; `opened` = initially expanded."""
         super().__init__()
         self._title = title
         self.head = QPushButton()
@@ -285,11 +309,11 @@ class Collapsible(QWidget):
         lay.addWidget(self.body)
         self.set_open(opened)
 
-    def is_open(self):
+    def is_open(self) -> bool:
         """Whether the body is shown."""
         return self.body.isVisibleTo(self)
 
-    def set_open(self, on) -> None:
+    def set_open(self, on: bool) -> None:
         """Show / hide the body, update the arrow in the header and emit `toggled`."""
         on = bool(on)
         self.body.setVisible(on)
@@ -300,22 +324,24 @@ class Collapsible(QWidget):
 class SegmentBar(QWidget):
     """A thin bar of coloured segments (latency components): a segment's width = its share of the total."""
 
-    def __init__(self, height=6) -> None:
+    def __init__(self, height: int = 6) -> None:
+        """An empty bar `height` px high."""
         super().__init__()
         self.setFixedHeight(height)
-        self.parts = ()
+        self.parts: tuple[tuple[float, str], ...] = ()
 
-    def sizeHint(self):
+    def sizeHint(self) -> QSize:
+        """A wide, flat default size."""
         return QSize(120, self.height())
 
-    def set(self, parts) -> None:
-        """parts = [(value, colour)]; an empty list = the track only."""
+    def set(self, parts: Iterable[tuple[float, str]]) -> None:
+        """Parts = [(value, colour)]; an empty list = the track only."""
         parts = tuple((max(0.0, v), c) for v, c in parts)
         if parts != self.parts:
             self.parts = parts
             self.update()
 
-    def paintEvent(self, _e) -> None:
+    def paintEvent(self, _e: QPaintEvent) -> None:
         """Clip to a rounded track, then paint each segment proportionally (a 1.5 px gap between segments)."""
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -336,22 +362,25 @@ class SegmentBar(QWidget):
 class BatteryBar(QWidget):
     """A rounded battery bar; pct = None -> an empty track (unknown state)."""
 
-    def __init__(self, height=10) -> None:
+    def __init__(self, height: int = 10) -> None:
+        """A bar `height` px high showing an unknown level."""
         super().__init__()
         self.setFixedHeight(height)
-        self.pct, self.color = None, QColor(OK)
+        self.pct: float | None = None
+        self.color = QColor(OK)
 
-    def sizeHint(self):
+    def sizeHint(self) -> QSize:
+        """A wide, flat default size."""
         return QSize(120, self.height())
 
-    def set(self, pct, color) -> None:
+    def set(self, pct: float | None, color: Any) -> None:
         """Update the percentage and colour; repaint only when something changed."""
         color = QColor(color)
         if (pct, color) != (self.pct, self.color):
             self.pct, self.color = pct, color
             self.update()
 
-    def paintEvent(self, _e) -> None:
+    def paintEvent(self, _e: QPaintEvent) -> None:
         """Paint the track, then the filled part (never narrower than its height)."""
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -365,20 +394,24 @@ class BatteryBar(QWidget):
 
 
 class Segmented(QFrame):
-    """An option switch in one "rail" ([ Result ][ Physical ]): the selected option is a raised pill, the options have
-    equal width and spacing, so they do not merge into one button."""
+    """An option switch in one "rail" ([ Result ][ Physical ]).
+
+    The selected option is a raised pill, the options have equal width and spacing, so they do not merge into one
+    button.
+    """
 
     changed = Signal(str)
     GAP = 4
 
-    def __init__(self, options) -> None:
+    def __init__(self, options: Iterable[tuple[str, str]]) -> None:
+        """`options` = [(key, text)], laid out in one rail."""
         super().__init__()
         self.setObjectName("segment")
         lay = QHBoxLayout(self)
         lay.setContentsMargins(3, 3, 3, 3)
         lay.setSpacing(self.GAP)
         self.group = QButtonGroup(self)
-        self.buttons = {}
+        self.buttons: dict[str, QPushButton] = {}
         for key, text in options:
             b = QPushButton(text)
             b.setCheckable(True)
@@ -401,10 +434,10 @@ class Segmented(QFrame):
         for b in self.buttons.values():
             b.setMinimumWidth(w)
 
-    def set(self, key) -> None:
+    def set(self, key: str) -> None:
         """Check the option with this key."""
         self.buttons[key].setChecked(True)
 
-    def value(self):
+    def value(self) -> str:
         """The key of the checked option."""
         return next(k for k, b in self.buttons.items() if b.isChecked())

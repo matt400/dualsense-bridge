@@ -33,6 +33,7 @@ class ShortcutRow(QFrame):
     """One list row: the button combination on the left, the description in the middle, an optional master crown on the right."""
 
     def __init__(self, sc: SC.Shortcut) -> None:
+        """Build the row for the shortcut `sc`."""
         super().__init__()
         self.setObjectName("row")
         self.shortcut = sc
@@ -57,6 +58,7 @@ class KeysDrawer(SideDrawer):
     width_px = 460
 
     def __init__(self, host: QWidget) -> None:
+        """Attach the drawer to the window's central widget `host`."""
         super().__init__(host, "keys", _("SKRÓTY PADA"))
 
     def _build(self, lay: QVBoxLayout) -> None:

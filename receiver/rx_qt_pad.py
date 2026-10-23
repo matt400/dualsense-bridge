@@ -5,20 +5,22 @@ a refresh 30 times a second costs little, and hit-testing is exact (the outline,
 Keyboard / pad in TV mode (rx_qt_tv): ← / → move over the parts, Enter / Space picks a part.
 Test mode (set_test): no profile badges and no clicking; trigger values above them, fingers and the touchpad click.
 """
-from rx_i18n import _
 import re
-from typing import Any
+from collections.abc import Iterable, Sequence
+from typing import Any, TypeAlias
 
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import (QColor, QFont, QFontMetricsF, QLinearGradient, QPainter, QPainterPath, QPen,
-                           QRadialGradient, QTransform)
+from PySide6.QtCore import QEvent, QPointF, QRectF, Qt, Signal
+from PySide6.QtGui import (QColor, QFocusEvent, QFont, QFontMetricsF, QKeyEvent, QLinearGradient, QMouseEvent, QPainter, QPainterPath,
+                           QPaintEvent, QPen, QRadialGradient, QTransform)
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
 import rx_buttons as B
 from rx_editor import L3_OF, SHORT
+from rx_i18n import _
 from rx_qt_style import ACCENT as _ACCENT
 from rx_qt_style import BAD as _BAD
 from rx_qt_style import BG as _BG
+from rx_shape import Profile
 
 VIEW_X, VIEW_Y, VIEW_W, VIEW_H = 44, 24, 712, 484     # the drawing's frame (SVG 800x520 coordinates without the empty margins)
 ACCENT, BAD, DARK = QColor(_ACCENT), QColor(_BAD), QColor(_BG)
@@ -32,23 +34,28 @@ NAV_ORDER = ("l2", "l1", "dpad_up", "dpad_left", "dpad_right", "dpad_down", "sha
 STICK_TRAVEL = 14      # by this much (drawing units) the stick knob moves at full deflection
 TOUCH_RECT = QRectF(300, 112, 200, 96)                # the touchpad in the drawing; the sender's touch is in the DS4 1920x943 scale
 TOUCH_W, TOUCH_H = 1919, 942
+TOUCH_CLICK_TWO = 2     # touchpad click state: 0 = none, 1 = pressed, 2 = pressed with two fingers
+TRIG_VISIBLE = 0.02     # a trigger deflection below 2 % is not drawn (the part stays in its rest colour)
 FINGER = (QColor("#ffb547"), QColor("#5bc0ff"))       # first / second finger
 
 _TOKENS = re.compile(r"[A-Za-z]|-?\d+(?:\.\d+)?")
 _ARGS = {"M": 2, "L": 2, "H": 1, "V": 1, "C": 6, "Q": 4}
+Badge: TypeAlias = tuple[float, float, str, bool | str]    # (x, y, text, kind): kind True = disabled, "fx" = trigger effect
 
 
-def svg_path(d):
+def svg_path(d: str) -> QPainterPath:
     """An SVG path (absolute commands M L H V C Q Z only - enough for this drawing) -> a QPainterPath.
-    Tokens are commands (letters) and numbers; a command's arguments are read in groups of _ARGS[cmd], and a repeated group reuses the
-    command."""
-    path, toks, i, cmd, x, y = QPainterPath(), _TOKENS.findall(d), 0, None, 0.0, 0.0
+
+    Tokens are commands (letters) and numbers; a command's arguments are read in groups of _ARGS[cmd], and a repeated
+    group reuses the command.
+    """
+    path, toks, i, cmd, x, y = QPainterPath(), _TOKENS.findall(d), 0, "", 0.0, 0.0
     while i < len(toks):
         if toks[i].isalpha():
             cmd, i = toks[i], i + 1
         if cmd == "Z":
             path.closeSubpath()
-            cmd = None
+            cmd = ""
             continue
         n = _ARGS[cmd]
         a = [float(v) for v in toks[i:i + n]]
@@ -74,14 +81,14 @@ def svg_path(d):
     return path
 
 
-def _circle(cx, cy, r):
+def _circle(cx: float, cy: float, r: float) -> QPainterPath:
     """A circle path with centre (cx, cy) and radius r."""
     p = QPainterPath()
     p.addEllipse(QPointF(cx, cy), r, r)
     return p
 
 
-def _round_rect(x, y, w, h, r, rot=None):
+def _round_rect(x: float, y: float, w: float, h: float, r: float, rot: tuple[float, float, float] | None = None) -> QPainterPath:
     """A rounded rectangle path, optionally rotated by rot = (angle, cx, cy) around that point."""
     p = QPainterPath()
     p.addRoundedRect(QRectF(x, y, w, h), r, r)
@@ -91,7 +98,7 @@ def _round_rect(x, y, w, h, r, rot=None):
     return p
 
 
-def _poly(*pts):
+def _poly(*pts: Any) -> QPainterPath:
     """A closed polygon path through the given points."""
     p = QPainterPath()
     p.moveTo(*pts[0])
@@ -105,15 +112,17 @@ class Part:
     """A clickable part of the pad: an outline, optionally an arrow / symbol / label."""
     __slots__ = ("name", "path", "tip", "arrow", "sym", "label", "rot")
 
-    def __init__(self, name, path, tip, arrow=None, sym=None, label=None, rot=None) -> None:
+    def __init__(self, name: str, path: QPainterPath, tip: str, arrow: QPainterPath | None = None,
+                 sym: tuple[QPainterPath, str] | None = None, label: tuple[str, float, float] | None = None,
+                 rot: tuple[float, float, float] | None = None) -> None:
         """Store the part's name, outline path, tooltip and optional arrow / symbol / label / rotation."""
         self.name, self.path, self.tip = name, path, tip
         self.arrow, self.sym, self.label, self.rot = arrow, sym, label, rot     # label = (text, x, y)
 
 
-def _build_parts():
+def _build_parts() -> list[Part]:
     """The parts in drawing order (the last one is on top - the one a click checks first)."""
-    L = {k: _(v) for k, v in B.LABELS.items()}
+    labels = {k: _(v) for k, v in B.LABELS.items()}
     sym = QPainterPath()
     sym.moveTo(587, 232)
     sym.lineTo(603, 248)
@@ -122,25 +131,25 @@ def _build_parts():
     square = QPainterPath()
     square.addRoundedRect(QRectF(547, 192, 16, 16), 1.5, 1.5)
     return [
-        Part("l2", svg_path("M128 84 C130 50 170 36 214 40 C236 42 246 56 248 82 Z"), L["l2"], label=("L2", 190, 68)),
-        Part("r2", svg_path("M672 84 C670 50 630 36 586 40 C564 42 554 56 552 82 Z"), L["r2"], label=("R2", 610, 68)),
-        Part("l1", _round_rect(132, 86, 124, 24, 12, (-9, 194, 98)), L["l1"], label=("L1", 192, 107), rot=(-9, 194, 98)),
-        Part("r1", _round_rect(544, 86, 124, 24, 12, (9, 606, 98)), L["r1"], label=("R1", 608, 107), rot=(9, 606, 98)),
-        Part("share", _round_rect(266, 136, 12, 38, 6), L["share"]),
-        Part("options", _round_rect(522, 136, 12, 38, 6), L["options"]),
-        Part("ps", _circle(400, 252, 16), L["ps"], label=("PS", 400, 256)),
-        Part("dpad_up", svg_path("M191 190 V168 Q191 160 199 160 H211 Q219 160 219 168 V190 Z"), L["dpad_up"],
+        Part("l2", svg_path("M128 84 C130 50 170 36 214 40 C236 42 246 56 248 82 Z"), labels["l2"], label=("L2", 190, 68)),
+        Part("r2", svg_path("M672 84 C670 50 630 36 586 40 C564 42 554 56 552 82 Z"), labels["r2"], label=("R2", 610, 68)),
+        Part("l1", _round_rect(132, 86, 124, 24, 12, (-9, 194, 98)), labels["l1"], label=("L1", 192, 107), rot=(-9, 194, 98)),
+        Part("r1", _round_rect(544, 86, 124, 24, 12, (9, 606, 98)), labels["r1"], label=("R1", 608, 107), rot=(9, 606, 98)),
+        Part("share", _round_rect(266, 136, 12, 38, 6), labels["share"]),
+        Part("options", _round_rect(522, 136, 12, 38, 6), labels["options"]),
+        Part("ps", _circle(400, 252, 16), labels["ps"], label=("PS", 400, 256)),
+        Part("dpad_up", svg_path("M191 190 V168 Q191 160 199 160 H211 Q219 160 219 168 V190 Z"), labels["dpad_up"],
              arrow=svg_path("M205 166 L198 178 H212 Z")),
-        Part("dpad_down", svg_path("M191 210 V232 Q191 240 199 240 H211 Q219 240 219 232 V210 Z"), L["dpad_down"],
+        Part("dpad_down", svg_path("M191 210 V232 Q191 240 199 240 H211 Q219 240 219 232 V210 Z"), labels["dpad_down"],
              arrow=svg_path("M205 234 L198 222 H212 Z")),
-        Part("dpad_left", svg_path("M195 186 H173 Q165 186 165 194 V206 Q165 214 173 214 H195 Z"), L["dpad_left"],
+        Part("dpad_left", svg_path("M195 186 H173 Q165 186 165 194 V206 Q165 214 173 214 H195 Z"), labels["dpad_left"],
              arrow=svg_path("M171 200 L183 193 V207 Z")),
-        Part("dpad_right", svg_path("M215 186 H237 Q245 186 245 194 V206 Q245 214 237 214 H215 Z"), L["dpad_right"],
+        Part("dpad_right", svg_path("M215 186 H237 Q245 186 245 194 V206 Q245 214 237 214 H215 Z"), labels["dpad_right"],
              arrow=svg_path("M239 200 L227 193 V207 Z")),
-        Part("triangle", _circle(595, 160, 19), L["triangle"], sym=(_poly((595, 150), (586, 166), (604, 166)), "#4cd08a")),
-        Part("circle", _circle(635, 200, 19), L["circle"], sym=(_circle(635, 200, 8.5), "#ff6b6b")),
-        Part("cross", _circle(595, 240, 19), L["cross"], sym=(sym, "#5b9bff")),
-        Part("square", _circle(555, 200, 19), L["square"], sym=(square, "#e58bd2")),
+        Part("triangle", _circle(595, 160, 19), labels["triangle"], sym=(_poly((595, 150), (586, 166), (604, 166)), "#4cd08a")),
+        Part("circle", _circle(635, 200, 19), labels["circle"], sym=(_circle(635, 200, 8.5), "#ff6b6b")),
+        Part("cross", _circle(595, 240, 19), labels["cross"], sym=(sym, "#5b9bff")),
+        Part("square", _circle(555, 200, 19), labels["square"], sym=(square, "#e58bd2")),
         Part("left_stick", _circle(305, 285, 42), _("Lewa gałka (klik = L3)")),
         Part("right_stick", _circle(495, 285, 42), _("Prawa gałka (klik = R3)")),
     ]
@@ -152,7 +161,7 @@ BODY = ("M400 96 C360 96 318 98 268 104 C200 112 150 130 118 190 C84 256 62 360 
 STICK_CENTER = {"left_stick": (305, 285), "right_stick": (495, 285)}
 
 
-def _lerp(a, b, t):
+def _lerp(a: float, b: float, t: float) -> int:
     """Linear interpolation from a to b by t (0..1), rounded to an int."""
     return round(a + (b - a) * t)
 
@@ -161,7 +170,7 @@ class PadView(QWidget):
     """The pad drawing. Signal part_clicked(name) - an input name (cross, l2, dpad_up...) or left_stick / right_stick."""
     part_clicked = Signal(str)
 
-    def __init__(self, parent=None) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         """Build the parts and the static shapes, and set the initial live state (nothing pressed, sticks centred)."""
         super().__init__(parent)
         self.parts = _build_parts()
@@ -169,10 +178,10 @@ class PadView(QWidget):
         self.body = svg_path(BODY)
         self.touch = _round_rect(300, 112, 200, 96, 24)
         self.mic = _round_rect(391, 292, 18, 8, 4)          # the microphone button - drawing only (it does not reach the PC)
-        self.selected = None
-        self.hover = None
+        self.selected: str | None = None
+        self.hover: str | None = None
         self.live: dict[str, Any] = {"on": frozenset(), "ls": (128, 128), "rs": (128, 128), "l2": 0, "r2": 0}
-        self.badges = []
+        self.badges: list[Badge] = []
         self.test = False                                 # the Test view: no badges and no clicking, touch on the drawing
         self.touch_live = ((), 0)                         # (fingers (x, y) in the DS4 scale, touchpad click 0/1/2)
         self._tf = self._inv = QTransform()
@@ -182,13 +191,13 @@ class PadView(QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
     # ---------- data ----------
-    def set_selected(self, name) -> None:
+    def set_selected(self, name: str | None) -> None:
         """Mark the part being edited (drawn with the accent outline)."""
         if name != self.selected:
             self.selected = name
             self.update()
 
-    def set_test(self, on) -> None:
+    def set_test(self, on: bool) -> None:
         """Switch the Test view on / off: it clears the selection and hover and shows the live touch instead of the badges."""
         if on != self.test:
             self.test = on
@@ -196,21 +205,21 @@ class PadView(QWidget):
             self.setCursor(Qt.CursorShape.ArrowCursor)
             self.update()
 
-    def set_touch(self, touch, click) -> None:
+    def set_touch(self, touch: Sequence[Sequence[int]], click: int) -> None:
         """Live touch (the Test view): fingers ((active, id, x, y), ...) and the touchpad click."""
         live = (tuple((f[2], f[3]) for f in touch if f[0]), int(click))
         if live != self.touch_live:
             self.touch_live = live
             self.update()
 
-    def set_profile(self, prof) -> None:
+    def set_profile(self, prof: Profile) -> None:
         """Profile change badges next to the pad's parts (→ ○, ∅, ∿, gyro)."""
         badges = self._badges(prof)
         if badges != self.badges:
             self.badges = badges
             self.update()
 
-    def set_live(self, pressed, ls, rs, l2, r2) -> None:
+    def set_live(self, pressed: Iterable[str], ls: Sequence[int], rs: Sequence[int], l2: int, r2: int) -> None:
         """Live state (what the drawing should show); repaints only when it changed."""
         on = frozenset(pressed) | {s for s, b in L3_OF.items() if b in pressed}
         live = {"on": on, "ls": tuple(ls), "rs": tuple(rs), "l2": l2, "r2": r2}
@@ -218,10 +227,12 @@ class PadView(QWidget):
             self.live = live
             self.update()
 
-    def _badges(self, prof):
-        """Compute the badges for a profile as (x, y, text, kind): button remaps, stick source / inversion, tuning, trigger effects and
-        the gyro mode."""
-        out = []
+    def _badges(self, prof: Profile) -> list[Badge]:
+        """Compute the badges for a profile as (x, y, text, kind).
+
+        Button remaps, stick source / inversion, tuning, trigger effects and the gyro mode.
+        """
+        out: list[Badge] = []
         for src, dst in prof["buttons"].items():
             name = src if src in self.by_name else next((s for s, b in L3_OF.items() if b == src), None)
             if name is None:
@@ -244,7 +255,7 @@ class PadView(QWidget):
         for name in B.TRIGGERS:                           # a DualSense trigger effect: next to the trigger, on the outside
             e = trig.get(name)
             tag = {"res": _("opór {n}"), "click": _("klik {n}"), "vib": _("drgania {n}"), "off": _("bez efektu")}.get(
-                (e or {}).get("mode"), "").format(n=(e or {}).get("force", (e or {}).get("amp")))
+                (e or {}).get("mode", ""), "").format(n=(e or {}).get("force", (e or {}).get("amp")))
             if game_rv:
                 tag = (tag + " + " if tag else "") + _("wibr. gry")
             if tag:
@@ -257,12 +268,12 @@ class PadView(QWidget):
         return out
 
     # ---------- mouse ----------
-    def _hit(self, pos):
+    def _hit(self, pos: QPointF) -> str | None:
         """The name of the topmost part under a widget position (mapped back to drawing coordinates), or None."""
         pt = self._inv.map(QPointF(pos))
         return next((p.name for p in reversed(self.parts) if p.path.contains(pt)), None)
 
-    def mouseMoveEvent(self, e) -> None:
+    def mouseMoveEvent(self, e: QMouseEvent) -> None:
         """Track the hovered part: update the cursor, tooltip and highlight."""
         name = self._hit(e.position())
         if name != self.hover:
@@ -272,20 +283,20 @@ class PadView(QWidget):
             self.setToolTip(self.by_name[name].tip if name else "")
             self.update()
 
-    def leaveEvent(self, _e) -> None:
+    def leaveEvent(self, _e: QEvent) -> None:
         """The cursor left the widget: drop the hover highlight."""
         if self.hover is not None:
             self.hover = None
             self.update()
 
-    def mousePressEvent(self, e) -> None:
+    def mousePressEvent(self, e: QMouseEvent) -> None:
         """A left click on a part emits part_clicked (not in the Test view)."""
         if e.button() == Qt.MouseButton.LeftButton and not self.test:
             name = self._hit(e.position())
             if name:
                 self.part_clicked.emit(name)
 
-    def keyPressEvent(self, e) -> None:
+    def keyPressEvent(self, e: QKeyEvent) -> None:
         """← / → : the previous / next part (highlighted as under the cursor), Enter / Space: pick."""
         k = e.key()
         if k in (Qt.Key.Key_Left, Qt.Key.Key_Right):
@@ -300,21 +311,23 @@ class PadView(QWidget):
         else:
             super().keyPressEvent(e)
 
-    def focusInEvent(self, e) -> None:
+    def focusInEvent(self, e: QFocusEvent) -> None:
         """Repaint to show the focus frame."""
         super().focusInEvent(e)
         self.update()
 
-    def focusOutEvent(self, e) -> None:
+    def focusOutEvent(self, e: QFocusEvent) -> None:
         """Drop the keyboard hover and repaint without the focus frame."""
         super().focusOutEvent(e)
         self.hover = None
         self.update()
 
     # ---------- drawing ----------
-    def paintEvent(self, _e) -> None:
-        """Paint the stage, then the drawing scaled to fit: triggers behind the body, the body, decorations, buttons, sticks, and finally
-        the badges (or the Test overlay)."""
+    def paintEvent(self, _e: QPaintEvent) -> None:
+        """Paint the stage, then the drawing scaled to fit.
+
+        Triggers behind the body, the body, decorations, buttons, sticks, and finally the badges (or the Test overlay).
+        """
         p = QPainter(self)
         p.setRenderHints(QPainter.RenderHint.Antialiasing | QPainter.RenderHint.TextAntialiasing)
         self._stage(p)
@@ -342,7 +355,7 @@ class PadView(QWidget):
         for cx, cy, text, bad in self.badges:
             self._badge(p, cx, cy, text, bad)
 
-    def _test_overlay(self, p) -> None:
+    def _test_overlay(self, p: QPainter) -> None:
         """The Test view: trigger values (0-255) above them, fingers on the touchpad."""
         for name in B.TRIGGERS:
             r = self.by_name[name].path.boundingRect()
@@ -354,7 +367,7 @@ class PadView(QWidget):
             p.setBrush(FINGER[n])
             p.drawEllipse(pt, 6.5, 6.5)
 
-    def _stage(self, p) -> None:
+    def _stage(self, p: QPainter) -> None:
         """The rounded background panel; the border turns accent-coloured when the widget has focus."""
         r = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
         g = QRadialGradient(r.center().x(), r.top() + r.height() * 0.38, max(r.width(), r.height()) * 0.7)
@@ -364,7 +377,7 @@ class PadView(QWidget):
         p.setBrush(g)
         p.drawRoundedRect(r, 16, 16)
 
-    def _decor(self, p) -> None:
+    def _decor(self, p: QPainter) -> None:
         """Elements without remapping: the touchpad with light bars, the microphone, the D-pad base."""
         click = self.test and self.touch_live[1]
         p.setPen(QPen(ACCENT if click else QColor("#434a5c"), 3 if click else 2))
@@ -372,7 +385,7 @@ class PadView(QWidget):
         p.drawPath(self.touch)
         p.setFont(self._font(12, QFont.Weight.Medium))
         p.setPen(WHITE if click else QColor("#5d6478"))
-        self._text(p, "TOUCHPAD" + (" ×2" if click == 2 else ""), 400, 165)
+        self._text(p, "TOUCHPAD" + (" ×2" if click == TOUCH_CLICK_TWO else ""), 400, 165)
         bar = QPen(QColor(61, 139, 255, 217), 4)
         bar.setCapStyle(Qt.PenCapStyle.RoundCap)
         p.setPen(bar)
@@ -384,13 +397,13 @@ class PadView(QWidget):
         p.drawPath(self.mic)
         p.drawPath(_circle(205, 200, 13))
 
-    def _part(self, p, part) -> None:
+    def _part(self, p: QPainter, part: Part) -> None:
         """Paint one part: fill (accent when pressed, a trigger blends with its deflection), outline, arrow, symbol and label."""
         on = part.name in self.live["on"]
         fill = ACCENT if on else SHAPE
         if part.name in B.TRIGGERS:                       # a trigger: a smooth fill depending on the deflection
             v = self.live[part.name] / 255
-            if v > 0.02 and not on:
+            if v > TRIG_VISIBLE and not on:
                 fill = QColor(_lerp(SHAPE.red(), ACCENT.red(), v), _lerp(SHAPE.green(), ACCENT.green(), v),
                               _lerp(SHAPE.blue(), ACCENT.blue(), v))
         p.setPen(self._edge(part.name))
@@ -423,7 +436,7 @@ class PadView(QWidget):
             else:
                 self._text(p, text, x, y)
 
-    def _stick(self, p, part) -> None:
+    def _stick(self, p: QPainter, part: Part) -> None:
         """Paint a stick: the well, then the knob offset by the live deflection and its inner ring."""
         on = part.name in self.live["on"]
         cx, cy = STICK_CENTER[part.name]
@@ -439,7 +452,7 @@ class PadView(QWidget):
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawEllipse(QPointF(cx + ox, cy + oy), 17, 17)
 
-    def _edge(self, name, base=EDGE, width=1.5):
+    def _edge(self, name: str, base: QColor = EDGE, width: float = 1.5) -> QPen:
         """A part's outline: selected = accent and thick, under the cursor / picked from the pad = white."""
         if name == self.selected:
             return QPen(ACCENT, 3.5)
@@ -447,7 +460,7 @@ class PadView(QWidget):
             return QPen(WHITE, 3 if self.hasFocus() else width)
         return QPen(base, width)
 
-    def _badge(self, p, cx, cy, text, kind) -> None:
+    def _badge(self, p: QPainter, cx: float, cy: float, text: str, kind: bool | str) -> None:
         """A change badge: kind True = disabled (red), "fx" = trigger resistance (violet), otherwise the accent."""
         p.setFont(self._font(11, QFont.Weight.Bold))
         w = QFontMetricsF(p.font()).horizontalAdvance(text)
@@ -458,7 +471,7 @@ class PadView(QWidget):
         self._text(p, text, cx, cy + 4)
 
     @staticmethod
-    def _font(px, weight):
+    def _font(px: int, weight: QFont.Weight) -> QFont:
         """The drawing font (Segoe UI) at a pixel size and weight."""
         f = QFont("Segoe UI")
         f.setPixelSize(px)
@@ -466,7 +479,7 @@ class PadView(QWidget):
         return f
 
     @staticmethod
-    def _text(p, text, cx, y) -> None:
+    def _text(p: QPainter, text: str, cx: float, y: float) -> None:
         """Text centred horizontally at cx, the baseline at y (like text-anchor: middle in SVG)."""
         p.drawText(QPointF(cx - QFontMetricsF(p.font()).horizontalAdvance(text) / 2, y), text)
 

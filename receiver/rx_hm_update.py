@@ -1,4 +1,4 @@
-"""Receiver: HIDMaestro downloaded and updated by itself from GitHub Releases (hifihedgehog/HIDMaestro).
+r"""Receiver: HIDMaestro downloaded and updated by itself from GitHub Releases (hifihedgehog/HIDMaestro).
 
 A release is a ~160 MB zip (SDK + test applications), and the receiver needs only HIDMaestro.Core.dll (the driver is inside it)
 and two Windows SDK projection DLLs (plus LICENSE from its folder - the licence travels with every version).
@@ -20,6 +20,9 @@ installation (no version at all) does not wait.
   check(force)      one check (at most every CHECK_S, unless force) -> Status
   thread()          the receiver thread: a check after startup and then once a day
 """
+from __future__ import annotations
+
+import contextlib
 import io
 import json
 import os
@@ -30,26 +33,39 @@ import threading
 import time
 import urllib.request
 import zipfile
-from dataclasses import dataclass
+from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass, replace
+from datetime import datetime
+from typing import Any, Final
 
-REPO = "hifihedgehog/HIDMaestro"
-API = f"https://api.github.com/repos/{REPO}/releases/latest"
-DLL = "HIDMaestro.Core.dll"
-DEPS = ("Microsoft.Windows.SDK.NET.dll", "WinRT.Runtime.dll")   # Windows SDK projections (TFM net10.0-windows10.0.26100)
-LICENSE = "LICENSE"                  # the HIDMaestro licence from the DLL folder in the zip (optional - older releases may not have it)
-CHECK_S = 24 * 3600
-MIN_AGE_DAYS = 7                     # a new version installs only this many days after publication (see above)
-START_DELAY_S = 20                   # after the receiver starts: pads and the window first, then the network
-TIMEOUT_S = 30
-CHUNK = 1 << 16
-PREFETCH_MAX = 128 << 20             # a zip entry up to this many bytes is fetched in one request (in memory); a larger one in pieces
-LOCAL_SLACK = 1 << 12                # an entry's local header can be longer than in the zip directory (the extra field)
-UA = {"User-Agent": "dualsense-bridge", "Accept": "application/vnd.github+json"}
-_TAG = re.compile(r"^v?(\d+(?:\.\d+)*)$")
+from rx_config import C
+
+REPO: Final = "hifihedgehog/HIDMaestro"
+API: Final = f"https://api.github.com/repos/{REPO}/releases/latest"
+DLL: Final = "HIDMaestro.Core.dll"
+DEPS: Final = ("Microsoft.Windows.SDK.NET.dll", "WinRT.Runtime.dll")   # Windows SDK projections (TFM net10.0-windows10.0.26100)
+# the HIDMaestro licence from the DLL folder in the zip (optional - older releases may not have it)
+LICENSE: Final = "LICENSE"
+DAY_S: Final = 24 * 3600
+CHECK_S: Final = DAY_S
+MIN_AGE_DAYS: Final = 7                     # a new version installs only this many days after publication (see above)
+START_DELAY_S: Final = 20                   # after the receiver starts: pads and the window first, then the network
+TIMEOUT_S: Final = 30
+CHUNK: Final = 1 << 16
+WATCH_EVERY_S: Final = 3600          # the thread checks hourly whether a day has passed (a sleeping PC, a settings change)
+ZIP_LOCAL_HEADER_LEN: Final = 30
+# a zip entry up to this many bytes is fetched in one request (in memory); a larger one in pieces
+HTTP_PARTIAL: Final = 206
+PREFETCH_MAX: Final = 128 << 20
+LOCAL_SLACK: Final = 1 << 12                # an entry's local header can be longer than in the zip directory (the extra field)
+UA: Final = {"User-Agent": "dualsense-bridge", "Accept": "application/vnd.github+json"}
+_TAG: Final = re.compile(r"^v?(\d+(?:\.\d+)*)$")
 
 
 @dataclass(frozen=True, slots=True)
 class Status:
+    """What the updater knows: the downloaded version, the latest on GitHub and the progress."""
+
     version: str = ""        # the downloaded version (the newest in the folder), "" = none
     latest: str = ""         # the newest on GitHub at the last check
     busy: bool = False       # a check / download is running
@@ -60,50 +76,62 @@ class Status:
 
 status = Status()
 _lock = threading.Lock()
-on_installed = None          # fn(version) after a new version is downloaded (rx_ds4: HIDMaestro from the next pad connection)
+# fn(version) after a new version is downloaded (rx_ds4: HIDMaestro from the next pad connection)
+on_installed: Callable[[str], None] | None = None
 
 
-def root():
-    """The folder holding the downloaded HIDMaestro versions."""
+def root() -> str:
+    """Return the folder holding the downloaded HIDMaestro versions."""
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), "hidmaestro")
 
 
-def version_key(tag):
-    """A version tag ("v2.0.3") -> a tuple of ints for ordering, or None when it is not a version."""
+def version_key(tag: str | None) -> tuple[int, ...] | None:
+    """Turn a version tag ("v2.0.3") into a tuple of ints for ordering, or None when it is not a version."""
     m = _TAG.match(tag or "")
     return tuple(int(x) for x in m.group(1).split(".")) if m else None
 
 
-def installed():
-    """Downloaded versions, newest first: [(tag, folder)] - only folders with the DLL (an interrupted download does not count)."""
+def version_tuple(tag: str | None) -> tuple[int, ...]:
+    """Like version_key, but a non-version sorts before every version (an empty tuple) - for comparisons."""
+    return version_key(tag) or ()
+
+
+def installed() -> list[tuple[str, str]]:
+    """Return the downloaded versions, newest first: [(tag, folder)]; folders without the DLL (interrupted downloads) do not count."""
     try:
         names = os.listdir(root())
     except OSError:
         return []
     found = [(n, os.path.join(root(), n)) for n in names
              if version_key(n) and os.path.isfile(os.path.join(root(), n, DLL))]
-    return sorted(found, key=lambda t: version_key(t[0]), reverse=True)
+    return sorted(found, key=lambda t: version_tuple(t[0]), reverse=True)
 
 
-def newest_dll():
-    """The path of the DLL of the newest downloaded version, or None."""
+def newest_dll() -> str | None:
+    """Return the path of the DLL of the newest downloaded version, or None."""
     found = installed()
     return os.path.join(found[0][1], DLL) if found else None
 
 
-def in_use():
-    """The folder of the HIDMaestro version loaded in this process, or None. The CLR locks only files already loaded - the dependencies
-    (Microsoft.Windows.SDK.NET.dll, WinRT.Runtime.dll) are loaded only on the first use of their types."""
+def in_use() -> str | None:
+    """Return the folder of the HIDMaestro version loaded in this process, or None.
+
+    The CLR locks only files already loaded - the dependencies (Microsoft.Windows.SDK.NET.dll, WinRT.Runtime.dll) are
+    loaded only on the first use of their types.
+    """
     import rx_hm                              # rx_hm imports this module - import here
     b = rx_hm.loaded()
     path = getattr(b, "path", None)
     return os.path.normcase(os.path.dirname(os.path.abspath(path))) if path else None
 
 
-def cleanup(keep) -> None:
-    """Older versions and leftovers of interrupted downloads. The folder of the version loaded in this process stays until a restart:
-    rmtree removed unlocked DLL dependencies from it (loaded lazily) - a HIDMaestro loaded before the update
-    crashed on the next pad connection (a missing file). Locked files stay until next time."""
+def cleanup(keep: str) -> None:
+    """Remove older versions and leftovers of interrupted downloads.
+
+    The folder of the version loaded in this process stays until a restart: rmtree removed unlocked DLL dependencies
+    from it (loaded lazily) - a HIDMaestro loaded before the update crashed on the next pad connection (a missing file).
+    Locked files stay until next time.
+    """
     busy = in_use()
     for n in os.listdir(root()) if os.path.isdir(root()) else ():
         p = os.path.join(root(), n)
@@ -112,13 +140,13 @@ def cleanup(keep) -> None:
             shutil.rmtree(p, ignore_errors=True)
 
 
-def _state_path():
-    """The file with the time and result of the last check."""
+def _state_path() -> str:
+    """Return the file with the time and result of the last check."""
     return os.path.join(root(), "state.json")
 
 
-def _load_state():
-    """-> (time of the last check, the latest tag seen); (0.0, "") when there is no readable state."""
+def _load_state() -> tuple[float, str]:
+    """Return (time of the last check, the latest tag seen); (0.0, "") when there is no readable state."""
     try:
         with open(_state_path(), encoding="utf-8") as f:
             raw = json.load(f)
@@ -127,34 +155,31 @@ def _load_state():
         return 0.0, ""
 
 
-def _save_state(checked, latest) -> None:
+def _save_state(checked: float, latest: str) -> None:
     """Save the check state (best effort - an I/O error is ignored)."""
-    try:
+    with contextlib.suppress(OSError):
         os.makedirs(root(), exist_ok=True)
         tmp = _state_path() + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump({"checked": checked, "latest": latest}, f)
         os.replace(tmp, _state_path())
-    except OSError:
-        pass
 
 
-def _get(url, headers=None, timeout=TIMEOUT_S):
-    """An HTTP GET with the project's User-Agent; returns the response (usable as a context manager)."""
+def _get(url: str, headers: Mapping[str, str] | None = None, timeout: float = TIMEOUT_S) -> Any:
+    """Make an HTTP GET with the project's User-Agent; returns the response (usable as a context manager)."""
     return urllib.request.urlopen(urllib.request.Request(url, headers={**UA, **(headers or {})}), timeout=timeout)
 
 
-def _published(rel):
-    """The release publication time (time.time()) or 0 (missing / unreadable)."""
-    from datetime import datetime
+def _published(rel: Mapping[str, Any]) -> float:
+    """Return the release publication time (time.time()) or 0 (missing / unreadable)."""
     try:
         return datetime.fromisoformat(str(rel.get("published_at")).replace("Z", "+00:00")).timestamp()
     except (TypeError, ValueError):
         return 0.0
 
 
-def latest_release():
-    """-> (tag, x64 zip url, publication time or 0). The DLL is identical in the x64 and arm64 zips - we take the plain one."""
+def latest_release() -> tuple[str, str, float]:
+    """Return (tag, x64 zip url, publication time or 0). The DLL is identical in the x64 and arm64 zips - we take the plain one."""
     with _get(API) as r:
         rel = json.load(r)
     tag = rel.get("tag_name", "")
@@ -165,23 +190,24 @@ def latest_release():
     return tag, asset["browser_download_url"], _published(rel)
 
 
-def min_age_s():
-    """How long a new release must wait before installing, in seconds (hm_min_age_days from the configuration)."""
-    from rx_config import C
-    return max(0.0, float(getattr(C, "HM_MIN_AGE_DAYS", MIN_AGE_DAYS))) * 86400
+def min_age_s() -> float:
+    """Return how long a new release must wait before installing, in seconds (hm_min_age_days from the configuration)."""
+    return max(0.0, float(getattr(C, "HM_MIN_AGE_DAYS", MIN_AGE_DAYS))) * DAY_S
 
 
 class HttpRange(io.RawIOBase):
     """A remote file readable with seeking (HTTP Range) - zipfile reads the directory from the end and single entries.
-    The address after GitHub's redirect (a signed link to the storage) is fixed once, the size comes from Content-Range.
-    prefetch(start, end) fetches a range in one request; reads from it are served from memory."""
 
-    def __init__(self, url, opener=None) -> None:
+    The address after GitHub's redirect (a signed link to the storage) is fixed once, the size comes from Content-Range.
+    prefetch(start, end) fetches a range in one request; reads from it are served from memory.
+    """
+
+    def __init__(self, url: str, opener: Callable[..., Any] | None = None) -> None:
         """Probe the server with a 1-byte Range request: it must answer 206; the final URL and the total size are taken from it."""
         super().__init__()
         self._get = opener = opener or _get
         with opener(url, {"Range": "bytes=0-0"}) as r:
-            if r.status != 206:
+            if r.status != HTTP_PARTIAL:
                 raise OSError(f"server ignores Range (HTTP {r.status})")
             self.url = r.geturl()
             self.size = int(r.headers["Content-Range"].rsplit("/", 1)[1])
@@ -190,17 +216,17 @@ class HttpRange(io.RawIOBase):
         self.requests = 1                    # how many HTTP requests (log, tests)
         self._buf, self._buf_at = memoryview(b""), 0
 
-    def _fetch(self, start, n):
+    def _fetch(self, start: int, n: int) -> bytes:
         """One Range request for n bytes at `start` (an error when the server ignores Range)."""
         with self._get(self.url, {"Range": f"bytes={start}-{start + n - 1}"}) as r:
-            if r.status != 206:              # 200 = the whole file from the start: the bytes are not from this place
+            if r.status != HTTP_PARTIAL:              # 200 = the whole file from the start: the bytes are not from this place
                 raise OSError(f"server ignored Range (HTTP {r.status})")
             data = r.read(n)
         self.requests += 1
         self.fetched += len(data)
         return data
 
-    def prefetch(self, start, end) -> None:
+    def prefetch(self, start: int, end: int) -> None:
         """Bytes [start, end) in one request; a range that is too large (PREFETCH_MAX) is left to be read in pieces."""
         start, end = max(0, start), min(self.size, end)
         held = self._buf_at <= start and end <= self._buf_at + len(self._buf)
@@ -210,20 +236,23 @@ class HttpRange(io.RawIOBase):
         self._buf, self._buf_at = memoryview(self._fetch(start, end - start)), start
 
     def readable(self) -> bool:
+        """Tell that reading is supported."""
         return True
 
     def seekable(self) -> bool:
+        """Tell that seeking is supported."""
         return True
 
-    def tell(self):
+    def tell(self) -> int:
+        """Return the read position."""
         return self.pos
 
-    def seek(self, off, whence=io.SEEK_SET):
+    def seek(self, off: int, whence: int = io.SEEK_SET) -> int:
         """Move the read position (SEEK_SET / SEEK_CUR / SEEK_END); no network traffic."""
         self.pos = {io.SEEK_SET: 0, io.SEEK_CUR: self.pos, io.SEEK_END: self.size}[whence] + off
         return self.pos
 
-    def readinto(self, b):
+    def readinto(self, b: Any) -> int:
         """Read into b: from the prefetched buffer when the position lies in it, otherwise with a Range request."""
         n = min(len(b), self.size - self.pos)
         if n <= 0:
@@ -237,16 +266,19 @@ class HttpRange(io.RawIOBase):
         return len(data)
 
 
-def _name(info):
-    """A zip entry path with forward slashes (the HIDMaestro zip is packed on Windows - the separator is "\\")."""
+def _name(info: zipfile.ZipInfo) -> str:
+    r"""Return a zip entry path with forward slashes (the HIDMaestro zip is packed on Windows - the separator is "\")."""
     return info.filename.replace("\\", "/")
 
 
-def pick(infos):
-    """The entries to extract: the DLL from the zip root (or the first one found) and its WinRT dependencies from the folder of the
-    application that ships it (HIDMaestroTest) - without test applications, samples and second copies of the DLL."""
+def pick(infos: Iterable[zipfile.ZipInfo]) -> list[zipfile.ZipInfo]:
+    """Choose the entries to extract.
+
+    The DLL from the zip root (or the first one found) and its WinRT dependencies from the folder of the application
+    that ships it (HIDMaestroTest) - without test applications, samples and second copies of the DLL.
+    """
     files = [i for i in infos if not i.is_dir()]
-    by_name = {}
+    by_name: dict[str, zipfile.ZipInfo] = {}
     for i in sorted(files, key=lambda i: _name(i).count("/")):     # the shallowest first: the DLL from the root directory
         by_name.setdefault(posixpath.basename(_name(i)), i)
     if DLL not in by_name:
@@ -258,16 +290,20 @@ def pick(infos):
     return picked + ([lic] if lic else [])
 
 
-def entry_span(info):
-    """The byte range of a zip entry: the local header and the data (with a margin for a longer extra field) -> (start, end)."""
+def entry_span(info: zipfile.ZipInfo) -> tuple[int, int]:
+    """Return (start, end) of a zip entry: the local header and the data (with a margin for a longer extra field)."""
     start = info.header_offset
-    return start, start + 30 + len(info.orig_filename.encode("utf-8")) + len(info.extra) + info.compress_size + LOCAL_SLACK
+    header = ZIP_LOCAL_HEADER_LEN + len(info.orig_filename.encode("utf-8")) + len(info.extra)
+    return start, start + header + info.compress_size + LOCAL_SLACK
 
 
-def extract(zf, dest, prefetch=None):
-    """From an open zip: the DLL and its dependencies -> dest (flat). prefetch(start, end): fetch an entry at once. -> the names."""
+def extract(zf: zipfile.ZipFile, dest: str, prefetch: Callable[[int, int], None] | None = None) -> list[str]:
+    """Extract the DLL and its dependencies from an open zip into dest (flat); return the names.
+
+    prefetch(start, end) fetches an entry at once.
+    """
     os.makedirs(dest, exist_ok=True)
-    names = []
+    names: list[str] = []
     for i in pick(zf.infolist()):
         if prefetch is not None:
             prefetch(*entry_span(i))
@@ -281,8 +317,8 @@ def extract(zf, dest, prefetch=None):
     return names
 
 
-def install(tag, url, opener=None):
-    """Download version `tag` into hidmaestro/<tag> (first .<tag>.tmp, then rename). -> (folder, downloaded bytes)."""
+def install(tag: str, url: str, opener: Callable[..., Any] | None = None) -> tuple[str, int]:
+    """Download version `tag` into hidmaestro/<tag> (first .<tag>.tmp, then rename); returns (folder, downloaded bytes)."""
     os.makedirs(root(), exist_ok=True)
     final, tmp = os.path.join(root(), tag), os.path.join(root(), f".{tag}.tmp")
     shutil.rmtree(tmp, ignore_errors=True)
@@ -300,14 +336,13 @@ def install(tag, url, opener=None):
     return final, raw.fetched
 
 
-def _set(**kw) -> None:
+def _set(**kw: Any) -> None:
     """Replace fields of the immutable status object."""
     global status
-    from dataclasses import replace
     status = replace(status, **kw)
 
 
-def refresh_status():
+def refresh_status() -> Status:
     """Refresh the status from disk: the downloaded version and the saved check state."""
     have = installed()
     checked, latest = _load_state()
@@ -315,13 +350,13 @@ def refresh_status():
     return status
 
 
-def check(force=False):
-    """One check: a newer version on GitHub -> download. A network error does not touch the downloaded version. -> Status."""
+def check(force: bool = False) -> Status:
+    """Run one check: a newer version on GitHub gets downloaded. A network error does not touch the downloaded version."""
     if not _lock.acquire(blocking=False):
         return status                         # already running (a background thread or the button in the window)
     try:
         _check(force)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - a background update must never raise: network, zip and JSON errors all end up in status.error
         _set(error=f"{type(e).__name__}: {e}")
         print(f"HIDMaestro update check failed: {e!r}")
     finally:
@@ -330,9 +365,12 @@ def check(force=False):
     return status
 
 
-def _check(force) -> None:
-    """The check itself (under the lock): skip when checked recently, ask GitHub for the latest release, hold a fresh one
-    until it is old enough (the first installation never waits), otherwise install it, clean up and notify."""
+def _check(force: bool) -> None:
+    """The check itself (under the lock).
+
+    Skip when checked recently, ask GitHub for the latest release, hold a fresh one until it is old enough (the first
+    installation never waits), otherwise install it, clean up and notify.
+    """
     refresh_status()
     # 0 <=: a clock set back (a check "in the future") must not stop checking until that date
     if not force and 0 <= time.time() - status.checked < CHECK_S and status.version:
@@ -342,7 +380,7 @@ def _check(force) -> None:
     now = time.time()
     _save_state(now, tag)
     _set(latest=tag, checked=now, held_until=0.0)
-    if status.version and version_key(status.version) >= version_key(tag):
+    if status.version and version_tuple(status.version) >= version_tuple(tag):
         return
     ready = published + min_age_s()
     if status.version and published and now < ready:      # a fresh release waits (also on "Check now")
@@ -357,8 +395,8 @@ def _check(force) -> None:
         on_installed(tag)
 
 
-def thread(stop, enabled) -> None:
-    """The receiver thread. enabled() - whether downloading is allowed (the settings may change meanwhile)."""
+def thread(stop: threading.Event, enabled: Callable[[], bool]) -> None:
+    """Run the receiver thread; enabled() tells whether downloading is allowed (the settings may change meanwhile)."""
     refresh_status()
     if status.version:
         cleanup(keep=status.version)
@@ -367,5 +405,5 @@ def thread(stop, enabled) -> None:
     while not stop.is_set():
         if enabled():
             check()
-        if stop.wait(3600):                   # every hour it checks whether a day has passed (a sleeping PC, a settings change)
+        if stop.wait(WATCH_EVERY_S):
             return

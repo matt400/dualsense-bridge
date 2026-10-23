@@ -3,24 +3,38 @@
 A pad with a saved calibration (gyro_cal_file) does not calibrate at startup - it uses the stored bias right away, so
 it does not have to be put down after switching on. Autobias (sender_streams) keeps fine-tuning the bias in memory;
 the saved value does not change.
-Calibration from the window (CMD_GYRO_CAL): the pad lies still for arg seconds; the result (calres packet) goes back to the receiver.
+Calibration from the window (CMD_GYRO_CAL): the pad lies still for arg seconds; the result (calres packet) goes back
+to the receiver.
 """
+from __future__ import annotations
+
 import asyncio
 import json
 import re
 import time
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, Any, Final, TypeAlias
 
 import sender_net as net
 from proto import CAL_FEW, CAL_MAX_S, CAL_MOVED, CAL_OK, CALF_STORED, T_CALRES, clamp, write_json
 from sender_config import BURST_DELAYS, C
 
-MIN_SAMPLES = 20
-DUP_S = 0.3              # the command arrives 3x (UDP) - repeats within this time do not restart the calibration
+if TYPE_CHECKING:
+    from sender_ctrl import Ctrl
+
+Bias: TypeAlias = list[float]        # gyro bias [x, y, z]
+CalResult: TypeAlias = tuple[int, Bias | None]    # (CAL_* status, bias when CAL_OK)
+
+MIN_SAMPLES: Final = 20              # fewer samples than this in the window = no data (CAL_FEW)
+MIN_REQUEST_S: Final = 1             # shortest calibration the window may ask for
+DUP_S: Final = 0.3       # the command arrives 3x (UDP) - repeats within this time do not restart the calibration
+BIAS_DECIMALS: Final = 1             # the stored bias is rounded: more digits are noise
+AXES: Final = 3
 _MAC = re.compile(r"[0-9a-f]{2}(?::[0-9a-f]{2}){5}", re.IGNORECASE)
-_saved = None            # MAC -> {"bias": [x, y, z], "t": save time (unix)}
+_saved: dict[str, dict[str, Any]] | None = None     # MAC -> {"bias": [x, y, z], "t": save time (unix)}
 
 
-def _load():
+def _load() -> dict[str, dict[str, Any]]:
     """Return the saved-calibration table, reading gyro_cal_file lazily on first use and caching it.
 
     Entries are normalised (lower-case MAC, three float bias values, integer timestamp); malformed entries or an
@@ -33,8 +47,8 @@ def _load():
             try:
                 with open(C.GYRO_CAL_FILE, encoding="utf-8") as f:
                     raw = json.load(f)
-                _saved = {str(k).lower(): {"bias": [float(x) for x in v["bias"]][:3], "t": int(v.get("t", 0))}
-                          for k, v in raw.items() if len(v["bias"]) == 3}
+                _saved = {str(k).lower(): {"bias": [float(x) for x in v["bias"]][:AXES], "t": int(v.get("t", 0))}
+                          for k, v in raw.items() if len(v["bias"]) == AXES}
             except FileNotFoundError:
                 pass
             except (OSError, ValueError, TypeError, KeyError, AttributeError) as e:
@@ -42,25 +56,28 @@ def _load():
     return _saved
 
 
-def stored(key):
-    """Saved calibration of a pad -> {"bias", "t"} or None (none saved / pad without a MAC)."""
+def stored(key: str | None) -> dict[str, Any] | None:
+    """Return the saved calibration of a pad as {"bias", "t"}, or None (none saved / pad without a MAC)."""
     return _load().get((key or "").lower())
 
 
-def save(key, bias) -> bool:
-    """Save a pad's bias (only pads with a MAC - a USB pad without uniq has a changing key). Returns True if saved.
+def save(key: str | None, bias: Iterable[float]) -> bool:
+    """Save a pad's bias (only pads with a MAC - a USB pad without uniq has a changing key).
 
     The table is updated in memory first (so the new value is used even if the file cannot be written), then written
     atomically with proto.write_json.
+
+    Returns:
+        True if saved.
     """
-    if not _MAC.fullmatch(key or ""):
+    if not key or not _MAC.fullmatch(key):
         return False
-    data = _load()
-    data[key.lower()] = {"bias": [round(b, 1) for b in bias], "t": int(time.time())}
+    table = _load()
+    table[key.lower()] = {"bias": [round(b, BIAS_DECIMALS) for b in bias], "t": int(time.time())}
     if not C.GYRO_CAL_FILE:
         return True
     try:
-        write_json(C.GYRO_CAL_FILE, data, indent=1, sort_keys=True)
+        write_json(C.GYRO_CAL_FILE, table, indent=1, sort_keys=True)
     except OSError as e:
         print(f"Cannot write {C.GYRO_CAL_FILE}: {e!r}")
         return False
@@ -75,10 +92,13 @@ class GyroCal:
     """
     __slots__ = ("end", "samples", "user")
 
-    def __init__(self, now, secs, user) -> None:
-        self.end, self.samples, self.user = now + secs, [], user
+    def __init__(self, now: float, secs: float, user: bool) -> None:
+        """Start a window of ``secs`` seconds at ``now``; ``user`` tells that the window asked for it (the result is saved)."""
+        self.end = now + secs
+        self.samples: list[tuple[float, ...]] = []
+        self.user = user
 
-    def feed(self, now, gyro):
+    def feed(self, now: float, gyro: Iterable[float]) -> CalResult | None:
         """Add one gyro sample (x, y, z); once the window has ended, evaluate and return the result."""
         if now < self.end:
             self.samples.append(tuple(gyro))
@@ -91,7 +111,7 @@ class GyroCal:
         return CAL_OK, [sum(a) / len(a) for a in axes]
 
 
-def report(c, status, repeat=False) -> None:
+def report(c: Ctrl, status: int, repeat: bool = False) -> None:
     """Send a calres packet to the receiver: status, the saved bias and the bias the sender is using right now.
 
     With repeat=True a calibration result is sent two more times (BURST_DELAYS) with the same values - a lost packet
@@ -108,18 +128,18 @@ def report(c, status, repeat=False) -> None:
         loop = asyncio.get_running_loop()
     except RuntimeError:
         return
-    for d in BURST_DELAYS:
-        loop.call_later(d, lambda: net.emit(T_CALRES, c.idx, *vals))
+    for delay in BURST_DELAYS:
+        loop.call_later(delay, lambda: net.emit(T_CALRES, c.idx, *vals))
 
 
-def request(c, secs, now=None) -> None:
+def request(c: Ctrl, secs: int, now: float | None = None) -> None:
     """Command from the window: calibrate for `secs` seconds (stream_motion starts it on the next sample).
 
     The duration is clamped; a duplicate arriving within DUP_S is ignored. A pad that has no motion sensor yet (e.g.
     still connecting) cannot be calibrated, so a failure status is reported straight away.
     """
     now = time.monotonic() if now is None else now
-    secs = clamp(secs, 1, CAL_MAX_S)
+    secs = clamp(secs, MIN_REQUEST_S, CAL_MAX_S)
     if now - c.cal_cmd_t < DUP_S:
         return
     c.cal_cmd_t = now
@@ -129,24 +149,24 @@ def request(c, secs, now=None) -> None:
     c.cal_request = secs
 
 
-def startup_done(c, result) -> None:
+def startup_done(c: Ctrl, result: CalResult) -> None:
     """Result of the startup calibration (not saved - only a calibration from the window is saved)."""
     status, bias = result
-    if status == CAL_OK:
+    if status == CAL_OK and bias is not None:
         c.gyro_bias = bias
         print(f"Controller {c.idx}: gyro bias {[round(b) for b in bias]}")
     else:
         print(f"Controller {c.idx}: calibration skipped (pad was moving)")
 
 
-def finish(c, result) -> None:
+def finish(c: Ctrl, result: CalResult) -> None:
     """Result of a calibration requested from the window: save it and answer the receiver.
 
     On success the new bias becomes active and is persisted; if the pad moved or too few samples arrived, the bias
     stays unchanged. In every case the receiver is told the outcome (with repeats against packet loss).
     """
     status, bias = result
-    if status == CAL_OK:
+    if status == CAL_OK and bias is not None:
         c.gyro_bias = bias
         saved = save(c.key, bias)
         print(f"Controller {c.idx}: gyro calibrated {[round(b) for b in bias]}" + (" (saved)" if saved else ""))

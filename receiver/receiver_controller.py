@@ -1,5 +1,7 @@
-"""DualSense UDP receiver (Windows): a virtual DS4 (ViGEm) + a DSU (Cemuhook) server + one window (PySide6)
-with battery, link and remapping. Protocol: proto.py.
+"""DualSense UDP receiver (Windows).
+
+A virtual DS4 (ViGEm) + a DSU (Cemuhook) server + one window (PySide6) with battery, link and remapping. Protocol:
+proto.py.
 
 Files: proto.py (shared), rx_config.py, rx_state.py, rx_buttons.py (remap + remap.json),
        rx_shape.py (deadzones, curves, gyro), rx_hotkeys.py (PS shortcuts), rx_games.py (profile per game),
@@ -43,14 +45,17 @@ import os
 import sys
 import threading
 import time
+from types import ModuleType
 
 import rx_config
 from rx_config import C
 
 
-def _startup_events(rx_winapi) -> None:
-    """Log: how long after logon (or Windows start) the receiver started (a delayed autostart = a late console mode) and, in the background,
-    moving the old autostart from the Run entry to Task Scheduler (start right after logon)."""
+def _startup_events(rx_winapi: ModuleType) -> None:
+    """Log how long after logon (or Windows start) the receiver started (a delayed autostart = a late console mode).
+
+    In the background also moves the old autostart from the Run entry to Task Scheduler (start right after logon).
+    """
     import threading
 
     import rx_events as ev
@@ -67,8 +72,10 @@ def _startup_events(rx_winapi) -> None:
         return
 
     def migrate() -> None:
-        """Autostart housekeeping thread: migrate the old Run entry, then raise the task to the highest privileges and refresh the admin
-        task."""
+        """Autostart housekeeping thread.
+
+        Migrate the old Run entry, then raise the task to the highest privileges and refresh the admin task.
+        """
         import rx_autostart
         if rx_autostart.migrate():
             ev.info(_("Autostart przeniesiony do Harmonogramu zadań - receiver startuje zaraz po zalogowaniu"))
@@ -89,7 +96,7 @@ def _gamebar() -> None:
     try:
         for change in rx_gamebar.suppress():
             print(f"Game Bar: {change}")
-    except Exception as e:
+    except Exception as e:      # noqa: BLE001 - registry trouble must not stop the startup
         print(f"Game Bar: cannot update registry ({e!r})")
 
 
@@ -100,14 +107,17 @@ RESTART_GUARD_S = 20.0     # restart: cleanup longer than this -> the new proces
 ELEVATE_GUARD_S = 60       # the admin task was started a moment ago and the process again has no privileges -> UAC (no loop)
 
 
-def _guard_path():
-    """The marker of an attempt through the task - in the user's temp folder: the receiver folder can be read-only
-    (e.g. Program Files), and without a marker a task that gives no privileges started the receiver in a loop."""
+def _guard_path() -> str:
+    """The marker of an attempt through the task - in the user's temp folder.
+
+    The receiver folder can be read-only (e.g. Program Files), and without a marker a task that gives no privileges
+    started the receiver in a loop.
+    """
     import tempfile
     return os.path.join(tempfile.gettempdir(), "dualsense-bridge-elevate_try")
 
 
-def _recent_try():
+def _recent_try() -> bool:
     """This start is the result of our schtasks /run from a moment ago (the task gave no privileges, e.g. a non-admin account)."""
     try:
         return 0 <= time.time() - os.path.getmtime(_guard_path()) < ELEVATE_GUARD_S
@@ -124,11 +134,14 @@ def _clear_guard() -> None:
 
 
 def elevate() -> None:
-    """Windows without administrator rights: the receiver again as administrator, then exit. First through the
-    DualSenseBridgeAdmin task (no UAC prompt; created by a receiver running as administrator), without it - a UAC prompt.
-    A refusal in UAC / --no-elevate -> carry on without privileges (virtual pads through ViGEmBus). Before rx_config.init:
-    --autostart on always goes through UAC (the task would run the receiver without that flag). The receiver already running ->
-    no elevation (the second copy exits soon anyway - earlier it first showed a UAC prompt)."""
+    """Windows without administrator rights: the receiver again as administrator, then exit.
+
+    First through the DualSenseBridgeAdmin task (no UAC prompt; created by a receiver running as administrator), without
+    it - a UAC prompt. A refusal in UAC / --no-elevate -> carry on without privileges (virtual pads through ViGEmBus).
+    Before rx_config.init: --autostart on always goes through UAC (the task would run the receiver without that flag).
+    The receiver already running -> no elevation (the second copy exits soon anyway - earlier it first showed a UAC
+    prompt).
+    """
     if os.name != "nt" or NO_ELEVATE in sys.argv[1:]:
         return
     import rx_winapi
@@ -159,7 +172,7 @@ def elevate() -> None:
 _restart_once = threading.Lock()      # a new process starts once: a normal shutdown or the restart guard
 
 
-def _restart_now(console_on, force=False) -> None:
+def _restart_now(console_on: bool, force: bool = False) -> None:
     """Start the new receiver process once (the guard calls it with force when cleanup hangs and then kills this process)."""
     import rx_console
     import rx_state as S
@@ -212,7 +225,9 @@ def _init_modules() -> None:
 
 def _start_workers() -> tuple[list[threading.Thread], threading.Thread]:
     """Start the background threads (one per pad slot, feedback, HIDMaestro updates, gyro mouse, game watch).
-    Returns the slot threads and the feedback thread - the ones shutdown has to join."""
+
+    Returns the slot threads and the feedback thread - the ones shutdown has to join.
+    """
     import rx_ds4
     import rx_feedback
     import rx_games
@@ -258,7 +273,7 @@ def _gui_available() -> bool:
     return True
 
 
-def _run(use_gui) -> None:
+def _run(use_gui: bool) -> None:
     """Block until the receiver is told to stop: the network loop runs in a thread next to the window, or alone without one."""
     import rx_net
     import rx_state as S
@@ -269,7 +284,7 @@ def _run(use_gui) -> None:
     net_thread = S.start_thread("net", rx_net.net_loop)
     try:
         rx_qt.run_gui()
-    except Exception as e:     # e.g. no display - carry on without the window
+    except Exception as e:     # noqa: BLE001 - e.g. no display - carry on without the window
         print(f"GUI unavailable: {e!r} - running without GUI")
         while not S.stop.is_set() and net_thread.is_alive():
             S.stop.wait(0.5)
@@ -277,9 +292,12 @@ def _run(use_gui) -> None:
     net_thread.join(2)
 
 
-def _shutdown(slot_threads, fb_thread) -> None:
-    """Stop everything in the order that leaves no stuck state behind: release the pad triggers, disconnect the virtual pads,
-    restore the screens, close the sockets - then start the new process if a restart was requested."""
+def _shutdown(slot_threads: list[threading.Thread], fb_thread: threading.Thread) -> None:
+    """Stop everything in the order that leaves no stuck state behind.
+
+    Release the pad triggers, disconnect the virtual pads, restore the screens, close the sockets - then start the new
+    process if a restart was requested.
+    """
     import rx_console
     import rx_dsu
     import rx_feedback
@@ -319,8 +337,11 @@ def _shutdown(slot_threads, fb_thread) -> None:
 
 
 def main() -> None:
-    """Start the receiver: elevate, load the configuration, initialise the modules, start the worker threads and run the GUI
-    (or the network loop alone), then shut everything down in order - optionally restarting the process."""
+    """Start the receiver.
+
+    Elevate, load the configuration, initialise the modules, start the worker threads and run the GUI (or the network
+    loop alone), then shut everything down in order - optionally restarting the process.
+    """
     elevate()
     rx_config.init()
     sys.setswitchinterval(0.001)   # the default 5 ms is how long the network thread may wait while another one holds the GIL

@@ -1,5 +1,6 @@
-"""Receiver: the sender's Bluetooth (a phone without a screen) controlled from the window - the adapter state, the device list and commands
-(proto: btcmd -> btstate + btdev, sender v10+).
+"""Receiver: the sender's Bluetooth (a phone without a screen) controlled from the window.
+
+The adapter state, the device list and commands (proto: btcmd -> btstate + btdev, sender v10+).
 
 Packets arrive in the network thread (on_packet), the window reads them in its own: the state and the list are immutable objects replaced
 with a single assignment, so no locks are needed. The sender's list comes in rounds (btstate with BTF_LIST and the device count, then
@@ -118,8 +119,11 @@ class Controller:
 
 @dataclass(frozen=True, slots=True)
 class Status:
-    """The last btstate: adapter state BTS_*, flags, seconds of scan left, connected devices, the last operation with its result and MAC,
-    and the receive time."""
+    """The last btstate.
+
+    Adapter state BTS_*, flags, seconds of scan left, connected devices, the last operation with its result and MAC, and
+    the receive time.
+    """
     state: int
     flags: int
     scan_left: int

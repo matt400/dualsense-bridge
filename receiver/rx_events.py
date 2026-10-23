@@ -5,21 +5,25 @@ mode, errors, updates) and by the sender (the event packet, when enabled in the 
 window language; the console log stays separate (print, in English). On every refresh the window fetches the new
 entries by sequence number (since).
 """
+from __future__ import annotations
+
 import collections
 import threading
 import time
 from dataclasses import dataclass
+from typing import Final
 
-from proto import (BODY, E_ERROR, E_NET_DOWN, E_NO_RECEIVER, E_NO_SLOT, E_PAD_OFF, E_PAD_ON, E_POWER_OFF, E_START, E_WOL, E_WOL_FAIL,
+from proto import (BODY, NO_PAD, E_ERROR,
+                    E_NET_DOWN, E_NO_RECEIVER, E_NO_SLOT, E_PAD_OFF, E_PAD_ON, E_POWER_OFF, E_START, E_WOL, E_WOL_FAIL,
                    EV_ERROR, EV_INFO, EV_WARN, T_EVENT, cstr)
 from rx_i18n import _
 
-KEEP = 5000                       # entries kept in memory (the panel's line limit is a separate setting)
-LEVELS = ("info", "warn", "error")
-WIRE_LEVEL = {EV_INFO: "info", EV_WARN: "warn", EV_ERROR: "error"}
+KEEP: Final = 5000                       # entries kept in memory (the panel's line limit is a separate setting)
+LEVELS: Final = ("info", "warn", "error")
+WIRE_LEVEL: Final = {EV_INFO: "info", EV_WARN: "warn", EV_ERROR: "error"}
 # sender event texts (the E_* code from the event packet); {n} = pad number, {arg} = the packet argument
 # (these are i18n keys - they stay in Polish and are translated through rx_i18n)
-SENDER_TEXT = {
+SENDER_TEXT: Final = {
     E_START: "Nadajnik uruchomiony (wersja {arg})",
     E_PAD_ON: "Pad {n} połączony z telefonem ({arg})",
     E_PAD_OFF: "Pad {n} rozłączony od telefonu",
@@ -35,6 +39,8 @@ SENDER_TEXT = {
 
 @dataclass(frozen=True, slots=True)
 class Event:
+    """One log entry: a sequence number, its time, level, the (translated) text and whether the sender produced it."""
+
     seq: int
     t: float                      # time (time.time())
     level: str                    # info | warn | error
@@ -43,13 +49,13 @@ class Event:
 
 
 _lock = threading.Lock()
-_events = collections.deque(maxlen=KEEP)
+_events: collections.deque[Event] = collections.deque(maxlen=KEEP)
 _seq = 0
-_seen = collections.deque(maxlen=128)      # sender event numbers (UDP repeats)
+_seen: collections.deque[int] = collections.deque(maxlen=128)      # sender event numbers (UDP repeats)
 
 
-def add(level, text, sender=False, t=None):
-    """Append an entry with the next sequence number (an unknown level becomes "info") and return it. Thread-safe."""
+def add(level: str, text: str, sender: bool = False, t: float | None = None) -> Event:
+    """Append an entry with the next sequence number (an unknown level becomes "info") and return it; thread-safe."""
     global _seq
     with _lock:
         _seq += 1
@@ -58,23 +64,23 @@ def add(level, text, sender=False, t=None):
     return e
 
 
-def info(text):
+def info(text: str) -> Event:
     """Add an info entry."""
     return add("info", text)
 
 
-def warn(text):
+def warn(text: str) -> Event:
     """Add a warning entry."""
     return add("warn", text)
 
 
-def error(text):
+def error(text: str) -> Event:
     """Add an error entry."""
     return add("error", text)
 
 
-def since(seq):
-    """Entries newer than seq (oldest first); the window polls with the last number it has seen."""
+def since(seq: int) -> list[Event]:
+    """Return the entries newer than seq (oldest first); the window polls with the last number it has seen."""
     with _lock:
         if not _events or _events[-1].seq <= seq:
             return []
@@ -88,24 +94,24 @@ def clear() -> None:
         _seen.clear()
 
 
-def visible(e, level):
-    """Whether entry e passes the minimum-level filter."""
+def visible(e: Event, level: str) -> bool:
+    """Tell whether entry e passes the minimum-level filter."""
     return LEVELS.index(e.level) >= LEVELS.index(level)
 
 
-def fmt(e):
-    """'12:03:44  ⚠  text' (sender entries get a phone icon before the text) - the line used for copying."""
+def fmt(e: Event) -> str:
+    """Format an entry as '12:03:44  ⚠  text' (sender entries get a phone icon before the text) - the line used for copying."""
     mark = {"info": "·", "warn": "⚠", "error": "✖"}[e.level]
     return f"{time.strftime('%H:%M:%S', time.localtime(e.t))}  {mark}  " + ("📱 " if e.sender else "") + e.text
 
 
-def pad_name(i):
+def pad_name(i: int) -> str:
     """Display name of pad slot i (slots are numbered from 0, names from 1)."""
     return _("Pad {n}").format(n=i + 1)
 
 
-def on_sender_event(i, data, now=None):
-    """Turn a sender event packet into an entry; a repeat (same event number) is dropped -> Event or None.
+def on_sender_event(i: int, data: bytes, now: float | None = None) -> Event | None:
+    """Turn a sender event packet into an entry; a repeat (same event number) is dropped (None).
 
     The sender sends events with repeats because UDP can lose them, so the number is the dedup key. Known codes are
     rendered from SENDER_TEXT, unknown ones get a generic text. The packet carries the event's age, so the timestamp is
@@ -116,6 +122,6 @@ def on_sender_event(i, data, now=None):
         return None
     _seen.append(num)
     tpl = SENDER_TEXT.get(code)
-    text = _(tpl).format(n=i + 1 if i != 255 else "?", arg=cstr(arg)) if tpl else _("Zdarzenie nadajnika {code}: {arg}").format(
+    text = _(tpl).format(n=i + 1 if i != NO_PAD else "?", arg=cstr(arg)) if tpl else _("Zdarzenie nadajnika {code}: {arg}").format(
         code=code, arg=cstr(arg))
     return add(WIRE_LEVEL.get(level, "info"), text, sender=True, t=(time.time() if now is None else now) - age)

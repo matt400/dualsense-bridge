@@ -1,6 +1,8 @@
-"""Receiver: one window for everything (PySide6): pads with the battery and latency on the left, the pad drawing in the centre
-(a click = remapping), profiles / gyro / changes on the right, an icon in the tray. Full screen = the TV mode: a bigger interface
-(readable from a couch) and controlling the window with the pad (rx_qt_tv).
+"""Receiver: one window for everything (PySide6).
+
+Pads with the battery and latency on the left, the pad drawing in the centre (a click = remapping), profiles / gyro
+/ changes on the right, an icon in the tray. Full screen = the TV mode: a bigger interface (readable from a couch)
+and controlling the window with the pad (rx_qt_tv).
 
 Speed: the pad drawing refreshes 30 times a second only while the window is visible and only when the pad state
 changed; the rest (cards, tray) every 400 ms, with a hidden window too (the tray tooltip, a low battery).
@@ -9,13 +11,15 @@ Profile changes reach the pad live 150 ms after the last slider move, saving to 
 from rx_i18n import _
 import os
 import signal
+from collections.abc import Iterable, Sequence
 from functools import cache
 import sys
 import threading
 import time
+from typing import Any
 
 from PySide6.QtCore import QAbstractNativeEventFilter, QEvent, QSettings, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QIcon, QKeySequence, QPixmap, QShortcut
+from PySide6.QtGui import QCloseEvent, QHideEvent, QIcon, QKeySequence, QMouseEvent, QPixmap, QShortcut, QShowEvent
 from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QMenu, QSplitter, QStackedWidget,
                                QSystemTrayIcon, QTabWidget, QToolButton, QVBoxLayout, QWidget)
 
@@ -59,10 +63,11 @@ NOTE_S = 6.0           # for this many seconds a message (e.g. "Saved") covers t
 VIEWS = (("out", "Wynik"), ("in", "Fizycznie"), ("test", "Test"))
 EXIT_HOLD_S = 1.0      # the Test view in TV mode: how long ○ of the pad under test must be held to leave the test
 DEFAULT_SIZE = QSize(1160, 720)
+BATT_UNKNOWN = 100     # a battery level above this (as a percentage) means the pad did not report one
 
 
 @cache
-def make_icon(rgb):
+def make_icon(rgb: tuple[int, int, int]) -> QIcon:
     """The pad icon at several sizes - sharp in the tray, on the taskbar and with 150-200 % scaling."""
     ic = QIcon()
     for size in (16, 24, 32, 48, 64):
@@ -72,7 +77,7 @@ def make_icon(rgb):
     return ic
 
 
-def n_changes(n):
+def n_changes(n: int) -> str:
     """"1 zmiana", "3 zmiany", "5 zmian", "22 zmiany" (the Polish inflection) / "1 change", "N changes"."""
     if n == 1:
         return _("{n} zmiana").format(n=n)
@@ -80,8 +85,8 @@ def n_changes(n):
     return (_("{n} zmiany") if few else _("{n} zmian")).format(n=n)
 
 
-def _profile_label(key):
-    """The profile name for display: \"default\" is translated, a game profile keeps its program name."""
+def _profile_label(key: str) -> str:
+    """The profile name for display: "default" is translated, a game profile keeps its program name."""
     label = S.profile_label(key)
     return _("domyślny") if label == "default" else label
 
@@ -90,17 +95,22 @@ STATS_HELP = "zwykle = 95 na 100 pomiarów było tak szybkich albo szybszych, ma
 
 
 class PadCard(QFrame):
-    """The pad card on the left - only what matters at first glance: the battery, the pad -> game latency (with a bar of
-    segments), the profile and the touchpad mode; details (the latency breakdown, ping, loss, Hz) in a tooltip. A problem
-    (no signal, rumble unavailable) shows as one warning line. A disconnected pad = the name only.
-    A click = edit this pad; a click on the crown = this pad becomes the master (a second click - no master)."""
+    """The pad card on the left - only what matters at first glance.
+
+    The battery, the pad -> game latency (with a bar of segments), the profile and the touchpad mode; details (the
+    latency breakdown, ping, loss, Hz) in a tooltip. A problem (no signal, rumble unavailable) shows as one warning
+    line. A disconnected pad = the name only. A click = edit this pad; a click on the crown = this pad becomes the
+    master (a second click - no master).
+    """
 
     clicked = Signal(int)
     master_changed = Signal()
 
-    def __init__(self, slot) -> None:
-        """Build the card: the header (state dot, crown, rumble test, power off), the status line and the body with the battery, latency,
-        button latency and the profile line."""
+    def __init__(self, slot: int) -> None:
+        """Build the card: the header (state dot, crown, rumble test, power off).
+
+        The status line and the body with the battery, latency, button latency and the profile line.
+        """
         super().__init__()
         self.slot, self._key, self._lat = slot, None, None
         self.setObjectName("card")
@@ -108,6 +118,15 @@ class PadCard(QFrame):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(px(14), px(12), px(10), px(12))
         lay.setSpacing(px(7))
+        lay.addLayout(self._build_head())
+        self.status = label("", "dim")               # only when the pad does not work: "not connected" / "no signal"
+        lay.addWidget(self.status)
+        lay.addWidget(self._build_body())
+        self.warn = label("", wrap=True)              # one problem line (rumble unavailable)
+        lay.addWidget(self.warn)
+
+    def _build_head(self) -> QHBoxLayout:
+        """The card header: state dot, pad name, crown, rumble test and power off."""
         head = QHBoxLayout()
         head.setSpacing(px(4))
         self.dot = label("●")
@@ -121,18 +140,18 @@ class PadCard(QFrame):
         self.rumble.clicked.connect(lambda: self.test_rumble())
         self.off = ConfirmButton(_("Wyłącz"), _("Wyłączyć?"), iconic="power",
                                  tip=_("Wyłącz") + " - " + _("Rozłącza pada przez Bluetooth - pad się wyłącza"))
-        self.off.confirmed.connect(lambda: P.power_off(slot))
+        self.off.confirmed.connect(lambda: P.power_off(self.slot))
         head.addWidget(self.dot)
         head.addSpacing(px(2))
-        head.addWidget(label(_("Pad {n}").format(n=slot + 1), "name"))
+        head.addWidget(label(_("Pad {n}").format(n=self.slot + 1), "name"))
         head.addWidget(self.crown)
         head.addStretch(1)
         head.addWidget(self.rumble)
         head.addWidget(self.off)
-        lay.addLayout(head)
-        self.status = label("", "dim")               # only when the pad does not work: "not connected" / "no signal"
-        lay.addWidget(self.status)
+        return head
 
+    def _build_body(self) -> QWidget:
+        """The part for a connected pad: battery, latency with its bar, button latency and the profile line."""
         self.body = QWidget()                         # everything below - for a connected pad only
         bl = QVBoxLayout(self.body)
         bl.setContentsMargins(0, 0, 0, 0)
@@ -176,11 +195,9 @@ class PadCard(QFrame):
         bl.addWidget(self.btn_row)
         self.profile = label("", "dim")
         bl.addWidget(self.profile)
-        lay.addWidget(self.body)
-        self.warn = label("", wrap=True)              # one problem line (rumble unavailable)
-        lay.addWidget(self.warn)
+        return self.body
 
-    def mousePressEvent(self, e) -> None:
+    def mousePressEvent(self, e: QMouseEvent) -> None:
         """A left click selects this pad for editing."""
         if e.button() == Qt.MouseButton.LeftButton:
             self.clicked.emit(self.slot)
@@ -198,7 +215,7 @@ class PadCard(QFrame):
         self._key = None
         self.master_changed.emit()
 
-    def set_selected(self, on) -> None:
+    def set_selected(self, on: bool) -> None:
         """Mark the card as the selected pad."""
         set_prop(self, "selected", on)
 
@@ -208,7 +225,7 @@ class PadCard(QFrame):
         self._lat = None
         self._update_latency(time.monotonic())
 
-    def _update_latency(self, now) -> None:
+    def _update_latency(self, now: float) -> None:
         """Latency: changes on every refresh - separately from the rest of the card (only when something changed)."""
         i = self.slot
         summ, press = ST.latency(i), ST.button_latency(i)
@@ -233,7 +250,7 @@ class PadCard(QFrame):
         for w in (self.lat, self.lat_icon, self.lat_stats, self.lat_bar):
             w.setToolTip(tip)
         self.btn_row.setVisible(bsig is not None)
-        if bsig is not None:
+        if bsig is not None and press is not None:
             self.btn_lat.setText(bsig[0])
             self.btn_stats.setText(bsig[1])
             set_prop(self.btn_lat, "level", bsig[2])
@@ -242,13 +259,13 @@ class PadCard(QFrame):
                 w.setToolTip(btip)
 
     @staticmethod
-    def _rows(summ):
+    def _rows(summ: rx_latency.Summary) -> list[str]:
         """HTML rows of the latency breakdown, each with its bar colour."""
         return [f"<span style='color:{SEGMENT[k]}'>■</span>&nbsp; {name}: <b>{v:.2f} ms</b>"
                 for k, name, v in ST.latency_parts(summ)]
 
     @staticmethod
-    def _latency_tip(summ, link):
+    def _latency_tip(summ: rx_latency.Summary | None, link: str) -> str:
         """A tooltip (HTML): the latency breakdown with the colours of the bar, the link, a note about the measurement."""
         dim = f"<span style='color:{DIM}'>{{}}</span>"
         if summ is None:
@@ -265,7 +282,7 @@ class PadCard(QFrame):
         return "<br>".join(rows)
 
     @staticmethod
-    def _button_tip(summ):
+    def _button_tip(summ: rx_latency.Summary) -> str:
         """A tooltip (HTML) for the button -> game latency: the statistics, the breakdown and what is measured."""
         dim = f"<span style='color:{DIM}'>{{}}</span>"
         return "<br>".join([
@@ -276,7 +293,7 @@ class PadCard(QFrame):
             *PadCard._rows(summ),
             dim.format(_("Tylko przyciski, D-pad i spusty (wciśnięcie / puszczenie) - bez gałek i żyroskopu."))])
 
-    def update_state(self, now):
+    def update_state(self, now: float) -> bool:
         """Refresh the card (only what changed). -> True when the pad's battery is running low."""
         i = self.slot
         alive, want = bool(S.alive[i]), S.want[i].is_set()
@@ -309,23 +326,8 @@ class PadCard(QFrame):
         self.dot.setVisible(alive or want)
         set_prop(self.dot, "level", "ok" if alive else "warn")
         self.dot.setToolTip(self.status.text().strip("●○ "))
-        charging = bool(flags & 1)
-        if pct > 100:                         # the battery level is unknown
-            self.bar.set(None, LEVEL["ok"])
-            self.pct.setText(_("b/d"))
-        else:
-            self.bar.set(pct, LEVEL[ST.battery_level(pct, charging, ST.low_pct())])
-            self.pct.setText(f"{pct}%" + (" ⚡" if charging else ""))
-        set_prop(self.pct, "level", "bad" if low else "")
-        n = S.profile_changes(i)
-        pm = pixmap("mouse" if S.mouse_mode[i] else "touchpad", px(18) * 2)
-        pm.setDevicePixelRatio(2)
-        self.mode_icon.setPixmap(pm)
-        self.mode_icon.setToolTip((_("Touchpad jako mysz") if S.mouse_mode[i] else _("Touchpad jako dotyk DS4")) + "\n"
-                                  + _("Wirtualny pad: {pad}  ·  touchpad: {tp}").format(
-                                      pad=rx_ds4.LABELS[kind] if S.plugged[i] and kind else _("wył."),
-                                      tp=_("mysz") if S.mouse_mode[i] else _("dotyk w grze")))
-        self.profile.setText(_("profil: {name}").format(name=_profile_label(S.active[i])) + (f" ({n})" if n else ""))
+        self._show_battery(pct, bool(flags & 1), low)
+        self._show_mode(kind)
         text, level, tip = ST.rumble_status(i)
         problem = alive and level in ("bad", "warn")
         self.warn.setText("⚠  " + text if problem else "")
@@ -338,16 +340,44 @@ class PadCard(QFrame):
             self._update_latency(now)
         return low
 
+    def _show_battery(self, pct: int, charging: bool, low: bool) -> None:
+        """The battery bar and percentage ("b/d" when the pad reports no level)."""
+        if pct > BATT_UNKNOWN:               # the battery level is unknown
+            self.bar.set(None, LEVEL["ok"])
+            self.pct.setText(_("b/d"))
+        else:
+            self.bar.set(pct, LEVEL[ST.battery_level(pct, charging, ST.low_pct())])
+            self.pct.setText(f"{pct}%" + (" ⚡" if charging else ""))
+        set_prop(self.pct, "level", "bad" if low else "")
+
+    def _show_mode(self, kind: str | None) -> None:
+        """The touchpad mode icon with its tooltip and the profile line (name and the number of changes)."""
+        i = self.slot
+        n = S.profile_changes(i)
+        pm = pixmap("mouse" if S.mouse_mode[i] else "touchpad", px(18) * 2)
+        pm.setDevicePixelRatio(2)
+        self.mode_icon.setPixmap(pm)
+        self.mode_icon.setToolTip((_("Touchpad jako mysz") if S.mouse_mode[i] else _("Touchpad jako dotyk DS4")) + "\n"
+                                  + _("Wirtualny pad: {pad}  ·  touchpad: {tp}").format(
+                                      pad=rx_ds4.LABELS[kind] if S.plugged[i] and kind else _("wył."),
+                                      tp=_("mysz") if S.mouse_mode[i] else _("dotyk w grze")))
+        self.profile.setText(_("profil: {name}").format(name=_profile_label(S.active[i])) + (f" ({n})" if n else ""))
+
 
 class MainWindow(ScreenPlacement):
-    """The main window: the pad cards, the pad drawing, the profile editor, the Test view, the drawers (Bluetooth, shortcuts), the log and
-    the tray icon."""
+    """The main window.
+
+    The pad cards, the pad drawing, the profile editor, the Test view, the drawers (Bluetooth, shortcuts), the log and
+    the tray icon.
+    """
     update_done = Signal(object)          # rx_update.Result from the update thread
     test_escaped = Signal()               # Options + Create on the pad ended the Test view (the network thread, rx_testmode)
 
-    def __init__(self, settings) -> None:
-        """Restore the saved state (pad, view, geometry), create the timers, build the UI and the tray, then fit the window to its screen
-        and start the slow refresh."""
+    def __init__(self, settings: QSettings) -> None:
+        """Restore the saved state (pad, view, geometry), create the timers, build the UI and the tray.
+
+        Then fit the window to its screen and start the slow refresh.
+        """
         super().__init__()
         self.settings = settings
         self.setWindowTitle("DualSense bridge")
@@ -366,7 +396,7 @@ class MainWindow(ScreenPlacement):
         self.note_text, self.note_until = None, 0.0
         self.low_any, self.tip, self.online = False, None, None
         self._banner_sig, self._upd_notified, self._sender_stale = None, None, None   # the update banner
-        self.settings_dlg = None               # the console mode settings window (created on first opening)
+        self.settings_dlg: ConsoleSettings | None = None   # the console mode settings window (created on first opening)
 
         self.apply_timer = QTimer(self)
         self.apply_timer.setSingleShot(True)
@@ -395,6 +425,12 @@ class MainWindow(ScreenPlacement):
         self._fitting = False                  # place_on_screen resizes the window - this is not the user's choice
         self._connected = (False,) * C.NUM_PADS   # pads connected at the previous refresh (the window comes to the front)
         self._place_pending = False            # the screens changed during a game - the window goes to the centre after leaving it
+        self._restore_layout(settings)
+        self.slow_tick()
+        self.slow_timer.start()                # works with a hidden window too (the tray, battery, Ctrl+C)
+
+    def _restore_layout(self, settings: QSettings) -> None:
+        """Restore the saved geometry, splitter and log state, then fit the window to its screen and watch the screens."""
         geo = settings.value("geometry")
         if not (geo and self.restoreGeometry(geo)):
             self.resize(DEFAULT_SIZE)
@@ -409,13 +445,14 @@ class MainWindow(ScreenPlacement):
             self.split.setSizes([px(560), px(190)])
         self.log_btn.setChecked(settings.value("log_open", "false") in (True, "true"))
         self.log_panel.setVisible(self.log_btn.isChecked())
-        self.slow_tick()
-        self.slow_timer.start()                # works with a hidden window too (the tray, battery, Ctrl+C)
 
     # ---------- building ----------
     def _build(self) -> None:
-        """Build the layout: the header, the update banner, the three columns (pads, drawing, editor), the log under a splitter and the
-        drawers over the window."""
+        """Build the layout.
+
+        The header, the update banner, the three columns (pads, drawing, editor), the log under a splitter and the drawers
+        over the window.
+        """
         root = QWidget()
         root.setObjectName("root")
         root.setFocusPolicy(Qt.FocusPolicy.ClickFocus)   # the startup focus on the background: no focus frame on the first button
@@ -450,7 +487,7 @@ class MainWindow(ScreenPlacement):
         # the minimum size comes from the layout (columns + the smallest pad drawing) - an explicit minimum smaller than that
         # allowed squeezing the window so that the right panel overlapped the drawing
 
-    def _header(self):
+    def _header(self) -> QFrame:
         """The name and version on the left; on the right the sender state and icon-only buttons (tooltips with descriptions)."""
         bar = QFrame()
         bar.setObjectName("header")
@@ -498,9 +535,12 @@ class MainWindow(ScreenPlacement):
         self._iconic = [self.bt_btn, self.keys_btn, self.log_btn, self.fs_btn, settings_btn, self.update_btn, restart_btn, quit_btn]
         return bar
 
-    def _banner(self):
-        """A bar under the header, visible only when there is something to do: a new version on GitHub and / or a sender
-        on a different version than the receiver. A text with a description (not colour alone) and an Update button."""
+    def _banner(self) -> QFrame:
+        """A bar under the header, visible only when there is something to do.
+
+        A new version on GitHub and / or a sender on a different version than the receiver. A text with a description (not
+        colour alone) and an Update button.
+        """
         bar = QFrame()
         bar.setObjectName("banner")
         lay = QHBoxLayout(bar)
@@ -519,8 +559,10 @@ class MainWindow(ScreenPlacement):
         return bar
 
     def _refresh_banner(self) -> None:
-        """Show the update banner when a newer version exists or the sender runs a different one (rebuilt only on change); notify through
-        the tray once per new version."""
+        """Show the update banner when a newer version exists or the sender runs a different one.
+
+        Rebuilt only on change; notifies through the tray once per new version.
+        """
         av, stale = rx_update.available, self._sender_stale
         lines = []
         if av is not None and av.behind:
@@ -541,7 +583,7 @@ class MainWindow(ScreenPlacement):
             self.tray.showMessage(_("Dostępna aktualizacja: {n}").format(n=n_changes(av.behind)),
                                   av.subject or _("Kliknij Aktualizuj w oknie"), QSystemTrayIcon.MessageIcon.Information, 8000)
 
-    def _left(self):
+    def _left(self) -> QWidget:
         """The left column: one card per pad slot."""
         w = QWidget()
         w.setFixedWidth(px(248))
@@ -557,7 +599,7 @@ class MainWindow(ScreenPlacement):
         lay.addStretch(1)
         return w
 
-    def _center(self):
+    def _center(self) -> QVBoxLayout:
         """The centre: the pad drawing, the hint and the Result / Physical / Test switch."""
         lay = QVBoxLayout()
         lay.setSpacing(px(10))
@@ -578,7 +620,7 @@ class MainWindow(ScreenPlacement):
         lay.addLayout(row)
         return lay
 
-    def _right(self):
+    def _right(self) -> QFrame:
         """The right column: the profile editor (profile bar, tabs, status, Save / Revert) stacked with the Test panel."""
         panel = QFrame()
         panel.setObjectName("panel")
@@ -628,7 +670,7 @@ class MainWindow(ScreenPlacement):
         lay.addLayout(row)
         return panel
 
-    def _make_tray(self):
+    def _make_tray(self) -> QSystemTrayIcon | None:
         """Create the tray icon and its menu (None when the tray is disabled or unavailable)."""
         if not C.cfg["tray"]:
             return None
@@ -650,7 +692,7 @@ class MainWindow(ScreenPlacement):
         return tray
 
     # ---------- scale ----------
-    def apply_scale(self, k) -> None:
+    def apply_scale(self, k: float) -> None:
         """The interface scale (TV mode): the whole application's QSS + fixed column widths and icon sizes."""
         from rx_qt_style import scale
         if k == scale:
@@ -673,8 +715,10 @@ class MainWindow(ScreenPlacement):
 
     def _pads_connected(self) -> None:
         """A newly connected pad -> the window to the front, but not during a game (the same program list as the console mode).
-        A connection = S.want (like the "connected" log entry and the console mode auto-ON), not S.alive: alive fades
-        after stale_s (0.5 s) of silence - a momentary signal gap pulled the window to the front, e.g. over Steam Big Picture."""
+
+        A connection = S.want (like the "connected" log entry and the console mode auto-ON), not S.alive: alive fades after
+        stale_s (0.5 s) of silence - a momentary signal gap pulled the window to the front, e.g. over Steam Big Picture.
+        """
         conn = tuple(w.is_set() for w in S.want)
         new = [i for i, (now, before) in enumerate(zip(conn, self._connected, strict=False)) if now and not before]
         self._connected = conn
@@ -687,7 +731,7 @@ class MainWindow(ScreenPlacement):
         print(f"Pad {new[0] + 1} connected - window to the front")
         self.bring_to_front()
 
-    def _tray_clicked(self, reason) -> None:
+    def _tray_clicked(self, reason: QSystemTrayIcon.ActivationReason) -> None:
         """A click on the tray icon toggles the window: hide it when it is active, otherwise bring it to the front."""
         if reason in (QSystemTrayIcon.ActivationReason.Trigger, QSystemTrayIcon.ActivationReason.DoubleClick):
             if self.isVisible() and self.isActiveWindow():
@@ -695,7 +739,7 @@ class MainWindow(ScreenPlacement):
             else:
                 self.bring_to_front()
 
-    def closeEvent(self, e) -> None:
+    def closeEvent(self, e: QCloseEvent) -> None:
         """The X hides the window to the tray (the receiver keeps running); without a tray - an ordinary minimise."""
         e.ignore()
         self.save_settings()
@@ -704,7 +748,7 @@ class MainWindow(ScreenPlacement):
         else:
             self.showMinimized()
 
-    def changeEvent(self, e) -> None:
+    def changeEvent(self, e: QEvent) -> None:
         """Minimising goes to the tray; any state or activation change re-evaluates the Test lock."""
         if e.type() == QEvent.Type.WindowStateChange and self.tray and self.isMinimized():
             QTimer.singleShot(0, self.hide)    # minimising = to the tray, without a taskbar button
@@ -712,14 +756,14 @@ class MainWindow(ScreenPlacement):
             self.sync_block()                  # the test lock only while the window is active (a click into the game = the pad returns)
         super().changeEvent(e)
 
-    def showEvent(self, e) -> None:
+    def showEvent(self, e: QShowEvent) -> None:
         """On showing: apply the Test lock and start the live pad drawing."""
         super().showEvent(e)
         self.sync_block()
         self.live_tick()
         self.live_timer.start()
 
-    def hideEvent(self, e) -> None:
+    def hideEvent(self, e: QHideEvent) -> None:
         """On hiding: stop the live drawing, cancel a drift measurement and release the Test lock."""
         super().hideEvent(e)
         self.live_timer.stop()                 # a hidden window does not repaint the pad
@@ -735,7 +779,7 @@ class MainWindow(ScreenPlacement):
         """Open / close the shortcuts panel."""
         self.keys_drawer.toggle()
 
-    def _drawer_opened(self, drawer, on) -> None:
+    def _drawer_opened(self, drawer: BtDrawer | KeysDrawer, on: bool) -> None:
         """Only one panel open at a time; when closed, the focus returns to its icon (TV mode - the pad still knows where it is)."""
         if on:
             for other in self.drawers:
@@ -744,7 +788,7 @@ class MainWindow(ScreenPlacement):
         elif self.fullscreen():
             self.drawers[drawer].setFocus(Qt.FocusReason.TabFocusReason)
 
-    def show_log(self, on) -> None:
+    def show_log(self, on: bool) -> None:
         """The log panel at the bottom of the window (the header icon)."""
         self.log_panel.setVisible(on)
         self.log_btn.setToolTip(_("Schowaj dziennik zdarzeń") if on else
@@ -769,7 +813,7 @@ class MainWindow(ScreenPlacement):
             self.settings_dlg.applied.connect(self.slow_tick)
         self.settings_dlg.present()
 
-    def _sender_label(self, online, build) -> None:
+    def _sender_label(self, online: bool, build: tuple[Any, ...] | None) -> None:
         """"● Sender online (ip) · a1b2c3d"; a different version than the receiver -> yellow and a hint to update."""
         if not online:
             self._sender_stale = None
@@ -783,9 +827,9 @@ class MainWindow(ScreenPlacement):
         if build and build[0]:
             text += f"  ·  {build[0]}"
         stale = bool(build and build[0] and mine and build[0] != mine)
-        self._sender_stale = (build[0], mine) if stale else None   # the description in the update banner (not only colour)
+        self._sender_stale = (build[0], mine) if build and stale else None   # the description in the update banner (not only colour)
         tip = (_("Nadajnik: wersja {s}, receiver: {r} - kliknij Aktualizuj").format(
-                   s=rx_update.describe(*build), r=rx_update.describe(*rx_update.version()[:2])) if stale else
+                   s=rx_update.describe(*build), r=rx_update.describe(*rx_update.version()[:2])) if build and stale else
                _("Nadajnik: wersja {s}").format(s=rx_update.describe(*build)) if build and build[0] else
                _("Nadajnik nie podaje wersji (starsza wersja albo nie klon git)"))
         self.sender.setText(text)
@@ -793,8 +837,11 @@ class MainWindow(ScreenPlacement):
         set_prop(self.sender, "level", "warn" if stale else "ok")
 
     def start_update(self) -> None:
-        """Update both sides: a command to the sender (git pull on the phone, it restarts itself) and the receiver's git pull
-        in a separate thread; the result returns by a signal to the window thread, then we wait for the sender's result."""
+        """Update both sides.
+
+        A command to the sender (git pull on the phone, it restarts itself) and the receiver's git pull in a separate
+        thread; the result returns by a signal to the window thread, then we wait for the sender's result.
+        """
         if not self.update_btn.isEnabled():
             return
         self.update_btn.setEnabled(False)
@@ -817,13 +864,15 @@ class MainWindow(ScreenPlacement):
         """An exception (git hung, no access to the folder) must not leave the button stuck forever on "Updating…"."""
         try:
             r = rx_update.update()
-        except Exception as e:
+        except Exception as e:      # noqa: BLE001 - any failure (git, disk) becomes the result text
             r = rx_update.Result(False, False, _("Aktualizacja nie powiodła się: {err}").format(err=repr(e)))
         self.update_done.emit(r)
 
-    def _update_stuck(self, run) -> None:
-        """The update thread did not finish (git hung) - the button must not hang on "Updating…" until the receiver
-        restarts. A late result still works (a restart after the code is fetched)."""
+    def _update_stuck(self, run: int) -> None:
+        """The update thread did not finish (git hung) - the button must not hang on "Updating…" until the receiver restarts.
+
+        A late result still works (a restart after the code is fetched).
+        """
         if run != self._upd_run or self._upd_result is not None:
             return
         print(f"Update: no result from git after {UPDATE_STUCK_S:g}s")
@@ -833,15 +882,17 @@ class MainWindow(ScreenPlacement):
         self.update_btn.setEnabled(True)
         self.note(text, "bad")
 
-    def _update_finished(self, r) -> None:
+    def _update_finished(self, r: rx_update.Result) -> None:
         """The receiver is ready - we wait (UPDATE_WAIT_S at most) for the sender's result, then a message and a restart."""
         print(f"Update: {r.text}")
         self._upd_result = r
         self._update_poll()
 
     def _update_poll(self) -> None:
-        """Wait (polling every 250 ms) for the sender to finish updating, then show the combined result, notify the log and restart when
-        the code changed."""
+        """Wait (polling every 250 ms) for the sender to finish updating, then show the combined result.
+
+        Notify the log and restart when the code changed.
+        """
         r = self._upd_result
         if r is None:
             return
@@ -867,9 +918,12 @@ class MainWindow(ScreenPlacement):
         if r.changed:
             QTimer.singleShot(UPDATE_RESTART_MS, self.restart)
 
-    def restart(self, admin=False) -> None:
-        """A restart (the button, the tray, saved settings): an ordinary window close, and the receiver starts again by itself
-        after releasing the ports and virtual pads. admin: the new process as administrator (UAC, HIDMaestro)."""
+    def restart(self, admin: bool = False) -> None:
+        """A restart (the button, the tray, saved settings).
+
+        An ordinary window close, and the receiver starts again by itself after releasing the ports and virtual pads. admin:
+        the new process as administrator (UAC, HIDMaestro).
+        """
         print("Restart requested from the window" + (" (as administrator)" if admin else ""))
         S.restart = "admin" if admin else True
         self.quit()
@@ -887,7 +941,7 @@ class MainWindow(ScreenPlacement):
         QApplication.instance().quit()
 
     # ---------- selection and changes ----------
-    def select_pad(self, slot) -> None:
+    def select_pad(self, slot: int) -> None:
         """Edit another pad: apply pending changes, switch the editor and the Test panel, then refresh everything."""
         self.flush()
         if slot != self.ed.slot:
@@ -899,7 +953,7 @@ class MainWindow(ScreenPlacement):
         self.sync_block()
         self.refresh_all()
 
-    def set_view(self, view) -> None:
+    def set_view(self, view: str) -> None:
         """Switch between Result, Physical and Test; entering or leaving Test activates / cancels the Test panel and updates the lock."""
         was_test, self.view = self.view == "test", view
         if view != "test":
@@ -930,8 +984,11 @@ class MainWindow(ScreenPlacement):
         self.pad_hint.setText(hint)
 
     def sync_block(self) -> None:
-        """The output lock to the game: only the pad under test, only in the Test view, with the option on and the window active -
-        going to a game (another window in front), minimising or hiding gives the pad back at once."""
+        """The output lock to the game.
+
+        Only the pad under test, only in the Test view, with the option on and the window active - going to a game (another
+        window in front), minimising or hiding gives the pad back at once.
+        """
         test = (self.view == "test" and not rx_testmode.escaped and self.isVisible() and not self.isMinimized()
                 and self.isActiveWindow())
         rx_testmode.set_active(test)           # all pads' shortcuts stand still, the master's Options + Create leaves
@@ -940,18 +997,20 @@ class MainWindow(ScreenPlacement):
             P.block(i, on and i == self.ed.slot)
 
     def _test_escaped(self) -> None:
-        """Options + Create from the pad (rx_testmode): the lock is already lifted on the network thread - the window returns to the
-        previous view."""
+        """Options + Create from the pad (rx_testmode).
+
+        The lock is already lifted on the network thread - the window returns to the previous view.
+        """
         if self.view == "test":
             self.set_view(self.edit_view)
             self.note(_("Wyjście z widoku Test z pada (Options + Create)"), "ok")
 
-    def on_block_toggled(self, _on) -> None:
+    def on_block_toggled(self, _on: bool) -> None:
         """The Test lock option was toggled: remember it and apply it."""
         self.save_settings()
         self.sync_block()
 
-    def on_part(self, name) -> None:
+    def on_part(self, name: str) -> None:
         """A pad part was clicked: show its editor (ignored in the Test view)."""
         if self.view == "test":
             return
@@ -960,13 +1019,13 @@ class MainWindow(ScreenPlacement):
         self.part_page.show_part(name)
         self.tabs.setCurrentIndex(0)
 
-    def on_profile(self, key) -> None:
+    def on_profile(self, key: str) -> None:
         """Another profile was chosen in the list."""
         self.flush()
         self.ed.select(key)
         self.refresh_all()
 
-    def on_create(self, text, copy_current) -> None:
+    def on_create(self, text: str, copy_current: bool) -> None:
         """Create a game profile for the typed program."""
         self.flush()
         ok, msg = self.ed.new_game(text, copy_current)
@@ -999,7 +1058,7 @@ class MainWindow(ScreenPlacement):
         if self.apply_timer.isActive():
             self.do_apply(False)
 
-    def do_apply(self, save) -> bool:
+    def do_apply(self, save: bool) -> bool:
         """Send the edited profile to the pad (and save it to remap.json when `save`); -> False and a message on failure."""
         self.apply_timer.stop()
         ok, msg = self.ed.apply(save)
@@ -1049,7 +1108,7 @@ class MainWindow(ScreenPlacement):
         n = self.changes_page.refresh()
         self.tabs.setTabText(2, _("Zmiany ({n})").format(n=n) if n else _("Zmiany"))
 
-    def note(self, text, level) -> None:
+    def note(self, text: str, level: str) -> None:
         """A message covering the profile status for a few seconds (saved, an error, a profile created)."""
         self.note_text, self.note_until = (text, level), time.monotonic() + NOTE_S
         self.update_status()
@@ -1089,7 +1148,8 @@ class MainWindow(ScreenPlacement):
         self.tilt_preview.tick(on_gyro and tilt.any_open(), self.ed.slot, tilt.cfg)
 
     @staticmethod
-    def _with_tilt(live, pressed, ls, rs):
+    def _with_tilt(live: dict[str, Any], pressed: Iterable[str], ls: Sequence[int],
+                   rs: Sequence[int]) -> tuple[list[str], Sequence[int], Sequence[int]]:
         """The view of the pad's own input, with the stick / d-pad / button that the tilt drives replaced by the output."""
         target = live["tilt"]
         if target == "left":
@@ -1099,7 +1159,7 @@ class MainWindow(ScreenPlacement):
         keep = {n for n in live["pressed_out"] if n in ("l3", "r3") or (target == "dpad" and n.startswith("dpad"))}
         return sorted(set(pressed) | keep), ls, rs
 
-    def _exit_hold(self, now, held) -> None:
+    def _exit_hold(self, now: float, held: bool) -> None:
         """TV mode: a held ○ of the pad under test (which then does not control the window) leaves the Test view."""
         if not (held and self.fullscreen()):
             self.exit_hold = None
@@ -1112,12 +1172,15 @@ class MainWindow(ScreenPlacement):
         """Every 400 ms; an error in one pass must not stop the refreshing forever."""
         try:
             self._slow()
-        except Exception as e:
+        except Exception as e:      # noqa: BLE001 - one bad pass must not stop the refresh timer
             print(f"GUI refresh error: {e!r}")
 
     def _slow(self) -> None:
-        """The 400 ms pass: place the window after a game, bring it forward for a new pad, refresh the sender label, banner, Bluetooth
-        indicator, pad cards, low battery notices, the window title, the editor sync and the tray tooltip / icon."""
+        """The 400 ms pass.
+
+        Place the window after a game, bring it forward for a new pad, refresh the sender label, banner, Bluetooth
+        indicator, pad cards, low battery notices, the window title, the editor sync and the tray tooltip / icon.
+        """
         now = time.monotonic()
         if self._place_pending and not rx_games.in_game():
             self._screens_settled()
@@ -1134,7 +1197,7 @@ class MainWindow(ScreenPlacement):
             i = c.slot
             low_any = c.update_state(now) or low_any
             pct, flags = S.batt_info[i]
-            charging, known = bool(flags & 1), pct <= 100
+            charging, known = bool(flags & 1), pct <= BATT_UNKNOWN
             if S.want[i].is_set() or S.alive[i]:
                 tips.append(_("Pad {n}").format(n=i + 1) + ": "
                             + (f"{pct}%" + (_(" (ładuje się)") if charging else "") if known else _("b/d")))
@@ -1164,7 +1227,7 @@ class MainWindow(ScreenPlacement):
         self.log_panel.tick()
 
 
-def _int(v, default):
+def _int(v: Any, default: int) -> int:
     """int(v), or `default` when it is not a number."""
     try:
         return int(v)
@@ -1175,16 +1238,18 @@ def _int(v, default):
 WM_QUERYENDSESSION = 0x0011
 
 
-def session_end(*_args) -> None:
-    """Windows is shutting down / restarting / logging off (Start, Big Picture, shutdown.exe): the console mode on -> OFF
-    before the process is closed, so that after startup the picture is not on the TV only."""
+def session_end(*_args: Any) -> None:
+    """Windows is shutting down / restarting / logging off (Start, Big Picture, shutdown.exe).
+
+    The console mode on -> OFF before the process is closed, so that after startup the picture is not on the TV only.
+    """
     if rx_console.power_off(_("wyłączanie Windows")):
         print("Windows session ending - console mode switched off")
 
 
 class SessionEndFilter(QAbstractNativeEventFilter):
     """WM_QUERYENDSESSION straight from the message loop - works also when Qt does not raise commitDataRequest."""
-    def nativeEventFilter(self, event_type, message):
+    def nativeEventFilter(self, event_type: Any, message: Any) -> tuple[bool, int]:
         """Look for WM_QUERYENDSESSION in native Windows messages and run session_end; never swallows the message."""
         if event_type in (b"windows_generic_MSG", "windows_generic_MSG"):
             import ctypes.wintypes
@@ -1196,7 +1261,7 @@ class SessionEndFilter(QAbstractNativeEventFilter):
 _session_filter = None      # a reference - the filter must not be garbage collected
 
 
-def _watch_session_end(app) -> None:
+def _watch_session_end(app: QApplication) -> None:
     """Hook the Windows session end (Qt's commitDataRequest and, on Windows, the native filter) once."""
     global _session_filter
     if _session_filter is not None:
@@ -1207,7 +1272,7 @@ def _watch_session_end(app) -> None:
         app.installNativeEventFilter(_session_filter)
 
 
-def create_window(settings_path=None):
+def create_window(settings_path: str | None = None) -> MainWindow:
     """A QApplication (if there is none yet) + the window. Separate from run_gui so that tests can drive the window without a loop."""
     W.set_app_id()                             # the pad icon on the taskbar instead of Python's
     app = QApplication.instance() or QApplication(sys.argv[:1])
@@ -1221,8 +1286,10 @@ def create_window(settings_path=None):
 
 
 def run_gui() -> None:
-    """Run the GUI: optionally wait for the first pad, create the window and the update checker, handle Ctrl+C, then run the Qt loop and
-    hide the tray icon on exit."""
+    """Run the GUI: optionally wait for the first pad, create the window and the update checker.
+
+    Handle Ctrl+C, then run the Qt loop and hide the tray icon on exit.
+    """
     if C.cfg["gui_wait_pad"]:      # an option: do not create the window or the icon until some pad connects
         while not S.stop.is_set() and not any(w.is_set() for w in S.want):
             S.stop.wait(0.25)

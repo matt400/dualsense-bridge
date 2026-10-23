@@ -1,5 +1,7 @@
-"""Receiver: the sender's Bluetooth in the window - a status dot in the header and a panel sliding in from the right (scan,
-device list, Pair / Connect / Disconnect / Forget). A phone behind a TV needs no screen or mouse.
+"""Receiver: the sender's Bluetooth in the window.
+
+A status dot in the header and a panel sliding in from the right (scan, device list, Pair / Connect / Disconnect /
+Forget). A phone behind a TV needs no screen or mouse.
 
 The panel (rx_qt_drawer.SideDrawer) lies over the window: a dimmed background, a click on it or Esc closes it. TV mode: the D-pad moves
 only over the panel's elements, ✕ clicks, ○ closes and the focus returns to the Bluetooth icon.
@@ -13,7 +15,7 @@ from functools import cache
 from itertools import pairwise
 
 from PySide6.QtCore import QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
+from PySide6.QtGui import QColor, QIcon, QPainter, QPaintEvent, QPixmap, QResizeEvent
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
 
 import rx_bt as BT
@@ -56,10 +58,13 @@ def status_icon(level: str) -> QIcon:
 
 class ElidedLabel(QLabel):
     """A label that elides long text with an ellipsis instead of widening the panel (the full text in the tooltip).
+
     Plain text: Bluetooth device names are set by every device in range - a QLabel in AutoText mode would show a name
-    with HTML tags as formatted content (impersonating window elements)."""
+    with HTML tags as formatted content (impersonating window elements).
+    """
 
     def __init__(self, role: str) -> None:
+        """A plain-text label; `role` is the QSS role property (name, dim, ...)."""
         super().__init__()
         self.setTextFormat(Qt.TextFormat.PlainText)
         self.setProperty("role", role)
@@ -73,7 +78,7 @@ class ElidedLabel(QLabel):
             self.setToolTip(f"<qt>{html.escape(text)}</qt>" if text else "")   # a tooltip also interprets HTML
             self._elide()
 
-    def resizeEvent(self, e) -> None:
+    def resizeEvent(self, e: QResizeEvent) -> None:
         """Re-elide the text for the new width."""
         super().resizeEvent(e)
         self._elide()
@@ -88,6 +93,7 @@ class SignalBars(QWidget):
     """Signal strength as 0-4 bars (0 = no measurement - RSSI exists only during a scan)."""
 
     def __init__(self) -> None:
+        """Start with no lit bars."""
         super().__init__()
         self.n = 0
         self.setFixedSize(px(18), px(14))
@@ -98,7 +104,7 @@ class SignalBars(QWidget):
             self.n = n
             self.update()
 
-    def paintEvent(self, _e) -> None:
+    def paintEvent(self, _e: QPaintEvent) -> None:
         """Draw four bars of rising height; the first `n` in the OK colour, the rest dim."""
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -117,6 +123,7 @@ class DeviceRow(QFrame):
     action = Signal(str, str)        # (MAC, "pair" | "connect" | "disconnect" | "remove")
 
     def __init__(self, dev: BT.Device) -> None:
+        """Build the row for `dev`: icon, name, details and the action buttons."""
         super().__init__()
         self.setObjectName("row")
         self.mac = dev.mac
@@ -152,8 +159,11 @@ class DeviceRow(QFrame):
         self.update_from(dev, None, False)
 
     def update_from(self, dev: BT.Device, busy: int | None, other_busy: bool) -> None:
-        """Refresh the row from the device state: name, signal, state text, and the action button (pair / connect / disconnect by state;
-        busy = the running operation code, other_busy disables the row while another device is busy)."""
+        """Refresh the row from the device state.
+
+        Name, signal, state text, and the action button (pair / connect / disconnect by state; busy = the running operation
+        code, other_busy disables the row while another device is busy).
+        """
         self.name.set_full(dev.name)
         self.bars.set(dev.bars())
         self.bars.setToolTip(f"{dev.rssi} dBm" if dev.rssi is not None else _("Sygnał widać w trakcie skanowania"))
@@ -183,6 +193,7 @@ class ControllerRow(QFrame):
     use = Signal(int)                # N from hciN
 
     def __init__(self, c: BT.Controller) -> None:
+        """Build the row for the Bluetooth controller `c`."""
         super().__init__()
         self.setObjectName("row")
         self.index = c.index
@@ -234,8 +245,10 @@ class BtDrawer(SideDrawer):
 
     # ---------- building ----------
     def _build(self, lay: QVBoxLayout) -> None:
-        """Build the panel: status, controller choice, power / scan buttons, hint, the scrollable device list and the last operation
-        result."""
+        """Build the panel.
+
+        Status, controller choice, power / scan buttons, hint, the scrollable device list and the last operation result.
+        """
         self.rows: dict[str, DeviceRow] = {}
         self.status = label("", wrap=True)
         lay.addWidget(self.status)
@@ -334,8 +347,11 @@ class BtDrawer(SideDrawer):
 
     # ---------- refreshing ----------
     def refresh(self) -> None:
-        """Every REFRESH_MS while the panel is open: state, scan, the result of the last operation, rows; every KEEPALIVE_S
-        BT_LIST (the sender sends the list while the panel is open)."""
+        """Every REFRESH_MS while the panel is open.
+
+        State, scan, the result of the last operation, rows; every KEEPALIVE_S BT_LIST (the sender sends the list while the
+        panel is open).
+        """
         now = time.monotonic()
         if self._open and self.window().isVisible() and now - self._keepalive >= BT.KEEPALIVE_S:
             self._keepalive = now
@@ -358,8 +374,11 @@ class BtDrawer(SideDrawer):
         self._result(s)
 
     def _adapter(self, s: BT.Status | None, busy: bool, now: float) -> None:
-        """Controller choice: the mode (not during our own change - no flash of the old mode), the list of controllers
-        with names and a Use button, the description."""
+        """Controller choice.
+
+        The mode (not during our own change - no flash of the old mode), the list of controllers with names and a Use
+        button, the description.
+        """
         shown = s is not None and s.mode != 0
         self.adapter_box.setVisible(shown)
         if not shown:
@@ -407,8 +426,10 @@ class BtDrawer(SideDrawer):
         set_prop(self.result, "level", "ok" if s.result == BTR_OK else "" if s.result == BTR_RUNNING else "warn")
 
     def _rows(self, now: float, busy: bool, enabled: bool) -> None:
-        """Sync the device rows with the list: drop the vanished ones (moving the focus off a removed row), add new ones, update all and
-        fix the order."""
+        """Sync the device rows with the list.
+
+        Drop the vanished ones (moving the focus off a removed row), add new ones, update all and fix the order.
+        """
         devs = BT.devices if enabled else ()
         order = [d.mac for d in devs]
         for mac in [m for m in self.rows if m not in order]:

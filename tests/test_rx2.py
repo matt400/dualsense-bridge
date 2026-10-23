@@ -169,7 +169,7 @@ ok("kolor z PC (Steam) poza grą pominięty - własny kolor; w grze kolor gry; p
 # ---------- 9. raport DS4 i DSU nadal działają ----------
 import rx_report, rx_dsu
 state(0, mask=BIT[304]); rep = rx_report.build_report(S.states[0], 1, False); assert len(rep) == 63 and rep[4] & 0x20
-pkt = rx_dsu.dsu_data(0, S.states[0], 1); assert len(pkt) == 100 and pkt[37] == 0x40
+pkt = rx_dsu.build_data_packet(0, S.states[0], 1); assert len(pkt) == 100 and pkt[37] == 0x40
 ok("raport DS4 / DSU")
 import socket as _socket
 _sk = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM); _sk.bind(("127.0.0.1", 0))

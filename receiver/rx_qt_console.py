@@ -1,4 +1,6 @@
-"""Receiver: the settings window (tray -> Settings, or a button in the window header) - nine tabs:
+"""Receiver: the settings window (tray -> Settings, or a button in the window header).
+
+Nine tabs:
 
   Console mode  the pad button is chosen by pressing it on the pad (rx_console.arm_capture), the audio devices are a list of
                 active Windows outputs (rx_audio, Refresh); "Test" switches the console mode on for a few seconds
@@ -21,12 +23,14 @@ saves console.json and asks the window owner to restart the receiver (the saved 
 startup_mode applies as with autostart.
 """
 import time
+from collections.abc import Iterable, Sequence
+from typing import Any
 
 from rx_i18n import _
 from PySide6.QtCore import QPoint, QRect, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor
-from PySide6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QDialog, QGridLayout, QHBoxLayout, QLineEdit, QPlainTextEdit,
-                               QTabWidget, QVBoxLayout, QWidget)
+from PySide6.QtGui import QColor, QHideEvent, QPixmap
+from PySide6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QDialog, QGridLayout, QHBoxLayout, QLayout, QLineEdit,
+                               QPlainTextEdit, QScrollArea, QTabWidget, QVBoxLayout, QWidget)
 
 import rx_audio
 import rx_backup
@@ -39,6 +43,7 @@ import rx_security
 import rx_update
 import rx_settings
 import rx_state as S
+from rx_backup import Backup
 from rx_buttons import LABELS
 from rx_config import C
 from rx_console import DEFAULT_APPS, STARTUP_MODES, ConsoleConfig
@@ -53,6 +58,7 @@ from rx_settings import (ABSENT, COMBO_BUTTONS, DEFAULT_PAD, LIGHT_MODES, LOW_PC
                          WolConfig)
 
 CAPTURE_TIMEOUT_MS = 15000
+LUMA_DARK_TEXT = 380      # R + G + B above this (of 765) is a light colour: the button text turns black
 NO_AUDIO = "— nie zmieniaj dźwięku —"
 TV_RESOLUTIONS = ((0, 0), (1920, 1080), (2560, 1440), (3840, 2160))
 STARTUP_LABELS = {"extend": "Rozszerz: oba ekrany aktywne", "internal": "Tylko monitor"}
@@ -69,7 +75,7 @@ class ConsoleSettings(QDialog):
     applied = Signal()          # mouse / master saved and in effect (no restart) - the window refreshes the pad cards
     captured = Signal(str)      # the button name from the network thread (Qt queues it to the window thread)
 
-    def __init__(self, parent=None) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         """Create the dialog: the capture timer (a pad button pick times out), the captured signal hookup and the tabs."""
         super().__init__(parent)
         self.setObjectName("root")
@@ -121,9 +127,12 @@ class ConsoleSettings(QDialog):
         lay.addLayout(row)
         self.tabs.currentChanged.connect(lambda i: self.test_btn.setVisible(i == 0))
 
-    def _console_tab(self):
-        """The Console mode tab: the toggle button pick, the double click interval, auto-OFF, auto-ON, the TV / audio, and the program
-        list that blocks switching in a game."""
+    def _console_tab(self) -> list[QWidget | QLayout]:
+        """The Console mode tab.
+
+        The toggle button pick, the double click interval, auto-OFF, auto-ON, the TV / audio, and the program list that
+        blocks switching in a game.
+        """
         self.pick = button("", small=True)
         self.pick.clicked.connect(self._toggle_capture)
         self.pick_icon = label("")
@@ -176,7 +185,7 @@ class ConsoleSettings(QDialog):
                        "zmiany profilu (Zapisz w oknie głównym) zostaną utracone."), "dim", wrap=True)
         return [switching, tv, games, note]
 
-    def _mouse_tab(self):
+    def _mouse_tab(self) -> list[QWidget | QLayout]:
         """The Mouse tab: cursor sensitivity and the click stabilisation sliders (ranges shared with settings.json)."""
         lim = MOUSE_LIMITS                  # the same ranges as settings.json - saving does not clip values
         self.sens = SliderRow(_("Czułość kursora"), *lim["sens"], 0.05, "x")
@@ -194,7 +203,7 @@ class ConsoleSettings(QDialog):
                               "gdy przeciąganie (np. okna) rusza za późno - zmniejsz ostatni suwak."), "dim", wrap=True))
         return [cursor, click, left(dflt)]
 
-    def _window_tab(self):
+    def _window_tab(self) -> list[QWidget | QLayout]:
         """The Window tab: the screen to open on, window / full screen, and the language."""
         self.screen_box = Combo()
         self.win_mode = Combo([("window", _("Okno (F11 przełącza)"), "window"), ("full", _("Pełny ekran"), "fullscreen")])
@@ -209,7 +218,7 @@ class ConsoleSettings(QDialog):
                      label(_("Zmiana języka działa po restarcie receivera."), "dim", wrap=True))
         return [window, lang]
 
-    def _vpad_tab(self):
+    def _vpad_tab(self) -> list[QWidget | QLayout]:
         """The Pads tab: the backend, HIDMaestro download / path, the current state and the fixed player order."""
         self.vpad_backend = Combo([(k, _(v)) for k, v in VPAD_BACKENDS.items()])
         self.vpad_backend.changed.connect(lambda _v: self._vpad_state())
@@ -249,7 +258,7 @@ class ConsoleSettings(QDialog):
                             "dim", wrap=True))
         return [backend, order]
 
-    def _load_vpad(self, v) -> None:
+    def _load_vpad(self, v: VpadConfig) -> None:
         """Fill the Pads tab from a VpadConfig."""
         self.vpad_backend.set_data(v.backend)
         self.vpad_dll.setText(v.hm_dll)
@@ -278,9 +287,12 @@ class ConsoleSettings(QDialog):
         self._hm_timer.start()
         self._vpad_state()
 
-    def _vpad_state(self, busy=False) -> None:
-        """What works now: the kind of plugged pads, the HIDMaestro version (downloaded / newest / downloading / error), the reason
-        for working without HIDMaestro, the restart-as-administrator button."""
+    def _vpad_state(self, busy: bool = False) -> None:
+        """What works now: the kind of plugged pads.
+
+        The HIDMaestro version (downloaded / newest / downloading / error), the reason for working without HIDMaestro, the
+        restart-as-administrator button.
+        """
         backend = self.vpad_backend.currentData()
         used = sorted({rx_ds4.LABELS[k] for k in rx_ds4.kinds if k})
         lines = [_("Teraz: {kinds}").format(kinds=", ".join(used)) if used else _("Teraz: żaden wirtualny pad nie jest podłączony")]
@@ -289,7 +301,7 @@ class ConsoleSettings(QDialog):
         if busy:
             lines.append(_("HIDMaestro: sprawdzanie / pobieranie…"))
         elif st.version:
-            newer = st.latest and rx_hm_update.version_key(st.latest) > rx_hm_update.version_key(st.version)
+            newer = st.latest and rx_hm_update.version_tuple(st.latest) > rx_hm_update.version_tuple(st.version)
             lines.append(_("HIDMaestro {v} pobrany").format(v=st.version)
                          + (_(" (na GitHubie jest {v})").format(v=st.latest) if newer else ""))
             if newer and st.held_until > time.time():
@@ -318,12 +330,12 @@ class ConsoleSettings(QDialog):
         set_prop(self.vpad_now, "level", "warn" if need_admin or (backend == "hidmaestro" and rx_ds4.hm_note) else "")
         self.vpad_admin.setVisible(need_admin)
 
-    def _collect_vpad(self):
+    def _collect_vpad(self) -> VpadConfig:
         """-> the VpadConfig described by the Pads tab."""
         return VpadConfig(backend=self.vpad_backend.currentData(), fixed_slots=self.vpad_fixed.isChecked(),
                           hm_dll=self.vpad_dll.text().strip(), hm_auto=self.vpad_auto.isChecked())
 
-    def _backup_tab(self):
+    def _backup_tab(self) -> list[QWidget | QLayout]:
         """The Backups tab: the list of copies and a make-a-copy-now button."""
         self.backup_rows = QVBoxLayout()
         self.backup_rows.setSpacing(6)
@@ -337,7 +349,7 @@ class ConsoleSettings(QDialog):
                     self.backup_rows, left(now))
         return [box]
 
-    def _security_tab(self):
+    def _security_tab(self) -> list[QWidget | QLayout]:
         """The Security tab: the findings of rx_security, the harden-folder button and a new HMAC key to the clipboard."""
         self.sec_now = label("", wrap=True)
         self.sec_harden = button(_("Zabezpiecz folder"), small=True)
@@ -392,7 +404,7 @@ class ConsoleSettings(QDialog):
         for b in backups:
             self.backup_rows.addWidget(self._backup_row(b))
 
-    def _backup_row(self, b):
+    def _backup_row(self, b: Backup) -> QWidget:
         """One backup row: its time, origin and files, and a Restore button that needs a confirming click."""
         from PySide6.QtWidgets import QFrame
         row = QFrame()
@@ -422,7 +434,7 @@ class ConsoleSettings(QDialog):
         self._status(_("✓ Kopia zapisana.") if b else _("Nie ma jeszcze plików ustawień do skopiowania."),
                      "ok" if b else "warn")
 
-    def _restore(self, name) -> None:
+    def _restore(self, name: str) -> None:
         """Restore a backup; on success disable Save and restart the receiver shortly."""
         ok, msg = rx_backup.restore(name, rx_update.version()[0] or "")
         self._status(("✓ " if ok else "") + msg, "ok" if ok else "bad")
@@ -450,9 +462,11 @@ class ConsoleSettings(QDialog):
         self.screen_box.set_items(items)
         self.screen_box.set_data(cur)
 
-    def _master_tab(self):
-        """The Master tab: the master pad, claiming with PS + R3, the master-only features, the behaviour without a master and the PS +
-        button actions."""
+    def _master_tab(self) -> list[QWidget | QLayout]:
+        """The Master tab: the master pad, claiming with PS + R3, the master-only features.
+
+        The behaviour without a master and the PS + button actions.
+        """
         self.master_pad = Combo()
         self._master_touched = False
         self.master_pad.changed.connect(lambda _v: setattr(self, "_master_touched", True))
@@ -492,7 +506,7 @@ class ConsoleSettings(QDialog):
                                 "(krótka wibracja = trzymaj dalej). Wyłączenie PC daje 10 s na \"shutdown /a\"."), "dim", wrap=True))
         return [who, rights, actions]
 
-    def _light_tab(self):
+    def _light_tab(self) -> list[QWidget | QLayout]:
         """The Lightbar tab: the low battery threshold and the per-pad colour / mode / blinking / game override."""
         self._lights, self._color, self._light_key, self._loading = {}, "", DEFAULT_PAD, False
         self.low_pct = spinbox(*LOW_PCT, 1, " %")
@@ -528,7 +542,7 @@ class ConsoleSettings(QDialog):
                     self.light_game, self.light_blink)
         return [low, pad]
 
-    def _wol_tab(self):
+    def _wol_tab(self) -> list[QWidget | QLayout]:
         """The Wake-on-LAN tab: enable, the pad combination and hold time, and the MAC / broadcast addresses."""
         self.wol_on = QCheckBox(_("Budzenie komputera z pada"))
         self.wol_on.setIcon(icon("wake"))
@@ -559,9 +573,11 @@ class ConsoleSettings(QDialog):
         return [how, addr]
 
     # ---------- lightbar ----------
-    def _load_light(self, cfg) -> None:
-        """Fill the Lightbar tab from a LightbarConfig: the pad list (default, connected pads, remembered ones) and the first entry's
-        values."""
+    def _load_light(self, cfg: LightbarConfig) -> None:
+        """Fill the Lightbar tab from a LightbarConfig.
+
+        The pad list (default, connected pads, remembered ones) and the first entry's values.
+        """
         self.low_pct.setValue(cfg.low_pct)
         self._lights = dict(cfg.pads)
         items: list[tuple] = [(DEFAULT_PAD, _("Domyślne - pady bez własnego ustawienia"), "lightbar")]    # (key, label[, icon])
@@ -576,7 +592,7 @@ class ConsoleSettings(QDialog):
         self.light_pad.set_data(DEFAULT_PAD)
         self._pick_light_pad(DEFAULT_PAD)
 
-    def _pick_light_pad(self, key) -> None:
+    def _pick_light_pad(self, key: str) -> None:
         """Show the lightbar settings of the chosen pad key (falling back to the default entry); loading does not count as an edit."""
         self._light_key = key
         light = self._lights.get(key) or self._lights.get(DEFAULT_PAD) or PadLight()
@@ -597,12 +613,12 @@ class ConsoleSettings(QDialog):
             w.setEnabled(own)
         self.light_color.setEnabled(own and self.light_mode.currentData() == "solid")
 
-    def _set_color(self, hex_color, store=True) -> None:
+    def _set_color(self, hex_color: str, store: bool = True) -> None:
         """Set the chosen colour (empty = the default) and paint the button with it; store=False skips recording the edit."""
         self._color = hex_color
         rgb = rx_lightbar.hex_rgb(hex_color) if hex_color else C.IDLE_RGB
         text = rx_lightbar.rgb_hex(rgb) + ("" if hex_color else _("  (domyślny)"))
-        fg = "#000000" if sum(rgb) > 380 else "#ffffff"
+        fg = "#000000" if sum(rgb) > LUMA_DARK_TEXT else "#ffffff"
         self.light_color.setText(text)
         self.light_color.setStyleSheet(f"background: {rx_lightbar.rgb_hex(rgb)}; color: {fg};")
         if store:
@@ -615,7 +631,7 @@ class ConsoleSettings(QDialog):
         if c.isValid():
             self._set_color(c.name())
 
-    def _light_edited(self, *_args) -> None:
+    def _light_edited(self, *_args: Any) -> None:
         """Record the edited fields for the current pad key (an own setting), or drop the entry when it uses the default."""
         if getattr(self, "_loading", False):
             return
@@ -628,7 +644,7 @@ class ConsoleSettings(QDialog):
         self._light_enable()
 
     # ---------- Wake-on-LAN ----------
-    def _load_wol(self, w) -> None:
+    def _load_wol(self, w: WolConfig) -> None:
         """Fill the Wake-on-LAN tab from a WolConfig."""
         self.wol_on.setChecked(w.enabled)
         self.wol_btn.set_data(w.button)
@@ -650,7 +666,7 @@ class ConsoleSettings(QDialog):
                 mac=mac or _("nieznany - wpisz go albo uruchom receiver, gdy nadajnik działa"), bcast=bcast or "255.255.255.255"))
         set_prop(self.wol_seen, "level", "warn" if seen is not None and not mac else "")
 
-    def _collect_wol(self):
+    def _collect_wol(self) -> WolConfig:
         """-> WolConfig, or a ValueError naming the field."""
         try:
             mac = rx_settings.WolConfig.V["mac"](self.wol_mac.text().strip())
@@ -676,10 +692,12 @@ class ConsoleSettings(QDialog):
         self.activateWindow()
 
     def _fit(self) -> None:
-        """Centre on the main window's screen and fully inside the work area (without the taskbar): a fixed 860x780 on
-        1080p with 150 % scaling (720 px of height) went under the taskbar together with the Save buttons.
-        The window frame (the title bar) is known only after showing - remembered, so later openings place
-        the window once, before showing it (without moving a visible window)."""
+        """Centre on the main window's screen and fully inside the work area (without the taskbar).
+
+        A fixed 860x780 on 1080p with 150 % scaling (720 px of height) went under the taskbar together with the Save
+        buttons. The window frame (the title bar) is known only after showing - remembered, so later openings place the
+        window once, before showing it (without moving a visible window).
+        """
         if self.isVisible():
             self._frame = self.frameGeometry().size() - self.geometry().size()
         frame = getattr(self, "_frame", FRAME_GUESS)
@@ -725,15 +743,18 @@ class ConsoleSettings(QDialog):
         self.refresh(cfg.audio_tv, cfg.audio_pc)
         self._status("")
 
-    def refresh(self, tv=None, pc=None) -> None:
-        """Read the active audio outputs; a device chosen earlier that is absent now (e.g. the TV is off)
-        stays on the list as "unavailable", so that saving does not lose it."""
+    def refresh(self, tv: str | None = None, pc: str | None = None) -> None:
+        """Read the active audio outputs.
+
+        A device chosen earlier that is absent now (e.g. the TV is off) stays on the list as "unavailable", so that saving
+        does not lose it.
+        """
         tv = self.tv.currentData() if tv is None else tv
         pc = self.pc.currentData() if pc is None else pc
         try:
             names = [name for _, name in rx_audio.list_outputs()]
             self._status("")
-        except Exception as e:
+        except Exception as e:      # noqa: BLE001 - any audio backend failure is shown, not fatal
             names = []
             self._status(_("Nie można odczytać urządzeń audio: {err} (pip install pycaw)").format(err=repr(e)), "bad")
         for combo, current in ((self.tv, tv), (self.pc, pc)):
@@ -743,14 +764,14 @@ class ConsoleSettings(QDialog):
             combo.set_items(items)
             combo.set_data(current or "")
 
-    def _load_mouse(self, m) -> None:
+    def _load_mouse(self, m: MouseConfig) -> None:
         """Fill the Mouse tab from a MouseConfig."""
         self.sens.set(m.sens)
         self.freeze.set(m.click_freeze_ms)
         self.rewind.set(m.click_rewind_ms)
         self.drag.set(m.drag_threshold)
 
-    def _load_master(self, m) -> None:
+    def _load_master(self, m: MasterConfig) -> None:
         """Fill the Master tab from a MasterConfig; the pad list holds the identified pads and the configured one."""
         items: list[tuple] = [("", _("— brak mastera (każdy pad może wszystko) —"))]     # (key, label[, icon])
         known = {""}
@@ -773,9 +794,11 @@ class ConsoleSettings(QDialog):
         for k, combo in self.actions.items():
             combo.set_data(m.actions.get(k, ""))
 
-    def collect_settings(self):
-        """-> the Settings described by the window (mouse, master, language, lightbar, Wake-on-LAN, pads); the log settings stay as they
-        are."""
+    def collect_settings(self) -> rx_settings.Settings:
+        """-> the Settings described by the window (mouse, master, language, lightbar, Wake-on-LAN, pads).
+
+        The log settings stay as they are.
+        """
         mouse = MouseConfig(sens=round(self.sens.value(), 2), click_freeze_ms=round(self.freeze.value()),
                             click_rewind_ms=round(self.rewind.value()), drag_threshold=round(self.drag.value()))
         # a master left unchanged in this window stays the current one: the crown on the pad card or PS + R3 while Settings is open
@@ -789,7 +812,7 @@ class ConsoleSettings(QDialog):
                                     LightbarConfig(low_pct=self.low_pct.value(), pads=dict(self._lights)),
                                     self._collect_wol(), rx_settings.cur.log, self._collect_vpad())
 
-    def collect(self):
+    def collect(self) -> ConsoleConfig:
         """-> the ConsoleConfig described by the Console mode tab."""
         return ConsoleConfig(toggle_button=self.toggle_button, double_click_ms=self.dbl.value(),
                              audio_tv=self.tv.currentData() or "", audio_pc=self.pc.currentData() or "",
@@ -800,7 +823,7 @@ class ConsoleSettings(QDialog):
                                                               if x.strip())))
 
     # ---------- pad button ----------
-    def set_button(self, name) -> None:
+    def set_button(self, name: str) -> None:
         """Show the chosen toggle button (name and icon) and leave the capture state."""
         self.toggle_button = name
         self.pick_name.setText(_(LABELS.get(name, name)))
@@ -825,7 +848,7 @@ class ConsoleSettings(QDialog):
             rx_console.ctl.cancel_capture()
         self.set_button(self.toggle_button)
 
-    def _on_captured(self, name) -> None:
+    def _on_captured(self, name: str) -> None:
         """A pad button arrived from the network thread: take it as the toggle button (only while still waiting)."""
         if self._cap_timer.isActive():                       # a late signal after cancelling changes nothing
             self._cap_timer.stop()
@@ -844,8 +867,11 @@ class ConsoleSettings(QDialog):
         QTimer.singleShot(int((rx_console.TEST_S + 5) * 1000), lambda: self.test_btn.setEnabled(True))
 
     def _save(self) -> None:
-        """Validate and save everything: settings.json (in effect at once) and, when the console mode or the language changed,
-        console.json plus a restart request."""
+        """Validate and save everything.
+
+        Settings.json (in effect at once) and, when the console mode or the language changed, console.json plus a restart
+        request.
+        """
         try:
             new = self.collect_settings()
         except ValueError as e:
@@ -883,12 +909,12 @@ class ConsoleSettings(QDialog):
         self._stop_capture()
         self.saved.emit()
 
-    def _status(self, text, level="") -> None:
+    def _status(self, text: str, level: str = "") -> None:
         """Show a status message with a level style."""
         self.status.setText(text)
         set_prop(self.status, "level", level)
 
-    def hideEvent(self, e) -> None:
+    def hideEvent(self, e: QHideEvent) -> None:
         """On hiding: stop a pending pad button capture and the HIDMaestro status timer."""
         super().hideEvent(e)
         if self._cap_timer.isActive():
@@ -896,7 +922,7 @@ class ConsoleSettings(QDialog):
         self._hm_timer.stop()
 
 
-def _backup_reason(b):
+def _backup_reason(b: Backup) -> str:
     """Where a backup came from: an update (old -> new version), before restoring another, manual."""
     if b.reason == "update":
         ver = f"{b.commit} → {b.new}" if b.commit and b.new else b.commit or b.new
@@ -904,12 +930,12 @@ def _backup_reason(b):
     return _("przed przywróceniem kopii") if b.reason == "restore" else _("zrobiona ręcznie")
 
 
-def _res_items(resolutions):
-    """Combo items (\"WxH\" value, \"W × H\" text) for the TV resolutions; (0, 0) means unchanged."""
+def _res_items(resolutions: Iterable[tuple[int, int]]) -> list[tuple[str, str]]:
+    """Combo items ("WxH" value, "W × H" text) for the TV resolutions; (0, 0) means unchanged."""
     return [("{}x{}".format(*r), f"{r[0]} × {r[1]}" if r[0] else _("— bez zmiany —")) for r in resolutions]
 
 
-def _page(items):
+def _page(items: Sequence[QWidget | QLayout]) -> QScrollArea:
     """A tab: sections one under another, scrolling vertically only (the width is always the window's width)."""
     w = QWidget()
     lay = QVBoxLayout(w)
@@ -924,7 +950,7 @@ def _page(items):
     return _scroll(w)
 
 
-def _scroll(w):
+def _scroll(w: QWidget) -> QScrollArea:
     """Wrap a widget in a frameless scroll area without a horizontal bar."""
     from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QFrame, QScrollArea
@@ -942,7 +968,7 @@ def _claim_s() -> str:
     return f"{rx_master.CLAIM_S:g}"
 
 
-def _hidpi(name, size):
+def _hidpi(name: str, size: int) -> QPixmap:
     """A pad icon pixmap rendered for a 2x device pixel ratio."""
     from rx_qt_icons import pixmap
     pm = pixmap(name, size * 2)
@@ -950,7 +976,7 @@ def _hidpi(name, size):
     return pm
 
 
-def row_of(*widgets):
+def row_of(*widgets: Any) -> QHBoxLayout:
     """Buttons in a row, to the left."""
     row = QHBoxLayout()
     row.setSpacing(8)
@@ -960,7 +986,7 @@ def row_of(*widgets):
     return row
 
 
-def _wrap(layout):
+def _wrap(layout: QLayout) -> QWidget:
     """Wrap a layout in a plain widget so it can be used as a field."""
     w = QWidget()
     layout.setContentsMargins(0, 0, 0, 0)

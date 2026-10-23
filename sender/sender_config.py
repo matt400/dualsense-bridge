@@ -6,11 +6,16 @@ before anything else starts.
 import argparse
 import os
 import socket
+from collections.abc import Sequence
 from types import SimpleNamespace
+from typing import Any, Final
 
+from evdev import ecodes as ec
+
+import sender_migrate
 from proto import load_config
 
-DEFAULTS = {
+DEFAULTS: dict[str, Any] = {
     "host": "192.168.1.4",
     "port": 5005,
     "max_pads": 2,
@@ -54,19 +59,33 @@ DEFAULTS = {
 }
 
 # constants independent of the configuration
-AUTOBIAS_MAX_STEP = 2048
-BURST_DELAYS = (0.003, 0.009)      # repeats of a button change (resilience to a lost packet)
-SETTLE_S = 0.5                     # how long we wait for the complete set of pad devices (pad+motion+touch)
-PAD_ABS = (0, 1, 2, 3, 4, 5)
-STICK_AXES = (0, 1, 3, 4)
-TOUCH_W, TOUCH_H = 1919, 942
-IDLE_TP = ((0, 0, 0, 0), (0, 0, 0, 0))
-NEUTRAL_PAD = (128, 128, 0, 128, 128, 0)
+AUTOBIAS_MAX_STEP: Final = 2048
+BURST_DELAYS: Final = (0.003, 0.009)    # repeats of a button change (resilience to a lost packet)
+SETTLE_S: Final = 0.5                   # how long we wait for the complete set of pad devices (pad+motion+touch)
+# evdev axes of the DualSense: left stick x y, L2, right stick x y, R2 - their order is the order of the state packet's axis fields
+PAD_ABS: Final = (ec.ABS_X, ec.ABS_Y, ec.ABS_Z, ec.ABS_RX, ec.ABS_RY, ec.ABS_RZ)
+STICK_AXES: Final = (ec.ABS_X, ec.ABS_Y, ec.ABS_RX, ec.ABS_RY)
+L2_AXIS, R2_AXIS = ec.ABS_Z, ec.ABS_RZ
+HAT_AXES: Final = (ec.ABS_HAT0X, ec.ABS_HAT0Y)     # the D-pad: -1, 0, 1
+AXIS_MAX: Final = 255                   # the pad reports its axes as 0..255
+STICK_CENTER: Final = 128
+TOUCH_W, TOUCH_H = 1919, 942            # the DS4 touchpad scale of the touch packet
+IDLE_TP: Final = ((0, 0, 0, 0), (0, 0, 0, 0))     # the touch packet with no finger down
+NEUTRAL_PAD: Final = (STICK_CENTER, STICK_CENTER, 0, STICK_CENTER, STICK_CENTER, 0)
+# Everything a failing or fake evdev device can raise when asked for an axis: the device is going away (OSError), is not an
+# evdev device at all (tests, another platform) or lacks the axis (AttributeError / KeyError).
+DEVICE_READ_ERRORS: Final = (OSError, AttributeError, TypeError, ValueError, KeyError)
+
+US_PER_S: Final = 1_000_000             # evdev event times are seconds + microseconds
+RUMBLE_MODES: Final = ("auto", "evdev", "hidraw", "off")
+RT_PRIORITY_MAX: Final = 99             # the highest SCHED_FIFO priority
+SECONDS_PER_MINUTE: Final = 60
+MS_PER_S: Final = 1000.0
 
 C = SimpleNamespace()
 
 
-def _beside(name):
+def _beside(name: object) -> str:
     """Resolve a file name relative to the sender's folder (the service starts from another directory); "" = disabled.
 
     Absolute paths and empty names are returned unchanged, so a user can point a file anywhere or switch it off.
@@ -75,37 +94,40 @@ def _beside(name):
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), name) if name and not os.path.isabs(name) else name
 
 
-def init(argv=None):
-    """Build the global configuration object C from DEFAULTS, the config file and the CLI flags (later wins).
-
-    Priority, lowest to highest: DEFAULTS < --config file < CLI flags (host, --key, --stats) < for the key, the PADKEY
-    environment variable is only a fallback when no key was given. Every value is coerced to its expected type and
-    clamped to a sane range here, once, so the rest of the sender can read C.* without any further validation.
-    Exits with a message if the host is missing or cannot be resolved.
-    """
+def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
+    """Parse the command line (None = sys.argv)."""
     ap = argparse.ArgumentParser(description="DualSense UDP sender")
     # default=None: otherwise the default host would override the host from --config
     ap.add_argument("host", nargs="?", default=None, help="IP odbiornika (PC z Windows)")
     ap.add_argument("--config", help="plik konfiguracji .toml / .json")
     ap.add_argument("--key", help="wspólny klucz HMAC (uwierzytelnianie pakietów)")
     ap.add_argument("--stats", action="store_true", default=None, help="pokazuj RTT co 5 s")
-    args = ap.parse_args(argv)
+    return ap.parse_args(argv)
 
+
+def _merge_settings(args: argparse.Namespace) -> dict[str, Any]:
+    """Merge the settings, lowest priority first: DEFAULTS, the --config file, the CLI flags (host, --key, --stats).
+
+    The PADKEY environment variable is only a fallback when no key was given. Exits with a message if there is no host.
+    """
     if args.config:                    # old default values in the file -> new ones (the user's own settings stay)
-        import sender_migrate
         sender_migrate.migrate(args.config)
     cfg = dict(DEFAULTS)
     cfg.update(load_config(args.config, DEFAULTS))
-    for k in ("host", "key", "stats"):
-        v = getattr(args, k)
-        if v is not None:
-            cfg[k] = v
+    for name in ("host", "key", "stats"):
+        value = getattr(args, name)
+        if value is not None:
+            cfg[name] = value
     if not cfg.get("host"):
         raise SystemExit("Brak hosta odbiornika. Podaj argument (python sender_controller.py 192.168.1.100) "
                          "albo ustaw host w pliku --config.")
     if not cfg.get("key"):
         cfg["key"] = os.environ.get("PADKEY", "")
+    return cfg
 
+
+def _apply_network(cfg: dict[str, Any]) -> None:
+    """Receiver address, port, pad limit and the HMAC key; exits with a message if the host cannot be resolved."""
     C.HOST = str(cfg["host"]).strip()
     try:
         C.PC_ADDR = socket.gethostbyname(C.HOST)
@@ -113,13 +135,21 @@ def init(argv=None):
         raise SystemExit(f"Nie można rozwiązać hosta {C.HOST!r}: {e}") from None
     C.PORT = int(cfg["port"])
     C.MAX_PADS = int(cfg["max_pads"])
+    C.KEY = str(cfg["key"]).encode() if cfg["key"] else b""
+
+
+def _apply_files(cfg: dict[str, Any]) -> None:
+    """The state files, resolved next to the sender ("" = not saved)."""
     C.SLOTS_FILE = _beside(cfg["slots_file"])
     C.WOL_FILE = _beside(cfg["wol_file"])
     C.GYRO_CAL_FILE = _beside(cfg["gyro_cal_file"])
     C.BT_ADAPTER, C.BT_FILE = str(cfg["bt_adapter"]), _beside(cfg["bt_file"])
     C.AUTH_FILE = _beside(cfg["auth_file"])
-    C.GRAB_PAD, C.GRAB_TOUCH, C.TAP_CLICK = bool(cfg["grab_pad"]), bool(cfg["grab_touch"]), bool(cfg["tap_click"])
-    C.TAP_MAX_S, C.TAP_MAX_MOVE = float(cfg["tap_max_s"]), int(cfg["tap_max_move"])
+
+
+def _apply_pad_tuning(cfg: dict[str, Any]) -> None:
+    """Pad and motion reading: send rate limits, deadbands, calibration, autobias, polling."""
+    C.GRAB_PAD = bool(cfg["grab_pad"])
     C.PAD_MIN_DT = max(0.0, float(cfg["pad_min_dt"]))
     C.HEARTBEAT_S, C.MOTION_MIN_DT, C.RESCAN_S = (float(cfg["heartbeat_s"]), float(cfg["motion_min_dt"]),
                                                   float(cfg["rescan_s"]))
@@ -128,14 +158,46 @@ def init(argv=None):
     C.CAL_S, C.CAL_MAX_RANGE = float(cfg["calibrate_s"]), int(cfg["calibrate_max_range"])
     C.AUTOBIAS, C.AUTOBIAS_S, C.AUTOBIAS_RANGE = bool(cfg["autobias"]), float(cfg["autobias_s"]), int(cfg["autobias_range"])
     C.BATT_POLL_S = float(cfg["battery_poll_s"])
-    C.TOUCH_COALESCE_S = max(0.0, float(cfg["touch_coalesce_ms"])) / 1000.0
+
+
+def _apply_touch(cfg: dict[str, Any]) -> None:
+    """Touchpad: grabbing, taps, gestures, coalescing and deadzones."""
+    C.GRAB_TOUCH, C.TAP_CLICK = bool(cfg["grab_touch"]), bool(cfg["tap_click"])
+    C.TAP_MAX_S, C.TAP_MAX_MOVE = float(cfg["tap_max_s"]), int(cfg["tap_max_move"])
+    C.TOUCH_COALESCE_S = max(0.0, float(cfg["touch_coalesce_ms"])) / MS_PER_S
     C.TOUCH_DEADZONE = int(cfg["touch_deadzone"])
     C.TOUCH_START_MOVE = max(0, int(cfg["touch_start_move"]))
     C.GESTURES = bool(cfg["gestures"])
-    C.RUMBLE = cfg["rumble"] if cfg["rumble"] in ("auto", "evdev", "hidraw", "off") else "auto"
-    C.IDLE_OFF_S = max(0.0, float(cfg["idle_off_min"])) * 60
-    C.RT_PRIORITY = max(0, min(99, int(cfg["rt_priority"])))
+
+
+def _apply_runtime(cfg: dict[str, Any]) -> None:
+    """Rumble mode, idle power-off, real-time scheduling and statistics."""
+    C.RUMBLE = cfg["rumble"] if cfg["rumble"] in RUMBLE_MODES else "auto"
+    C.IDLE_OFF_S = max(0.0, float(cfg["idle_off_min"])) * SECONDS_PER_MINUTE
+    C.RT_PRIORITY = max(0, min(RT_PRIORITY_MAX, int(cfg["rt_priority"])))
     C.LOW_LATENCY, C.CPU_LATENCY_US = bool(cfg["low_latency"]), max(0, int(cfg["cpu_latency_us"]))
-    C.KEY = str(cfg["key"]).encode() if cfg["key"] else b""
     C.STATS = bool(cfg["stats"])
+
+
+def init(argv: Sequence[str] | None = None) -> SimpleNamespace:
+    """Build the global configuration object C from DEFAULTS, the config file and the CLI flags (later wins).
+
+    Every value is coerced to its expected type and clamped to a sane range here, once, so the rest of the sender can read
+    C.* without any further validation.
+
+    Args:
+        argv: The command line without the program name; None = sys.argv[1:].
+
+    Returns:
+        The configuration object (the same C every module imports).
+
+    Raises:
+        SystemExit: The host is missing or cannot be resolved.
+    """
+    cfg = _merge_settings(_parse_args(argv))
+    _apply_network(cfg)
+    _apply_files(cfg)
+    _apply_pad_tuning(cfg)
+    _apply_touch(cfg)
+    _apply_runtime(cfg)
     return C

@@ -1,29 +1,42 @@
-"""Sender: commands from the PC (power off a pad, gyro calibration, sticks without deadzone), idle power-off
-and info packets (ping, Hz) for the receiver window."""
+"""Sender: PC commands, idle power-off and info packets.
+
+Commands from the PC: power off a pad, gyro calibration, sticks without deadzone. Info packets (ping, Hz) go to the
+receiver window once a second.
+"""
+from __future__ import annotations
+
 import asyncio
 import re
 import time
 from subprocess import DEVNULL, PIPE
+from typing import TYPE_CHECKING, Final
 
 import sender_bt
 import sender_calib as calib
+import sender_events as events
 import sender_net as net
 import sender_state as state
 import sender_update
-import sender_events as events
 from proto import CAL_STATUS, CMD_GYRO_CAL, CMD_POWER_OFF, CMD_RAW_STICKS, CMD_UPDATE, E_POWER_OFF, T_INFO
 from sender_config import C
 
+if TYPE_CHECKING:
+    from sender_ctrl import Ctrl
+
 MAC_RE = re.compile(r"[0-9a-f]{2}(?::[0-9a-f]{2}){5}", re.IGNORECASE)
-RETRY_S = 10.0          # the same pad is powered off again no sooner than this many seconds later
+RETRY_S: Final = 10.0           # the same pad is powered off again no sooner than this many seconds later
+DISCONNECT_TIMEOUT_S: Final = 10    # `bluetoothctl disconnect` that takes longer is stuck
+INFO_PERIOD_S: Final = 1.0
+U16_MAX: Final = 0xFFFF         # the rate fields of the info packet are 16-bit
+SECONDS_PER_MIN: Final = 60
 
 
-def per_s(n, dt):
+def per_s(n: int, dt: float) -> int:
     """Convert a counter delta n over dt seconds into a rate per second, clamped to the 16-bit packet field."""
-    return max(0, min(0xFFFF, round(n / dt))) if dt > 0 else 0
+    return max(0, min(U16_MAX, round(n / dt))) if dt > 0 else 0
 
 
-async def power_off(c, reason) -> None:
+async def power_off(c: Ctrl, reason: str) -> None:
     """Disconnect a pad over Bluetooth - a DualSense switches itself off when it loses the link.
 
     Over USB there is nothing to disconnect, so the call is skipped (the key of a Bluetooth pad is its MAC address).
@@ -48,7 +61,7 @@ async def power_off(c, reason) -> None:
         print("Power off failed: bluetoothctl not found (install bluez)")
         return
     try:
-        _, err = await asyncio.wait_for(proc.communicate(), 10)
+        _, err = await asyncio.wait_for(proc.communicate(), DISCONNECT_TIMEOUT_S)
     except TimeoutError:
         proc.kill()
         await proc.wait()              # without this a zombie process is left behind
@@ -58,7 +71,7 @@ async def power_off(c, reason) -> None:
         print(f"Controller {c.idx}: power off failed: {err.decode(errors='replace').strip() or proc.returncode}")
 
 
-def on_command(idx, cmd, arg) -> None:
+def on_command(idx: int, cmd: int, arg: int) -> None:
     """Handle a command packet from the receiver (called by the network layer for the target slot idx).
 
     CMD_UPDATE concerns the whole sender, so it ignores idx. Every other command is looked up by slot and silently
@@ -84,16 +97,17 @@ def on_command(idx, cmd, arg) -> None:
 
 async def info_loop() -> None:
     """Once a second: send one info packet per pad (ping, real report Hz) and power off pads that sat idle too long."""
-    prev = {}        # Ctrl -> (pad reports, motion reports, time); keyed by object, because counters restart after a reconnect
+    # Ctrl -> (pad reports, motion reports, time); keyed by object, because counters restart after a reconnect
+    prev: dict[Ctrl, tuple[int, int, float]] = {}
     while True:
-        await asyncio.sleep(1.0)
+        await asyncio.sleep(INFO_PERIOD_S)
         try:
             _info_tick(prev, time.monotonic())
-        except Exception as e:          # statistics must never stop the sender
+        except Exception as e:  # noqa: BLE001 - statistics must never stop the sender
             print(f"info error: {e!r}")
 
 
-def _info_tick(prev, now) -> None:
+def _info_tick(prev: dict[Ctrl, tuple[int, int, float]], now: float) -> None:
     """One iteration of info_loop.
 
     Report rates are derived from the difference of the per-pad report counters since the previous tick, divided by
@@ -113,4 +127,4 @@ def _info_tick(prev, now) -> None:
         net.emit(T_INFO, c.idx, rtt, per_s(pad - p0, dt), per_s(motion - m0, dt))
         if C.IDLE_OFF_S and now - c.last_input > C.IDLE_OFF_S:
             c.last_input = now            # the next attempt only after another idle period
-            state.spawn(power_off(c, f"idle for {C.IDLE_OFF_S / 60:g} min"))
+            state.spawn(power_off(c, f"idle for {C.IDLE_OFF_S / SECONDS_PER_MIN:g} min"))

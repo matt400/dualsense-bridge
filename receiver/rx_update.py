@@ -1,4 +1,4 @@
-"""Receiver: update from GitHub (git pull) - the "Update" button in the window, the tray menu or update.bat.
+r"""Receiver: update from GitHub (git pull) - the "Update" button in the window, the tray menu or update.bat.
 
 update() -> Result:
   1. the repository folder (the parent of receiver/) must be a git clone - a downloaded ZIP has no history
@@ -13,14 +13,18 @@ After the new code is downloaded (before the restart) a copy of settings.json / 
 (rx_backup, the last 5, restore in the window: Settings -> Backups) - the new version may fix them at startup.
 After a successful update the window restarts the receiver (the new code only runs in a new process).
 
-Running without a window: python receiver\\rx_update.py
+Running without a window: python receiver\rx_update.py
 """
+from __future__ import annotations
+
 import os
 import subprocess
 import sys
 import threading
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Any, Final
 
 import proto
 import rx_backup
@@ -28,14 +32,20 @@ import rx_events as ev
 from proto import UPD_DONE, UPD_FAILED, UPD_NO_CHANGE, UPD_NO_GIT, UPD_NONE, UPD_NOT_GIT, UPD_RUNNING
 from rx_i18n import _
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-REQUIREMENTS = "receiver/requirements.txt"
-NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-PULL_TIMEOUT_S = 90            # git pull (network); longer = an error instead of a hanging button
+ROOT: Final = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REQUIREMENTS: Final = "receiver/requirements.txt"
+NO_WINDOW: Final = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+PULL_TIMEOUT_S: Final = 90            # git pull (network); longer = an error instead of a hanging button
+
+PIP_TIMEOUT_S: Final = 600
+FETCH_TIMEOUT_S: Final = 60
+SHORT_HASH: Final = 7
 
 
 @dataclass(frozen=True)
 class Result:
+    """The outcome of an update."""
+
     ok: bool                  # no error (also "no changes")
     changed: bool             # new code downloaded - a restart is needed
     text: str                 # message for the window / console
@@ -44,7 +54,7 @@ class Result:
 
 
 # result of the sender update (the build packet) -> text in the window
-SENDER_TEXT = {
+SENDER_TEXT: Final = {
     UPD_NO_CHANGE: "nadajnik: najnowsza wersja",
     UPD_DONE: "nadajnik: zaktualizowany, uruchamia się od nowa",
     UPD_NOT_GIT: "nadajnik: folder na telefonie to nie klon git - na telefonie: "
@@ -53,51 +63,59 @@ SENDER_TEXT = {
     UPD_FAILED: "nadajnik: git pull nie powiódł się (szczegóły w logu na telefonie)",   # an older sender without a reason
     UPD_RUNNING: "nadajnik nie odpowiedział",
 }
-_version = None
+_version: tuple[Any, ...] | None = None
 
 
-def find_git():
-    """The git executable (see proto.find_git) or None."""
+def find_git() -> str | None:
+    """Return the git executable (see proto.find_git) or None."""
     return proto.find_git()
 
 
-def version():
-    """The receiver code version (commit, time, title) - computed once, the code changes only with a restart."""
+def version() -> tuple[Any, ...]:
+    """Return the receiver code version (commit, time, title) - computed once, the code changes only with a restart."""
     global _version
     if _version is None:
         _version = proto.git_version(ROOT)
     return _version
 
 
-def running(root=ROOT):
-    """The commit of the running code (from version(), computed at startup) - only for the receiver's own repository."""
+def running(root: str = ROOT) -> str:
+    """Return the commit of the running code (from version(), computed at startup) - only for the receiver's own repository."""
     return version()[0] if root == ROOT else ""
 
 
-def describe(commit, ts):
-    """'a1b2c3d · 12.10.2026' or "unknown" (a folder without git)."""
+def describe(commit: str, ts: float) -> str:
+    """Describe a version as 'a1b2c3d · 12.10.2026' or "unknown" (a folder without git)."""
     if not commit:
         return _("nieznana")
     return f"{commit} · {time.strftime('%d.%m.%Y', time.localtime(ts))}" if ts else commit
 
 
-def sender_state(build, old_commit=""):
-    """The sender update state from the build packet. After downloading code the sender restarts (os.execv) and the new process
-    reports UPD_NONE - when the receiver updated for longer (e.g. pip install), the window saw only that state and wrote
-    "the sender did not answer". A commit different from the one before the update (old_commit) = updated."""
-    if build is None:
-        return None
+def sender_state(build: Sequence[Any] | None, old_commit: str = "") -> int | None:
+    """Return the sender update state from the build packet.
+
+    After downloading code the sender restarts (os.execv) and the new process reports UPD_NONE - when the receiver
+    updated for longer (e.g. pip install), the window saw only that state and wrote "the sender did not answer". A
+    commit different from the one before the update (old_commit) = updated.
+    """
+    return None if build is None else _state_of(build, old_commit)
+
+
+def _state_of(build: Sequence[Any], old_commit: str) -> int:
+    """Return the update state of a sender that did send its build packet."""
     if old_commit and build[0] and build[0] != old_commit and build[2] in (UPD_NONE, UPD_RUNNING):
         return UPD_DONE
-    return build[2]
+    return int(build[2])
 
 
-def sender_text(build, msg="", old_commit=""):
-    """The sender update result from the build packet (None = a sender older than this feature); msg = the failure reason (updmsg);
-    old_commit = the sender commit before the update (see sender_state)."""
+def sender_text(build: Sequence[Any] | None, msg: str = "", old_commit: str = "") -> str:
+    """Describe the sender update result from the build packet (None = a sender older than this feature).
+
+    msg is the failure reason (updmsg); old_commit the sender commit before the update (see sender_state).
+    """
     if build is None:
         return _("nadajnik w starej wersji - zaktualizuj go raz ręcznie (git pull na telefonie)")
-    state = sender_state(build, old_commit)
+    state = _state_of(build, old_commit)
     if state == UPD_FAILED and msg:
         text = _("nadajnik: git pull nie powiódł się: {msg}").format(msg=msg)
         if proto.is_auth_error(msg):
@@ -108,29 +126,33 @@ def sender_text(build, msg="", old_commit=""):
 
 
 # ---------------- checking whether GitHub has a newer version (in the background, without downloading code) ----------------
-CHECK_FIRST_S = 20.0           # the first check after startup (pads and the window first)
-CHECK_EVERY_S = 30 * 60.0
+CHECK_FIRST_S: Final = 20.0           # the first check after startup (pads and the window first)
+CHECK_EVERY_S: Final = 30 * 60.0
 # in the background git must not ask for anything: no Git Credential Manager login window and no terminal prompt
-QUIET_ENV = {"GCM_INTERACTIVE": "never", "GIT_TERMINAL_PROMPT": "0"}
+QUIET_ENV: Final = {"GCM_INTERACTIVE": "never", "GIT_TERMINAL_PROMPT": "0"}
 
 
 @dataclass(frozen=True)
 class Available:
+    """What a background check found: how far GitHub is ahead of the running version."""
+
     behind: int               # this many commits GitHub has beyond the receiver version (0 = up to date)
     subject: str = ""         # the title of the newest of them
     commit: str = ""          # its short hash (7 characters) - the window uses it to tell that this is a new update to report
 
 
-available = None               # the Available from the last successful check, or None (not checked / error)
+available: Available | None = None               # the Available from the last successful check, or None (not checked / error)
 # a background git fetch and a git pull from the button at the same time would fight over the same refs ("cannot lock ref ...") - the pull
 # could
 # fail. An update waits for a running check; a check skips its turn while an update is running.
 _git_lock = threading.Lock()
 
 
-def check_available(root=ROOT, git=None):
-    """git fetch (no file changes) and a comparison with the branch on GitHub. -> Available or None (no git / network /
-    tracking branch - the window then simply shows nothing)."""
+def check_available(root: str = ROOT, git: str | None = None) -> Available | None:
+    """Run git fetch (no file changes) and compare with the branch on GitHub.
+
+    Returns Available, or None (no git / network / tracking branch - the window then simply shows nothing).
+    """
     git = git or find_git()
     if git is None or not os.path.isdir(os.path.join(root, ".git")):
         return None
@@ -142,11 +164,13 @@ def check_available(root=ROOT, git=None):
         _git_lock.release()
 
 
-def _check(root, git):
-    """Fetch the upstream and count the commits between the running version and the upstream tip; Available(0) when up to date, None on
-    any failure."""
+def _check(root: str, git: str) -> Available | None:
+    """Fetch the upstream and count the commits between the running version and the upstream tip.
+
+    Available(0) when up to date, None on any failure.
+    """
     try:
-        if proto.git(root, "fetch", "--quiet", git_exe=git, timeout=60, env=QUIET_ENV).returncode:
+        if proto.git(root, "fetch", "--quiet", git_exe=git, timeout=FETCH_TIMEOUT_S, env=QUIET_ENV).returncode:
             return None
         # from the RUNNING version, not from HEAD: code downloaded but not started is still an update to do
         p = proto.git(root, "rev-list", "--count", f"{running(root) or 'HEAD'}..@{{u}}", git_exe=git)
@@ -155,16 +179,18 @@ def _check(root, git):
         behind = int(p.stdout.strip() or 0)
         if not behind:
             return Available(0)
-        head = proto.git(root, "log", "-1", "--format=%h%x00%s", "--abbrev=7", "@{u}", git_exe=git).stdout.strip()
+        head = proto.git(root, "log", "-1", "--format=%h%x00%s", f"--abbrev={SHORT_HASH}", "@{u}", git_exe=git).stdout.strip()
         commit, _sep, subject = head.partition("\0")
-        return Available(behind, subject, commit[:7])
+        return Available(behind, subject, commit[:SHORT_HASH])
     except (OSError, ValueError, subprocess.SubprocessError):
         return None
 
 
-def _checker(stop) -> None:
-    """Thread body: wait CHECK_FIRST_S, then check every CHECK_EVERY_S, store the result in `available` and log a newly found update
-    once."""
+def _checker(stop: threading.Event) -> None:
+    """Thread body: wait CHECK_FIRST_S, then check every CHECK_EVERY_S.
+
+    Store the result in `available` and log a newly found update once.
+    """
     global available
     if stop.wait(CHECK_FIRST_S):
         return
@@ -179,14 +205,13 @@ def _checker(stop) -> None:
             return
 
 
-def start_checker(stop) -> None:
+def start_checker(stop: threading.Event) -> None:
     """A background thread: checks GitHub every CHECK_EVERY_S, the result in rx_update.available (the window reads it every 400 ms)."""
-    import threading
     threading.Thread(target=_checker, args=(stop,), name="update check", daemon=True).start()
 
 
-def update(root=ROOT, git=None, pip=True):
-    """Update the code: git pull --ff-only, then a settings backup and (when requirements changed) pip install -> Result.
+def update(root: str = ROOT, git: str | None = None, pip: bool = True) -> Result:
+    """Update the code: git pull --ff-only, then a settings backup and (when requirements changed) pip install.
 
     Also covers code that is already on disk but not yet running (see the module docstring, 2a). The git lock keeps the pull from
     colliding with the background check.
@@ -208,17 +233,17 @@ def update(root=ROOT, git=None, pip=True):
         # the new code is already on disk but the old one is running (e.g. the previous restart failed) - start the new one
         old = proto.git(root, "rev-parse", cur, git_exe=git).stdout.strip() or cur
         files = proto.git(root, "diff", "--name-only", old, new, git_exe=git).stdout.splitlines()
-        print(f"Update: code {new[:7]} already downloaded, running {cur} - restart needed")
+        print(f"Update: code {new[:SHORT_HASH]} already downloaded, running {cur} - restart needed")
     count = proto.git(root, "rev-list", "--count", f"{old}..{new}", git_exe=git).stdout.strip() or "?"
-    text = _("Zaktualizowano ({n} zmian): {old} → {new}").format(n=count, old=old[:7], new=new[:7])
+    text = _("Zaktualizowano ({n} zmian): {old} → {new}").format(n=count, old=old[:SHORT_HASH], new=new[:SHORT_HASH])
     text += " · " + _backup(old, new)
     if pip and REQUIREMENTS in files:
         text += " · " + _install_requirements(root)
     return Result(True, True, text, old, new)
 
 
-def _backup(old, new):
-    """A copy of the settings after the new code is downloaded (before we start it). A failed copy does not undo the update."""
+def _backup(old: str, new: str) -> str:
+    """Copy the settings after the new code is downloaded (before we start it); a failed copy does not undo the update."""
     try:
         b = rx_backup.create("update", old, new)
     except OSError as e:
@@ -231,22 +256,22 @@ def _backup(old, new):
     return _("kopia ustawień zapisana")
 
 
-def _run(cmd, root, timeout):
+def _run(cmd: list[str], root: str, timeout: float) -> subprocess.CompletedProcess[str]:
     """Run a command in `root` with captured output and a timeout, without a console window."""
     return subprocess.run(cmd, cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                          timeout=timeout, creationflags=NO_WINDOW)
+                          timeout=timeout, creationflags=NO_WINDOW, check=False)
 
 
-def _last_lines(text, n=3):
-    """The last n non-empty lines of a text joined with " / " (the useful end of a pip error)."""
+def _last_lines(text: str, n: int = 3) -> str:
+    """Return the last n non-empty lines of a text joined with " / " (the useful end of a pip error)."""
     lines = [x.strip() for x in text.strip().splitlines() if x.strip()]
     return " / ".join(lines[-n:])
 
 
-def _install_requirements(root):
-    """pip install -r requirements.txt with the receiver's Python -> a message (success, or what to run by hand when it fails)."""
+def _install_requirements(root: str) -> str:
+    """Run pip install -r requirements.txt with the receiver's Python; return a message (success, or what to run by hand)."""
     try:
-        p = _run([sys.executable, "-m", "pip", "install", "-r", os.path.join(root, *REQUIREMENTS.split("/"))], root, 600)
+        p = _run([sys.executable, "-m", "pip", "install", "-r", os.path.join(root, *REQUIREMENTS.split("/"))], root, PIP_TIMEOUT_S)
     except (OSError, subprocess.TimeoutExpired) as e:
         return _("pip nie zadziałał ({msg}) - uruchom: pip install -r receiver\\requirements.txt").format(msg=e)
     if p.returncode:

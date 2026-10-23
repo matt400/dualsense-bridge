@@ -7,7 +7,10 @@ actions, the long-PS action. Disabled shortcuts (ps_modifier = false, action "no
 Keys are a tuple of tokens: a pad icon name ("ps", "cross", "dpad_up"...), "+" or a short text ("3 s", "×2").
 feature = a key from rx_settings.MASTER_FEATURES - when the feature is restricted to the master, the panel shows a crown.
 """
+from __future__ import annotations
+
 from dataclasses import dataclass
+from typing import Final
 
 import rx_console
 import rx_master
@@ -16,12 +19,14 @@ import rx_testmode
 from rx_config import C
 from rx_i18n import _
 
-HOLD_ACTION = {"gamebar": "Xbox Game Bar (Win+G)", "bigpicture": "Steam Big Picture"}
-SHARE_ACTION = {"screenshot": "Zrzut ekranu (Obrazy\\Zrzuty ekranu)", "capture": "Zrzut ekranu przez Game Bar"}
+HOLD_ACTION: Final = {"gamebar": "Xbox Game Bar (Win+G)", "bigpicture": "Steam Big Picture"}
+SHARE_ACTION: Final = {"screenshot": "Zrzut ekranu (Obrazy\\Zrzuty ekranu)", "capture": "Zrzut ekranu przez Game Bar"}
 
 
 @dataclass(frozen=True, slots=True)
 class Shortcut:
+    """One row of the panel: the key tokens, the description and the master feature that can restrict it."""
+
     keys: tuple[str, ...]     # tokens: icon names, "+" or a short text
     text: str
     feature: str | None = None
@@ -29,25 +34,29 @@ class Shortcut:
 
 @dataclass(frozen=True, slots=True)
 class Group:
+    """A titled group of shortcuts with an optional note under it."""
+
     title: str
     items: tuple[Shortcut, ...]
     note: str = ""
 
 
-def _s(x):
-    """Seconds without a needless ",0": 1.0 -> "1 s", 1.2 -> "1,2 s"."""
+def _s(x: float) -> str:
+    """Format seconds without a needless ",0": 1.0 -> "1 s", 1.2 -> "1,2 s"."""
     return f"{x:g} s".replace(".", ",")
 
 
-def master_only(feature):
-    """Whether a shortcut is restricted to the master pad (a master is set and the feature is in the only_master list)."""
+def master_only(feature: str | None) -> bool:
+    """Tell whether a shortcut is restricted to the master pad (a master is set and the feature is in the only_master list)."""
     m = rx_settings.cur.master
     return bool(feature and m.pad and feature in m.only_master)
 
 
-def _ps():
-    """The PS-button group: short press, long-press action, PS + Share capture and the PS + D-pad combos. Collapses to a single
-    row plus a note when ps_modifier is off."""
+def _ps() -> Group:
+    """The PS-button group: short press, long-press action, PS + Share capture and the PS + D-pad combos.
+
+    Collapses to a single row plus a note when ps_modifier is off.
+    """
     if not C.PS_MODIFIER:
         return Group(_("Skróty z PS"), (Shortcut(("ps",), _("PS dla gry i Steam (od razu)"), "ps_game"),),
                      _("Skróty z PS są wyłączone (ps_modifier = false)."))
@@ -65,7 +74,7 @@ def _ps():
     return Group(_("Skróty z PS"), tuple(items))
 
 
-def _touchpad():
+def _touchpad() -> Group:
     """The touchpad group: switching between mouse and DS4 touch, and the gestures of the mouse mode."""
     return Group(_("Touchpad"), (
         Shortcut(("ps", "+", "touchpad"), _("Przełącz: mysz ↔ dotyk DS4 (klik touchpada)"), "mouse"),
@@ -76,10 +85,10 @@ def _touchpad():
     ))
 
 
-def _master():
+def _master() -> Group:
     """The master-pad group: the claim hold and every action that has a button assigned (a note appears when there are none)."""
     m = rx_settings.cur.master
-    items = []
+    items: list[Shortcut] = []
     if m.claim_hold:
         items.append(Shortcut(("ps", "+", rx_master.CLAIM_BUTTON, _s(rx_master.CLAIM_S)),
                               _("Ten pad zostaje masterem (mignie na złoto)")))
@@ -92,7 +101,7 @@ def _master():
                  "" if items else _("Brak przypisanych akcji (Ustawienia → Master)."))
 
 
-def _console():
+def _console() -> Group:
     """The console-mode group: the toggle button pressed twice within double_click_ms."""
     cfg = rx_console.ctl.cfg if rx_console.ctl is not None else rx_console.ConsoleConfig()
     return Group(_("Tryb konsoli"), (
@@ -102,7 +111,7 @@ def _console():
     ), _("Działa tylko na pulpicie, w Steam i launcherach (lista w Ustawieniach), nie w grze."))
 
 
-def _tv():
+def _tv() -> Group:
     """The TV-mode group: navigating the window with the pad."""
     return Group(_("Tryb TV (okno na pełnym ekranie i aktywne)"), (
         Shortcut(("dpad_up", "dpad_down", "dpad_left", "dpad_right"), _("Poruszanie się, suwaki, zakładki")),
@@ -112,7 +121,7 @@ def _tv():
     ))
 
 
-def _test():
+def _test() -> Group:
     """The Test-view group: the emergency exit combination and the TV-mode exit hold."""
     from rx_qt import EXIT_HOLD_S       # just a constant - rx_qt is already loaded whenever the panel exists
     return Group(_("Widok Test"), (
@@ -122,6 +131,6 @@ def _test():
     ), _("W widoku Test pozostałe skróty nie działają."))
 
 
-def groups():
-    """All groups in panel order; empty groups (no shortcuts and no note) are skipped."""
+def groups() -> list[Group]:
+    """Return all groups in panel order; empty groups (no shortcuts and no note) are skipped."""
     return [g for g in (_ps(), _touchpad(), _master(), _console(), _tv(), _test()) if g.items or g.note]
