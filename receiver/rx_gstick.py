@@ -18,7 +18,9 @@ One-sample pipeline (Engine.step, ~250 times per second):
 The output goes to the sink only when the change exceeds the delta threshold (or it is zero, the edge of the range, sprint, a state change).
 """
 import math
+from collections.abc import MutableMapping
 from dataclasses import dataclass, fields, replace
+from typing import Any
 
 from rx_buttons import BIT, BUTTON_CODES, INPUTS
 
@@ -40,16 +42,23 @@ REST_MIN_G = 0.6                        # an uncalibrated pad needs this much gr
 MIN_SPAN = 5.0                          # range is always this many degrees larger than the deadzone
 DPAD_AT = 0.5                           # d-pad mode: a direction from half deflection
 SMOOTH_MAX_S = 0.150
+GRAVITY_MIN_G, GRAVITY_MAX_G = 0.6, 1.4  # a calibrated center must be a gravity vector: its length is about 1 g
+VEC_LEN = 3                             # center = [x, y, z]
+EDGE_MIN_G = 0.35                       # a saved center with less gravity in the Y-Z plane = the pad was on its edge
+FULL_RANGE_SQ = 0.998                   # x^2 + y^2 from here the stick is at the edge of its range (always sent)
+FREEFALL_G2, IMPACT_G2 = 0.09, 9.0      # |acc|^2 [g^2] outside this (0.3 g .. 3 g): free fall / impact, no tilt information
 I16_MAX = 32767                         # full output range -32768..+32767 (the DS4 report has 8 bits - the sink scales)
 
 
-def _clamp(v, name):
+def _clamp(v: float, name: str) -> float:
     lo, hi = LIMITS[name]
     return min(hi, max(lo, v))
 
 
 @dataclass(frozen=True, slots=True)
 class Config:
+    """Gyro stick settings of one pad (immutable: the engine notices a change by identity)."""
+
     enabled: bool = False
     target: str = "left"            # which virtual input the gyro takes over (the physical one is then ignored)
     invert_pitch: bool = False
@@ -66,14 +75,14 @@ class Config:
     sprint_at: float = 95.0
     feedback: str = "off"
     focus_release: bool = True      # losing focus / changing the program zeroes the stick
-    center: tuple = None            # neutral center: gravity vector [g] from calibration; None = pad lies flat
+    center: tuple[float, ...] | None = None            # neutral center: gravity vector [g] from calibration; None = pad lies flat
 
 
-def normalize(raw):
+def normalize(raw: object) -> Config:
     """Dict from the file -> Config; a bad value = the default (message in the log), unknown keys are skipped."""
     raw = raw if isinstance(raw, dict) else {}
     base = Config()
-    values = {}
+    values: dict[str, Any] = {}
     for f in fields(Config):
         if f.name not in raw:
             continue
@@ -101,19 +110,19 @@ def normalize(raw):
     return replace(cfg, outer=max(cfg.outer, round(cfg.deadzone + MIN_SPAN, 3)))
 
 
-def _center(v):
+def _center(v: object) -> tuple[float, ...] | None:
     """[x, y, z] in g (length about 1) or None."""
     if v is None:
         return None
-    if not isinstance(v, (list, tuple)) or len(v) != 3 or any(isinstance(c, bool) or not isinstance(c, (int, float)) for c in v):
+    if not isinstance(v, (list, tuple)) or len(v) != VEC_LEN or any(isinstance(c, bool) or not isinstance(c, (int, float)) for c in v):
         raise ValueError("expected [x, y, z]")
     c = tuple(float(x) for x in v)
-    if not all(math.isfinite(x) for x in c) or not 0.6 <= math.sqrt(sum(x * x for x in c)) <= 1.4:
+    if not all(math.isfinite(x) for x in c) or not GRAVITY_MIN_G <= math.sqrt(sum(x * x for x in c)) <= GRAVITY_MAX_G:
         raise ValueError("expected a gravity vector of about 1 g")
     return tuple(round(x, 5) for x in c)
 
 
-def to_raw(cfg):
+def to_raw(cfg: Config) -> dict[str, Any]:
     """Config -> dict for the JSON file (the center only when calibrated)."""
     out = {f.name: getattr(cfg, f.name) for f in fields(Config)}
     if cfg.center is None:
@@ -123,27 +132,27 @@ def to_raw(cfg):
     return out
 
 
-def to_i16(v):
+def to_i16(v: float) -> int:
     """-1..1 -> -32768..32767 (the range from the feature spec; the DS4 / DualSense report has 8 bits, XInput / vJoy 16)."""
     return max(-32768, min(I16_MAX, round(v * (32768 if v < 0 else I16_MAX))))
 
 
 # ---------------- geometria ----------------
-def tilt_basis(center):
+def tilt_basis(center: tuple[float, ...] | None) -> tuple[float, float, float, float]:
     """Neutral center (gravity vector in g or None = detected at rest, see rest_up) -> (uy, uz, pitch0, roll0).
 
     (uy, uz) is the "up" direction in the plane perpendicular to the pad's X axis, pitch0 / roll0 are the center angles.
     """
     cy, cz = (center[1], center[2]) if center else (1.0, 0.0)
     n = math.hypot(cy, cz)
-    if n < 0.35:                         # center saved with the pad on its edge - the angles make no sense: treat as flat
+    if n < EDGE_MIN_G:                         # center saved with the pad on its edge - the angles make no sense: treat as flat
         cy, cz, n, center = 1.0, 0.0, 1.0, None
     uy, uz = cy / n, cz / n
-    p0, r0 = angles(*center, uy, uz) if center else (0.0, 0.0)
+    p0, r0 = angles(center[0], center[1], center[2], uy, uz) if center else (0.0, 0.0)
     return uy, uz, p0, r0
 
 
-def rest_up(ax, ay, az):
+def rest_up(ax: float, ay: float, az: float) -> tuple[float, float] | None:
     """The "up" direction (uy, uz) of an uncalibrated pad, taken from where gravity points at rest.
 
     The sensor axis that reads about +-1 g while the pad lies roughly flat. Which axis that is depends on the sensor
@@ -155,7 +164,7 @@ def rest_up(ax, ay, az):
     return (math.copysign(1.0, ay), 0.0) if abs(ay) >= abs(az) else (0.0, math.copysign(1.0, az))
 
 
-def angles(ax, ay, az, uy, uz):
+def angles(ax: float, ay: float, az: float, uy: float, uz: float) -> tuple[float, float]:
     """Gravity vector [g] -> (pitch, roll) in degrees in the frame given by (uy, uz).
 
     Positive pitch = front down, positive roll = right side down. Pitch is a rotation about the X axis, roll is measured
@@ -166,7 +175,7 @@ def angles(ax, ay, az, uy, uz):
     return math.degrees(math.atan2(gf, math.hypot(ax, gu))), math.degrees(math.atan2(-ax, gu))
 
 
-def curve(m, name):
+def curve(m: float, name: str) -> float:
     """Response curve 0..1 -> 0..1: linear, cubic (precision at small tilts), aggressive (fast start)."""
     if name == "cubic":
         return m * m * m
@@ -175,12 +184,12 @@ def curve(m, name):
     return m
 
 
-def to_u8(v):
+def to_u8(v: float) -> int:
     """-1..1 -> DS4 report stick byte (128 = center)."""
     return max(0, min(255, 128 + round(v * 127)))
 
 
-def drive_state(s, gs) -> None:
+def drive_state(s: MutableMapping[str, Any], gs: tuple[str, float, float, int]) -> None:
     """Applies the gyro output `gs` = (target, x, y, mask) to the output state `s` (an rx_state dict; call under the lock).
 
     A target taken by the gyro ignores the physical input; D-pad: a direction from half deflection (DPAD_AT); y > 0 =
@@ -198,7 +207,7 @@ def drive_state(s, gs) -> None:
         s["mask"] |= mask
 
 
-def sprint_mask(name):
+def sprint_mask(name: str) -> int:
     """Virtual sprint button name -> report bit mask (0 = none)."""
     code = BUTTON_CODES.get(name)
     return BIT[code] if code else 0
@@ -212,10 +221,12 @@ class Sink:
     holds the `button` (bit mask, 0 = none); release(): the gyro gives the input back (the physical one works again).
     """
 
-    def drive(self, slot, target, x, y, button):
+    def drive(self, slot: int, target: str, x: float, y: float, button: int) -> None:
+        """Take over `target` of the slot's virtual pad (see the class docstring)."""
         raise NotImplementedError
 
-    def release(self, slot):
+    def release(self, slot: int) -> None:
+        """Give the input back to the physical pad."""
         raise NotImplementedError
 
 
@@ -245,7 +256,8 @@ class Engine:
     crossing).
     """
 
-    def __init__(self, cfg=None) -> None:
+    def __init__(self, cfg: Config | None = None) -> None:
+        """Start asleep-free and unarmed: the first sample decides what happens."""
         self.cfg = cfg or Config()
         self._cfg = None                 # the config the cache was computed for (_apply)
         self._basis = tilt_basis(None)
@@ -267,15 +279,16 @@ class Engine:
         self.event = EV_NONE
         self._ref = None                 # reference sample for stillness detection
         self._since = 0.0
-        self._cal = None                 # [end, sx, sy, sz, n, max_dps] during center calibration
+        self._cal: list[Any] | None = None   # [end, sx, sy, sz, n, max_dps] during center calibration
         self.cal_result = None           # (ok, center | None) after calibration - collected by rx_gstick_io
 
     # ---------- control from outside ----------
     @property
     def calibrating(self) -> bool:
+        """Whether a center calibration is running."""
         return self._cal is not None
 
-    def start_center(self, now, secs=CAL_S) -> None:
+    def start_center(self, now: float, secs: float = CAL_S) -> None:
         """Center calibration: averages the pad position for `secs` s (result: cal_result)."""
         self.cal_result = None
         self._cal = [now + secs, 0.0, 0.0, 0.0, 0, 0.0]
@@ -290,12 +303,12 @@ class Engine:
         self.sent = None
         self._neutral(ST_SAFE)
 
-    def snapshot(self):
+    def snapshot(self) -> tuple[int, int, tuple[float, float], tuple[float, float], tuple[float, float], float, bool, bool]:
         """Tuple for the window preview: (state, zone, raw °, filtered °, output -1..1, mag 0..1, sprint, driving)."""
         return (self.state, self.zone, self.raw, self.filt_xy, self.xy, self.mag, self.sprint, self.out is not None)
 
     # ---------- internals ----------
-    def _apply(self, cfg) -> None:
+    def _apply(self, cfg: Config) -> None:
         """New config: recompute the neutral center; a change of target / enabled / sprint = a full reset."""
         old, self._cfg = self._cfg, cfg
         if old is None or old.center != cfg.center:
@@ -306,7 +319,7 @@ class Engine:
             self.sprint = False
             self.sent = FORCE
 
-    def _neutral(self, state):
+    def _neutral(self, state: int) -> bool:
         """The gyro doesn't drive: the physical input works, the preview is zero."""
         self.state, self.out = state, None
         self.filt = None
@@ -314,7 +327,7 @@ class Engine:
         self.raw = self.filt_xy = self.xy = (0.0, 0.0)
         return self._decide()
 
-    def _decide(self):
+    def _decide(self) -> bool:
         """Whether to send `out`.
 
         A change above the delta threshold; always zero (snap-back), the edge of the range, a button change, taking and
@@ -329,15 +342,17 @@ class Engine:
             send = True
         else:
             x, y, sp = out
-            send = (sp != sent[2] or (x == 0.0 and y == 0.0) or x * x + y * y >= 0.998
+            send = (sp != sent[2] or (x == 0.0 and y == 0.0) or x * x + y * y >= FULL_RANGE_SQ
                     or max(abs(x - sent[0]), abs(y - sent[1])) >= self._cfg.delta / 100)
         if send:
             self.sent = out
         self.send = send
         return send
 
-    def _calibrate(self, now, ax, ay, az, gdps, alive):
+    def _calibrate(self, now: float, ax: float, ay: float, az: float, gdps: float, alive: bool) -> bool:
+        """One sample of the center calibration: average the position, finish after CAL_S; -> _neutral()."""
         c = self._cal
+        assert c is not None            # step() calls this only while a calibration runs
         c[1] += ax
         c[2] += ay
         c[3] += az
@@ -356,7 +371,7 @@ class Engine:
             self.armed = False           # new center: the stick starts from zero, not from a jump
         return self._neutral(ST_CAL)
 
-    def _still(self, now, ax, ay, az, gdps, idle_s):
+    def _still(self, now: float, ax: float, ay: float, az: float, gdps: float, idle_s: float) -> bool:
         """Auto-sleep: a pad that stays still (lies) longer than idle_s -> True (zero on the stick); clear movement wakes it."""
         ref = self._ref
         dev = 1e9 if ref is None else max(abs(ax - ref[0]), abs(ay - ref[1]), abs(az - ref[2]))
@@ -373,7 +388,49 @@ class Engine:
             self.asleep = True
         return self.asleep
 
-    def step(self, now, ax, ay, az, gdps, held, alive: bool = True):
+    def _tilt(self, cfg: Config, ax: float, ay: float, az: float) -> tuple[float, float] | None:
+        """The pad tilt [°] as a vector (vx, vy) with the inversions and the X/Y ratio applied.
+
+        None = an uncalibrated pad lies too far from flat to tell which way is "up": wait for a flatter pose.
+        """
+        if cfg.center is None:
+            if self._rest is None:
+                self._rest = rest_up(ax, ay, az)
+                if self._rest is None:
+                    return None
+            uy, uz = self._rest
+            p0 = r0 = 0.0
+        else:
+            uy, uz, p0, r0 = self._basis
+        p, r = angles(ax, ay, az, uy, uz)
+        pitch, roll = p - p0, r - r0
+        vx = -roll if cfg.invert_roll else roll
+        vy = (-pitch if cfg.invert_pitch else pitch) * cfg.ratio
+        return vx, vy
+
+    def _smooth(self, vx: float, vy: float, raw_r: float, dt: float, cfg: Config) -> tuple[float, float]:
+        """Snap-back deadzone and the EMA filter; -> the filtered tilt (fx, fy) [°].
+
+        Inside the deadzone the output is zero at once and the filter follows the position (no trail).
+        """
+        dz = cfg.deadzone
+        if self.dead:
+            if raw_r > dz + HYST_DEG:
+                self.dead = False
+        elif raw_r < dz:
+            self.dead = True
+        if self.dead:
+            fx, fy = vx, vy
+        else:
+            tau = cfg.smoothing / 100 * SMOOTH_MAX_S
+            a = 1.0 - math.exp(-dt / tau) if tau > 0 else 1.0
+            fx, fy = self.filt if self.filt is not None else (vx, vy)
+            fx, fy = fx + a * (vx - fx), fy + a * (vy - fy)
+        self.filt = (fx, fy)
+        self.filt_xy = (fx, fy)
+        return fx, fy
+
+    def step(self, now: float, ax: float, ay: float, az: float, gdps: float, held: bool, alive: bool = True) -> bool:
         """One sample: now [s, monotonic clock], acc [g], gdps = rotation magnitude [°/s], held = clutch held.
 
         Alive = pad connected. -> True when `out` has to be sent (`sent` itself is already updated).
@@ -389,23 +446,13 @@ class Engine:
         if not ((cfg.enabled or self.preview) and alive):
             self._rest = None            # detect the orientation again when the feature or the pad comes back
             return self._neutral(ST_OFF)
-        g2 = ax * ax + ay * ay + az * az
-        if not 0.09 < g2 < 9.0:          # free fall / impact: the accelerometer doesn't measure tilt - no change
-            self.send = False
+        if not FREEFALL_G2 < ax * ax + ay * ay + az * az < IMPACT_G2:   # free fall / impact: the accelerometer doesn't measure tilt
+            self.send = False            # - no change
             return False
-        if cfg.center is None:
-            if self._rest is None:
-                self._rest = rest_up(ax, ay, az)
-                if self._rest is None:   # tilted past what can be called "roughly flat": wait for a flatter pose
-                    return self._neutral(ST_SAFE)
-            uy, uz = self._rest
-            p0 = r0 = 0.0
-        else:
-            uy, uz, p0, r0 = self._basis
-        p, r = angles(ax, ay, az, uy, uz)
-        pitch, roll = p - p0, r - r0
-        vx = -roll if cfg.invert_roll else roll
-        vy = (-pitch if cfg.invert_pitch else pitch) * cfg.ratio
+        tilt = self._tilt(cfg, ax, ay, az)
+        if tilt is None:
+            return self._neutral(ST_SAFE)
+        vx, vy = tilt
         if not held:
             send = self._neutral(ST_HOLD)
             self.raw = (vx, vy)          # the preview shows the tilt also with the clutch released
@@ -423,21 +470,7 @@ class Engine:
             self.armed = True
         self.state = ST_RUN
         self.raw = (vx, vy)
-        # snap-back: inside the deadzone the output is zero at once and the filter follows the position (no trail)
-        if self.dead:
-            if raw_r > dz + HYST_DEG:
-                self.dead = False
-        elif raw_r < dz:
-            self.dead = True
-        if self.dead:
-            fx, fy = vx, vy
-        else:
-            tau = cfg.smoothing / 100 * SMOOTH_MAX_S
-            a = 1.0 - math.exp(-dt / tau) if tau > 0 else 1.0
-            fx, fy = self.filt if self.filt is not None else (vx, vy)
-            fx, fy = fx + a * (vx - fx), fy + a * (vy - fy)
-        self.filt = (fx, fy)
-        self.filt_xy = (fx, fy)
+        fx, fy = self._smooth(vx, vy, raw_r, dt, cfg)
         fr = math.hypot(fx, fy)
         m = 0.0 if self.dead or fr <= dz else min(1.0, (fr - dz) / (cfg.outer - dz))
         mc = curve(m, cfg.curve)
@@ -447,7 +480,7 @@ class Engine:
         self.out = (self.xy[0], self.xy[1], self.sprint) if cfg.target != "none" and cfg.enabled else None
         return self._decide()
 
-    def _zones(self, m, cfg) -> None:
+    def _zones(self, m: float, cfg: Config) -> None:
         """Deflection zone (with edge hysteresis), the crossing event and the sprint state."""
         prev = self.zone
         zone = Z_DEAD if m <= 0 else Z_OUTER if m >= 1.0 or (prev == Z_OUTER and m >= OUTER_LEAVE) else Z_ACTIVE
