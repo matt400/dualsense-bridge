@@ -8,47 +8,53 @@
 
 Details and recommendations: docs/SECURITY.md.
 """
+from __future__ import annotations
+
 import os
 import sys
 from dataclasses import dataclass
+from types import ModuleType
+from typing import Final
 
 from rx_config import C
 from rx_i18n import _
 
-LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+LOCAL_HOSTS: Final = frozenset({"127.0.0.1", "localhost", "::1"})
 
 
 @dataclass(frozen=True, slots=True)
 class Issue:
+    """One security problem: a stable code for tests and the log, and the text shown in the window."""
+
     code: str        # key / dsu / folder / python
     text: str        # user-facing description (translated)
 
 
-def code_dir():
+def code_dir() -> str:
     """Folder holding the receiver's source files."""
     return os.path.dirname(os.path.abspath(__file__))
 
 
-def python_dir():
+def python_dir() -> str:
     """Folder of the running Python interpreter."""
     return os.path.dirname(os.path.abspath(sys.executable))
 
 
-def _winapi():
-    """rx_winapi on Windows, None elsewhere (the ownership checks only make sense on Windows)."""
+def _winapi() -> ModuleType | None:
+    """Return rx_winapi on Windows, None elsewhere (the ownership checks only make sense on Windows)."""
     if os.name != "nt":
         return None
     import rx_winapi
     return rx_winapi
 
 
-def issues():
+def issues() -> list[Issue]:
     """Collect the current security problems.
 
     Key and DSU checks work everywhere; the folder and Python ownership checks run only on Windows when the receiver is
     elevated (admin_owned() returns None when it cannot tell, which is not reported).
     """
-    out = []
+    out: list[Issue] = []
     if not C.KEY:
         out.append(Issue("key", _("Brak klucza HMAC: każdy w sieci lokalnej może sterować tym komputerem przez receiver "
                                   "(mysz, akcje pada master) i wysyłać polecenia do nadajnika. Ustaw ten sam klucz (key) "
@@ -78,8 +84,11 @@ def log_issues() -> None:
         ev.warn(i.text)
 
 
-def harden():
-    """Restrict write access to the receiver folder to administrators -> (ok, message). Windows with an elevated receiver only."""
+def harden() -> tuple[bool, str]:
+    """Restrict write access to the receiver folder to administrators and return (ok, message).
+
+    Works on Windows with an elevated receiver only.
+    """
     w = _winapi()
     if w is None or not w.is_admin():
         return False, _("Potrzebne uprawnienia administratora")

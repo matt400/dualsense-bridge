@@ -14,7 +14,16 @@ The settings are part of the remap profile (a missing key = the default, no chan
   The old resistance format {"start", "force"} (without "mode") is loaded as "res" (force 0 = no entry).
 Shaping works on the OUTPUT (what the game receives, after the sticks are swapped); gyro is added to the right stick.
 """
+from __future__ import annotations
+
 import math
+from collections.abc import Collection, Sequence
+from typing import Any, Final, TypeAlias
+
+Profile: TypeAlias = dict[str, Any]       # one remap profile (see rx_buttons): buttons, sticks, tuning, gyro, triggers...
+Tuning: TypeAlias = dict[str, dict[str, float]]
+Triggers: TypeAlias = dict[str, dict[str, Any]]
+Trig2: TypeAlias = tuple[int, ...]         # the 12 values of a trig2 packet
 
 STICK_DEF = {"dz": 0.0, "outer": 1.0, "curve": 1.0, "anti": 0.0}
 STICK_LIMITS = {"dz": (0.0, 0.5), "outer": (0.5, 1.0), "curve": (0.3, 3.0), "anti": (0.0, 0.5)}
@@ -34,9 +43,19 @@ RUMBLE_DEF = {"on": False, **{k: d for k, (_lo, _hi, d) in RUMBLE_LIMITS.items()
 GYRO_DPS_FULL = 150.0    # stick mode: full deflection at this many deg/s (divided by sens)
 GYRO_PX_PER_DEG = 10.0   # mouse mode: pixels per degree of rotation (multiplied by sens)
 GYRO_SOFT_DPS = 0.75     # below this speed the movement is smoothly faded out (hand tremor, drift)
+AXIS_CENTRE: Final = 128             # axis byte of a centred stick
+AXIS_NEG_SPAN: Final = 128           # bytes below the centre (0..127 -> -1..0)
+AXIS_POS_SPAN: Final = 127           # bytes above the centre (129..255 -> 0..1)
+BYTE_MAX: Final = 255
+MIN_OUTER_GAP: Final = 0.05          # the usable range of a stick always starts this far beyond the deadzone
+TRIG_DZ_MAX: Final = 200             # the largest trigger deadzone
+TRIG_MAX_MIN: Final = 55             # the lowest "fully pressed" point of a trigger
+TRIG_MIN_SPAN: Final = 20            # the deadzone and the full-press point stay at least this far apart
+GYRO_SENS_RANGE: Final = (0.1, 5.0)
+GYRO_ANTI_MAX: Final = 0.5
 
 
-def _num(v, lo, hi, default):
+def _num(v: Any, lo: float, hi: float, default: float) -> float:
     """Convert to float and clamp to lo..hi; the default for anything that is not a number (or NaN)."""
     try:
         v = float(v)
@@ -45,31 +64,31 @@ def _num(v, lo, hi, default):
     return default if math.isnan(v) else min(hi, max(lo, v))
 
 
-def normalize_tuning(t):
+def normalize_tuning(t: Any) -> dict[str, dict[str, Any]]:
     """Clean the settings: known keys only, values within their ranges; entries equal to the defaults disappear."""
     t = t if isinstance(t, dict) else {}
-    out = {}
+    out: dict[str, dict[str, Any]] = {}
     for name in ("left", "right"):
         e = t.get(name)
         if not isinstance(e, dict):
             continue
         ne = {k: round(_num(e.get(k, d), *STICK_LIMITS[k], d), 3) for k, d in STICK_DEF.items()}
-        ne["outer"] = max(ne["outer"], round(ne["dz"] + 0.05, 3))      # the range always lies beyond the deadzone
+        ne["outer"] = max(ne["outer"], round(ne["dz"] + MIN_OUTER_GAP, 3))      # the range always lies beyond the deadzone
         if ne != STICK_DEF:
             out[name] = ne
     for name in ("l2", "r2"):
         e = t.get(name)
         if not isinstance(e, dict):
             continue
-        dz = round(_num(e.get("dz", 0), 0, 200, 0))
-        ne = {"dz": dz, "max": max(round(_num(e.get("max", 255), 55, 255, 255)), dz + 20)}
+        dz = round(_num(e.get("dz", 0), 0, TRIG_DZ_MAX, 0))
+        ne = {"dz": dz, "max": max(round(_num(e.get("max", BYTE_MAX), TRIG_MAX_MIN, BYTE_MAX, BYTE_MAX)), dz + TRIG_MIN_SPAN)}
         if ne != TRIG_DEF:
             out[name] = ne
     return out
 
 
-def trigger_entry(e):
-    """One trigger -> {"mode", mode parameters} within ranges, or None (a bad entry / an old format with force 0)."""
+def trigger_entry(e: Any) -> dict[str, Any] | None:
+    """Normalise one trigger to {"mode", mode parameters} within ranges, or None (a bad entry / an old format with force 0)."""
     if not isinstance(e, dict):
         return None
     mode = e.get("mode")
@@ -82,10 +101,10 @@ def trigger_entry(e):
     return {"mode": mode, **{k: round(_num(e.get(k), lo, hi, d)) for k, (lo, hi, d) in TRIG_PARAMS[mode].items()}}
 
 
-def normalize_triggers(t):
+def normalize_triggers(t: Any) -> Triggers:
     """Trigger effects: L2 / R2 (trigger_entry) and game rumble ("rumble"); unknown keys are dropped."""
     t = t if isinstance(t, dict) else {}
-    out = {name: e for name in ("l2", "r2") if (e := trigger_entry(t.get(name))) is not None}
+    out: Triggers = {name: e for name in ("l2", "r2") if (e := trigger_entry(t.get(name))) is not None}
     r = t.get("rumble")
     if isinstance(r, dict):
         out["rumble"] = {"on": r.get("on") is True,
@@ -93,17 +112,18 @@ def normalize_triggers(t):
     return out
 
 
-def merge_triggers(pad, game):
+def merge_triggers(pad: Triggers, game: Triggers) -> Triggers:
     """Trigger effects in a game: the game profile entries, and whatever it lacks - from the pad profile."""
     return {**pad, **game}
 
 
-def trigger_values(t):
-    """Normalised trigger effects -> trig2 packet values (L2: mode, a, b, c; R2: ...; flags, %, Hz, 0)."""
+def trigger_values(t: Triggers) -> Trig2:
+    """Convert normalised trigger effects to trig2 packet values (L2: mode, a, b, c; R2: ...; flags, %, Hz, 0)."""
     from proto import RFX_ON, TFX_CLICK, TFX_OFF, TFX_RES, TFX_VIB
 
-    def side(e):
-        match (e or {}).get("mode"):
+    def side(entry: dict[str, Any] | None) -> tuple[int, int, int, int]:
+        e = entry or {}
+        match e.get("mode"):
             case "res":
                 return TFX_RES, e["start"], e["force"], 0
             case "click":
@@ -117,47 +137,47 @@ def trigger_values(t):
     return (*side(t.get("l2")), *side(t.get("r2")), *rumble)
 
 
-def legacy_values(vals):
-    """trig2 values -> the old trig packet for a sender without CAP_TRIG_FX (resistance only; click / vibration = none)."""
+def legacy_values(vals: Sequence[int]) -> tuple[int, int, int, int]:
+    """Convert trig2 values to the old trig packet for a sender without CAP_TRIG_FX (resistance only; click / vibration = none)."""
     from proto import TFX_RES
 
-    def side(mode, a, b, _c):
+    def side(mode: int, a: int, b: int, _c: int) -> tuple[int, int]:
         return (a, b) if mode == TFX_RES else (0, 0)
     return (*side(*vals[0:4]), *side(*vals[4:8]))
 
 
-def needs_fx(t):
-    """Whether the effects need a sender with CAP_TRIG_FX (click, trigger vibration, game vibration)."""
+def needs_fx(t: Triggers) -> bool:
+    """Tell whether the effects need a sender with CAP_TRIG_FX (click, trigger vibration, game vibration)."""
     return any((t.get(n) or {}).get("mode") in ("click", "vib") for n in ("l2", "r2")) or \
         bool((t.get("rumble") or {}).get("on"))
 
 
-def normalize_gyro(g, inputs):
-    """-> {} (default, disabled) or a full settings dict; `inputs` = input names allowed as "hold"."""
+def normalize_gyro(g: Any, inputs: Collection[str]) -> dict[str, Any]:
+    """Return {} (default, disabled) or a full settings dict; `inputs` = input names allowed as "hold"."""
     if not isinstance(g, dict):
         return {}
     ne = {
         "mode": g.get("mode") if g.get("mode") in GYRO_MODES else "off",
         "hold": g.get("hold") if g.get("hold") in inputs else "always",
-        "sens": round(_num(g.get("sens"), 0.1, 5.0, 1.0), 2),
+        "sens": round(_num(g.get("sens"), *GYRO_SENS_RANGE, 1.0), 2),
         "inv_x": bool(g.get("inv_x")),
         "inv_y": bool(g.get("inv_y")),
-        "anti": round(_num(g.get("anti"), 0.0, 0.5, 0.0), 3),
+        "anti": round(_num(g.get("anti"), 0.0, GYRO_ANTI_MAX, 0.0), 3),
     }
     return {} if ne == GYRO_DEF else ne
 
 
-def _unit(v):
-    """Axis byte 0..255 (centre 128) -> -1..1."""
-    return (v - 128) / (128 if v < 128 else 127)
+def _unit(v: float) -> float:
+    """Convert an axis byte 0..255 (centre 128) to -1..1."""
+    return (v - AXIS_CENTRE) / (AXIS_NEG_SPAN if v < AXIS_CENTRE else AXIS_POS_SPAN)
 
 
-def _byte(f):
-    """-1..1 -> axis byte 0..255 (the inverse of _unit)."""
-    return max(0, min(255, round(128 + f * (128 if f < 0 else 127))))
+def _byte(f: float) -> int:
+    """Convert -1..1 to an axis byte 0..255 (the inverse of _unit)."""
+    return max(0, min(BYTE_MAX, round(AXIS_CENTRE + f * (AXIS_NEG_SPAN if f < 0 else AXIS_POS_SPAN))))
 
 
-def shape_stick(x, y, t):
+def shape_stick(x: int, y: int, t: dict[str, float] | None) -> tuple[int, int]:
     """Radial deadzone with rescaling, the range (outer), the response curve and the anti-deadzone."""
     if not t:
         return x, y
@@ -165,7 +185,7 @@ def shape_stick(x, y, t):
     r = math.hypot(fx, fy)
     dz = t["dz"]
     if r <= dz or r == 0:
-        return 128, 128
+        return AXIS_CENTRE, AXIS_CENTRE
     m = min(1.0, (r - dz) / (t["outer"] - dz))
     if t["curve"] != 1.0:
         m **= t["curve"]
@@ -175,19 +195,19 @@ def shape_stick(x, y, t):
     return _byte(fx * k), _byte(fy * k)
 
 
-def shape_trigger(v, t):
+def shape_trigger(v: int, t: dict[str, float] | None) -> int:
     """Deadzone and the full-press point of a trigger, rescaled to the full 0..255."""
     if not t or v == 0:
         return v
     if v <= t["dz"]:
         return 0
     if v >= t["max"]:
-        return 255
-    return round((v - t["dz"]) * 255 / (t["max"] - t["dz"]))
+        return BYTE_MAX
+    return round((v - t["dz"]) * BYTE_MAX / (t["max"] - t["dz"]))
 
 
-def gyro_rates(gyro, g, res):
-    """Raw gyro (pitch, yaw, roll) -> (x, y) in deg/s in screen space (x right, y down), with tremor fading."""
+def gyro_rates(gyro: Sequence[float], g: dict[str, Any], res: float) -> tuple[float, float]:
+    """Convert the raw gyro (pitch, yaw, roll) to (x, y) in deg/s in screen space (x right, y down), with tremor fading."""
     x = -gyro[1] / res        # rotation around the vertical axis (yaw) -> horizontal
     y = -gyro[0] / res        # pitch -> vertical
     if g["inv_x"]:
@@ -201,7 +221,7 @@ def gyro_rates(gyro, g, res):
     return x, y
 
 
-def gyro_stick(rx, ry, rates, g):
+def gyro_stick(rx: int, ry: int, rates: Sequence[float], g: dict[str, Any]) -> tuple[int, int]:
     """Add gyro to the right stick; the anti-deadzone overcomes the game's deadzone on small movements."""
     full = GYRO_DPS_FULL / g["sens"]
     gx, gy = rates[0] / full, rates[1] / full
@@ -218,7 +238,7 @@ def gyro_stick(rx, ry, rates, g):
     return _byte(sx), _byte(sy)
 
 
-def gyro_mouse_velocity(rates, g):
+def gyro_mouse_velocity(rates: Sequence[float], g: dict[str, Any]) -> tuple[float, float]:
     """Cursor speed in px/s for the mouse mode."""
     k = GYRO_PX_PER_DEG * g["sens"]
     return rates[0] * k, rates[1] * k

@@ -7,33 +7,39 @@ It is computed for the physical stick, so swapping the sticks in a profile does 
 next to remap.json:
     {"version": 1, "pads": {"aa:bb:cc:dd:ee:ff": {"drift": {"left": 0.07, "right": 0.04}}}}
 """
+from __future__ import annotations
+
 import json
 import os
 import threading
+from typing import Any, Final
 
 from proto import write_json
 from rx_config import C
 from rx_i18n import _
-from rx_shape import STICK_DEF, STICK_LIMITS
+from rx_shape import STICK_DEF, STICK_LIMITS, Profile
 
-STICKS = ("left", "right")
-DZ_MAX = STICK_LIMITS["dz"][1]
+STICKS: Final = ("left", "right")
+DZ_MAX: Final = STICK_LIMITS["dz"][1]
+FILE_VERSION: Final = 1
+OUTER_GAP: Final = 0.05      # the stick range ends at least this far beyond the raised deadzone
+DZ_DECIMALS: Final = 3
 
 _lock = threading.Lock()
-_pads = None             # pad key -> {"left": dz, "right": dz} (non-zero values only)
+_pads: dict[str, dict[str, float]] | None = None             # pad key -> {"left": dz, "right": dz} (non-zero values only)
 
 
-def path():
-    """Next to remap.json (remap_file can be changed in the configuration - padcal follows it)."""
+def path() -> str:
+    """Return the file path: next to remap.json (remap_file can be changed in the configuration - padcal follows it)."""
     return os.path.join(os.path.dirname(C.REMAP_PATH), "padcal.json")
 
 
-def _clean(e):
-    """A pad entry from the file -> {stick: dz} clamped to 0..DZ_MAX, without zeros and unknown keys."""
-    out = {}
+def _clean(e: Any) -> dict[str, float]:
+    """Convert a pad entry from the file to {stick: dz} clamped to 0..DZ_MAX, without zeros and unknown keys."""
+    out: dict[str, float] = {}
     for name in STICKS:
         try:
-            v = round(min(DZ_MAX, max(0.0, float(e.get(name, 0)))), 3)
+            v = round(min(DZ_MAX, max(0.0, float(e.get(name, 0)))), DZ_DECIMALS)
         except (TypeError, ValueError, AttributeError):
             continue
         if v:
@@ -41,7 +47,7 @@ def _clean(e):
     return out
 
 
-def _load():
+def _load() -> dict[str, dict[str, float]]:
     """Lazily load the file into _pads (a missing file = no corrections, an unreadable one is reported and ignored).
 
     Call with _lock held.
@@ -69,14 +75,18 @@ def reload() -> None:
         _pads = None
 
 
-def drift(key):
-    """Drift correction of a pad -> {"left": dz, "right": dz} (no entry = no correction)."""
+def drift(key: str | None) -> dict[str, float]:
+    """Return the drift correction of a pad as {"left": dz, "right": dz} (no entry = no correction)."""
     with _lock:
         return dict(_load().get((key or "").lower(), {}))
 
 
-def set_drift(key, values):
-    """Set the pad's drift correction ({stick: dz}, 0 = no correction), merged with the existing one, and save at once -> (ok, message)."""
+def set_drift(key: str | None, values: dict[str, float]) -> tuple[bool, str]:
+    """Set the pad's drift correction ({stick: dz}, 0 = no correction), merged with the existing one, and save at once.
+
+    Returns:
+        ``(ok, message)``.
+    """
     key = (key or "").lower()
     with _lock:
         pads = _load()
@@ -88,18 +98,18 @@ def set_drift(key, values):
         return _write(pads)
 
 
-def _write(pads):
-    """Atomic write (temporary file + replace) through proto.write_json. Call with _lock held."""
+def _write(pads: dict[str, dict[str, float]]) -> tuple[bool, str]:
+    """Write atomically (temporary file + replace) through proto.write_json; call with _lock held."""
     p = path()
     try:
-        write_json(p, {"version": 1, "pads": {k: {"drift": v} for k, v in pads.items()}}, indent=2, sort_keys=True)
+        write_json(p, {"version": FILE_VERSION, "pads": {k: {"drift": v} for k, v in pads.items()}}, indent=2, sort_keys=True)
     except OSError as e:
         return False, _("Zapis nieudany: {err}").format(err=e)
     return True, _("Zapisano - {file}").format(file=os.path.basename(p))
 
 
-def apply_drift(prof, d):
-    """Profile (normalised, a copy) with the deadzone raised on every output fed by a stick that drifts.
+def apply_drift(prof: Profile, d: dict[str, float]) -> Profile:
+    """Return the profile (normalised, a copy) with the deadzone raised on every output fed by a stick that drifts.
 
     The source stick of each output is looked up in the profile's stick mapping, so a swap is handled. The deadzone is
     only ever raised, never lowered, and the outer limit is pushed up so that the usable range does not collapse.
@@ -115,5 +125,5 @@ def apply_drift(prof, d):
         cur = tun.get(out) or STICK_DEF
         if cur["dz"] >= dz:
             continue
-        tun[out] = {**cur, "dz": dz, "outer": max(cur["outer"], round(dz + 0.05, 3))}
+        tun[out] = {**cur, "dz": dz, "outer": max(cur["outer"], round(dz + OUTER_GAP, DZ_DECIMALS))}
     return prof

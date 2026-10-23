@@ -3,14 +3,19 @@
 pycaw / comtypes are imported lazily, only when used - without them the receiver still works, just without audio
 switching. Every function initialises COM in the calling thread itself, so they can be used from any thread.
 """
+from __future__ import annotations
+
 import contextlib
 import time
+from collections.abc import Iterable, Iterator
+from typing import Final
 
-ROLES = ("eConsole", "eMultimedia", "eCommunications")   # same as "Set as default" in the Windows sound settings
+POLL_S: Final = 0.5           # how often to look for a device that has not appeared yet
+ROLES: Final = ("eConsole", "eMultimedia", "eCommunications")   # same as "Set as default" in the Windows sound settings
 
 
 @contextlib.contextmanager
-def _com():
+def _com() -> Iterator[None]:
     """Context manager that initialises COM for the current thread and uninitialises it afterwards (only if we did the init)."""
     import comtypes
     try:
@@ -25,8 +30,8 @@ def _com():
             comtypes.CoUninitialize()
 
 
-def list_outputs():
-    """Active output devices as [(id, name)], in system order."""
+def list_outputs() -> list[tuple[str, str]]:
+    """Return the active output devices as [(id, name)], in system order."""
     from pycaw.constants import DEVICE_STATE, EDataFlow
     from pycaw.utils import AudioUtilities
     with _com():
@@ -39,7 +44,7 @@ def list_outputs():
     return out
 
 
-def find(name, devices):
+def find(name: str, devices: Iterable[tuple[str, str]]) -> str | None:
     """Find a device id by name: an exact case-insensitive match first, otherwise the only device whose name contains the text."""
     want = name.casefold()
     exact = [dev_id for dev_id, n in devices if n.casefold() == want]
@@ -49,7 +54,7 @@ def find(name, devices):
     return partial[0] if len(partial) == 1 else None
 
 
-def set_default(name, wait_s: float = 6.0) -> None:
+def set_default(name: str, wait_s: float = 6.0) -> None:
     """Set the default audio output (all roles) by device name.
 
     Polls the device list for up to wait_s until the device appears - a TV's HDMI audio only becomes active after its
@@ -61,6 +66,6 @@ def set_default(name, wait_s: float = 6.0) -> None:
     while (dev_id := find(name, list_outputs())) is None:
         if time.monotonic() >= deadline:
             raise LookupError(f"audio output {name!r} not found")
-        time.sleep(0.5)
+        time.sleep(POLL_S)
     with _com():
         AudioUtilities.SetDefaultDevice(dev_id, [ERole[r] for r in ROLES])

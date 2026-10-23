@@ -4,8 +4,10 @@ Automatic choice of the remap profile (profile "<pad>@<game.exe>") and stopping 
 (leaving the game / alt-tab - rx_feedback.stop_game_rumble). Trigger effects survive a program change; they are
 released only when the program that set them closes (release_closed).
 """
+from __future__ import annotations
+
 import time
-from typing import Any
+from typing import Any, Final
 
 import rx_feedback as F
 import rx_state as S
@@ -21,19 +23,20 @@ lockapp.exe textinputhost.exe systemsettings.exe taskmgr.exe cmd.exe powershell.
 windowsterminal.exe conhost.exe openconsole.exe code.exe notepad.exe discord.exe steam.exe steamwebhelper.exe
 epicgameslauncher.exe gamebar.exe gamebarftserver.exe obs64.exe spotify.exe
 """.split())
-RECENT_MAX = 12
-POLL_S = 0.5
+RECENT_MAX: Final = 12
+POLL_S: Final = 0.5
+PROCS_S: Final = 2.0            # the process snapshot is cached this long
 
-recent = []      # recently active programs (newest first) - suggestions in the game profile editor
+recent: list[str] = []      # recently active programs (newest first) - suggestions in the game profile editor
 
 
-def is_game(exe) -> bool:
+def is_game(exe: str) -> bool:
     """Whether a foreground executable counts as a game: it is neither in the built-in NOT_GAMES list nor in the user's game_ignore."""
     return exe not in NOT_GAMES and exe not in C.GAME_IGNORE
 
 
-def in_game(exe=None):
-    """Whether a game is in the foreground.
+def in_game(exe: str | None = None) -> bool:
+    """Tell whether a game is in the foreground.
 
     A program outside the console-mode app list (desktop, Steam / Big Picture, launchers, this receiver - Settings ->
     Console mode) and outside NOT_GAMES. exe=None -> the program read last (S.game, refreshed every POLL_S). An empty
@@ -80,19 +83,17 @@ def poll_once() -> None:
 
 
 _procs: list[Any] = [0.0, None]           # (time, set of running programs) - at most one process snapshot per PROCS_S
-PROCS_S = 2.0
 
 
-def release_closed(now=None) -> None:
+def release_closed(now: float | None = None) -> None:
     """Release trigger effects of games whose process no longer runs (rx_feedback.forget_ended_games).
 
-    The process
-    snapshot is taken (and cached for PROCS_S) only when some slot holds effects of a program that is not in the foreground
-    - usually never.
+    The process snapshot is taken (and cached for PROCS_S) only when some slot holds effects of a program that is not
+    in the foreground - usually never.
     """
     now = time.monotonic() if now is None else now
 
-    def running(exe) -> bool:
+    def running(exe: str) -> bool:
         if _procs[1] is None or now - _procs[0] >= PROCS_S:
             try:
                 _procs[:] = [now, W.running_exes()]
