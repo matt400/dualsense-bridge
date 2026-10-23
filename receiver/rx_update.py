@@ -22,7 +22,7 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Final
 
@@ -40,6 +40,8 @@ PULL_TIMEOUT_S: Final = 90            # git pull (network); longer = an error in
 PIP_TIMEOUT_S: Final = 600
 FETCH_TIMEOUT_S: Final = 60
 SHORT_HASH: Final = 7
+# the percentages reported by update(): fixed stages (the window adds the sender wait above PCT_INSTALLED and 100 before the restart)
+PCT_PULL, PCT_PULLED, PCT_BACKED_UP, PCT_INSTALLED = 5, 60, 75, 90
 
 
 @dataclass(frozen=True)
@@ -210,20 +212,24 @@ def start_checker(stop: threading.Event) -> None:
     threading.Thread(target=_checker, args=(stop,), name="update check", daemon=True).start()
 
 
-def update(root: str = ROOT, git: str | None = None, pip: bool = True) -> Result:
+def update(root: str = ROOT, git: str | None = None, pip: bool = True, progress: Callable[[int], None] | None = None) -> Result:
     """Update the code: git pull --ff-only, then a settings backup and (when requirements changed) pip install.
 
     Also covers code that is already on disk but not yet running (see the module docstring, 2a). The git lock keeps the pull from
-    colliding with the background check.
+    colliding with the background check. progress(percent) is called at the stages (pull, backup, pip) from this thread -
+    the window shows it next to the button label; the stages are fixed steps, not a measurement of the download.
     """
+    report = progress or (lambda _pct: None)
     if not os.path.isdir(os.path.join(root, ".git")):
         return Result(False, False, _("Folder nie jest repozytorium git (pobrany jako ZIP?) - sklonuj: "
                                       "git clone https://github.com/matt400/dualsense-bridge"))
     git = git or find_git()
     if git is None:
         return Result(False, False, _("Nie znaleziono git - zainstaluj Git for Windows (git-scm.com)"))
+    report(PCT_PULL)
     with _git_lock:                            # not during a background check of GitHub
         state, msg, old, new, files = proto.git_pull(root, git, env=QUIET_ENV, timeout=PULL_TIMEOUT_S)
+    report(PCT_PULLED)
     if state == UPD_FAILED:
         return Result(False, False, _("git pull nie powiódł się: {msg}").format(msg=msg), old, old)
     cur = running(root)
@@ -237,8 +243,10 @@ def update(root: str = ROOT, git: str | None = None, pip: bool = True) -> Result
     count = proto.git(root, "rev-list", "--count", f"{old}..{new}", git_exe=git).stdout.strip() or "?"
     text = _("Zaktualizowano ({n} zmian): {old} → {new}").format(n=count, old=old[:SHORT_HASH], new=new[:SHORT_HASH])
     text += " · " + _backup(old, new)
+    report(PCT_BACKED_UP)
     if pip and REQUIREMENTS in files:
         text += " · " + _install_requirements(root)
+    report(PCT_INSTALLED)
     return Result(True, True, text, old, new)
 
 

@@ -53,7 +53,8 @@ from rx_qt_screens import ScreenPlacement
 from rx_qt_style import DIM, LEVEL, SEGMENT, TV_SCALE, apply_theme, px, set_prop
 from rx_qt_test import TestPanel
 from rx_qt_tv import PadNav
-from rx_qt_widgets import BatteryBar, ConfirmButton, Segmented, SegmentBar, button, icon_button, icon_label, label
+from rx_qt_widgets import (BatteryBar, ConfirmButton, ProgressRing, Segmented, SegmentBar, button, icon_button, icon_label,
+                           label)
 
 LIVE_MS, SLOW_MS, APPLY_MS = 33, 400, 150
 UPDATE_WAIT_S = 60.0       # how long at most we wait for the sender update result (git pull on the phone)
@@ -371,6 +372,7 @@ class MainWindow(ScreenPlacement):
     the tray icon.
     """
     update_done = Signal(object)          # rx_update.Result from the update thread
+    update_progress = Signal(int)         # the update stage (percent) from the update thread
     test_escaped = Signal()               # Options + Create on the pad ended the Test view (the network thread, rx_testmode)
 
     def __init__(self, settings: QSettings) -> None:
@@ -395,7 +397,8 @@ class MainWindow(ScreenPlacement):
         self.warned = [False] * C.NUM_PADS     # a low battery notification sent once per discharge
         self.note_text, self.note_until = None, 0.0
         self.low_any, self.tip, self.online = False, None, None
-        self._banner_sig, self._upd_notified, self._sender_stale = None, None, None   # the update banner
+        # the update banner state and the percent shown while updating (never goes back)
+        self._banner_sig, self._upd_notified, self._sender_stale, self._upd_pct = None, None, None, 0
         self.settings_dlg: ConsoleSettings | None = None   # the console mode settings window (created on first opening)
 
         self.apply_timer = QTimer(self)
@@ -415,6 +418,7 @@ class MainWindow(ScreenPlacement):
         self.nav = PadNav(self)                # controlling the window with the pad in TV mode
         self.tray = self._make_tray()
         self.update_done.connect(self._update_finished)
+        self.update_progress.connect(self._set_progress)
         self.test_escaped.connect(self._test_escaped)
         rx_testmode.on_escape = self.test_escaped.emit
         QShortcut(QKeySequence.StandardKey.Save, self).activated.connect(self.save)
@@ -516,6 +520,7 @@ class MainWindow(ScreenPlacement):
                                         tip=_("Aktualizuj") + " - " + _("Pobiera nową wersję z GitHuba (git pull) dla "
                                                                         "receivera i nadajnika; oba uruchamiają się od nowa"))
         self.update_btn.confirmed.connect(self.start_update)
+        self.update_ring = ProgressRing(self.update_btn)      # turns next to "Updating… 40%" while the update runs
         restart_btn = ConfirmButton("Restart", "Restart?", iconic="restart",
                                     tip="Restart - " + _("Uruchamia receiver od nowa (pady na chwilę znikną, niezapisane "
                                                          "zmiany profilu przepadną)"))
@@ -539,7 +544,7 @@ class MainWindow(ScreenPlacement):
         """A bar under the header, visible only when there is something to do.
 
         A new version on GitHub and / or a sender on a different version than the receiver. A text with a description (not
-        colour alone) and an Update button.
+        colour alone). The update itself is started with the header button.
         """
         bar = QFrame()
         bar.setObjectName("banner")
@@ -548,12 +553,7 @@ class MainWindow(ScreenPlacement):
         lay.setSpacing(px(10))
         self.banner_text = label("", wrap=True)
         set_prop(self.banner_text, "level", "warn")
-        self.banner_btn = ConfirmButton(_("Aktualizuj"), _("Aktualizować?"), small=True)
-        self.banner_btn.setIcon(icon("update"))
-        self.banner_btn.setProperty("primary", True)
-        self.banner_btn.confirmed.connect(self.start_update)
         lay.addWidget(self.banner_text, 1)
-        lay.addWidget(self.banner_btn, 0, Qt.AlignmentFlag.AlignVCenter)
         bar.hide()
         self.banner = bar
         return bar
@@ -571,12 +571,11 @@ class MainWindow(ScreenPlacement):
         if stale:
             lines.append("⚠  " + _("Nadajnik ma inną wersję ({s}) niż receiver ({r}) - Aktualizuj pobierze tę samą na obu")
                          .format(s=stale[0], r=stale[1]))
-        sig = (tuple(lines), self.update_btn.isEnabled())
+        sig = tuple(lines)
         if sig == self._banner_sig:
             return
         self._banner_sig = sig
         self.banner_text.setText("\n".join(lines))
-        self.banner_btn.setEnabled(self.update_btn.isEnabled())   # blocked during an update, as in the header
         self.banner.setVisible(bool(lines))
         if self.tray and av is not None and av.behind and av.commit != self._upd_notified:
             self._upd_notified = av.commit       # one notification per new version, not every 30 minutes
@@ -845,7 +844,9 @@ class MainWindow(ScreenPlacement):
         if not self.update_btn.isEnabled():
             return
         self.update_btn.setEnabled(False)
-        self.update_btn.setText(_("Aktualizuję…"))
+        self.update_ring.start()
+        self._upd_pct = 0
+        self._set_progress(0)
         self.note(_("Pobieranie aktualizacji…"), "")
         self._upd_sender = S.sender_online() and S.sender_build is not None   # a new sender answers with a result
         self._upd_t0 = time.monotonic()
@@ -863,10 +864,21 @@ class MainWindow(ScreenPlacement):
     def _update_thread(self) -> None:
         """An exception (git hung, no access to the folder) must not leave the button stuck forever on "Updating…"."""
         try:
-            r = rx_update.update()
+            r = rx_update.update(progress=self.update_progress.emit)
         except Exception as e:      # noqa: BLE001 - any failure (git, disk) becomes the result text
             r = rx_update.Result(False, False, _("Aktualizacja nie powiodła się: {err}").format(err=repr(e)))
         self.update_done.emit(r)
+
+    def _set_progress(self, pct: int) -> None:
+        """Show the update stage as "Updating… 40%" next to the turning ring (a late signal after the update ended is ignored).
+
+        The percent never goes back: the stages of the receiver and the wait for the sender report independently.
+        """
+        if not self.update_ring.running():
+            return
+        self._upd_pct = max(self._upd_pct, pct)
+        self.update_btn.setText(f"{_('Aktualizuję…')} {self._upd_pct}%")
+        self.update_ring.set_value(self._upd_pct)
 
     def _update_stuck(self, run: int) -> None:
         """The update thread did not finish (git hung) - the button must not hang on "Updating…" until the receiver restarts.
@@ -878,6 +890,7 @@ class MainWindow(ScreenPlacement):
         print(f"Update: no result from git after {UPDATE_STUCK_S:g}s")
         text = _("Aktualizacja nie odpowiada (git) - spróbuj ponownie albo uruchom update.bat")
         ev.error(text)
+        self.update_ring.stop()
         self.update_btn.disarm()
         self.update_btn.setEnabled(True)
         self.note(text, "bad")
@@ -899,6 +912,7 @@ class MainWindow(ScreenPlacement):
         waiting = (self._upd_sender and rx_update.sender_state(S.sender_build, self._upd_commit) == UPD_RUNNING
                    and time.monotonic() - self._upd_t0 < UPDATE_WAIT_S)
         if waiting:
+            self._set_progress(rx_update.PCT_INSTALLED + 2)       # the receiver is done, the sender is still pulling
             QTimer.singleShot(250, self._update_poll)
             return
         parts = [r.text]
@@ -909,7 +923,11 @@ class MainWindow(ScreenPlacement):
         text = " · ".join(parts)
         print(f"Update: {text}")
         (ev.info if r.ok else ev.error)(_("Aktualizacja: {text}").format(text=text))
-        self.update_btn.disarm()                   # the icon only (the "Updating…" label existed only during the update)
+        if r.changed:
+            self._set_progress(100)                # the full ring stays until the restart replaces the window
+        else:
+            self.update_ring.stop()
+            self.update_btn.disarm()               # the icon only (the "Updating…" label existed only during the update)
         self.update_btn.setEnabled(not r.changed)
         self.update_btn.setToolTip(text)
         self.note(text, "ok" if r.ok else "bad")

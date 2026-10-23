@@ -50,6 +50,15 @@ called.clear(); U.update(work)
 assert not called, "pip tylko przy zmianie requirements.txt"
 ok("zmiana requirements.txt -> pip install, bez zmiany - bez pip")
 
+commit(origin, "receiver/rx_x.py", "a = 3b\n", "stages")
+stages = []
+r = U.update(work, pip=False, progress=stages.append)
+assert r.changed and stages == [U.PCT_PULL, U.PCT_PULLED, U.PCT_BACKED_UP, U.PCT_INSTALLED], stages
+assert stages == sorted(stages) and stages[-1] < 100, "etapy rosną, 100% dopiero po wyniku nadajnika (okno)"
+stages.clear(); r = U.update(work, pip=False, progress=stages.append)
+assert not r.changed and stages == [U.PCT_PULL, U.PCT_PULLED], "bez zmian: tylko etapy pobierania"
+ok("postęp aktualizacji: etapy pobranie -> kopia -> pip, rosnące, bez zmian tylko pobranie")
+
 with open(os.path.join(work, "remap.json"), "w") as f:
     f.write("{}")                           # plik użytkownika (nieśledzony) nie przeszkadza
 commit(work, "receiver/rx_x.py", "lokalnie\n", "local")

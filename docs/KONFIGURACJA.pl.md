@@ -66,8 +66,10 @@ Aktualizacja: przycisk **Aktualizuj** w oknie (albo w menu ikony w zasobniku) ak
   i sam uruchamia się od nowa;
 - okno czeka na wynik nadajnika (do 60 s), pokazuje oba wyniki i restartuje receiver.
 
+W trakcie przycisk pokazuje kręcące się kółko i etapy w procentach (pobieranie, kopia ustawień, biblioteki, nadajnik).
+
 Wersja (commit i data) jest w nagłówku okna obok nazwy, a wersja nadajnika przy „Nadajnik online”. Pod nagłówkiem
-pojawia się pasek z przyciskiem **Aktualizuj**, gdy:
+pojawia się pasek z informacją (przycisk **Aktualizuj** jest w nagłówku), gdy:
 - na GitHubie jest nowsza wersja - „Dostępna aktualizacja: 3 zmiany - tytuł najnowszej” (okno sprawdza to w tle
   20 s po starcie i co 30 min, bez pobierania kodu i bez okna logowania; raz też powiadomienie z zasobnika);
 - nadajnik ma inną wersję niż receiver - „Nadajnik ma inną wersję (…) niż receiver (…)”. Wymaga klonów git po obu stronach (`git clone https://github.com/matt400/dualsense-bridge`, na nadajniku potem
