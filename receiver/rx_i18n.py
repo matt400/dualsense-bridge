@@ -944,8 +944,9 @@ EN = {
     "Tryb konsoli: Windows przywrócił oba ekrany - ponowne przełączenie na TV":
         "Console mode: Windows restored both screens - switching to the TV again",
     # karta "Przechył" (rx_qt_gstick)
-    "Przechył": "Tilt",
-    "GAŁKA Z PRZECHYŁU PADA": "TILT TO ANALOG STICK",
+    "PRZECHYŁ PADA": "PAD TILT",
+    "Przechył pada jako gałka": "Pad tilt as a stick",
+    "Przechylenie pada steruje gałką analogową": "Tilting the pad drives an analog stick",
     "Włącz (dla tego pada)": "Enable (for this pad)",
     "Zastępuje wejście pada": "Replaces pad input",
     "Aktywne (sprzęgło)": "Active (clutch)",
@@ -979,6 +980,7 @@ EN = {
     "● Steruje": "● Driving",
     "Wibracja i kolor": "Rumble and colour",
     "Sygnał przy skraju zakresu i powrocie do środka": "Signal at full tilt and when back in the center",
+    "Podgląd - funkcja jest wyłączona": "Preview - the feature is off",
     "Środek ustawiony.": "Center set.",
     "Kalibracja nie wyszła - trzymaj pada nieruchomo przez chwilę.": "Calibration failed - hold the pad still for a moment.",
 }

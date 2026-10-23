@@ -24,7 +24,6 @@ import rx_ds4
 import rx_events as ev
 import rx_feedback as F
 import rx_games
-import rx_gstick_io
 import rx_latency
 import rx_master
 import rx_profiles as P
@@ -43,7 +42,7 @@ from rx_qt_keys import KeysDrawer
 from rx_qt_console import ConsoleSettings
 from rx_qt_icons import icon, pixmap
 from rx_qt_log import LogPanel
-from rx_qt_gstick import GyroStickPage
+from rx_qt_gstick import TiltDrawer
 from rx_qt_pad import PadView
 from rx_qt_panels import ChangesPage, GyroPage, PartPage, ProfileBar
 from rx_qt_style import DIM, LEVEL, SEGMENT, TV_SCALE, apply_theme, px, set_prop
@@ -451,7 +450,8 @@ class MainWindow(QMainWindow):
         outer.addWidget(self.split, 1)
         self.bt_drawer = BtDrawer(root)          # slides in over the window from the right (the Bluetooth icon in the header)
         self.keys_drawer = KeysDrawer(root)      # the list of pad shortcuts (the pad icon in the header)
-        self.drawers = {self.bt_drawer: self.bt_btn, self.keys_drawer: self.keys_btn}
+        self.tilt_drawer = TiltDrawer(root, lambda: self.ed.slot)   # pad tilt as a stick (the tilt icon in the header)
+        self.drawers = {self.bt_drawer: self.bt_btn, self.keys_drawer: self.keys_btn, self.tilt_drawer: self.tilt_btn}
         for d in self.drawers:
             d.opened.connect(lambda on, d=d: self._drawer_opened(d, on))
         # the minimum size comes from the layout (columns + the smallest pad drawing) - an explicit minimum smaller than that
@@ -475,6 +475,8 @@ class MainWindow(QMainWindow):
         self.bt_btn, self._bt_refresh = indicator_button(self.toggle_bt)   # the sender's Bluetooth: a status dot + the panel
         self.keys_btn = icon_button("keys", _("Skróty pada") + " - " + _("Wszystkie skróty pada w tym receiverze"))
         self.keys_btn.clicked.connect(self.toggle_keys)
+        self.tilt_btn = icon_button("gyro", _("Przechył pada jako gałka") + " - " + _("Przechylenie pada steruje gałką analogową"))
+        self.tilt_btn.clicked.connect(self.toggle_tilt)
         self.log_btn = icon_button("log", _("Dziennik zdarzeń") + " - " + _("Połączenia padów, master, tryb konsoli, błędy, aktualizacje"))
         self.log_btn.setCheckable(True)
         self.log_btn.toggled.connect(self.show_log)
@@ -499,10 +501,11 @@ class MainWindow(QMainWindow):
         lay.addStretch(1)
         lay.addWidget(self.sender)
         lay.addSpacing(px(10))
-        for b in (self.bt_btn, self.keys_btn, self.log_btn, self.fs_btn, settings_btn, self.update_btn, restart_btn,
+        for b in (self.bt_btn, self.keys_btn, self.tilt_btn, self.log_btn, self.fs_btn, settings_btn, self.update_btn, restart_btn,
                   quit_btn):
             lay.addWidget(b)
-        self._iconic = [self.bt_btn, self.keys_btn, self.log_btn, self.fs_btn, settings_btn, self.update_btn, restart_btn, quit_btn]
+        self._iconic = [self.bt_btn, self.keys_btn, self.tilt_btn, self.log_btn, self.fs_btn, settings_btn, self.update_btn,
+                        restart_btn, quit_btn]
         return bar
 
     def _banner(self):
@@ -609,13 +612,10 @@ class MainWindow(QMainWindow):
         lay.addWidget(self.profile_bar)
         self.part_page, self.gyro_page = PartPage(self.ed), GyroPage(self.ed)
         self.changes_page = ChangesPage(self.ed)
-        self.tilt_page = GyroStickPage()
-        self.tilt_page.changed.connect(lambda cfg: rx_gstick_io.runner.set_config(self.ed.slot, cfg))
         self.tabs = QTabWidget()
         self.tabs.tabBar().setExpanding(True)
         self.tabs.tabBar().setDrawBase(False)
-        for page, name in ((self.part_page, _("Wybrane")), (self.gyro_page, _("Gyro")), (self.changes_page, _("Zmiany")),
-                           (self.tilt_page, _("Przechył"))):
+        for page, name in ((self.part_page, _("Wybrane")), (self.gyro_page, _("Gyro")), (self.changes_page, _("Zmiany"))):
             self.tabs.addTab(page, name)
         for page in (self.part_page, self.gyro_page):
             page.edited.connect(self.on_edit)
@@ -871,6 +871,10 @@ class MainWindow(QMainWindow):
         """Open / close the shortcuts panel."""
         self.keys_drawer.toggle()
 
+    def toggle_tilt(self):
+        """Open / close the pad-tilt panel."""
+        self.tilt_drawer.toggle()
+
     def _drawer_opened(self, drawer, on):
         """Only one panel open at a time; when closed, the focus returns to its icon (TV mode - the pad still knows where it is)."""
         if on:
@@ -1121,7 +1125,6 @@ class MainWindow(QMainWindow):
     def on_edit(self):
         """A change from a panel: refresh the badges and the list of changes; it reaches the pad after a short delay."""
         self.pad.set_profile(self.ed.prof)
-        self.tilt_page.set_slot(self.ed.slot)
         self.update_changes()
         self.update_status()
         self.apply_timer.start()
@@ -1174,7 +1177,6 @@ class MainWindow(QMainWindow):
         self.part_page.refresh()
         self.gyro_page.refresh()
         self.pad.set_profile(self.ed.prof)
-        self.tilt_page.set_slot(self.ed.slot)
         self.update_changes()
         self.update_status()
 
@@ -1217,8 +1219,6 @@ class MainWindow(QMainWindow):
             self._exit_hold(now, "circle" in live["pressed"])
         else:
             self.gyro_page.set_live(self.ed.key == live["active"], live["gyro_on"])
-            if self.tabs.currentWidget() is self.tilt_page:
-                self.tilt_page.tick()
 
     def _exit_hold(self, now, held):
         """TV mode: a held ○ of the pad under test (which then does not control the window) leaves the Test view."""
