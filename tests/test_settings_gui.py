@@ -48,7 +48,7 @@ rx_update.available = rx_update.Available(3, "Nowy tryb konsoli", "abc1234")
 win.slow_tick(); pump()
 assert win.banner.isVisible() and "Dostępna aktualizacja: 3 zmiany  -  Nowy tryb konsoli" in win.banner_text.text(), \
     win.banner_text.text()
-assert win.banner_btn.isEnabled()
+assert not hasattr(win, "banner_btn"), "pasek tylko informuje - przycisk Aktualizuj jest w nagłówku"
 S.sender_build = ("0000000", 1_700_000_000, 0, _t.monotonic()); S.last_pkt = _t.monotonic()
 rx_update._version = ("1111111", 1_700_000_100, "x")
 win.online = None; win.slow_tick(); pump()
@@ -270,15 +270,20 @@ import rx_update
 rx_qt.UPDATE_RESTART_MS = 50
 results = iter([rx_update.Result(True, False, "Masz najnowszą wersję"),
                 rx_update.Result(True, True, "Zaktualizowano (2 zmian): aaaaaaa → bbbbbbb", "a", "b")])
-rx_update.update = lambda: (time.sleep(0.1), next(results))[1]
+rx_update.update = lambda **_: (time.sleep(0.1), next(results))[1]
 import time
 btn = win.update_btn
 assert btn.text() == "" and btn.toolTip().startswith("Aktualizuj") and not btn.icon().isNull(), "sama ikona"
 S.restart = False; closed.clear()
 btn.click(); btn.click(); pump(20)
-assert not btn.isEnabled() and btn.text() == "Aktualizuję…", "w trakcie: przycisk zablokowany"
+assert not btn.isEnabled() and btn.text().startswith("Aktualizuję…") and btn.text().endswith("%"), "w trakcie: zablokowany, z procentami"
+assert win.update_ring.running() and not btn.icon().isNull(), "obok napisu kręci się kółko"
+win.update_progress.emit(60); pump(); assert btn.text() == "Aktualizuję… 60%", btn.text()
+win.update_progress.emit(30); pump(); assert btn.text() == "Aktualizuję… 60%", "procenty nie cofają się"
 pump(300)
 assert btn.isEnabled() and "najnowszą" in win.status.text() and S.restart is False, "brak zmian - bez restartu"
+assert btn.text() == "" and not win.update_ring.running(), "po aktualizacji znów sama ikona"
+win.update_progress.emit(50); pump(); assert btn.text() == "", "spóźniony sygnał po zakończeniu jest ignorowany"
 btn.click(); btn.click(); pump(500)
 assert S.restart is True and closed and "Zaktualizowano" in btn.toolTip(), "nowa wersja -> restart receivera"
 S.restart = False
@@ -296,7 +301,7 @@ assert "2222222" in win.sender.text() and win.sender.property("level") == "warn"
     "inna wersja nadajnika niż receivera -> żółty, podpowiedź"
 build(b"1111111", 0); win.slow_tick(); pump()
 assert win.sender.property("level") == "ok", "ta sama wersja - zielony"
-rx_update.update = lambda: rx_update.Result(True, True, "Zaktualizowano (1 zmian): 1111111 → 3333333")
+rx_update.update = lambda **_: rx_update.Result(True, True, "Zaktualizowano (1 zmian): 1111111 → 3333333")
 rx_qt.UPDATE_RESTART_MS = 50
 sent.clear(); S.restart = False; closed.clear(); btn.setEnabled(True)   # po poprzedniej aktualizacji czeka na restart
 btn.click(); btn.click(); pump(150)
