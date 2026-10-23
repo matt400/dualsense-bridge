@@ -840,7 +840,8 @@ class MainWindow(ScreenPlacement):
                _("Nadajnik nie podaje wersji (starsza wersja albo nie klon git)"))
         if batt:
             tip = _("Bateria nadajnika: {pct}%").format(pct=batt[0]) + (_(" (ładuje się)") if batt[1] else "") + "\n" + tip
-            self.sender.set_battery(batt[0], LEVEL[ST.battery_level(batt[0], False, ST.low_pct())], batt[1])   # the fill: the level, not "charging"
+            fill = LEVEL[ST.battery_level(batt[0], False, ST.low_pct())]      # the fill follows the level, not "charging"
+            self.sender.set_battery(batt[0], fill, batt[1])
         else:
             self.sender.set_battery(None)
         self.sender.setText(text)
