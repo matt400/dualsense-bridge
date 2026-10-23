@@ -115,6 +115,7 @@ class Runner:
         self._game = None
 
     def init(self):
+        """One engine per slot (receiver_controller at startup; the window entry points call it too if nobody did)."""
         n = C.NUM_PADS
         self.engines = [Engine() for _ in range(n)]
         self.cal_msg = [None] * n
@@ -129,8 +130,13 @@ class Runner:
     def config(self, slot):
         return self.store.get(self.key(slot))
 
+    def _ready(self):
+        if not self.engines:
+            self.init()
+
     def set_config(self, slot, cfg, save=True):
         """New pad settings (from the window). The engine picks them up on the next sample (Config is immutable)."""
+        self._ready()
         if save:
             self.store.set(self.key(slot), cfg)
         self.engines[slot].cfg = cfg
@@ -138,6 +144,7 @@ class Runner:
 
     def calibrate(self, slot):
         """Sets the current pad position as the center (0, 0): averages ~0.4 s, the result goes to cal_msg and the settings."""
+        self._ready()
         self.cal_msg[slot] = None
         self.engines[slot].start_center(time.monotonic())
         self.wake.set()
@@ -145,7 +152,14 @@ class Runner:
     def reset_center(self, slot):
         self.set_config(slot, replace(self.config(slot), center=None))
 
+    def set_preview(self, slot, on):
+        """The tilt window is open for the slot: the preview follows the pad even while the feature is switched off."""
+        self._ready()
+        self.engines[slot].preview = on
+        self.wake.set()
+
     def snapshot(self, slot):
+        self._ready()
         return self.engines[slot].snapshot()
 
     def force_release_all(self):
@@ -187,7 +201,7 @@ class Runner:
         send = e.step(now, acc[0] / res * k0, acc[1] / res * k1, acc[2] / res * k2, gdps, held, alive)
         if send:
             self._push(i, e)
-        if e.event != EV_NONE and cfg.feedback != "off":
+        if e.event != EV_NONE and cfg.feedback != "off" and cfg.enabled:
             self._feedback(i, e.event, cfg.feedback, now)
         return e.state != ST_OFF
 

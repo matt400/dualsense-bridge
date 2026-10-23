@@ -2,7 +2,7 @@
 nakładka na stan slotu (ujście) i twarde zerowanie."""
 import math, os, sys
 sys.path.insert(0, os.path.dirname(__file__))
-from rxenv import RX, C, S, TMP                                         # noqa  (zaślepki Windows, stan slotów)
+from rxenv import RX, C, S, TMP, feed                                         # noqa  (zaślepki Windows, stan slotów)
 from dataclasses import replace
 import rx_gstick as G
 import rx_gstick_io as IO
@@ -38,6 +38,19 @@ o = t.run(acc(roll=20), 3); check(o[0] > 0.5 and abs(o[1]) < 0.01, f"prawo -> X+
 o = t.run(acc(roll=-20), 3); check(o[0] < -0.5, f"lewo -> X- ({o})")
 o = t.run(acc(pitch=20, roll=20), 3); check(o[0] > 0.3 and o[1] > 0.3 and math.hypot(o[0], o[1]) <= 1.0001, f"ukośnie, długość <= 1 ({o})")
 o = t.run(acc(pitch=80), 3); check(math.hypot(o[0], o[1]) > 0.999, f"skraj zakresu = 1.0 ({o})")
+
+# --- the sensor frame is detected: gravity on +Z, -Y or -Z at rest works the same way ---
+def rot(a_, frame):
+    """Gravity vector a_ (Y up) expressed in another sensor frame: z_up (Z = up, Y = back), y_down, z_down."""
+    x, y, z = a_
+    return {"z_up": (x, -z, y), "y_down": (-x, -y, z), "z_down": (x, z, -y)}[frame]
+for frame in ("z_up", "y_down", "z_down"):
+    t = T(base); t.run(rot(acc(), frame), 5)
+    o = t.run(rot(acc(pitch=20), frame), 3)
+    o2 = t.run(rot(acc(roll=20), frame), 3)
+    check(o is not None and abs(o[1]) > 0.5 and abs(o2[0]) > 0.5, f"frame {frame}: tilt drives the stick ({o}, {o2})")
+t = T(base); t.run((0.7, 0.7, 0.0), 5)
+check(t.e.out is None and t.e.state == G.ST_SAFE, "no axis clearly vertical: waits instead of guessing")
 
 # --- inwersje i ratio ---
 t = T(replace(base, invert_pitch=True, invert_roll=True)); t.run(acc(), 5)
@@ -98,6 +111,12 @@ check(t.run(acc(pitch=20), 2) is None, "funkcja wyłączona: brak wyjścia")
 t = T(replace(base, sprint="l3", sprint_at=90.0)); t.run(acc(), 5)
 o = t.run(acc(pitch=60), 3); check(o[2] is True, "sprint na skraju zakresu")
 o = t.run(acc(pitch=10), 3); check(o[2] is False, "sprint puszczony")
+
+# --- preview while the feature is off: tracks the tilt, sends nothing ---
+t = T(replace(base, enabled=False)); t.e.preview = True; t.run(acc(), 5)
+t.run(acc(pitch=20), 3)
+check(t.e.out is None and all(s is None for s in t.sent) and t.e.raw[1] > 10, f"preview: the tilt is tracked ({t.e.raw}) but there is no output")
+t.e.preview = False; t.run(acc(pitch=20), 2); check(t.e.state == G.ST_OFF and t.e.raw == (0.0, 0.0), "preview off: idle again")
 
 # --- kalibracja środka ---
 t = T(base); t.run(acc(), 5)
@@ -180,6 +199,29 @@ import rx_feedback as RF
 check(all(k in RF.PULSES for k in ("tilt_edge_h", "tilt_edge_l", "tilt_edge_b", "tilt_center_h", "tilt_center_l", "tilt_center_b")),
       "every feedback kind exists in rx_feedback.PULSES")
 S.alive[0] = False
+
+# --- the whole path: state packet -> rx_net -> 250 Hz thread -> slot state (what the game gets) ---
+import threading, time
+from proto import T_STATE
+import rx_gstick_io as IO2
+IO2.runner = rr = IO.Runner(IO.Store(os.path.join(TMP, "g4.json")))
+rr.init()
+def pkt(a_):
+    ax, ay, az = (round(v * C.ACC_RES) for v in a_)
+    feed(T_STATE, 0, 128, 128, 0, 128, 128, 0, 0, 0, 0, 80, 0, ax, ay, az, 0, 0, 0)
+S.stop.clear()
+th = threading.Thread(target=rr.loop, daemon=True); th.start()
+pkt(acc())
+rr.set_config(0, replace(base, target="left", idle_s=0.0))
+time.sleep(0.15); pkt(acc(pitch=25)); time.sleep(0.25)
+check(S.states[0]["ly"] < 60 and abs(S.states[0]["lx"] - 128) <= 2, f"end to end: front down moves the left stick up (ly={S.states[0]['ly']})")
+pkt(acc()); time.sleep(0.25)
+check(S.states[0]["ly"] == 128, "end to end: back in the deadzone the stick is centered")
+pkt(acc(pitch=25)); time.sleep(0.1)
+rr.set_config(0, replace(base, enabled=False)); time.sleep(0.3)
+check(S.states[0]["gs"] is None and S.states[0]["ly"] == 128, "end to end: switching it off gives the stick back")
+S.stop.set(); th.join(2); S.stop.clear()
+check(not th.is_alive(), "the thread stops with the receiver")
 
 # --- okno ---
 try:

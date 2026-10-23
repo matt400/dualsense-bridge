@@ -36,6 +36,7 @@ LIMITS = {"deadzone": (0.0, 20.0),      # martwa strefa [°]
           "idle_s": (0.0, 10.0),        # auto-sleep after stillness [s], 0 = off
           "delta": (0.0, 5.0),          # smallest change sent to the game [% of full range]
           "sprint_at": (50.0, 100.0)}   # sprint from this % of the range
+REST_MIN_G = 0.6                        # an uncalibrated pad needs this much gravity on Y or Z to detect its "up"
 MIN_SPAN = 5.0                          # range is always this many degrees larger than the deadzone
 DPAD_AT = 0.5                           # d-pad mode: a direction from half deflection
 SMOOTH_MAX_S = 0.150
@@ -129,7 +130,7 @@ def to_i16(v):
 
 # ---------------- geometria ----------------
 def tilt_basis(center):
-    """Neutral center (gravity vector in g or None = pad flat) -> (uy, uz, pitch0, roll0).
+    """Neutral center (gravity vector in g or None = detected at rest, see rest_up) -> (uy, uz, pitch0, roll0).
     (uy, uz) is the "up" direction in the plane perpendicular to the pad's X axis, pitch0 / roll0 are the center angles."""
     cy, cz = (center[1], center[2]) if center else (1.0, 0.0)
     n = math.hypot(cy, cz)
@@ -138,6 +139,15 @@ def tilt_basis(center):
     uy, uz = cy / n, cz / n
     p0, r0 = angles(*center, uy, uz) if center else (0.0, 0.0)
     return uy, uz, p0, r0
+
+
+def rest_up(ax, ay, az):
+    """The "up" direction (uy, uz) of an uncalibrated pad, taken from where gravity points at rest: the sensor axis that
+    reads about +-1 g while the pad lies roughly flat. Which axis that is depends on the sensor frame (Y in the DS4 report,
+    Z in some evdev mappings) and on the sign, so it is detected instead of assumed. None = no axis is clearly vertical."""
+    if max(abs(ay), abs(az)) < REST_MIN_G:
+        return None
+    return (math.copysign(1.0, ay), 0.0) if abs(ay) >= abs(az) else (0.0, math.copysign(1.0, az))
 
 
 def angles(ax, ay, az, uy, uz):
@@ -223,6 +233,8 @@ class Engine:
         self.cfg = cfg or Config()
         self._cfg = None                 # the config the cache was computed for (_apply)
         self._basis = tilt_basis(None)
+        self.preview = False             # the window is showing the preview: track the tilt even when the feature is off (no output)
+        self._rest = None                # (uy, uz) detected at rest for an uncalibrated pad; None = not yet
         self.t = 0.0
         self.armed = False               # without a return to zero there is no stick jump after enabling / returning to the window
         self.asleep = False
@@ -270,6 +282,7 @@ class Engine:
         old, self._cfg = self._cfg, cfg
         if old is None or old.center != cfg.center:
             self._basis = tilt_basis(cfg.center)
+            self._rest = None
         if old is None or (old.enabled, old.target, old.sprint) != (cfg.enabled, cfg.target, cfg.sprint):
             self.armed = False
             self.sprint = False
@@ -350,13 +363,21 @@ class Engine:
         self.t = now
         if self._cal is not None:
             return self._calibrate(now, ax, ay, az, gdps, alive)
-        if not (cfg.enabled and alive):
+        if not ((cfg.enabled or self.preview) and alive):
+            self._rest = None            # detect the orientation again when the feature or the pad comes back
             return self._neutral(ST_OFF)
         g2 = ax * ax + ay * ay + az * az
         if not 0.09 < g2 < 9.0:          # free fall / impact: the accelerometer doesn't measure tilt - no change
             self.send = False
             return False
-        uy, uz, p0, r0 = self._basis
+        if cfg.center is None:
+            if self._rest is None:
+                self._rest = rest_up(ax, ay, az)
+                if self._rest is None:   # tilted past what can be called "roughly flat": wait for a flatter pose
+                    return self._neutral(ST_SAFE)
+            uy, uz, p0, r0 = (*self._rest, 0.0, 0.0)
+        else:
+            uy, uz, p0, r0 = self._basis
         p, r = angles(ax, ay, az, uy, uz)
         pitch, roll = p - p0, r - r0
         vx = -roll if cfg.invert_roll else roll
@@ -399,7 +420,7 @@ class Engine:
         self.xy = (fx / fr * mc, fy / fr * mc) if m > 0 else (0.0, 0.0)
         self.mag = m
         self._zones(m, cfg)
-        self.out = (self.xy[0], self.xy[1], self.sprint) if cfg.target != "none" else None
+        self.out = (self.xy[0], self.xy[1], self.sprint) if cfg.target != "none" and cfg.enabled else None
         return self._decide()
 
     def _zones(self, m, cfg):

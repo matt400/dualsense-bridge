@@ -1,6 +1,8 @@
-"""Receiver: the "Tilt" tab - pad tilt as an analog stick (per-pad settings, a live 2D preview).
+"""Receiver: the "Tilt" drawer - pad tilt as an analog stick (per-pad settings, a live 2D preview). It slides in over the
+window from the header icon (like Bluetooth and shortcuts), because the profile tabs are too narrow for the settings and the preview.
 
   TiltView         drawing: deadzone and range circles, raw tilt (grey), filtered (blue), output (crosshair)
+  TiltDrawer       the side panel holding GyroStickPage; a 30 Hz timer feeds the preview while it is open
   GyroStickPage    settings (sliders, lists, switches), center calibration, raw / filtered output numbers
 
 Setting changes go through the `changed(Config)` signal to rx_gstick_io.runner (a slot in the window); the 250 Hz thread never
@@ -8,7 +10,7 @@ touches Qt, and the preview is refreshed by the window timer (tick) from an engi
 import time
 from dataclasses import replace
 
-from PySide6.QtCore import QPointF, Qt, Signal
+from PySide6.QtCore import QPointF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget
 
@@ -16,6 +18,7 @@ import rx_buttons as B
 import rx_gstick as G
 from rx_gstick_io import runner
 from rx_i18n import _
+from rx_qt_drawer import SideDrawer
 from rx_qt_panels import scrolled
 from rx_qt_style import ACCENT, BAD, CARD, LINE, OK
 from rx_qt_widgets import Combo, SliderRow, button, field, group, input_items, label, pair
@@ -92,7 +95,6 @@ class GyroStickPage(QWidget):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(10)
         QVBoxLayout(self).addWidget(scrolled(w))
-        lay.addWidget(label(_("GAŁKA Z PRZECHYŁU PADA"), "h2"))
         self.on = QCheckBox(_("Włącz (dla tego pada)"))
         self.on.toggled.connect(lambda v: self._set(enabled=v))
         lay.addWidget(self.on)
@@ -199,4 +201,39 @@ class GyroStickPage(QWidget):
             self.refresh()                                   # the new center was saved by the thread
         elif msg is not None and now > self._msg_until:
             runner.cal_msg[self.slot], self._msg_until, msg = None, 0.0, None
-        self.status.setText(_(STATE_TEXT[state]) if msg is None else _(CAL_TEXT[msg]))
+        if msg is not None:
+            self.status.setText(_(CAL_TEXT[msg]))
+        elif not self.cfg.enabled and state != G.ST_OFF:
+            self.status.setText(_("Podgląd - funkcja jest wyłączona"))
+        else:
+            self.status.setText(_(STATE_TEXT[state]))
+
+
+LIVE_MS = 33
+
+
+class TiltDrawer(SideDrawer):
+    """Right-hand drawer with the tilt settings of the pad selected in the window."""
+
+    width_px = 460
+
+    def __init__(self, host, slot):
+        self._slot = slot                                   # () -> the slot selected in the window
+        super().__init__(host, "gyro", _("PRZECHYŁ PADA"))
+        self.timer = QTimer(self)
+        self.timer.setInterval(LIVE_MS)
+        self.timer.timeout.connect(self.page.tick)
+
+    def _build(self, lay):
+        self.page = GyroStickPage()
+        self.page.changed.connect(lambda cfg: runner.set_config(self._slot(), cfg))
+        lay.addWidget(self.page, 1)
+
+    def _on_open(self):
+        self.page.set_slot(self._slot())
+        runner.set_preview(self.page.slot, True)
+        self.timer.start()
+
+    def _on_close(self):
+        self.timer.stop()
+        runner.set_preview(self.page.slot, False)

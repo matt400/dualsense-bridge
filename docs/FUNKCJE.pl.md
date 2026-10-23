@@ -26,10 +26,10 @@
     błędy - nadajnik trzyma je, póki receiver nie odpowiada, więc np. Wake-on-LAN pojawia się po starcie komputera
     z prawdziwą godziną. Dziennik jest tylko w pamięci (restart go czyści), wysokość panelu da się przeciągnąć;
   - na środku rysunek pada na żywo: kliknij przycisk, spust albo gałkę, żeby ją zremapować lub dostroić;
-  - po prawej profil (domyślny / per gra), zakładki **Selected**, **Gyro**, **Changes**, **Tilt** i przycisk **Save** (Ctrl+S);
+  - po prawej profil (domyślny / per gra), zakładki **Selected**, **Gyro**, **Changes** i przycisk **Save** (Ctrl+S);
   - remapowanie przycisków i gałek, celowanie żyroskopem (prawa gałka / mysz); strefy martwe, krzywe i
     anti-deadzone w zwijanej sekcji „Zaawansowane” (otwiera się sama, gdy coś w niej zmieniono);
-  - **zakładka Przechył:** przechył pada steruje gałką analogową (albo D-padem), osobno dla każdego pada (zapis po MAC w
+  - **panel Przechył** (ikona w nagłówku, wysuwa się jak Bluetooth i Skróty): przechył pada steruje gałką analogową (albo D-padem), osobno dla każdego pada (zapis po MAC w
     `gyrostick.json` obok `remap.json`, działa od razu - nie jest częścią profilu). Przód w dół = gałka w górę, lewo /
     prawo = gałka w lewo / prawo, pełny zakres 360°. Ustawienia: martwa strefa, maksymalne wychylenie, wygładzanie (EMA),
     stosunek pion / poziom, krzywa odpowiedzi (liniowa / sześcienna / agresywna), odwrócenie pitch / roll, przycisk
