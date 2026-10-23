@@ -1,16 +1,20 @@
-"""Sender: współdzielony stan (aktywne pady, przydział slotów, zadania w tle)."""
+"""Sender: shared state (active pads, slot assignment, background tasks)."""
 import asyncio
 
-active = {}      # klucz urządzenia (uniq/phys) -> Ctrl
-slots = {}       # klucz urządzenia -> numer slotu (stabilny między rozłączeniami)
+active = {}      # device key (uniq/phys) -> Ctrl
+slots = {}       # device key -> slot number (stable across reconnects)
 bg_tasks = set()
-main_task = None     # zadanie main() - anulowane przy restarcie po aktualizacji
-restart = False      # po zakończeniu main(): os.execv (nowy kod po aktualizacji)
-saved_slots = None   # MAC -> slot zapamiętany w slots_file (wczytywany przy pierwszym przydziale)
+main_task = None     # the main() task - cancelled on restart after an update
+restart = False      # after main() ends: os.execv (new code after an update)
+saved_slots = None   # MAC -> slot remembered in slots_file (loaded on the first assignment)
 
 
 def spawn(coro):
-    """Zadanie w tle trzymane w bg_tasks (pętla asyncio trzyma tylko słabe referencje - GC mógłby je przerwać)."""
+    """Start a background task and keep a strong reference to it in bg_tasks.
+
+    The asyncio loop only holds weak references to tasks, so a fire-and-forget task could be garbage-collected
+    mid-run. The done-callback removes the task from the set once it finishes, so the set never grows.
+    """
     t = asyncio.get_running_loop().create_task(coro)
     bg_tasks.add(t)
     t.add_done_callback(bg_tasks.discard)
@@ -18,5 +22,5 @@ def spawn(coro):
 
 
 def ctrl_by_idx(idx):
-    """Ctrl pada w slocie idx albo None."""
+    """Find the active Ctrl that sits in slot idx (linear scan over a handful of pads); None if there is none."""
     return next((c for c in active.values() if c.idx == idx), None)

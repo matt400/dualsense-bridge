@@ -1,18 +1,18 @@
-"""Receiver: widok Test otwarty w oknie - skróty wszystkich padów wyłączone i awaryjne wyjście z pada.
+"""Receiver: the Test view open in the window - shortcuts of all pads are disabled, plus an emergency exit from the pad.
 
-Okno (wątek GUI) ustawia set_active(), gdy widok Test jest otwarty w aktywnym oknie. Wtedy żaden pad nie uruchamia
-skrótów: PS + przycisk (rx_hotkeys), akcje i przejęcie mastera (rx_master), tryb konsoli (rx_console), PS + klik
-touchpada. Po zmianie stanu sloty skrótów zaczynają od czystego stanu (sync() w wątku sieci), więc przycisk trzymany
-przez granicę testu nie odpali niczego.
+The window (GUI thread) calls set_active() when the Test view is open in the active window. Then no pad runs
+shortcuts: PS + button (rx_hotkeys), master actions and claim (rx_master), console mode (rx_console), PS + touchpad
+click. After a state change the shortcut slots start from a clean state (sync() in the network thread), so a button held
+across the test boundary triggers nothing.
 
-Jedyny wyjątek: Options + Create naciśnięte razem na padzie master (bez mastera w ustawieniach - na dowolnym padzie; master
-ustawiony, ale nie podłączony - wg when_absent) od razu kończy test, nawet przy schowanym albo zablokowanym oknie, bez
-myszy: zdejmuje blokadę wyjścia do gry, a przyciski i D-pad trzymane w tej chwili (Options, Create i reszta na testowanym
-padzie) gra dostaje jako puszczone do ich puszczenia - pierwszy raport po teście nie niesie kombinacji; gałki i spusty
-idą analogowo na żywo. Okno dostaje on_escape().
+The only exception: Options + Create pressed together on the master pad (with no master in the settings - on any pad; master
+set but not connected - according to when_absent) ends the test at once, even when the window is hidden or blocked, with no
+mouse: it lifts the output block to the game, and the buttons and D-pad held at that moment (Options, Create and the rest on
+the tested pad) are delivered to the game as released until they are actually released - the first report after the test does not
+carry the combination; sticks and triggers go on analogously, live. The window gets on_escape().
 
-Bez PS i bez przytrzymania: długie PS + △ wyłączało pada (Bluetooth). Liczy się zbocze - kombinacja trzymana już przy
-wejściu w Test albo przez granicę testu musi zostać puszczona i naciśnięta od nowa.
+Without PS and without a hold: a long PS + triangle used to switch the pad off (Bluetooth). It is the edge that counts - a combination
+already held on entering Test or across the test boundary has to be released and pressed again.
 """
 from collections.abc import Callable
 
@@ -28,15 +28,16 @@ from rx_i18n import _
 ESCAPE_KEYS = ("options", "share")              # Options + Create (Share)
 ESCAPE_MASK = BIT[BUTTON_CODES["options"]] | BIT[BUTTON_CODES["share"]]
 
-active = False                                  # widok Test otwarty - skróty padów nie działają
-escaped = False                                 # test zakończony z pada; rearm() przy następnym wejściu w Test
-on_escape: Callable[[], None] | None = None     # okno: wyjdź z widoku Test (wołane z wątku sieci)
-_gen = 0                                        # zmiana `active` - sloty skrótów od nowa (sync)
+active = False                                  # the Test view is open - pad shortcuts are disabled
+escaped = False                                 # the test was ended from a pad; rearm() on the next entry into Test
+on_escape: Callable[[], None] | None = None     # window: leave the Test view (called from the network thread)
+_gen = 0                                        # changes of `active` - the shortcut slots start afresh (sync)
 _seen: list[int] = []
-_held: list[bool] = []                          # slot trzyma kombinację w ostatnim znanym stanie
+_held: list[bool] = []                          # the slot holds the combination in the last known state
 
 
 def init(n: int) -> None:
+    """Start with the test closed and no combination held for `n` pads."""
     global active, escaped
     active = escaped = False
     _seen[:] = [_gen] * n
@@ -44,7 +45,7 @@ def init(n: int) -> None:
 
 
 def _slot(i: int) -> int:
-    """Indeks slotu; bez init() (np. moduł użyty przed startem okna) listy rosną do liczby slotów."""
+    """Slot index; without init() (e.g. the module used before the window started) the lists grow to the number of slots."""
     if i >= len(_held):
         n = max(i + 1, len(S.states or ()))
         _seen.extend([_gen] * (n - len(_seen)))
@@ -53,47 +54,48 @@ def _slot(i: int) -> int:
 
 
 def _now_held(i: int) -> bool:
-    """Kombinacja wciśnięta w ostatnim stanie slotu i (przed pierwszym pakietem: nie)."""
+    """Whether the combination is pressed in the last state of slot i (before the first packet: no)."""
     states = S.states or ()
     return i < len(states) and states[i]["raw"][0] & ESCAPE_MASK == ESCAPE_MASK
 
 
 def set_active(on: bool) -> bool:
-    """Wątek okna: widok Test otwarty / zamknięty. -> True, gdy się zmieniło."""
+    """Window thread: the Test view was opened / closed -> True when the value changed."""
     global active, _gen
     on = bool(on)
     if on == active:
         return False
     active = on
     _gen += 1
-    _held[:] = map(_now_held, range(len(_held)))   # trzymane przez granicę testu - wychodzi dopiero nowe naciśnięcie
+    _held[:] = map(_now_held, range(len(_held)))   # held across the test boundary - only a new press exits
     return True
 
 
 def rearm() -> None:
-    """Wątek okna: ponowne wejście w widok Test po wyjściu z pada."""
+    """Window thread: entering the Test view again after leaving it from a pad."""
     global escaped
     escaped = False
 
 
 def sync(i: int) -> None:
-    """Wątek sieci, przed skrótami: po zmianie stanu testu sloty skrótów pada zaczynają od czystego stanu
-    (bez trwających kombinacji, timerów przytrzymania i PS czekającego na impuls) - liczonego od wejść trzymanych
-    przed tą zmianą (S.states[i]["raw"] jest jeszcze poprzednim stanem), więc nowe naciśnięcie działa od razu."""
+    """Network thread, before the shortcuts: after the test state changes, the pad shortcut slots start from a clean state
+    (no combinations in progress, no hold timers, no PS waiting for a pulse) - computed from the inputs held
+    before the change (S.states[i]["raw"] still has the previous state), so a new press works at once."""
     if _seen[_slot(i)] != _gen:
         _seen[i] = _gen
         hotkeys.reset(i, keep=True)
         master.reset(i, keep=True)
-        import rx_console                 # rx_console importuje rx_master - import tutaj
+        import rx_console                 # rx_console imports rx_master - import here
         rx_console.resync(i)
 
 
 def shortcuts_on() -> bool:
+    """Whether the pad shortcuts work (they are off while the Test view is open)."""
     return not active
 
 
 def may_escape(i: int) -> bool:
-    """Pad master; bez mastera w ustawieniach każdy pad; master niepodłączony - wg when_absent (jak rx_master)."""
+    """The master pad; with no master in the settings any pad; master not connected - according to when_absent (like rx_master)."""
     m = rx_settings.cur.master
     if not m.pad:
         return True
@@ -102,8 +104,8 @@ def may_escape(i: int) -> bool:
 
 
 def on_state(i: int, raw: tuple) -> bool:
-    """Zmiana surowych przycisków slotu i (wątek sieci), raw = (mask, hx, hy, lt, rt) jeszcze przed zapisem w stanie.
-    -> True, gdy wyjście właśnie się wykonało."""
+    """Raw buttons of slot i changed (network thread), raw = (mask, hx, hy, lt, rt) before they are stored in the state.
+    Detects the rising edge of Options + Create on a pad that may escape. -> True when the exit has just been performed."""
     if not active:
         return False
     _slot(i)
@@ -116,19 +118,19 @@ def on_state(i: int, raw: tuple) -> bool:
 
 
 def escape(i: int, raw: tuple | None = None) -> None:
-    """Wymuszone wyjście z widoku Test przez pad i: koniec blokady, neutralne wejścia do puszczenia, okno wychodzi.
-    raw: stan pada i z pakietu, który odpalił wyjście - zapisany od razu, bo kombinacja jest w nim pierwszy raz
-    (wcześniej stan w S.states był sprzed naciśnięcia i Options + Create nie byłyby połknięte)."""
+    """Forced exit from the Test view through pad i: end the block, neutral inputs until released, the window leaves.
+    raw: the state of pad i from the packet that triggered the exit - stored at once because the combination is in it for the first time
+    (earlier the state in S.states was from before the press and Options + Create would not be swallowed)."""
     global active, escaped, _gen
     if raw is not None:
         with S.lock:
             S.states[i]["raw"] = raw
     active, escaped = False, True
-    _gen += 1                           # _held: od nowa w set_active() przy następnym wejściu w Test
+    _gen += 1                           # _held: rebuilt in set_active() on the next entry into Test
     for s in range(len(S.states)):
         if s == i or S.states[s]["blocked"]:
             _release(s)
-    _seen[i] = _gen                     # slot i już wyczyszczony w _release - sync() nie zgubi połykania
+    _seen[i] = _gen                     # slot i is already cleaned in _release - sync() will not lose the swallowing
     print(f"Controller {i}: Options + Create - test view closed, output to games restored")
     ev.info(_("{pad}: wyjście z widoku Test (Options + Create)").format(pad=ev.pad_name(i)))
     F.pulse(i, "action")
@@ -137,18 +139,18 @@ def escape(i: int, raw: tuple | None = None) -> None:
 
 
 def _release(s: int) -> None:
-    """Slot wraca do gry z neutralnym raportem: trzymane teraz wejścia są zużyte (gra dostaje je jako puszczone do
-    puszczenia), dopiero potem zdjęta blokada - żaden raport do wirtualnego DS4 nie niesie Options + Create."""
-    import rx_console                   # rx_console importuje rx_master - import tutaj
+    """The slot returns to the game with a neutral report: the inputs held now are consumed (the game gets them as released
+    until they are released), only then is the block lifted - no report to the virtual DS4 carries Options + Create."""
+    import rx_console                   # rx_console imports rx_master - import here
     hotkeys.reset(s, keep=True)
     master.reset(s, keep=True)
-    rx_console.resync(s)                # przycisk trybu trzymany przy wyjściu to nie nowe kliknięcie
+    rx_console.resync(s)                # a mode button held at exit is not a new click
     with S.lock:
         st = S.states[s]
-        master.slots[s].sup = frozenset(pressed_inputs(*st["raw"])) - set(TRIGGERS)   # spusty: analogowo na żywo
+        master.slots[s].sup = frozenset(pressed_inputs(*st["raw"])) - set(TRIGGERS)   # triggers: analog, live
         st["fwd"] = hotkeys.forward(s, *st["raw"][:3])
     _seen[s] = _gen
-    if not S.set_blocked(s, False):     # nie był zablokowany (master obok testowanego pada) - sam przelicz wyjście
+    if not S.set_blocked(s, False):     # it was not blocked (the master next to the tested pad) - just recompute the output
         with S.lock:
             st = S.states[s]
             S.recompute(st, S.remap_maps[s])

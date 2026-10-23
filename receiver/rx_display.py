@@ -1,19 +1,20 @@
-"""Receiver: rozdzielczość i skalowanie ekranu TV po włączeniu trybu konsoli (Windows, ctypes).
+"""Receiver: the TV resolution and scaling after console mode is switched on (Windows, ctypes).
 
-apply_tv(w, h, scale) czeka, aż po DisplaySwitch /external zostanie jeden aktywny ekran (TV), potem:
-  rozdzielczość  SetDisplayConfig (CCD) - tak samo jak okno Ustawienia -> Ekran: tryb źródła w×h, odświeżanie
-                 najwyższe z trybów w×h, zapis w bazie układów Windows (pamięta go dla "tylko TV", układ extend /
-                 monitor zostaje nietknięty). Dawne ChangeDisplaySettingsExW zostawiało w Ustawieniach pustą listę
-                 rozdzielczości (tryb GDI spoza listy CCD) - zostaje tylko jako zapas, gdy CCD odmówi.
-  skalowanie     DisplayConfigSetDeviceInfo z nieudokumentowanym typem -4 (DPI_SCALE_SET) - tak samo robi okno
-                 Ustawienia -> Ekran. Skala jest podawana względem zalecanej dla ekranu, więc najpierw odczyt (-3).
-Ustawienie już obowiązujące nie jest zmieniane (bez mrugnięcia obrazu). Brak ekranu / nieobsługiwany tryb -> wyjątek
-z opisem (rx_console loguje go i działa dalej).
+apply_tv(w, h, scale) waits until one active display (the TV) is left after DisplaySwitch /external, then:
+  resolution     SetDisplayConfig (CCD) - the same as the Settings -> Display window: the source mode w×h, the highest
+                 refresh rate of the w×h modes, saved in the Windows layout database (it remembers it for "TV only", the extend /
+                 monitor layout stays untouched). The old ChangeDisplaySettingsExW left an empty resolution list in Settings
+                 (a GDI mode outside the CCD list) - it stays only as a fallback when CCD refuses.
+  scaling        DisplayConfigSetDeviceInfo with the undocumented type -4 (DPI_SCALE_SET) - the same as the
+                 Settings -> Display window does. The scale is given relative to the one recommended for the display, so it is read first
+                 (-3).
+A setting that is already in effect is not changed (no picture flicker). No display / an unsupported mode -> an exception
+with a description (rx_console logs it and carries on).
 """
 import ctypes
 import time
 
-DPI_VALUES = (100, 125, 150, 175, 200, 225, 250, 300, 350, 400, 450, 500)   # kolejne kroki skalowania Windows
+DPI_VALUES = (100, 125, 150, 175, 200, 225, 250, 300, 350, 400, 450, 500)   # consecutive Windows scaling steps
 QDC_ONLY_ACTIVE_PATHS = 2
 DEVICE_INFO_GET_SOURCE_NAME, DPI_GET, DPI_SET = 1, -3, -4
 ENUM_CURRENT_SETTINGS = 0xFFFFFFFF
@@ -22,31 +23,31 @@ DM_INTERLACED = 0x2
 CDS_UPDATEREGISTRY = 0x1
 ERROR_INSUFFICIENT_BUFFER = 122
 DISP_CHANGE_SUCCESSFUL, DISP_CHANGE_RESTART = 0, 1
-SETTLE_S = 6.0          # tyle czekamy, aż Windows przełączy układ ekranów na "tylko TV"
+SETTLE_S = 6.0          # how long we wait for Windows to switch the display layout to "TV only"
 SDC_USE_SUPPLIED_DISPLAY_CONFIG, SDC_VALIDATE, SDC_APPLY, SDC_SAVE_TO_DATABASE, SDC_ALLOW_CHANGES = 0x20, 0x40, 0x80, 0x200, 0x400
 MODE_IDX_INVALID = 0xFFFFFFFF
 MODE_SOURCE = 1
 SCALING_PREFERRED = 128
-NTSC_HZ = frozenset({23, 29, 47, 59, 71, 119, 143, 239})    # GDI podaje 59 dla 59,94 Hz itd.
-TOPOLOGY = {"internal": 0x1, "clone": 0x2, "extend": 0x4, "tv": 0x8}     # SDC_TOPOLOGY_* (jak DisplaySwitch)
+NTSC_HZ = frozenset({23, 29, 47, 59, 71, 119, 143, 239})    # GDI reports 59 for 59.94 Hz etc.
+TOPOLOGY = {"internal": 0x1, "clone": 0x2, "extend": 0x4, "tv": 0x8}     # SDC_TOPOLOGY_* (like DisplaySwitch)
 
 
-# ---------------- czysta logika (testowalna bez Windows) ----------------
+# ---------------- pure logic (testable without Windows) ----------------
 def pick_mode(modes, w, h):
-    """modes = [(szer, wys, bpp, Hz[, flagi])] -> najlepszy tryb w×h (32 bpp, bez przeplotu, najwyższe Hz) albo None."""
+    """modes = [(w, h, bpp, Hz[, flags])] -> the best w×h mode (32 bpp, not interlaced, the highest Hz) or None."""
     ok = [m for m in modes if m[0] == w and m[1] == h and m[2] >= 32 and not (m[4:5] and m[4] & DM_INTERLACED)]
     return max(ok, key=lambda m: m[3]) if ok else None
 
 
 def refresh_rational(hz):
-    """Hz z GDI (liczba całkowita) -> (licznik, mianownik) dla CCD; 0 = niech Windows wybierze."""
+    """Hz from GDI (an integer) -> (numerator, denominator) for CCD; 0 = let Windows choose. NTSC rates become x/1.001."""
     if not hz:
         return 0, 0
     return ((hz + 1) * 1000, 1001) if hz in NTSC_HZ else (hz, 1)
 
 
 def compact_modes(paths, modes):
-    """Tylko tryby, do których odwołują się ścieżki (porzucony tryb celu wypada), indeksy przepisane -> lista."""
+    """Only the modes the paths refer to (an abandoned target mode drops out), indexes rewritten -> a list."""
     out, remap = [], {}
     for p in paths:
         for info in (p.sourceInfo, p.targetInfo):
@@ -61,8 +62,8 @@ def compact_modes(paths, modes):
 
 
 def scale_relative(percent, min_rel, cur_rel, max_rel):
-    """Skala w % -> (wartość względna dla DPI_SET, czy już jest). Zalecana skala ma indeks -min_rel w DPI_VALUES.
-    Skala spoza zakresu ekranu -> ValueError."""
+    """Scale in % -> (the relative value for DPI_SET, whether it is already set). The recommended scale has index -min_rel in DPI_VALUES.
+    A scale outside the display's range -> ValueError."""
     if percent not in DPI_VALUES:
         raise ValueError(f"scale {percent}% is not one of {DPI_VALUES}")
     rel = DPI_VALUES.index(percent) - (-min_rel)
@@ -72,7 +73,7 @@ def scale_relative(percent, min_rel, cur_rel, max_rel):
     return rel, rel == cur_rel
 
 
-# ---------------- struktury Windows (typy o stałym rozmiarze - jak w nagłówkach Windows) ----------------
+# ---------------- Windows structures (fixed-size types - as in the Windows headers) ----------------
 class LUID(ctypes.Structure):
     _fields_ = [("LowPart", ctypes.c_uint32), ("HighPart", ctypes.c_int32)]
 
@@ -98,7 +99,7 @@ class SOURCE_MODE(ctypes.Structure):
                 ("x", ctypes.c_int32), ("y", ctypes.c_int32)]
 
 
-class MODE_UNION(ctypes.Union):         # tryb celu / obraz pulpitu nie są zmieniane - wystarczy rozmiar (48 B, wyrównanie 8)
+class MODE_UNION(ctypes.Union):         # the target mode / desktop image are not changed - the size is enough (48 B, 8-byte alignment)
     _fields_ = [("sourceMode", SOURCE_MODE), ("raw", ctypes.c_uint64 * 6)]
 
 
@@ -137,12 +138,13 @@ class DEVMODEW(ctypes.Structure):
 
 
 def _user32():
+    """The user32 library (the display configuration functions live there)."""
     return ctypes.WinDLL("user32")
 
 
 def _query(u):
-    """Aktywne ścieżki ekranów -> (ścieżki, tryby) jako tablice ctypes; układ może się zmieniać w trakcie
-    (przełączanie TV) - wtedy ponów."""
+    """Active display paths -> (paths, modes) as ctypes arrays; the layout may change while we read
+    (TV switching) - then retry."""
     for _ in range(5):
         n_paths, n_modes = ctypes.c_uint32(), ctypes.c_uint32()
         if u.GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, ctypes.byref(n_paths), ctypes.byref(n_modes)):
@@ -158,14 +160,14 @@ def _query(u):
 
 
 def active_sources():
-    """[(adapterId, sourceId, nazwa GDI np. \\\\.\\DISPLAY2)] aktywnych ekranów."""
+    """[(adapterId, sourceId, GDI name e.g. \\\\.\\DISPLAY2)] of the active displays."""
     u = _user32()
     out, seen = [], set()
     for p in _query(u)[0]:
         src = p.sourceInfo
         key = (src.adapterId.LowPart, src.adapterId.HighPart, src.id)
         if key in seen:
-            continue                     # klonowanie: kilka celów na jednym źródle
+            continue                     # cloning: several targets on one source
         seen.add(key)
         name = SOURCE_NAME()
         name.header = HEADER(DEVICE_INFO_GET_SOURCE_NAME, ctypes.sizeof(SOURCE_NAME), src.adapterId, src.id)
@@ -176,15 +178,16 @@ def active_sources():
 
 
 def set_topology(mode):
-    """Układ ekranów ("extend" / "internal" / "tv") przez SetDisplayConfig - to samo co DisplaySwitch, ale bez
-    uruchamiania programu i synchronicznie (działa też w trakcie wyłączania Windows). Windows zapamiętuje układ,
-    więc po ponownym uruchomieniu ekran logowania pokazuje się tam, gdzie ustawiono."""
+    """The display layout ("extend" / "internal" / "tv") through SetDisplayConfig - the same as DisplaySwitch, but without
+    launching a program and synchronously (it works while Windows is shutting down too). Windows remembers the layout,
+    so after a restart the sign-in screen appears where it was set."""
     r = _user32().SetDisplayConfig(0, None, 0, None, SDC_APPLY | TOPOLOGY[mode])
     if r:
         raise OSError(f"SetDisplayConfig({mode}) = {r}")
 
 
 def _current(u, device):
+    """The current (w, h, Hz) of a GDI device, or None when it cannot be read."""
     cur = DEVMODEW(dmSize=ctypes.sizeof(DEVMODEW))
     if u.EnumDisplaySettingsW(device, ctypes.c_uint32(ENUM_CURRENT_SETTINGS), ctypes.byref(cur)):
         return cur.dmPelsWidth, cur.dmPelsHeight, cur.dmDisplayFrequency
@@ -192,7 +195,7 @@ def _current(u, device):
 
 
 def _modes(u, device):
-    """[(szer, wys, bpp, Hz, flagi, DEVMODEW)] - wszystkie tryby ekranu z GDI."""
+    """[(w, h, bpp, Hz, flags, DEVMODEW)] - all the display modes from GDI."""
     out, k = [], 0
     while True:
         dm = DEVMODEW(dmSize=ctypes.sizeof(DEVMODEW))
@@ -203,12 +206,12 @@ def _modes(u, device):
 
 
 def _ccd_resolution(u, w, h, rate, keep_target):
-    """Tryb źródła w×h przez SetDisplayConfig. keep_target=False: Windows dobiera sygnał do TV (w×h przy `rate`),
-    True: zostaje obecny sygnał, karta skaluje obraz. -> kod błędu Windows (0 = OK)."""
+    """The source mode w×h through SetDisplayConfig. keep_target=False: Windows picks a signal for the TV (w×h at `rate`),
+    True: the current signal stays, the graphics card scales the picture. -> a Windows error code (0 = OK)."""
     paths, modes = _query(u)
     for p in paths:
         if p.sourceInfo.modeInfoIdx == MODE_IDX_INVALID or modes[p.sourceInfo.modeInfoIdx].infoType != MODE_SOURCE:
-            return 87                    # ERROR_INVALID_PARAMETER - nieoczekiwany układ, niech zadziała zapas
+            return 87                    # ERROR_INVALID_PARAMETER - an unexpected layout, let the fallback work
         src = modes[p.sourceInfo.modeInfoIdx].u.sourceMode
         src.width, src.height = w, h
         if not keep_target:
@@ -223,15 +226,15 @@ def _ccd_resolution(u, w, h, rate, keep_target):
 
 
 def _gdi_resolution(u, device, best):
-    """Zapas: dokładnie ten DEVMODE, który zwrócił sterownik (z flagami i trybem wyjścia), bez gołych pól."""
+    """Fallback: exactly the DEVMODE the driver returned (with flags and the output mode), no bare fields."""
     *_, dm = best
     dm.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT | DM_BITSPERPEL | DM_DISPLAYFREQUENCY | DM_DISPLAYFLAGS
     return u.ChangeDisplaySettingsExW(device, ctypes.byref(dm), None, CDS_UPDATEREGISTRY, None)
 
 
 def set_resolution(device, w, h):
-    """-> opis zmiany; nic nie robi, gdy ekran już ma w×h. Kolejno: CCD z sygnałem w×h, CCD ze skalowaniem
-    obecnego sygnału, GDI. Po każdej próbie odczyt - liczy się to, co faktycznie jest na ekranie."""
+    """-> a description of the change; does nothing when the display already has w×h. In turn: CCD with a w×h signal, CCD scaling
+    the current signal, GDI. After each attempt it reads back - what counts is what is actually on the display."""
     u = _user32()
     if (cur := _current(u, device)) and cur[:2] == (w, h):
         return f"{w}x{h} already set"
@@ -258,6 +261,8 @@ def set_resolution(device, w, h):
 
 
 def set_scale(adapter, source_id, percent):
+    """Set the Windows scaling of a display source to `percent` (relative to its recommended scale; read first, then set). -> a
+    description."""
     u = _user32()
     get = DPI_GET_INFO()
     get.header = HEADER(DPI_GET, ctypes.sizeof(DPI_GET_INFO), adapter, source_id)
@@ -273,7 +278,7 @@ def set_scale(adapter, source_id, percent):
 
 
 def apply_tv(w, h, scale, settle_s=SETTLE_S):
-    """Po /external: jedyny aktywny ekran = TV -> rozdzielczość, potem skalowanie (0 = bez zmiany). -> opis."""
+    """After /external: the only active display = the TV -> resolution, then scaling (0 = no change). -> a description."""
     end = time.monotonic() + settle_s
     while True:
         src = active_sources()
@@ -286,7 +291,7 @@ def apply_tv(w, h, scale, settle_s=SETTLE_S):
     done = []
     if w and h:
         done.append(set_resolution(device, w, h))
-        time.sleep(0.5)                  # skala zalecana zależy od rozdzielczości - odczyt po zmianie trybu
+        time.sleep(0.5)                  # the recommended scale depends on the resolution - read it after the mode change
     if scale:
         done.append(set_scale(adapter, sid, scale))
     return f"{device}: " + ", ".join(done)

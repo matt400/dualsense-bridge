@@ -1,10 +1,10 @@
-"""Receiver: Bluetooth nadajnika w oknie - kropka stanu w nagłówku i wysuwany z prawej panel (skan, lista urządzeń,
-Sparuj / Połącz / Rozłącz / Zapomnij). Telefon za telewizorem nie potrzebuje ekranu ani myszy.
+"""Receiver: the sender's Bluetooth in the window - a status dot in the header and a panel sliding in from the right (scan,
+device list, Pair / Connect / Disconnect / Forget). A phone behind a TV needs no screen or mouse.
 
-Panel (rx_qt_drawer.SideDrawer) leży nad oknem: przyciemnione tło, klik w nie albo Esc zamyka. Tryb TV: D-pad chodzi
-tylko po elementach panelu, ✕ klika, ○ zamyka i fokus wraca na ikonę Bluetooth.
-Wiersze urządzeń są trwałe (klucz = MAC) i aktualizowane w miejscu - fokus z pada nie skacze przy odświeżaniu co
-REFRESH_MS. Kolejność listy ustala nadajnik (połączone, sparowane, pady, nazwa - bez RSSI, które by ją przestawiało).
+The panel (rx_qt_drawer.SideDrawer) lies over the window: a dimmed background, a click on it or Esc closes it. TV mode: the D-pad moves
+only over the panel's elements, ✕ clicks, ○ closes and the focus returns to the Bluetooth icon.
+Device rows are persistent (key = MAC) and updated in place - the pad focus does not jump on the refresh every
+REFRESH_MS. The list order is set by the sender (connected, paired, pads, name - without RSSI, which would reshuffle it).
 """
 import html
 import time
@@ -39,7 +39,7 @@ CTRL_KIND = {"usb": "dongle USB", "fixed": "wewnętrzny USB", "builtin": "wbudow
 
 @cache
 def status_icon(level: str) -> QIcon:
-    """Ikona Bluetooth z kolorową kropką stanu w prawym dolnym rogu (kilka rozmiarów - ostra na HiDPI)."""
+    """The Bluetooth icon with a coloured status dot in the bottom right corner (several sizes - sharp on HiDPI)."""
     ic = QIcon()
     for size in (20, 24, 32, 48):
         pm = QPixmap(pixmap("bluetooth", size))
@@ -55,9 +55,9 @@ def status_icon(level: str) -> QIcon:
 
 
 class ElidedLabel(QLabel):
-    """Etykieta, która przycina długi tekst wielokropkiem zamiast poszerzać panel (pełny tekst w podpowiedzi).
-    Zwykły tekst: nazwy urządzeń Bluetooth nadaje każde urządzenie w zasięgu - QLabel w trybie AutoText pokazałby
-    nazwę z tagami HTML jako sformatowaną treść (podszycie się pod elementy okna)."""
+    """A label that elides long text with an ellipsis instead of widening the panel (the full text in the tooltip).
+    Plain text: Bluetooth device names are set by every device in range - a QLabel in AutoText mode would show a name
+    with HTML tags as formatted content (impersonating window elements)."""
 
     def __init__(self, role: str):
         super().__init__()
@@ -67,22 +67,25 @@ class ElidedLabel(QLabel):
         self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
 
     def set_full(self, text: str) -> None:
+        """Set the full text (kept for re-eliding on resize); the tooltip holds it escaped."""
         if text != self.full:
             self.full = text
-            self.setToolTip(f"<qt>{html.escape(text)}</qt>" if text else "")   # podpowiedź też rozpoznaje HTML
+            self.setToolTip(f"<qt>{html.escape(text)}</qt>" if text else "")   # a tooltip also interprets HTML
             self._elide()
 
     def resizeEvent(self, e):
+        """Re-elide the text for the new width."""
         super().resizeEvent(e)
         self._elide()
 
     def _elide(self) -> None:
-        self.ensurePolished()               # czcionka z QSS (rola "name") - inaczej liczy szerokość zwykłą czcionką
+        """Show as much of the full text as fits, with a trailing ellipsis."""
+        self.ensurePolished()               # the font from the QSS (the "name" role) - otherwise the width is measured with the plain font
         self.setText(self.fontMetrics().elidedText(self.full, Qt.TextElideMode.ElideRight, max(0, self.width())))
 
 
 class SignalBars(QWidget):
-    """Siła sygnału 0-4 kreski (0 = brak pomiaru - RSSI jest tylko w trakcie skanu)."""
+    """Signal strength as 0-4 bars (0 = no measurement - RSSI exists only during a scan)."""
 
     def __init__(self):
         super().__init__()
@@ -90,11 +93,13 @@ class SignalBars(QWidget):
         self.setFixedSize(px(18), px(14))
 
     def set(self, n: int) -> None:
+        """Set the number of lit bars (0-4); repaint only on change."""
         if n != self.n:
             self.n = n
             self.update()
 
     def paintEvent(self, _e):
+        """Draw four bars of rising height; the first `n` in the OK colour, the rest dim."""
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.setPen(Qt.PenStyle.NoPen)
@@ -107,7 +112,7 @@ class SignalBars(QWidget):
 
 
 class DeviceRow(QFrame):
-    """Jedno urządzenie: ikona, nazwa, MAC / sygnał / stan i przyciski. Aktualizowane w miejscu (update)."""
+    """One device: an icon, a name, MAC / signal / state and buttons. Updated in place (update_from)."""
 
     action = Signal(str, str)        # (MAC, "pair" | "connect" | "disconnect" | "remove")
 
@@ -122,7 +127,7 @@ class DeviceRow(QFrame):
         self.icon = icon_label("ps" if dev.pad else "bluetooth", px(22))
         text = QVBoxLayout()
         text.setSpacing(px(2))
-        self.name = ElidedLabel("name")             # długa nazwa nie poszerza panelu
+        self.name = ElidedLabel("name")             # a long name does not widen the panel
         info = QHBoxLayout()
         info.setSpacing(px(6))
         self.bars = SignalBars()
@@ -147,6 +152,8 @@ class DeviceRow(QFrame):
         self.update_from(dev, None, False)
 
     def update_from(self, dev: BT.Device, busy: int | None, other_busy: bool) -> None:
+        """Refresh the row from the device state: name, signal, state text, and the action button (pair / connect / disconnect by state;
+        busy = the running operation code, other_busy disables the row while another device is busy)."""
         self.name.set_full(dev.name)
         self.bars.set(dev.bars())
         self.bars.setToolTip(f"{dev.rssi} dBm" if dev.rssi is not None else _("Sygnał widać w trakcie skanowania"))
@@ -166,13 +173,14 @@ class DeviceRow(QFrame):
         self.forget.setEnabled(busy is None and not other_busy)
 
     def focusables(self) -> list[QWidget]:
+        """The row's focusable buttons, in order (for the panel's tab order)."""
         return [self.btn, self.forget]
 
 
 class ControllerRow(QFrame):
-    """Kontroler Bluetooth nadajnika: ikona, nazwa urządzenia, rodzaj / hciN / stan i przycisk Użyj."""
+    """A sender's Bluetooth controller: an icon, the device name, kind / hciN / state and a Use button."""
 
-    use = Signal(int)                # N z hciN
+    use = Signal(int)                # N from hciN
 
     def __init__(self, c: BT.Controller):
         super().__init__()
@@ -196,6 +204,7 @@ class ControllerRow(QFrame):
         self.update_from(c, False)
 
     def update_from(self, c: BT.Controller, busy: bool) -> None:
+        """Refresh the controller row: name, kind / hciN / state text and the Use button (hidden for the active controller)."""
         self.index = c.index
         self.name.set_full(c.name)
         kind = "fixed" if c.fixed else "usb" if c.usb else "builtin"
@@ -208,25 +217,29 @@ class ControllerRow(QFrame):
         self.btn.setEnabled(not busy)
 
     def focusables(self) -> list[QWidget]:
+        """The row's focusable buttons (for the panel's tab order)."""
         return [self.btn]
 
 
 class BtDrawer(SideDrawer):
-    """Wysuwany z prawej panel Bluetooth nadajnika nad oknem `host` (centralny widżet okna)."""
+    """The sender's Bluetooth panel sliding in from the right over the window `host` (the window's central widget)."""
 
     def __init__(self, host: QWidget):
+        """Create the panel and its refresh timer (started only while the panel is open)."""
         super().__init__(host, "bluetooth", _("BLUETOOTH NADAJNIKA"))
         self.timer = QTimer(self)
         self.timer.setInterval(REFRESH_MS)
         self.timer.timeout.connect(self.refresh)
         self._keepalive = 0
 
-    # ---------- budowa ----------
+    # ---------- building ----------
     def _build(self, lay: QVBoxLayout) -> None:
+        """Build the panel: status, controller choice, power / scan buttons, hint, the scrollable device list and the last operation
+        result."""
         self.rows: dict[str, DeviceRow] = {}
         self.status = label("", wrap=True)
         lay.addWidget(self.status)
-        # wybór kontrolera nadajnika (wbudowany / dongle USB) - tylko nadajnik, który go obsługuje
+        # choice of the sender's controller (built-in / USB dongle) - only for a sender that supports it
         self.adapter_box = QWidget()
         box = QVBoxLayout(self.adapter_box)
         box.setContentsMargins(0, 0, 0, 0)
@@ -271,26 +284,31 @@ class BtDrawer(SideDrawer):
         self.result = label("", wrap=True)
         lay.addWidget(self.result)
 
-    # ---------- otwieranie ----------
+    # ---------- opening ----------
     def _on_open(self) -> None:
+        """Panel opened: refresh at once and start the periodic refresh."""
         self._keepalive = 0
         self.refresh()
         self.timer.start()
 
     def _on_close(self) -> None:
+        """Panel closed: stop the periodic refresh."""
         self.timer.stop()
 
     def first_focus(self) -> QWidget:
+        """The widget that gets the focus on opening: the scan button, or Close when scanning is not possible."""
         return self.scan_btn if self.scan_btn.isEnabled() else self.close_btn
 
-    # ---------- akcje ----------
+    # ---------- actions ----------
     def power_on(self) -> None:
+        """Ask the sender to switch Bluetooth on."""
         BT.power(True)
         self.refresh()
 
     def set_adapter(self, key: str) -> None:
+        """Controller mode chosen in the switch (key = the mode number)."""
         mode = int(key)
-        if mode == BTA_PICK:                 # "Wybrany": przypnij kontroler, którego nadajnik teraz używa
+        if mode == BTA_PICK:                 # "Picked": pin the controller the sender uses right now
             c = BT.active_controller() or next(iter(BT.controllers), None)
             if c is not None:
                 BT.use_controller(c.index)
@@ -299,22 +317,25 @@ class BtDrawer(SideDrawer):
         self.refresh()
 
     def use_controller(self, index: int) -> None:
+        """Switch the sender to controller hci<index>."""
         BT.use_controller(index)
         self.refresh()
 
     def toggle_scan(self) -> None:
+        """Start a scan, or stop the running one."""
         s = BT.status
         BT.scan(not (s is not None and s.scanning))
         self.refresh()
 
     def on_action(self, mac: str, kind: str) -> None:
+        """Run the pair / connect / disconnect / remove request for a device row."""
         {"pair": BT.pair, "connect": BT.connect, "disconnect": BT.disconnect, "remove": BT.remove}[kind](mac)
         self.refresh()
 
-    # ---------- odświeżanie ----------
+    # ---------- refreshing ----------
     def refresh(self) -> None:
-        """Co REFRESH_MS przy otwartym panelu: stan, skan, wynik ostatniej operacji, wiersze; co KEEPALIVE_S
-        BT_LIST (nadajnik wysyła listę, dopóki panel jest otwarty)."""
+        """Every REFRESH_MS while the panel is open: state, scan, the result of the last operation, rows; every KEEPALIVE_S
+        BT_LIST (the sender sends the list while the panel is open)."""
         now = time.monotonic()
         if self._open and self.window().isVisible() and now - self._keepalive >= BT.KEEPALIVE_S:
             self._keepalive = now
@@ -337,8 +358,8 @@ class BtDrawer(SideDrawer):
         self._result(s)
 
     def _adapter(self, s: BT.Status | None, busy: bool, now: float) -> None:
-        """Wybór kontrolera: tryb (nie w trakcie własnej zmiany - bez mignięcia starym trybem), lista kontrolerów
-        z nazwami i przyciskiem Użyj, opis."""
+        """Controller choice: the mode (not during our own change - no flash of the old mode), the list of controllers
+        with names and a Use button, the description."""
         shown = s is not None and s.mode != 0
         self.adapter_box.setVisible(shown)
         if not shown:
@@ -360,7 +381,7 @@ class BtDrawer(SideDrawer):
         self.adapter_info.setVisible(bool(text))
 
     def _controllers(self, busy: bool) -> None:
-        """Wiersze kontrolerów - trwałe (fokus z pada nie skacze), klucz = numer i nazwa."""
+        """Controller rows - persistent (the pad focus does not jump), key = index and name."""
         order = [(c.index, c.name) for c in BT.controllers]
         for key in [k for k in self.ctrl_rows if k not in order]:
             row = self.ctrl_rows.pop(key)
@@ -378,6 +399,7 @@ class BtDrawer(SideDrawer):
             row.update_from(c, busy)
 
     def _result(self, s: BT.Status | None) -> None:
+        """Show the result of the last operation (hidden for the plain list and when nothing ran)."""
         if s is None or s.op == BT_LIST or s.result == BTR_NONE:
             self.result.setText("")
             return
@@ -385,6 +407,8 @@ class BtDrawer(SideDrawer):
         set_prop(self.result, "level", "ok" if s.result == BTR_OK else "" if s.result == BTR_RUNNING else "warn")
 
     def _rows(self, now: float, busy: bool, enabled: bool) -> None:
+        """Sync the device rows with the list: drop the vanished ones (moving the focus off a removed row), add new ones, update all and
+        fix the order."""
         devs = BT.devices if enabled else ()
         order = [d.mac for d in devs]
         for mac in [m for m in self.rows if m not in order]:
@@ -411,7 +435,7 @@ class BtDrawer(SideDrawer):
                            _("Lista niedostępna - Bluetooth nadajnika nie działa albo nadajnik jest offline."))
 
     def _tab_order(self) -> None:
-        """Kolejność fokusu (Tab, D-pad) jak na ekranie: zamknij, zasilanie, skan, wiersze od góry."""
+        """Focus order (Tab, D-pad) as on screen: close, power, scan, rows from the top."""
         chain = [self.close_btn, *self.adapter_seg.buttons.values(),
                  *(b for r in self.ctrl_rows.values() for b in r.focusables()), self.power_btn, self.scan_btn]
         for k in range(self.list_lay.count()):
@@ -422,7 +446,7 @@ class BtDrawer(SideDrawer):
             QWidget.setTabOrder(a, b)
 
 def indicator_button(on_click: Callable[[], None]) -> tuple[QPushButton, Callable[[float], None]]:
-    """Przycisk z ikoną Bluetooth i kropką stanu do nagłówka okna. -> (przycisk, funkcja odświeżenia(now))."""
+    """A button with the Bluetooth icon and a status dot for the window header. -> (the button, a refresh function(now))."""
     btn = icon_button("bluetooth", _("Bluetooth nadajnika"))
     btn.clicked.connect(on_click)
     last: list[tuple[str, str] | None] = [None]

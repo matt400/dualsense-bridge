@@ -1,10 +1,10 @@
-"""Receiver: jedno okno do wszystkiego (PySide6): pady z baterią i opóźnieniem po lewej, rysunek pada na środku
-(klik = remapowanie), profile / gyro / zmiany po prawej, ikona w zasobniku. Pełny ekran = tryb TV: większy interfejs
-(czytelny z kanapy) i sterowanie oknem padem (rx_qt_tv).
+"""Receiver: one window for everything (PySide6): pads with the battery and latency on the left, the pad drawing in the centre
+(a click = remapping), profiles / gyro / changes on the right, an icon in the tray. Full screen = the TV mode: a bigger interface
+(readable from a couch) and controlling the window with the pad (rx_qt_tv).
 
-Szybkość: rysunek pada odświeża się 30 razy na sekundę tylko, gdy okno jest widoczne i tylko, gdy stan pada się
-zmienił; reszta (karty, zasobnik) co 400 ms, także przy ukrytym oknie (podpowiedź zasobnika, niski stan baterii).
-Zmiany profilu działają na pad na żywo po 150 ms od ostatniego ruchu suwaka, zapis do remap.json jest osobno (Save).
+Speed: the pad drawing refreshes 30 times a second only while the window is visible and only when the pad state
+changed; the rest (cards, tray) every 400 ms, with a hidden window too (the tray tooltip, a low battery).
+Profile changes reach the pad live 150 ms after the last slider move, saving to remap.json is separate (Save).
 """
 from rx_i18n import _
 import os
@@ -50,20 +50,20 @@ from rx_qt_tv import PadNav
 from rx_qt_widgets import BatteryBar, ConfirmButton, Segmented, SegmentBar, button, icon_button, icon_label, label
 
 LIVE_MS, SLOW_MS, APPLY_MS = 33, 400, 150
-UPDATE_WAIT_S = 60.0       # tyle najwyżej czekamy na wynik aktualizacji nadajnika (git pull na telefonie)
-UPDATE_RESTART_MS = 2500   # po udanej aktualizacji: tyle widać komunikat, potem restart receivera
-UPDATE_STUCK_S = 150.0     # git dłużej niż tyle (zawieszony mimo limitów) -> przycisk wraca, wynik i tak zadziała
-NOTE_S = 6.0           # tyle sekund komunikat (np. "Saved") zasłania status profilu
+UPDATE_WAIT_S = 60.0       # how long at most we wait for the sender update result (git pull on the phone)
+UPDATE_RESTART_MS = 2500   # after a successful update: the message is visible this long, then the receiver restarts
+UPDATE_STUCK_S = 150.0     # git longer than this (hung despite the limits) -> the button returns, the result will work anyway
+NOTE_S = 6.0           # for this many seconds a message (e.g. "Saved") covers the profile status
 VIEWS = (("out", "Wynik"), ("in", "Fizycznie"), ("test", "Test"))
-EXIT_HOLD_S = 1.0      # widok Test w trybie TV: tyle trzeba trzymać ○ testowanego pada, żeby wyjść z testu
+EXIT_HOLD_S = 1.0      # the Test view in TV mode: how long ○ of the pad under test must be held to leave the test
 DEFAULT_SIZE = QSize(1160, 720)
-FIT_MARGIN = 24        # okno dopasowane do ekranu: tyle px luzu od krawędzi obszaru roboczego
-SCREEN_SETTLE_MS = 800 # zmiana ekranów (tryb konsoli, rozdzielczość TV) przychodzi seriami - układamy okno po ciszy
+FIT_MARGIN = 24        # a window fitted to the screen: this many px of slack from the work area's edge
+SCREEN_SETTLE_MS = 800 # screen changes (console mode, TV resolution) arrive in bursts - the window is placed after quiet
 
 
 @cache
 def make_icon(rgb):
-    """Ikona pada w kilku rozmiarach - ostra w zasobniku, na pasku zadań i przy skalowaniu 150-200 %."""
+    """The pad icon at several sizes - sharp in the tray, on the taskbar and with 150-200 % scaling."""
     ic = QIcon()
     for size in (16, 24, 32, 48, 64):
         pm = QPixmap()
@@ -73,7 +73,7 @@ def make_icon(rgb):
 
 
 def n_changes(n):
-    """'1 zmiana', '3 zmiany', '5 zmian', '22 zmiany' (polska odmiana) / '1 change', 'N changes'."""
+    """"1 zmiana", "3 zmiany", "5 zmian", "22 zmiany" (the Polish inflection) / "1 change", "N changes"."""
     if n == 1:
         return _("{n} zmiana").format(n=n)
     few = n % 10 in (2, 3, 4) and n % 100 not in (12, 13, 14)
@@ -81,12 +81,13 @@ def n_changes(n):
 
 
 def _profile_label(key):
+    """The profile name for display: \"default\" is translated, a game profile keeps its program name."""
     label = S.profile_label(key)
     return _("domyślny") if label == "default" else label
 
 
 def screens():
-    """[(klucz, QScreen)] - klucz to nazwa ekranu z Windows (np. \\\\.\\DISPLAY2), a gdy jej brak - numer."""
+    """[(key, QScreen)] - the key is the screen name from Windows (e.g. DISPLAY2), or its number when it has none."""
     return [(sc.name() or f"#{n}", sc) for n, sc in enumerate(QApplication.screens(), 1)]
 
 
@@ -94,15 +95,17 @@ STATS_HELP = "zwykle = 95 na 100 pomiarów było tak szybkich albo szybszych, ma
 
 
 class PadCard(QFrame):
-    """Karta pada po lewej - tylko to, co ważne na pierwszy rzut oka: bateria, opóźnienie pad -> gra (z paskiem
-    odcinków), profil i tryb touchpada; szczegóły (rozbicie opóźnienia, ping, utrata, Hz) w podpowiedzi. Problem
-    (brak sygnału, wibracja niedostępna) pokazuje się jako jedna linia ostrzeżenia. Niepodłączony pad = sama nazwa.
-    Klik = edytuj ten pad; klik w koronę = ten pad zostaje masterem (drugi klik - bez mastera)."""
+    """The pad card on the left - only what matters at first glance: the battery, the pad -> game latency (with a bar of
+    segments), the profile and the touchpad mode; details (the latency breakdown, ping, loss, Hz) in a tooltip. A problem
+    (no signal, rumble unavailable) shows as one warning line. A disconnected pad = the name only.
+    A click = edit this pad; a click on the crown = this pad becomes the master (a second click - no master)."""
 
     clicked = Signal(int)
     master_changed = Signal()
 
     def __init__(self, slot):
+        """Build the card: the header (state dot, crown, rumble test, power off), the status line and the body with the battery, latency,
+        button latency and the profile line."""
         super().__init__()
         self.slot, self._key, self._lat = slot, None, None
         self.setObjectName("card")
@@ -132,10 +135,10 @@ class PadCard(QFrame):
         head.addWidget(self.rumble)
         head.addWidget(self.off)
         lay.addLayout(head)
-        self.status = label("", "dim")               # tylko gdy pad nie działa: "niepodłączony" / "brak sygnału"
+        self.status = label("", "dim")               # only when the pad does not work: "not connected" / "no signal"
         lay.addWidget(self.status)
 
-        self.body = QWidget()                         # wszystko poniżej - tylko dla podłączonego pada
+        self.body = QWidget()                         # everything below - for a connected pad only
         bl = QVBoxLayout(self.body)
         bl.setContentsMargins(0, 0, 0, 0)
         bl.setSpacing(px(7))
@@ -149,8 +152,8 @@ class PadCard(QFrame):
         lat = QHBoxLayout()
         lat.setSpacing(px(6))
         self.lat_icon = icon_label("stopwatch", px(16))
-        self.lat = label("", "big")                  # średnie opóźnienie pad -> gra (albo ping, gdy brak pomiaru)
-        self.lat_stats = label("", "small")          # zwykle ≤ p95 · max
+        self.lat = label("", "big")                  # the average pad -> game latency (or the ping when there is no measurement)
+        self.lat_stats = label("", "small")          # usually ≤ p95 · max
         self.mode_icon = label("")
         lat.addWidget(self.lat_icon)
         lat.addWidget(self.lat)
@@ -160,7 +163,7 @@ class PadCard(QFrame):
         bl.addLayout(lat)
         self.lat_bar = SegmentBar(px(5))
         bl.addWidget(self.lat_bar)
-        self.btn_row = QWidget()                      # przycisk -> gra: tylko naciśnięcia (bez gałek i gyro)
+        self.btn_row = QWidget()                      # button -> game: presses only (no sticks and gyro)
         br = QHBoxLayout(self.btn_row)
         br.setContentsMargins(0, 0, 0, 0)
         br.setSpacing(px(6))
@@ -179,18 +182,21 @@ class PadCard(QFrame):
         self.profile = label("", "dim")
         bl.addWidget(self.profile)
         lay.addWidget(self.body)
-        self.warn = label("", wrap=True)              # jedna linia problemu (wibracja niedostępna)
+        self.warn = label("", wrap=True)              # one problem line (rumble unavailable)
         lay.addWidget(self.warn)
 
     def mousePressEvent(self, e):
+        """A left click selects this pad for editing."""
         if e.button() == Qt.MouseButton.LeftButton:
             self.clicked.emit(self.slot)
 
     def test_rumble(self):
+        """Send a short rumble and lightbar blink to this pad, even with confirmations off."""
         print(f"Controller {self.slot}: rumble test from the window (feedback -> sender)")
         F.pulse(self.slot, "test", force=True)
 
     def toggle_master(self):
+        """Make this pad the master, or clear the master when it already is."""
         ok, msg = rx_master.set_master(None if rx_master.is_master(self.slot) else self.slot)
         if not ok:
             print(f"Master: {msg}")
@@ -198,15 +204,17 @@ class PadCard(QFrame):
         self.master_changed.emit()
 
     def set_selected(self, on):
+        """Mark the card as the selected pad."""
         set_prop(self, "selected", on)
 
     def reset_buttons(self):
+        """Clear the button -> game latency measurement of this pad."""
         rx_latency.reset_buttons(self.slot)
         self._lat = None
         self._update_latency(time.monotonic())
 
     def _update_latency(self, now):
-        """Opóźnienie: zmienia się co odświeżenie - osobno od reszty karty (tylko gdy coś się zmieniło)."""
+        """Latency: changes on every refresh - separately from the rest of the card (only when something changed)."""
         i = self.slot
         summ, press = ST.latency(i), ST.button_latency(i)
         link = ST.link_text(i, now)
@@ -240,12 +248,13 @@ class PadCard(QFrame):
 
     @staticmethod
     def _rows(summ):
+        """HTML rows of the latency breakdown, each with its bar colour."""
         return [f"<span style='color:{SEGMENT[k]}'>■</span>&nbsp; {name}: <b>{v:.2f} ms</b>"
                 for k, name, v in ST.latency_parts(summ)]
 
     @staticmethod
     def _latency_tip(summ, link):
-        """Podpowiedź (HTML): rozbicie opóźnienia z kolorami jak na pasku, łącze, uwaga o pomiarze."""
+        """A tooltip (HTML): the latency breakdown with the colours of the bar, the link, a note about the measurement."""
         dim = f"<span style='color:{DIM}'>{{}}</span>"
         if summ is None:
             rows = [f"<b>{_('Opóźnienie pad → gra')}</b>",
@@ -262,6 +271,7 @@ class PadCard(QFrame):
 
     @staticmethod
     def _button_tip(summ):
+        """A tooltip (HTML) for the button -> game latency: the statistics, the breakdown and what is measured."""
         dim = f"<span style='color:{DIM}'>{{}}</span>"
         return "<br>".join([
             f"<b>{_('Przycisk → gra')}: {summ.avg:.1f} ms</b> &nbsp;"
@@ -272,10 +282,10 @@ class PadCard(QFrame):
             dim.format(_("Tylko przyciski, D-pad i spusty (wciśnięcie / puszczenie) - bez gałek i żyroskopu."))])
 
     def update_state(self, now):
-        """Odświeża kartę (tylko to, co się zmieniło). -> True, gdy bateria pada jest na wyczerpaniu."""
+        """Refresh the card (only what changed). -> True when the pad's battery is running low."""
         i = self.slot
         alive, want = bool(S.alive[i]), S.want[i].is_set()
-        shown = alive and self.isVisible()     # okno w zasobniku: bez liczenia median opóźnienia
+        shown = alive and self.isVisible()     # the window in the tray: no latency median computing
         if shown:
             self._update_latency(now)
         pct, flags = S.batt_info[i]
@@ -285,7 +295,7 @@ class PadCard(QFrame):
         key = (alive, want, pct, flags, S.plugged[i], kind, S.mouse_mode[i], S.profile_changes(i), S.active[i],
                master, S.pad_id[i], S.sender_info[i], ST.low_pct())
         if key == self._key:
-            return low                        # nic się nie zmieniło - nie dotykaj widżetów
+            return low                        # nothing changed - do not touch the widgets
         self._key = key
         self._lat = None
         self.crown.setIcon(icon("crown", dim=not master))
@@ -305,7 +315,7 @@ class PadCard(QFrame):
         set_prop(self.dot, "level", "ok" if alive else "warn")
         self.dot.setToolTip(self.status.text().strip("●○ "))
         charging = bool(flags & 1)
-        if pct > 100:                         # stan baterii nieznany
+        if pct > 100:                         # the battery level is unknown
             self.bar.set(None, LEVEL["ok"])
             self.pct.setText(_("b/d"))
         else:
@@ -335,10 +345,14 @@ class PadCard(QFrame):
 
 
 class MainWindow(QMainWindow):
-    update_done = Signal(object)          # rx_update.Result z wątku aktualizacji
-    test_escaped = Signal()               # Options + Create z pada zakończyło widok Test (wątek sieci, rx_testmode)
+    """The main window: the pad cards, the pad drawing, the profile editor, the Test view, the drawers (Bluetooth, shortcuts), the log and
+    the tray icon."""
+    update_done = Signal(object)          # rx_update.Result from the update thread
+    test_escaped = Signal()               # Options + Create on the pad ended the Test view (the network thread, rx_testmode)
 
     def __init__(self, settings):
+        """Restore the saved state (pad, view, geometry), create the timers, build the UI and the tray, then fit the window to its screen
+        and start the slow refresh."""
         super().__init__()
         self.settings = settings
         self.setWindowTitle("DualSense bridge")
@@ -349,15 +363,15 @@ class MainWindow(QMainWindow):
         slot = _int(settings.value("slot", 0), 0)
         self.ed = Editor(slot if 0 <= slot < C.NUM_PADS else 0)
         view = settings.value("view", "out")
-        self.view = view if view in dict(VIEWS) and view != "test" else "out"     # test (z blokadą) nie od startu
-        self.edit_view = self.view             # ostatni widok Wynik / Fizycznie - do niego wraca wyjście z testu
-        self.exit_hold = None                  # widok Test w trybie TV: od kiedy ○ jest trzymane
-        self.part = None                       # zaznaczona część pada (nazwa) albo None
-        self.warned = [False] * C.NUM_PADS     # powiadomienie o niskiej baterii wysłane raz na rozładowanie
+        self.view = view if view in dict(VIEWS) and view != "test" else "out"     # the test (with the lock) not from startup
+        self.edit_view = self.view             # the last Result / Physical view - leaving the test returns to it
+        self.exit_hold = None                  # the Test view in TV mode: since when ○ has been held
+        self.part = None                       # the selected pad part (name) or None
+        self.warned = [False] * C.NUM_PADS     # a low battery notification sent once per discharge
         self.note_text, self.note_until = None, 0.0
         self.low_any, self.tip, self.online = False, None, None
-        self._banner_sig, self._upd_notified, self._sender_stale = None, None, None   # pasek aktualizacji
-        self.settings_dlg = None               # okno ustawień trybu konsoli (tworzone przy pierwszym otwarciu)
+        self._banner_sig, self._upd_notified, self._sender_stale = None, None, None   # the update banner
+        self.settings_dlg = None               # the console mode settings window (created on first opening)
 
         self.apply_timer = QTimer(self)
         self.apply_timer.setSingleShot(True)
@@ -370,10 +384,10 @@ class MainWindow(QMainWindow):
         self.slow_timer.setInterval(SLOW_MS)
         self.slow_timer.timeout.connect(self.slow_tick)
 
-        if self.fullscreen():                  # tryb TV od startu: skala przed budową (wymiary w px())
+        if self.fullscreen():                  # TV mode from startup: the scale before building (sizes in px())
             apply_theme(QApplication.instance(), TV_SCALE)
         self._build()
-        self.nav = PadNav(self)                # sterowanie oknem padem w trybie TV
+        self.nav = PadNav(self)                # controlling the window with the pad in TV mode
         self.tray = self._make_tray()
         self.update_done.connect(self._update_finished)
         self.test_escaped.connect(self._test_escaped)
@@ -383,14 +397,14 @@ class MainWindow(QMainWindow):
         self.select_pad(self.ed.slot)
         self.pad.set_selected(None)
         self.root.setFocus()
-        self._fitting = False                  # place_on_screen zmienia rozmiar - to nie wybór użytkownika
-        self._connected = (False,) * C.NUM_PADS   # połączone pady z poprzedniego odświeżenia (okno na wierzch)
-        self._place_pending = False            # ekrany zmieniły się w trakcie gry - okno na środek po wyjściu z niej
+        self._fitting = False                  # place_on_screen resizes the window - this is not the user's choice
+        self._connected = (False,) * C.NUM_PADS   # pads connected at the previous refresh (the window comes to the front)
+        self._place_pending = False            # the screens changed during a game - the window goes to the centre after leaving it
         geo = settings.value("geometry")
         if not (geo and self.restoreGeometry(geo)):
             self.resize(DEFAULT_SIZE)
         normal = self.normalGeometry().size()
-        self._pref = normal if normal.isValid() and not normal.isEmpty() else DEFAULT_SIZE   # rozmiar wybrany przez użytkownika
+        self._pref = normal if normal.isValid() and not normal.isEmpty() else DEFAULT_SIZE   # the size chosen by the user
         self.place_on_screen()
         self._watch_screens()
         split = settings.value("split")
@@ -401,13 +415,15 @@ class MainWindow(QMainWindow):
         self.log_btn.setChecked(settings.value("log_open", "false") in (True, "true"))
         self.log_panel.setVisible(self.log_btn.isChecked())
         self.slow_tick()
-        self.slow_timer.start()                # działa także przy ukrytym oknie (zasobnik, bateria, Ctrl+C)
+        self.slow_timer.start()                # works with a hidden window too (the tray, battery, Ctrl+C)
 
-    # ---------- budowa ----------
+    # ---------- building ----------
     def _build(self):
+        """Build the layout: the header, the update banner, the three columns (pads, drawing, editor), the log under a splitter and the
+        drawers over the window."""
         root = QWidget()
         root.setObjectName("root")
-        root.setFocusPolicy(Qt.FocusPolicy.ClickFocus)   # fokus startowy na tle: bez ramki fokusu na pierwszym przycisku
+        root.setFocusPolicy(Qt.FocusPolicy.ClickFocus)   # the startup focus on the background: no focus frame on the first button
         self.setCentralWidget(root)
         self.root = root
         outer = QVBoxLayout(root)
@@ -422,7 +438,7 @@ class MainWindow(QMainWindow):
         body.addWidget(self._left())
         body.addLayout(self._center(), 1)
         body.addWidget(self._right())
-        self.log_panel = LogPanel()             # dziennik zdarzeń: wysuwany z dołu (ikona w nagłówku), wysokość do ustawienia
+        self.log_panel = LogPanel()             # the event log: slides out from the bottom (the header icon), the height can be set
         self.split = QSplitter(Qt.Orientation.Vertical)
         self.split.setChildrenCollapsible(False)
         self.split.setHandleWidth(px(4))
@@ -431,16 +447,16 @@ class MainWindow(QMainWindow):
         self.split.setStretchFactor(0, 1)
         self.log_panel.setMinimumHeight(px(120))
         outer.addWidget(self.split, 1)
-        self.bt_drawer = BtDrawer(root)          # wysuwany nad oknem z prawej (ikona Bluetooth w nagłówku)
-        self.keys_drawer = KeysDrawer(root)      # lista skrótów pada (ikona pada w nagłówku)
+        self.bt_drawer = BtDrawer(root)          # slides in over the window from the right (the Bluetooth icon in the header)
+        self.keys_drawer = KeysDrawer(root)      # the list of pad shortcuts (the pad icon in the header)
         self.drawers = {self.bt_drawer: self.bt_btn, self.keys_drawer: self.keys_btn}
         for d in self.drawers:
             d.opened.connect(lambda on, d=d: self._drawer_opened(d, on))
-        # minimalny rozmiar wynika z układu (kolumny + najmniejszy rysunek pada) - jawne minimum mniejsze niż on
-        # pozwalało ścisnąć okno tak, że prawy panel zachodził na rysunek
+        # the minimum size comes from the layout (columns + the smallest pad drawing) - an explicit minimum smaller than that
+        # allowed squeezing the window so that the right panel overlapped the drawing
 
     def _header(self):
-        """Nazwa i wersja po lewej; po prawej stan nadajnika i przyciski z samymi ikonami (podpowiedzi z opisem)."""
+        """The name and version on the left; on the right the sender state and icon-only buttons (tooltips with descriptions)."""
         bar = QFrame()
         bar.setObjectName("header")
         lay = QHBoxLayout(bar)
@@ -454,7 +470,7 @@ class MainWindow(QMainWindow):
                                     _("Wersja nieznana - folder nie jest klonem git"))
         self.sender = label("")
         self.sender.setObjectName("pill")
-        self.bt_btn, self._bt_refresh = indicator_button(self.toggle_bt)   # Bluetooth nadajnika: kropka stanu + panel
+        self.bt_btn, self._bt_refresh = indicator_button(self.toggle_bt)   # the sender's Bluetooth: a status dot + the panel
         self.keys_btn = icon_button("keys", _("Skróty pada") + " - " + _("Wszystkie skróty pada w tym receiverze"))
         self.keys_btn.clicked.connect(self.toggle_keys)
         self.log_btn = icon_button("log", _("Dziennik zdarzeń") + " - " + _("Połączenia padów, master, tryb konsoli, błędy, aktualizacje"))
@@ -488,8 +504,8 @@ class MainWindow(QMainWindow):
         return bar
 
     def _banner(self):
-        """Pasek pod nagłówkiem, widoczny tylko, gdy jest coś do zrobienia: nowa wersja na GitHubie i / albo nadajnik
-        w innej wersji niż receiver. Napis z opisem (nie sam kolor) i przycisk Aktualizuj."""
+        """A bar under the header, visible only when there is something to do: a new version on GitHub and / or a sender
+        on a different version than the receiver. A text with a description (not colour alone) and an Update button."""
         bar = QFrame()
         bar.setObjectName("banner")
         lay = QHBoxLayout(bar)
@@ -508,6 +524,8 @@ class MainWindow(QMainWindow):
         return bar
 
     def _refresh_banner(self):
+        """Show the update banner when a newer version exists or the sender runs a different one (rebuilt only on change); notify through
+        the tray once per new version."""
         av, stale = rx_update.available, self._sender_stale
         lines = []
         if av is not None and av.behind:
@@ -521,14 +539,15 @@ class MainWindow(QMainWindow):
             return
         self._banner_sig = sig
         self.banner_text.setText("\n".join(lines))
-        self.banner_btn.setEnabled(self.update_btn.isEnabled())   # w trakcie aktualizacji zablokowany jak w nagłówku
+        self.banner_btn.setEnabled(self.update_btn.isEnabled())   # blocked during an update, as in the header
         self.banner.setVisible(bool(lines))
         if self.tray and av is not None and av.behind and av.commit != self._upd_notified:
-            self._upd_notified = av.commit       # jedno powiadomienie na nową wersję, nie co 30 minut
+            self._upd_notified = av.commit       # one notification per new version, not every 30 minutes
             self.tray.showMessage(_("Dostępna aktualizacja: {n}").format(n=n_changes(av.behind)),
                                   av.subject or _("Kliknij Aktualizuj w oknie"), QSystemTrayIcon.MessageIcon.Information, 8000)
 
     def _left(self):
+        """The left column: one card per pad slot."""
         w = QWidget()
         w.setFixedWidth(px(248))
         self.left_col = w
@@ -544,6 +563,7 @@ class MainWindow(QMainWindow):
         return w
 
     def _center(self):
+        """The centre: the pad drawing, the hint and the Result / Physical / Test switch."""
         lay = QVBoxLayout()
         lay.setSpacing(px(10))
         self.pad = PadView()
@@ -563,13 +583,14 @@ class MainWindow(QMainWindow):
         return lay
 
     def _right(self):
+        """The right column: the profile editor (profile bar, tabs, status, Save / Revert) stacked with the Test panel."""
         panel = QFrame()
         panel.setObjectName("panel")
         panel.setFixedWidth(px(340))
         self.right_col = panel
         outer = QVBoxLayout(panel)
         outer.setContentsMargins(px(14), px(14), px(14), px(14))
-        self.right_stack = QStackedWidget()      # edycja profilu albo panel testu (widok Test)
+        self.right_stack = QStackedWidget()      # profile editing or the test panel (the Test view)
         outer.addWidget(self.right_stack)
         edit = QWidget()
         lay = QVBoxLayout(edit)
@@ -594,7 +615,7 @@ class MainWindow(QMainWindow):
         for page in (self.part_page, self.gyro_page):
             page.edited.connect(self.on_edit)
         self.changes_page.undone.connect(self.on_undone)
-        self.changes_page.reset.confirmed.connect(self.reset)       # "Usuń wszystkie" - na liście zmian, nie w stopce
+        self.changes_page.reset.confirmed.connect(self.reset)       # "Delete all" - on the list of changes, not in the footer
         lay.addWidget(self.tabs, 1)
         self.status = label("", wrap=True)
         lay.addWidget(self.status)
@@ -612,6 +633,7 @@ class MainWindow(QMainWindow):
         return panel
 
     def _make_tray(self):
+        """Create the tray icon and its menu (None when the tray is disabled or unavailable)."""
         if not C.cfg["tray"]:
             return None
         if not QSystemTrayIcon.isSystemTrayAvailable():
@@ -625,29 +647,31 @@ class MainWindow(QMainWindow):
         menu.addAction(icon("restart"), "Restart", self.restart)
         menu.addAction(_("Zakończ"), self.quit)
         tray.setContextMenu(menu)
-        self._tray_menu = menu                 # Qt nie przejmuje własności menu - trzeba je trzymać
+        self._tray_menu = menu                 # Qt does not take ownership of the menu - it must be kept
         tray.setToolTip("DualSense bridge")
         tray.activated.connect(self._tray_clicked)
         tray.show()
         return tray
 
-    # ---------- okno ----------
-    # ---------- ekran okna ----------
+    # ---------- window ----------
+    # ---------- window screen ----------
     def screen_choice(self):
-        """Nazwa ekranu wybranego w Ustawieniach (QScreen.name()) albo "" = tam, gdzie okno było ostatnio."""
+        """The screen name chosen in Settings (QScreen.name()), or "" = where the window was last."""
         return str(self.settings.value("screen", "") or "")
 
     def set_screen_choice(self, name):
+        """Remember the chosen screen and move the window there."""
         self.settings.setValue("screen", name)
         self.settings.sync()
         self.place_on_screen()
 
     def fullscreen(self):
+        """Whether full screen (TV mode) is the saved choice."""
         return str(self.settings.value("fullscreen", "false")).lower() == "true"
 
     def set_fullscreen(self, on):
-        """Pełny ekran / okno (zapamiętane). Pełny ekran = tryb TV: większy interfejs i sterowanie padem; zajmuje
-        wybrany ekran (Ustawienia -> Okno) albo bieżący."""
+        """Full screen / window (remembered). Full screen = the TV mode: a bigger interface and pad control; it takes
+        the chosen screen (Settings -> Window) or the current one."""
         self.settings.setValue("fullscreen", bool(on))
         self.settings.sync()
         self.fs_btn.setToolTip(_("Wyjdź z pełnego ekranu (F11)") if on else _("Pełny ekran (F11)"))
@@ -656,7 +680,7 @@ class MainWindow(QMainWindow):
             self.bring_to_front()
 
     def apply_scale(self, k):
-        """Skala interfejsu (tryb TV): QSS całej aplikacji + stałe szerokości kolumn i rozmiary ikon."""
+        """The interface scale (TV mode): the whole application's QSS + fixed column widths and icon sizes."""
         from rx_qt_style import scale
         if k == scale:
             return
@@ -677,18 +701,19 @@ class MainWindow(QMainWindow):
         self.slow_tick()
 
     def toggle_fullscreen(self):
+        """F11 / the header button: switch between the window and full screen."""
         self.set_fullscreen(not self.fullscreen())
 
     def target_screen(self):
-        """Ekran wybrany w Ustawieniach -> Okno; gdy go nie ma (monitor wyłączony w trybie konsoli) albo nic nie
-        wybrano - ten, na którym okno jest teraz (Windows przenosi okna z odłączonego ekranu na pozostały)."""
+        """The screen chosen in Settings -> Window; when it is absent (the monitor off in the console mode) or nothing was
+        chosen - the one the window is on now (Windows moves windows from a disconnected screen to the remaining one)."""
         name = self.screen_choice()
         return (dict(screens()).get(name) if name else None) or self.screen() or QApplication.primaryScreen()
 
     def place_on_screen(self):
-        """Okno zawsze na środku ekranu (target_screen) i w całości na nim: większe niż obszar roboczy (TV
-        1280x720 przy skalowaniu 200 %) jest zmniejszane, a na większym ekranie wraca do rozmiaru wybranego przez
-        użytkownika. Nie pokazuje okna (schowane w zasobniku zostaje schowane). -> ekran."""
+        """The window always in the centre of the screen (target_screen) and entirely on it: one bigger than the work area (a TV
+        1280x720 at 200 % scaling) is shrunk, and on a bigger screen it returns to the size chosen by the user.
+        It does not show the window (one hidden in the tray stays hidden). -> the screen."""
         target = self.target_screen()
         area = target.availableGeometry()
         self._fitting = True
@@ -696,33 +721,34 @@ class MainWindow(QMainWindow):
             state = self.windowState()
             if state & (Qt.WindowState.WindowMaximized | Qt.WindowState.WindowFullScreen):
                 self.setWindowState(state & ~(Qt.WindowState.WindowMaximized | Qt.WindowState.WindowFullScreen))
-            frame = self.frameGeometry().size() - self.geometry().size()      # ramka i pasek tytułu (0 przed pokazaniem)
+            frame = self.frameGeometry().size() - self.geometry().size()      # the frame and title bar (0 before showing)
             room = area.size() - frame - QSize(FIT_MARGIN, FIT_MARGIN)
             size = self._pref.boundedTo(room).expandedTo(self.minimumSize())
             if size != self.size():
                 self.resize(size)
             g = self.frameGeometry()
             g.moveCenter(area.center())
-            # większe niż ekran mimo zmniejszenia (minimalny rozmiar układu) - widoczny lewy górny róg z przyciskami
+            # still bigger than the screen despite shrinking (the layout's minimum size) - the top left corner with the buttons stays
+            # visible
             self.move(max(g.left(), area.left()), max(g.top(), area.top()))
         finally:
             self._fitting = False
         return target
 
     def resizeEvent(self, e):
-        """Rozmiar zmieniony przez użytkownika (nie dopasowanie do ekranu) = nowy rozmiar okna na duże ekrany."""
+        """A size changed by the user (not a fit to the screen) = the new window size for big screens."""
         super().resizeEvent(e)
         if self._fitting or not self.isVisible() or self.windowState() != Qt.WindowState.WindowNoState:
             return
         if getattr(self, "_screen_timer", None) is not None and self._screen_timer.isActive():
-            return                             # Windows zmniejsza okno przy zmianie ekranów - to nie wybór użytkownika
+            return                             # Windows shrinks the window when screens change - this is not the user's choice
         room = self.target_screen().availableGeometry().size() - QSize(FIT_MARGIN, FIT_MARGIN)
         if e.size().width() < room.width() and e.size().height() < room.height():
             self._pref = e.size()
 
     def _watch_screens(self):
-        """Tryb konsoli przełącza obraz monitor <-> TV, zmienia rozdzielczość i skalowanie TV - po każdej takiej
-        zmianie okno wraca na środek i mieści się na ekranie (bez wyciągania na wierzch)."""
+        """The console mode switches the picture monitor <-> TV and changes the TV resolution and scaling - after every such
+        change the window returns to the centre and fits on the screen (without being pulled to the front)."""
         self._screen_timer = QTimer(self)
         self._screen_timer.setSingleShot(True)
         self._screen_timer.setInterval(SCREEN_SETTLE_MS)
@@ -735,6 +761,7 @@ class MainWindow(QMainWindow):
             self._screen_added(sc, settle=False)
 
     def _screen_added(self, sc, settle=True):
+        """Watch a screen's geometry and DPI; a new screen counts as a change."""
         sc.geometryChanged.connect(self._screens_changed)
         sc.availableGeometryChanged.connect(self._screens_changed)
         sc.logicalDotsPerInchChanged.connect(self._screens_changed)
@@ -742,11 +769,13 @@ class MainWindow(QMainWindow):
             self._screens_changed()
 
     def _screens_changed(self, *_args):
+        """A screen changed: (re)start the settle timer, since changes arrive in bursts."""
         self._screen_timer.start()
 
     def _screens_settled(self):
-        # gra zmieniła rozdzielczość - poukładamy po wyjściu z niej (_slow); wcześniej nic tego nie ponawiało i okno
-        # zostawało przesunięte / za duże, gdy gra przywracała rozdzielczość jeszcze na pierwszym planie
+        # a game changed the resolution - we rearrange after leaving it (_slow); before, nothing retried this and the window
+        # stayed shifted / too big when the game restored the resolution while still in the foreground
+        """The screens stopped changing: re-centre the window (after a game when one is in front) and restore its window state."""
         self._place_pending = rx_games.in_game()
         if self._place_pending:
             return
@@ -760,6 +789,8 @@ class MainWindow(QMainWindow):
                 self.showNormal()
 
     def bring_to_front(self):
+        """Show the window on its screen (centred, in the right mode) and take the foreground, which a background process needs extra help
+        for."""
         if self.isFullScreen() and not self.fullscreen():
             self.showNormal()
         self.place_on_screen()
@@ -770,25 +801,26 @@ class MainWindow(QMainWindow):
         self.raise_()
         self.activateWindow()
         if os.name == "nt":
-            W.force_foreground(int(self.winId()))   # proces w tle: samo activateWindow tylko miga na pasku zadań
+            W.force_foreground(int(self.winId()))   # a background process: activateWindow alone only flashes the taskbar
 
     def _pads_connected(self):
-        """Nowo połączony pad -> okno na wierzch, ale nie w trakcie gry (ta sama lista programów co tryb konsoli).
-        Połączenie = S.want (jak wpis "połączony" w dzienniku i auto-ON trybu konsoli), a nie S.alive: alive gaśnie
-        już po stale_s (0,5 s) ciszy - chwilowa przerwa w sygnale wyciągała okno na wierzch, np. nad Steam Big Picture."""
+        """A newly connected pad -> the window to the front, but not during a game (the same program list as the console mode).
+        A connection = S.want (like the "connected" log entry and the console mode auto-ON), not S.alive: alive fades
+        after stale_s (0.5 s) of silence - a momentary signal gap pulled the window to the front, e.g. over Steam Big Picture."""
         conn = tuple(w.is_set() for w in S.want)
         new = [i for i, (now, before) in enumerate(zip(conn, self._connected, strict=False)) if now and not before]
         self._connected = conn
         if not new:
             return
         hwnd, exe = W.foreground_window()
-        if (hwnd and exe is None) or rx_games.in_game(exe or ""):  # brak dostępu do programu = może gra - nie ruszaj
+        if (hwnd and exe is None) or rx_games.in_game(exe or ""):  # no access to the program = maybe a game - do not touch
             print(f"Pad {new[0] + 1} connected - window stays in the background ({exe or 'unknown program'} in front)")
             return
         print(f"Pad {new[0] + 1} connected - window to the front")
         self.bring_to_front()
 
     def _tray_clicked(self, reason):
+        """A click on the tray icon toggles the window: hide it when it is active, otherwise bring it to the front."""
         if reason in (QSystemTrayIcon.ActivationReason.Trigger, QSystemTrayIcon.ActivationReason.DoubleClick):
             if self.isVisible() and self.isActiveWindow():
                 self.hide()
@@ -796,7 +828,7 @@ class MainWindow(QMainWindow):
                 self.bring_to_front()
 
     def closeEvent(self, e):
-        """Krzyżyk chowa okno do zasobnika (receiver działa dalej); bez zasobnika - zwykła minimalizacja."""
+        """The X hides the window to the tray (the receiver keeps running); without a tray - an ordinary minimise."""
         e.ignore()
         self.save_settings()
         if self.tray:
@@ -805,32 +837,37 @@ class MainWindow(QMainWindow):
             self.showMinimized()
 
     def changeEvent(self, e):
+        """Minimising goes to the tray; any state or activation change re-evaluates the Test lock."""
         if e.type() == QEvent.Type.WindowStateChange and self.tray and self.isMinimized():
-            QTimer.singleShot(0, self.hide)    # minimalizacja = do zasobnika, bez przycisku na pasku zadań
+            QTimer.singleShot(0, self.hide)    # minimising = to the tray, without a taskbar button
         if e.type() in (QEvent.Type.WindowStateChange, QEvent.Type.ActivationChange):
-            self.sync_block()                  # blokada testu tylko przy aktywnym oknie (klik w grę = pad wraca)
+            self.sync_block()                  # the test lock only while the window is active (a click into the game = the pad returns)
         super().changeEvent(e)
 
     def showEvent(self, e):
+        """On showing: apply the Test lock and start the live pad drawing."""
         super().showEvent(e)
         self.sync_block()
         self.live_tick()
         self.live_timer.start()
 
     def hideEvent(self, e):
+        """On hiding: stop the live drawing, cancel a drift measurement and release the Test lock."""
         super().hideEvent(e)
-        self.live_timer.stop()                 # ukryte okno nie odrysowuje pada
-        self.test_panel.cancel()               # pomiar dryfu nie trwa w tle
-        self.sync_block()                      # schowane okno (zasobnik) - gra znowu dostaje pada
+        self.live_timer.stop()                 # a hidden window does not repaint the pad
+        self.test_panel.cancel()               # a drift measurement does not run in the background
+        self.sync_block()                      # a hidden window (the tray) - the game gets the pad again
 
     def toggle_bt(self):
+        """Open / close the Bluetooth panel."""
         self.bt_drawer.toggle()
 
     def toggle_keys(self):
+        """Open / close the shortcuts panel."""
         self.keys_drawer.toggle()
 
     def _drawer_opened(self, drawer, on):
-        """Naraz otwarty jeden panel; zamknięty: fokus wraca na jego ikonę (tryb TV - pad dalej wie, gdzie jest)."""
+        """Only one panel open at a time; when closed, the focus returns to its icon (TV mode - the pad still knows where it is)."""
         if on:
             for other in self.drawers:
                 if other is not drawer:
@@ -839,12 +876,13 @@ class MainWindow(QMainWindow):
             self.drawers[drawer].setFocus(Qt.FocusReason.TabFocusReason)
 
     def show_log(self, on):
-        """Panel dziennika na dole okna (ikona w nagłówku)."""
+        """The log panel at the bottom of the window (the header icon)."""
         self.log_panel.setVisible(on)
         self.log_btn.setToolTip(_("Schowaj dziennik zdarzeń") if on else
                                 _("Dziennik zdarzeń") + " - " + _("Połączenia padów, master, tryb konsoli, błędy, aktualizacje"))
 
     def save_settings(self):
+        """Store the window geometry, splitter, log state, selected pad, view and the Test lock option in receiver_ui.ini."""
         self.settings.setValue("geometry", self.saveGeometry())
         self.settings.setValue("split", self.split.saveState())
         self.settings.setValue("log_open", self.log_btn.isChecked())
@@ -854,6 +892,7 @@ class MainWindow(QMainWindow):
         self.settings.sync()
 
     def open_settings(self):
+        """Open the settings window (created on first use)."""
         if self.settings_dlg is None:
             self.settings_dlg = ConsoleSettings(self)
             self.settings_dlg.saved.connect(self.restart)
@@ -862,7 +901,7 @@ class MainWindow(QMainWindow):
         self.settings_dlg.present()
 
     def _sender_label(self, online, build):
-        """'● Nadajnik online (ip) · a1b2c3d'; inna wersja niż receiver -> żółty i podpowiedź, żeby zaktualizować."""
+        """"● Sender online (ip) · a1b2c3d"; a different version than the receiver -> yellow and a hint to update."""
         if not online:
             self._sender_stale = None
             self.sender.setText(_("●  Nadajnik offline"))
@@ -871,11 +910,11 @@ class MainWindow(QMainWindow):
             return
         src = S.peer[0] if S.peer else ""
         mine = rx_update.version()[0]
-        text = _("●  Nadajnik online")                 # adres w podpowiedzi - napis mieści się przy 1000 px
+        text = _("●  Nadajnik online")                 # the address is in the tooltip - the text fits at 1000 px
         if build and build[0]:
             text += f"  ·  {build[0]}"
         stale = bool(build and build[0] and mine and build[0] != mine)
-        self._sender_stale = (build[0], mine) if stale else None   # opis w pasku aktualizacji (nie tylko kolor)
+        self._sender_stale = (build[0], mine) if stale else None   # the description in the update banner (not only colour)
         tip = (_("Nadajnik: wersja {s}, receiver: {r} - kliknij Aktualizuj").format(
                    s=rx_update.describe(*build), r=rx_update.describe(*rx_update.version()[:2])) if stale else
                _("Nadajnik: wersja {s}").format(s=rx_update.describe(*build)) if build and build[0] else
@@ -885,20 +924,20 @@ class MainWindow(QMainWindow):
         set_prop(self.sender, "level", "warn" if stale else "ok")
 
     def start_update(self):
-        """Aktualizacja obu stron: polecenie do nadajnika (git pull na telefonie, sam się restartuje) i git pull
-        receivera w osobnym wątku; wynik wraca sygnałem do wątku okna, potem czekamy na wynik nadajnika."""
+        """Update both sides: a command to the sender (git pull on the phone, it restarts itself) and the receiver's git pull
+        in a separate thread; the result returns by a signal to the window thread, then we wait for the sender's result."""
         if not self.update_btn.isEnabled():
             return
         self.update_btn.setEnabled(False)
         self.update_btn.setText(_("Aktualizuję…"))
         self.note(_("Pobieranie aktualizacji…"), "")
-        self._upd_sender = S.sender_online() and S.sender_build is not None   # nowy nadajnik odpowie wynikiem
+        self._upd_sender = S.sender_online() and S.sender_build is not None   # a new sender answers with a result
         self._upd_t0 = time.monotonic()
         self._upd_result = None
         self._upd_run = run = getattr(self, "_upd_run", 0) + 1
         QTimer.singleShot(int(UPDATE_STUCK_S * 1000), lambda: self._update_stuck(run))
-        self._upd_commit = S.sender_build[0] if S.sender_build else ""   # nowy commit po restarcie = zaktualizowany
-        S.sender_update_msg = ""                 # powód z poprzedniej próby nie może opisać tej
+        self._upd_commit = S.sender_build[0] if S.sender_build else ""   # a new commit after the restart = updated
+        S.sender_update_msg = ""                 # the reason from the previous attempt must not describe this one
         if S.sender_build is not None:
             S.sender_build = (*S.sender_build[:2], UPD_RUNNING, time.monotonic())
         if S.sender_online():
@@ -906,7 +945,7 @@ class MainWindow(QMainWindow):
         threading.Thread(target=self._update_thread, name="update", daemon=True).start()
 
     def _update_thread(self):
-        """Wyjątek (git zawieszony, brak dostępu do folderu) nie może zostawić przycisku na zawsze w "Aktualizuję…"."""
+        """An exception (git hung, no access to the folder) must not leave the button stuck forever on "Updating…"."""
         try:
             r = rx_update.update()
         except Exception as e:
@@ -914,8 +953,8 @@ class MainWindow(QMainWindow):
         self.update_done.emit(r)
 
     def _update_stuck(self, run):
-        """Wątek aktualizacji nie skończył (git zawieszony) - przycisk nie może wisieć na "Aktualizuję…" do restartu
-        receivera. Spóźniony wynik nadal zadziała (restart po pobraniu kodu)."""
+        """The update thread did not finish (git hung) - the button must not hang on "Updating…" until the receiver
+        restarts. A late result still works (a restart after the code is fetched)."""
         if run != self._upd_run or self._upd_result is not None:
             return
         print(f"Update: no result from git after {UPDATE_STUCK_S:g}s")
@@ -926,12 +965,14 @@ class MainWindow(QMainWindow):
         self.note(text, "bad")
 
     def _update_finished(self, r):
-        """Receiver gotowy - czekamy (najwyżej UPDATE_WAIT_S) na wynik nadajnika, potem komunikat i restart."""
+        """The receiver is ready - we wait (UPDATE_WAIT_S at most) for the sender's result, then a message and a restart."""
         print(f"Update: {r.text}")
         self._upd_result = r
         self._update_poll()
 
     def _update_poll(self):
+        """Wait (polling every 250 ms) for the sender to finish updating, then show the combined result, notify the log and restart when
+        the code changed."""
         r = self._upd_result
         if r is None:
             return
@@ -948,35 +989,37 @@ class MainWindow(QMainWindow):
         text = " · ".join(parts)
         print(f"Update: {text}")
         (ev.info if r.ok else ev.error)(_("Aktualizacja: {text}").format(text=text))
-        self.update_btn.disarm()                   # sama ikona (napis "Aktualizuję…" był tylko w trakcie)
+        self.update_btn.disarm()                   # the icon only (the "Updating…" label existed only during the update)
         self.update_btn.setEnabled(not r.changed)
         self.update_btn.setToolTip(text)
         self.note(text, "ok" if r.ok else "bad")
         if r.ok and not r.changed:
-            rx_update.available = rx_update.Available(0)      # sprawdzone przed chwilą: nic nowego
+            rx_update.available = rx_update.Available(0)      # checked a moment ago: nothing new
         if r.changed:
             QTimer.singleShot(UPDATE_RESTART_MS, self.restart)
 
     def restart(self, admin=False):
-        """Restart (przycisk, zasobnik, zapisane ustawienia): zwykłe zamknięcie okna, a receiver sam startuje od nowa
-        po zwolnieniu portów i wirtualnych padów. admin: nowy proces jako administrator (UAC, HIDMaestro)."""
+        """A restart (the button, the tray, saved settings): an ordinary window close, and the receiver starts again by itself
+        after releasing the ports and virtual pads. admin: the new process as administrator (UAC, HIDMaestro)."""
         print("Restart requested from the window" + (" (as administrator)" if admin else ""))
         S.restart = "admin" if admin else True
         self.quit()
 
     def quit(self):
+        """Shut the window down: flush edits, release the Test lock and shortcuts, save the state and leave the application."""
         self.flush()
         self.test_panel.cancel()
-        rx_testmode.set_active(False)          # skróty padów wracają
-        for i in range(C.NUM_PADS):            # zamknięcie z widoku Test: wyjście do gry wraca przed sprzątaniem
+        rx_testmode.set_active(False)          # the pad shortcuts return
+        for i in range(C.NUM_PADS):            # closing from the Test view: the output to the game returns before cleanup
             P.block(i, False)
         self.save_settings()
         if self.tray:
             self.tray.hide()
         QApplication.instance().quit()
 
-    # ---------- wybór i zmiany ----------
+    # ---------- selection and changes ----------
     def select_pad(self, slot):
+        """Edit another pad: apply pending changes, switch the editor and the Test panel, then refresh everything."""
         self.flush()
         if slot != self.ed.slot:
             self.ed.set_slot(slot)
@@ -988,11 +1031,12 @@ class MainWindow(QMainWindow):
         self.refresh_all()
 
     def set_view(self, view):
+        """Switch between Result, Physical and Test; entering or leaving Test activates / cancels the Test panel and updates the lock."""
         was_test, self.view = self.view == "test", view
         if view != "test":
             self.edit_view = view
         elif not was_test:
-            rx_testmode.rearm()                # wejście w Test po wyjściu z pada (Options + Create) - znowu działa
+            rx_testmode.rearm()                # entering Test after leaving from the pad (Options + Create) - works again
         self.seg.set(view)
         self.exit_hold = None
         self._apply_view()
@@ -1002,7 +1046,7 @@ class MainWindow(QMainWindow):
         self.live_tick()
 
     def _apply_view(self):
-        """Widok Test: prawy panel testu, rysunek bez plakietek i klikania, podpowiedź pod padem."""
+        """The Test view: the test panel on the right, the drawing without badges and clicking, the hint under the pad."""
         test = self.view == "test"
         self.right_stack.setCurrentIndex(1 if test else 0)
         self.pad.set_test(test)
@@ -1017,26 +1061,29 @@ class MainWindow(QMainWindow):
         self.pad_hint.setText(hint)
 
     def sync_block(self):
-        """Blokada wyjścia do gry: tylko testowany pad, tylko w widoku Test, przy włączonej opcji i aktywnym oknie -
-        przejście do gry (inne okno na pierwszym planie), minimalizacja albo schowanie od razu oddają jej pada."""
+        """The output lock to the game: only the pad under test, only in the Test view, with the option on and the window active -
+        going to a game (another window in front), minimising or hiding gives the pad back at once."""
         test = (self.view == "test" and not rx_testmode.escaped and self.isVisible() and not self.isMinimized()
                 and self.isActiveWindow())
-        rx_testmode.set_active(test)           # skróty wszystkich padów stoją, Options + Create mastera wychodzi
+        rx_testmode.set_active(test)           # all pads' shortcuts stand still, the master's Options + Create leaves
         on = test and self.test_panel.block.isChecked()
         for i in range(C.NUM_PADS):
             P.block(i, on and i == self.ed.slot)
 
     def _test_escaped(self):
-        """Options + Create z pada (rx_testmode): blokada już zdjęta w wątku sieci - okno wraca do poprzedniego widoku."""
+        """Options + Create from the pad (rx_testmode): the lock is already lifted on the network thread - the window returns to the
+        previous view."""
         if self.view == "test":
             self.set_view(self.edit_view)
             self.note(_("Wyjście z widoku Test z pada (Options + Create)"), "ok")
 
     def on_block_toggled(self, _on):
+        """The Test lock option was toggled: remember it and apply it."""
         self.save_settings()
         self.sync_block()
 
     def on_part(self, name):
+        """A pad part was clicked: show its editor (ignored in the Test view)."""
         if self.view == "test":
             return
         self.part = name
@@ -1045,11 +1092,13 @@ class MainWindow(QMainWindow):
         self.tabs.setCurrentIndex(0)
 
     def on_profile(self, key):
+        """Another profile was chosen in the list."""
         self.flush()
         self.ed.select(key)
         self.refresh_all()
 
     def on_create(self, text, copy_current):
+        """Create a game profile for the typed program."""
         self.flush()
         ok, msg = self.ed.new_game(text, copy_current)
         if ok:
@@ -1058,28 +1107,31 @@ class MainWindow(QMainWindow):
         self.note(msg, "warn" if ok else "bad")
 
     def on_delete(self):
+        """Delete the current game profile."""
         self.flush()
         ok, msg = self.ed.delete_current()
         self.refresh_all()
         self.note(("✓ " if ok else "") + msg, "ok" if ok else "bad")
 
     def on_edit(self):
-        """Zmiana z panelu: odśwież plakietki i listę zmian; na pad poleci po krótkim opóźnieniu."""
+        """A change from a panel: refresh the badges and the list of changes; it reaches the pad after a short delay."""
         self.pad.set_profile(self.ed.prof)
         self.update_changes()
         self.update_status()
         self.apply_timer.start()
 
     def on_undone(self):
+        """A change was undone from the list: refresh the panels and send the profile."""
         self.refresh_all()
         self.apply_timer.start()
 
     def flush(self):
-        """Zmiana czekająca na wysłanie musi trafić do starego profilu przed przełączeniem."""
+        """A change waiting to be sent must reach the old profile before switching."""
         if self.apply_timer.isActive():
             self.do_apply(False)
 
     def do_apply(self, save):
+        """Send the edited profile to the pad (and save it to remap.json when `save`); -> False and a message on failure."""
         self.apply_timer.stop()
         ok, msg = self.ed.apply(save)
         if not ok:
@@ -1094,20 +1146,24 @@ class MainWindow(QMainWindow):
         return True
 
     def save(self):
+        """Save the profile (Ctrl+S)."""
         self.do_apply(True)
 
     def revert(self):
+        """Go back to the saved version of the profile."""
         self.ed.revert()
         self.refresh_all()
         self.do_apply(False)
 
     def reset(self):
+        """Remove all changes of the profile (Delete all)."""
         self.ed.reset_all()
         self.refresh_all()
         self.do_apply(False)
 
-    # ---------- odświeżanie widoku ----------
+    # ---------- refreshing the view ----------
     def refresh_all(self):
+        """Reload every panel from the current profile."""
         self.update_profile_bar()
         self.part_page.refresh()
         self.gyro_page.refresh()
@@ -1116,18 +1172,21 @@ class MainWindow(QMainWindow):
         self.update_status()
 
     def update_profile_bar(self):
+        """Refresh the profile list (with the programs seen recently)."""
         self.profile_bar.reload(self.ed.profiles(), self.ed.key, self.ed.info(), list(rx_games.recent))
 
     def update_changes(self):
+        """Refresh the list of changes and the tab title with their count."""
         n = self.changes_page.refresh()
         self.tabs.setTabText(2, _("Zmiany ({n})").format(n=n) if n else _("Zmiany"))
 
     def note(self, text, level):
-        """Komunikat zasłaniający status profilu na kilka sekund (zapisano, błąd, utworzono profil)."""
+        """A message covering the profile status for a few seconds (saved, an error, a profile created)."""
         self.note_text, self.note_until = (text, level), time.monotonic() + NOTE_S
         self.update_status()
 
     def update_status(self):
+        """Show the transient note, or else the profile status, and enable Save / Revert accordingly."""
         if self.note_text and time.monotonic() < self.note_until:
             level, text = self.note_text[1], self.note_text[0]
         else:
@@ -1139,7 +1198,7 @@ class MainWindow(QMainWindow):
         self.revert_btn.setEnabled(modified)
 
     def live_tick(self):
-        """Rysunek pada na żywo (30 Hz, tylko widoczne okno); w trybie TV także sterowanie oknem padem."""
+        """The live pad drawing (30 Hz, only a visible window); in TV mode also controlling the window with the pad."""
         now = time.monotonic()
         self.nav.tick(now)
         live = P.live(self.ed.slot)
@@ -1153,7 +1212,7 @@ class MainWindow(QMainWindow):
             self.gyro_page.set_live(self.ed.key == live["active"], live["gyro_on"])
 
     def _exit_hold(self, now, held):
-        """Tryb TV: przytrzymane ○ testowanego pada (który nie steruje wtedy oknem) wychodzi z widoku Test."""
+        """TV mode: a held ○ of the pad under test (which then does not control the window) leaves the Test view."""
         if not (held and self.fullscreen()):
             self.exit_hold = None
         elif self.exit_hold is None:
@@ -1162,13 +1221,15 @@ class MainWindow(QMainWindow):
             self.set_view(self.edit_view)
 
     def slow_tick(self):
-        """Co 400 ms; błąd w jednym przebiegu nie może zatrzymać odświeżania na zawsze."""
+        """Every 400 ms; an error in one pass must not stop the refreshing forever."""
         try:
             self._slow()
         except Exception as e:
             print(f"GUI refresh error: {e!r}")
 
     def _slow(self):
+        """The 400 ms pass: place the window after a game, bring it forward for a new pad, refresh the sender label, banner, Bluetooth
+        indicator, pad cards, low battery notices, the window title, the editor sync and the tray tooltip / icon."""
         now = time.monotonic()
         if self._place_pending and not rx_games.in_game():
             self._screens_settled()
@@ -1200,12 +1261,12 @@ class MainWindow(QMainWindow):
         title = _("DualSense bridge - NISKA BATERIA") if low_any else "DualSense bridge"
         if title != self.windowTitle():
             self.setWindowTitle(title)
-        if self.ed.sync():                     # np. nadeszło id pada - profil pada zmienił klucz
+        if self.ed.sync():                     # e.g. the pad id arrived - the pad's profile changed its key
             self.refresh_all()
         else:
             self.update_profile_bar()
             self.update_status()
-            self.part_page.update_caps()       # nadajnik doszedł / zaktualizował się - ostrzeżenie o oporze spustu
+            self.part_page.update_caps()       # the sender arrived / updated - the trigger resistance warning
         tip = (f"DualSense bridge\n{_('Nadajnik')}: " + ("online" if online else "offline") + "\n"
                + ("\n".join(tips) if tips else _("Brak podłączonych padów")))
         if self.tray and (tip != self.tip or low_any != self.low_any):
@@ -1216,6 +1277,7 @@ class MainWindow(QMainWindow):
 
 
 def _int(v, default):
+    """int(v), or `default` when it is not a number."""
     try:
         return int(v)
     except (TypeError, ValueError):
@@ -1226,15 +1288,16 @@ WM_QUERYENDSESSION = 0x0011
 
 
 def session_end(*_args):
-    """Windows się wyłącza / restartuje / wylogowuje (Start, Big Picture, shutdown.exe): włączony tryb konsoli -> OFF,
-    zanim proces zostanie zamknięty, żeby po starcie obraz nie był tylko na TV."""
+    """Windows is shutting down / restarting / logging off (Start, Big Picture, shutdown.exe): the console mode on -> OFF
+    before the process is closed, so that after startup the picture is not on the TV only."""
     if rx_console.power_off(_("wyłączanie Windows")):
         print("Windows session ending - console mode switched off")
 
 
 class SessionEndFilter(QAbstractNativeEventFilter):
-    """WM_QUERYENDSESSION prosto z pętli komunikatów - działa też, gdy Qt nie zgłosi commitDataRequest."""
+    """WM_QUERYENDSESSION straight from the message loop - works also when Qt does not raise commitDataRequest."""
     def nativeEventFilter(self, event_type, message):
+        """Look for WM_QUERYENDSESSION in native Windows messages and run session_end; never swallows the message."""
         if event_type in (b"windows_generic_MSG", "windows_generic_MSG"):
             import ctypes.wintypes
             if ctypes.wintypes.MSG.from_address(int(message)).message == WM_QUERYENDSESSION:
@@ -1242,10 +1305,11 @@ class SessionEndFilter(QAbstractNativeEventFilter):
         return False, 0
 
 
-_session_filter = None      # referencja - filtr nie może zostać zebrany przez GC
+_session_filter = None      # a reference - the filter must not be garbage collected
 
 
 def _watch_session_end(app):
+    """Hook the Windows session end (Qt's commitDataRequest and, on Windows, the native filter) once."""
     global _session_filter
     if _session_filter is not None:
         return
@@ -1256,32 +1320,34 @@ def _watch_session_end(app):
 
 
 def create_window(settings_path=None):
-    """QApplication (jeśli jeszcze nie ma) + okno. Osobno od run_gui, żeby testy mogły sterować oknem bez pętli."""
-    W.set_app_id()                             # ikona pada na pasku zadań zamiast ikony Pythona
+    """A QApplication (if there is none yet) + the window. Separate from run_gui so that tests can drive the window without a loop."""
+    W.set_app_id()                             # the pad icon on the taskbar instead of Python's
     app = QApplication.instance() or QApplication(sys.argv[:1])
     app.setApplicationName("DualSense bridge")
-    app.setWindowIcon(make_icon(ICON_OK))      # także okno ustawień i powiadomienia
-    app.setQuitOnLastWindowClosed(False)       # zamknięcie okna = do zasobnika
-    _watch_session_end(app)                    # wyłączanie Windows z trybem konsoli -> najpierw oba ekrany
+    app.setWindowIcon(make_icon(ICON_OK))      # the settings window and notifications too
+    app.setQuitOnLastWindowClosed(False)       # closing the window = to the tray
+    _watch_session_end(app)                    # Windows shutdown with the console mode -> both screens first
     apply_theme(app)
     path = settings_path or os.path.join(os.path.dirname(C.REMAP_PATH), "receiver_ui.ini")
     return MainWindow(QSettings(path, QSettings.Format.IniFormat))
 
 
 def run_gui():
-    if C.cfg["gui_wait_pad"]:      # opcja: nie twórz okna ani ikony, dopóki żaden pad się nie połączy
+    """Run the GUI: optionally wait for the first pad, create the window and the update checker, handle Ctrl+C, then run the Qt loop and
+    hide the tray icon on exit."""
+    if C.cfg["gui_wait_pad"]:      # an option: do not create the window or the icon until some pad connects
         while not S.stop.is_set() and not any(w.is_set() for w in S.want):
             S.stop.wait(0.25)
         if S.stop.is_set():
             return
     win = create_window()
-    rx_update.start_checker(S.stop)          # w tle: czy na GitHubie jest nowsza wersja (napis w nagłówku)
+    rx_update.start_checker(S.stop)          # in the background: whether GitHub has a newer version (the header text)
     app = QApplication.instance()
     try:
-        signal.signal(signal.SIGINT, lambda *_: app.quit())   # Ctrl+C w konsoli = zwykłe zamknięcie (czyszczenie padów)
+        signal.signal(signal.SIGINT, lambda *_: app.quit())   # Ctrl+C in the console = an ordinary close (pad cleanup)
     except ValueError:
-        pass                                                   # nie główny wątek
-    if win.tray is None or C.cfg["gui_start_visible"]:        # bez ikony okno jest jedynym sposobem obsługi
+        pass                                                   # not the main thread
+    if win.tray is None or C.cfg["gui_start_visible"]:        # without the icon the window is the only way to operate
         win.bring_to_front()
     try:
         app.exec()

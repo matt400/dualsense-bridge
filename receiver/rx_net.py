@@ -1,4 +1,4 @@
-"""Receiver: odbiór pakietów z nadajnika, obsługa zdarzeń, wykrywanie ciszy."""
+"""Receiver: receiving packets from the sender, handling events, detecting silence."""
 import os
 import socket
 import threading
@@ -26,44 +26,47 @@ from rx_config import C
 from rx_i18n import _
 from rx_winapi import bind_udp, boost_thread, recv_timeout
 
-RX_TYPES = {T_STATE, T_STATE2, T_TOUCH, T_CLICK, T_MOUSE, T_PING, T_BYE, T_IDENT, T_INFO, T_VERSION,   # typy, które
-            T_CALRES}                                                                                  # receiver przyjmuje
+RX_TYPES = {T_STATE, T_STATE2, T_TOUCH, T_CLICK, T_MOUSE, T_PING, T_BYE, T_IDENT, T_INFO, T_VERSION,   # the packet types the
+            T_CALRES}                                                                                  # receiver accepts
 ST_TOUCH, ST_MOUSE, ST_INFO = BODY[T_TOUCH], BODY[T_MOUSE], BODY[T_INFO]
 STATES = (T_STATE, T_STATE2)
-MAX_PROBE = 20_000              # pomiar dryfu: bezpiecznik długości listy próbek
-MAX_NET_US = 1_000_000          # sieć dłużej niż 1 s = zły zegar (np. zaraz po restarcie), nie pomiar
-SCFG_S = 5.0                    # co tyle ustawienia Wake-on-LAN / zdarzeń do nadajnika (po jego restarcie też je ma)
+MAX_PROBE = 20_000              # drift measurement: a safeguard on the length of the sample list
+MAX_NET_US = 1_000_000          # a network time over 1 s = a bad clock (e.g. right after a restart), not a measurement
+SCFG_S = 5.0                    # Wake-on-LAN / event settings go to the sender this often (it has them after its own restart too)
 WSAETIMEDOUT = 10060
-KEY_WARN_S = 60.0               # ostrzeżenie o innym kluczu HMAC w nadajniku najwyżej co tyle
+KEY_WARN_S = 60.0               # a warning about a different HMAC key in the sender at most this often
 
 
 class LinkStats:
-    """Utrata pakietów (z luk w numerach sekwencyjnych - nadajnik numeruje wszystkie pakiety jednym licznikiem)
-    i pakiety stanu na sekundę per slot. Wyniki co sekundę do S.link_loss / S.pps (okno w GUI).
+    """Packet loss (from gaps in the sequence numbers - the sender numbers all packets with one counter)
+    and state packets per second per slot. Results go every second to S.link_loss / S.pps (the GUI window).
 
-    Skok numeru to strata, gdy pasuje do ciszy: najwyżej tyle pakietów, ile nadajnik wysłałby w tym czasie (zmierzona
-    częstotliwość z zapasem). Większy skok = restart nadajnika (nowy losowy numer). Wcześniej próg był stały (1000):
-    przerwa w sygnale dłuższa niż ~1-4 s (250-1000 pakietów/s) liczyła się jako restart i wskaźnik pokazywał 0 %
-    strat właśnie przy największych zanikach."""
+    A jump in the number is a loss when it fits the silence: at most as many packets as the sender would send in that time (the measured
+    rate with a margin). A bigger jump = a sender restart (a new random number). Before, the threshold was fixed (1000):
+    a signal gap longer than ~1-4 s (250-1000 packets/s) counted as a restart and the indicator showed 0 %
+    loss exactly during the biggest dropouts."""
 
     WINDOW = 1.0
-    MIN_JUMP = 1000                  # mniejszy skok zawsze jest stratą (jak dotąd)
+    MIN_JUMP = 1000                  # a smaller jump is always a loss (as before)
     RATE_MARGIN, RATE_MIN = 1.5, 50.0
 
     def __init__(self, n):
+        """Start empty counters for `n` pad slots."""
         self.last = None
         self.t_last = 0.0
-        self.rate = 0.0              # pakiety/s z ostatniego okna (wszystkie typy)
+        self.rate = 0.0              # packets/s from the last window (all types)
         self.expected = self.got = 0
         self.states = [0] * n
         self.t0 = time.monotonic()
 
     def packet(self, sq, now=None):
+        """Account for one packet by its sequence number: a gap within the plausible limit counts as lost packets, a duplicate or late one
+        is ignored, a bigger jump is taken as a sender restart."""
         now = time.monotonic() if now is None else now
         if self.last is not None:
             d = (sq - self.last) & 0xFFFF
             if d == 0 or d >= 0x8000:
-                return                       # duplikat albo spóźniony - nie przesuwa licznika
+                return                       # a duplicate or a late one - does not move the counter
             limit = max(self.MIN_JUMP, (now - self.t_last) * max(self.rate, self.RATE_MIN) * self.RATE_MARGIN)
             if d <= limit:
                 self.expected += d
@@ -71,6 +74,8 @@ class LinkStats:
         self.last, self.t_last = sq, now
 
     def tick(self, now):
+        """Once per WINDOW: publish the loss percentage and the state packets per second, update the measured rate and reset the
+        counters."""
         dt = now - self.t0
         if dt < self.WINDOW:
             return
@@ -83,20 +88,20 @@ class LinkStats:
         self.t0 = now
 
 codec = None
-clock = EpochClock()     # zegar PC w pong2 i znacznikach v3 (losowe przesunięcie na proces)
+clock = EpochClock()     # the PC clock in pong2 and in v3 tokens (a random offset per process)
 in_sock = None
-_sender_clock = None     # (czas nadajnika z ostatniego pingu [ns], perf_counter_ns odbioru) - znacznik v3 dla nadajnika
+_sender_clock = None     # (the sender's time from the last ping [ns], perf_counter_ns of its arrival) - the v3 token for the sender
 _warned_idx = set()
-_digital = [None] * 4    # ostatni stan przycisków (maska, d-pad, spusty wciśnięte) per slot - zmiana = obsługa skrótów
-_pressed = [None] * 4    # (maska, d-pad, L2 >= TRIG_ON, R2 >= TRIG_ON) per slot - zmiana = próbka "przycisk -> gra"
-_key_warned = [float("-inf")]   # kiedy ostatnio ostrzegliśmy o innym kluczu HMAC
+_digital = [None] * 4    # the last button state (mask, d-pad, triggers pressed) per slot - a change = shortcut handling
+_pressed = [None] * 4    # (mask, d-pad, L2 >= TRIG_ON, R2 >= TRIG_ON) per slot - a change = a "button -> game" sample
+_key_warned = [float("-inf")]   # when we last warned about a different HMAC key
 _auth_warned = {"legacy": float("-inf"), "stale": float("-inf")}
-_first_ping = [None]     # kiedy (monotonic) ten proces dostał pierwszy ping nadajnika
-CLOCK_SYNC_S = 1.0       # tyle po pierwszym pingu nadajnik może jeszcze stemplować pakiety zegarem poprzedniego procesu
+_first_ping = [None]     # when (monotonic) this process got the sender's first ping
+CLOCK_SYNC_S = 1.0       # for this long after the first ping the sender may still stamp packets with the previous process's clock
 
 
 def sender_token():
-    """Znacznik v3 dla nadajnika: jego zegar teraz [ms, 32 bity] (ostatni ping + czas od odbioru) albo None."""
+    """The v3 token for the sender: its clock now [ms, 32 bits] (the last ping + the time since its arrival), or None."""
     sc = _sender_clock
     if sc is None:
         return None
@@ -104,8 +109,8 @@ def sender_token():
 
 
 def note_ping(t0, arr):
-    """Zegar nadajnika z pingu. Ping v3 nie jest sprawdzany pod kątem świeżości, więc powtórzone stare nagranie
-    nie może cofnąć zegara: przyjmujemy tylko nowszy czas, chyba że nadajnik milczał > 1 s (restart = nowy zegar)."""
+    """The sender's clock from a ping. A v3 ping is not checked for freshness, so a replayed old recording
+    must not turn the clock back: only a newer time is accepted, unless the sender was silent for > 1 s (a restart = a new clock)."""
     global _sender_clock
     if _first_ping[0] is None:
         _first_ping[0] = time.monotonic()
@@ -115,54 +120,58 @@ def note_ping(t0, arr):
 
 
 def make_codec():
-    """Codec z kluczem z konfiguracji; przejście na v3 zapamiętane w auth.json obok remap.json."""
+    """A Codec with the key from the configuration; the switch to v3 is remembered in auth.json next to remap.json."""
     return Codec(C.KEY, token=sender_token, now_ms=clock.ms32,
                  state_path=os.path.join(os.path.dirname(C.REMAP_PATH), "auth.json"))
 
 
 def init():
+    """Create the codec and bind the UDP receiving socket (with a read timeout so that silence can be detected); warn when no HMAC key is
+    set."""
     global codec, in_sock
     codec = make_codec()
     if not C.KEY:
         print("WARNING: no HMAC key - anyone on the local network can drive this PC through the receiver "
               "(mouse, master actions). Set the same key on both sides (docs/SECURITY.md)")
     in_sock = bind_udp(C.IN_PORT, "pad events", 1 << 20)
-    recv_timeout(in_sock, 0.1)   # pozwala wykrywać ciszę ze strony nadajnika (limit w jądrze - bez select() na pakiet)
+    recv_timeout(in_sock, 0.1)   # lets us detect silence from the sender (the timeout is in the kernel - no select() per packet)
 
 
 def close():
-    """Zamyka gniazdo odbiorcze (po zatrzymaniu pętli sieci) - port wolny dla nowego procesu po restarcie."""
+    """Close the receiving socket (after the network loop has stopped) - the port is free for a new process after a restart."""
     flush_repeats()
     if in_sock is not None:
         in_sock.close()
 
 
 def send_peer(pkt):
+    """Send a packet to the sender (ignored while it is unknown or the packet is None); send errors are dropped."""
     p = S.peer
-    if p is not None and pkt is not None:     # None: v3 bez zegara nadajnika (przed pierwszym pingiem)
+    if p is not None and pkt is not None:     # None: v3 without the sender's clock (before the first ping)
         try:
             in_sock.sendto(pkt, p)
         except OSError:
             pass
 
 
-REPEAT_DELAYS = (0.01, 0.03, 0.06)   # powtórki pakietów, które nie mogą zginąć (polecenia, spusty, scfg) [s]
-_repeats = set()                      # zaplanowane powtórki (threading.Timer)
+REPEAT_DELAYS = (0.01, 0.03, 0.06)   # repeats of packets that must not get lost (commands, triggers, scfg) [s]
+_repeats = set()                      # scheduled repeats (threading.Timer)
 _repeats_lock = threading.Lock()
 
 
 def _repeat_fire(pkt, timer):
+    """Timer callback: send a scheduled repeat unless flush_repeats already did."""
     with _repeats_lock:
         if timer not in _repeats:
-            return                    # już wysłana przez flush_repeats
+            return                    # already sent by flush_repeats
         _repeats.discard(timer)
     send_peer(pkt)
 
 
 def send_repeat(pkt, n):
-    """Ten sam pakiet (ten sam numer - nadajnik obsłuży go raz) teraz i n-1 razy później, po REPEAT_DELAYS.
-    Kopie wysłane naraz ginęły razem przy jednej serii strat, a każda miała własny numer, więc nadajnik wykonywał
-    polecenie kilka razy (chroniły go tylko jego blokady powtórzeń)."""
+    """The same packet (the same number - the sender handles it once) now and n-1 times later, after REPEAT_DELAYS.
+    Copies sent at once got lost together in one burst of losses, and each had its own number, so the sender ran the
+    command several times (only its repeat locks protected it)."""
     if pkt is None:
         return
     send_peer(pkt)
@@ -175,7 +184,7 @@ def send_repeat(pkt, n):
 
 
 def flush_repeats():
-    """Zaplanowane powtórki od razu (zamykanie receivera - gniazdo zaraz zniknie; testy)."""
+    """Scheduled repeats at once (receiver shutdown - the socket is about to vanish; tests)."""
     with _repeats_lock:
         pending = list(_repeats)
         _repeats.clear()
@@ -185,23 +194,24 @@ def flush_repeats():
 
 
 def send_feedback(i, vals):
+    """Send the rumble / lightbar values of slot i."""
     send_peer(codec.pack(T_FB, i, *vals))
 
 
 def send_cmd(i, cmd, arg=0):
-    """Polecenie do nadajnika (3x - UDP może zgubić pakiet; nadajnik ignoruje powtórki)."""
+    """A command to the sender (3x - UDP may drop a packet; the sender ignores repeats)."""
     send_repeat(codec.pack(T_CMD, i, cmd, arg), 3)
 
 
 def send_triggers(i, vals, repeat=1):
-    """Efekty spustów do nadajnika: 15 wartości = trig3 (z efektami gry), 12 = trig2, 4 = stary trig (sam opór);
-    zmiana idzie kilka razy (zgubiony pakiet)."""
+    """Trigger effects to the sender: 15 values = trig3 (with the game's effects), 12 = trig2, 4 = the old trig (resistance only);
+    a change goes several times (a lost packet)."""
     t = T_TRIG3 if len(vals) > len(TRIG2_OFF) else T_TRIG2 if len(vals) == len(TRIG2_OFF) else T_TRIG
     send_repeat(codec.pack(t, i, *vals), repeat)
 
 
 def scfg_values(s=None):
-    """Ustawienia dla nadajnika (pakiet scfg): Wake-on-LAN i zdarzenia do dziennika."""
+    """Settings for the sender (the scfg packet): Wake-on-LAN and events for the log."""
     s = s or rx_settings.cur
     w = s.wol
     flags = (SCFG_WOL if w.enabled else 0) | (SCFG_EVENTS if s.log.sender else 0)
@@ -210,12 +220,14 @@ def scfg_values(s=None):
 
 
 def send_scfg(repeat=1):
-    if codec is None or S.peer is None:      # start (ustawienia wczytane przed gniazdem) / nadajnik jeszcze nieznany
+    """Send the settings packet (Wake-on-LAN, events) to the sender, `repeat` times."""
+    if codec is None or S.peer is None:      # startup (settings loaded before the socket) / the sender not known yet
         return
     send_repeat(codec.pack(T_SCFG, 255, *scfg_values()), repeat)
 
 
 def _settings_changed(old, new):
+    """A settings listener: when the Wake-on-LAN or sender-event settings change, push them to the sender."""
     if (old.wol, old.log.sender) != (new.wol, new.log.sender):
         send_scfg(3)
 
@@ -224,7 +236,7 @@ rx_settings.on_change(_settings_changed)
 
 
 def batt_codes(pct, flags):
-    """-> (kod baterii DSU, bajt statusu baterii DS4)."""
+    """-> (the DSU battery code, the DS4 battery status byte)."""
     if pct > 100:
         return 5, 0x1B
     if flags & 1:
@@ -235,6 +247,8 @@ def batt_codes(pct, flags):
 
 
 def clear_slot(i, forget_id=False):
+    """Reset everything known about the pad in slot i (state, profile effects, shortcuts, latency, mouse); forget_id also forgets the pad
+    identity - for a pad that really left."""
     S.alive[i] = False
     S.tp_down[i] = 0
     S.swallow[i] = False
@@ -246,13 +260,13 @@ def clear_slot(i, forget_id=False):
     _digital[i] = _pressed[i] = None
     hotkeys.reset(i)
     master.reset(i)
-    rx_latency.clear(i)                # pomiary opóźnienia poprzedniego pada nie mieszają się z następnym
+    rx_latency.clear(i)                # the previous pad's latency measurements do not mix with the next one's
     with S.lock:
         S.states[i]["lat"] = S.states[i]["blat"] = None
-    if forget_id:                      # pad fizycznie odszedł - następny w tym slocie przyśle swój ident
-        rx_latency.reset_buttons(i)    # ostatnie naciśnięcia (bez limitu czasu) należały do tamtego pada
+    if forget_id:                      # the pad physically left - the next one in this slot will send its own ident
+        rx_latency.reset_buttons(i)    # the last presses (no time limit) belonged to that pad
         S.sender_info[i] = None
-        S.gyro_cal[i] = None           # kalibracja żyroskopu należała do tamtego pada
+        S.gyro_cal[i] = None           # the gyro calibration belonged to that pad
         with S.profile_lock:
             S.pad_id[i] = None
             S.override[i] = None
@@ -261,16 +275,16 @@ def clear_slot(i, forget_id=False):
     S.reset_state(i)
     mouse.reset(i)
     if forget_id:
-        master.mouse_follows_master()  # master odszedł -> mysz wg mouse_pads
+        master.mouse_follows_master()  # the master left -> the mouse follows mouse_pads
 
 
 def _latency(lat, arr):
-    """Pola pomiaru z pakietu state2 + czas odbioru [ns] -> (odbiór, phone, bt, net) albo None (brak pomiaru)."""
+    """Measurement fields from a state2 packet + the arrival time [ns] -> (arrival, phone, bt, net) or None (no measurement)."""
     pc_us, phone, bt = lat
     if not arr or not pc_us or phone == LAT_NONE:
         return None
-    net = ((arr + clock.base) // 1000 - pc_us) & 0xFFFFFFFF      # pc_us w zegarze z pong2 (z przesunięciem)
-    if net >= 0x80000000:          # odebrany "przed" wysłaniem: błąd przesunięcia zegarów (do połowy RTT) - to ~0
+    net = ((arr + clock.base) // 1000 - pc_us) & 0xFFFFFFFF      # pc_us in the pong2 clock (with the offset)
+    if net >= 0x80000000:          # received "before" it was sent: a clock offset error (up to half the RTT) - this is ~0
         net -= 1 << 32
     if not -MAX_NET_US < net < MAX_NET_US:
         return None
@@ -278,13 +292,13 @@ def _latency(lat, arr):
 
 
 def handle(t, i, data, arr=0):
-    """Pakiet od nadajnika; arr = czas odbioru (perf_counter_ns) - do pomiaru opóźnienia."""
-    if t == T_BYE:   # nadajnik: pad rozłączony -> odłącz wirtualny DS4
+    """A packet from the sender; arr = the arrival time (perf_counter_ns) - for latency measurement."""
+    if t == T_BYE:   # the sender: the pad disconnected -> unplug the virtual DS4
         was = S.want[i].is_set() or S.alive[i]
         clear_slot(i, forget_id=True)
         S.want[i].clear()
         S.wake[i].set()
-        S.ignore_until[i] = time.monotonic() + 1.0   # spóźnione pakiety nie mogą go odtworzyć
+        S.ignore_until[i] = time.monotonic() + 1.0   # late packets must not recreate it
         if was:
             print(f"Controller {i}: disconnected by sender")
             ev.info(_("{pad} rozłączony").format(pad=ev.pad_name(i)))
@@ -294,51 +308,52 @@ def handle(t, i, data, arr=0):
         S.alive[i] = True
         print(f"Controller {i}: data stream started")
     if not S.want[i].is_set():
-        ev.info(_("{pad} połączony").format(pad=ev.pad_name(i)))   # po krótkiej ciszy DS4 został - to nie nowe połączenie
-        S.want[i].set()   # wątek slotu utworzy wirtualny DS4
-        rx_console.pad_connected(i)       # pad master z już znanym identyfikatorem -> auto-ON trybu konsoli
+        ev.info(_("{pad} połączony").format(pad=ev.pad_name(i)))   # after a short silence the DS4 stayed - this is not a new connection
+        S.want[i].set()   # the slot thread will create the virtual DS4
+        rx_console.pad_connected(i)       # the master pad with an already known id -> auto-ON of the console mode
     if t in STATES:
         now_us = time.monotonic_ns() // 1000
         v = BODY[t].unpack_from(data, 4)
         lat = _latency(v[STATE_FIELDS:], arr) if t == T_STATE2 else None
         v = v[:STATE_FIELDS]
         if v == S.last_v[i]:
-            return      # powtórka (heartbeat) - nic się nie zmieniło
+            return      # a repeat (heartbeat) - nothing changed
         S.last_v[i] = v
         mask = v[8] & MASK_ALL
         bd, b4 = batt_codes(v[9], v[10])
         S.batt_info[i] = (v[9], v[10])
         lx, ly, lt, rx, ry, rt = v[:6]
         hx, hy = clamp(v[6], -1, 1), clamp(v[7], -1, 1)
-        dig = (mask, hx, hy, lt >> 5, rt >> 5)   # spusty z dokładnością 1/8 (histereza spustu w trybie konsoli)
+        dig = (mask, hx, hy, lt >> 5, rt >> 5)   # triggers to 1/8 precision (the trigger hysteresis in the console mode)
         btn = (mask, hx, hy, lt >= TRIG_ON, rt >= TRIG_ON)
-        blocked = S.states[i]["blocked"]    # widok Test: gra dostaje neutralny stan, skróty i master nie działają
-        pressed = (lat is not None and not blocked and _pressed[i] is not None   # pierwszy stan po połączeniu
-                   and btn != _pressed[i])                                       # to nie naciśnięcie
+        blocked = S.states[i]["blocked"]    # the Test view: the game gets a neutral state, shortcuts and the master do not work
+        pressed = (lat is not None and not blocked and _pressed[i] is not None   # the first state after connecting
+                   and btn != _pressed[i])                                       # is not a press
         _pressed[i] = btn
-        if dig != _digital[i]:              # skróty / master / tryb konsoli tylko przy zmianie przycisków,
-            _digital[i] = dig               # a nie przy każdej próbce gyro i gałek (250 Hz)
-            testmode.sync(i)                # widok Test otwarty / zamknięty - skróty slotu od czystego stanu
-            if testmode.on_state(i, (mask, hx, hy, lt, rt)):   # Options + Create mastera: wyjście z testu (także z
-                blocked = False                                 # testowanego pada) - wejścia już połknięte
-            elif not blocked and testmode.shortcuts_on():      # widok Test: skróty żadnego pada nie działają
-                hotkeys.on_state(i, mask, hx, hy)          # najpierw skróty PS (nowe naciśnięcie PS), potem master,
-                master.on_state(i, mask, hx, hy, lt, rt)   # który może oznaczyć to PS jako zużyte w kombinacji
+        if dig != _digital[i]:              # shortcuts / master / console mode only on a button change,
+            _digital[i] = dig               # not on every gyro and stick sample (250 Hz)
+            testmode.sync(i)                # the Test view opened / closed - the slot's shortcuts start from a clean state
+            # the master's Options + Create: leaving the test (also from the pad under test) -
+            if testmode.on_state(i, (mask, hx, hy, lt, rt)):
+                blocked = False                                 # the inputs have already been swallowed
+            elif not blocked and testmode.shortcuts_on():      # the Test view: no pad's shortcuts work
+                hotkeys.on_state(i, mask, hx, hy)          # PS shortcuts first (a new PS press), then the master,
+                master.on_state(i, mask, hx, hy, lt, rt)   # which may mark that PS as used in a combination
                 rx_console.on_state(i, mask, hx, hy, lt, rt)
         with S.lock:
             s = S.states[i]
             s["raw"] = (mask, hx, hy, lt, rt)
             s["fwd"] = hotkeys.forward(i, mask, hx, hy)
             s["rawst"] = (lx, ly, rx, ry)
-            if (p := S.probe[i]) is not None and len(p) < MAX_PROBE:   # pomiar dryfu (rx_drift)
+            if (p := S.probe[i]) is not None and len(p) < MAX_PROBE:   # drift measurement (rx_drift)
                 p.append(s["rawst"])
-            s["acc"], s["gyro"] = v[11:14], v[14:17]      # przed recompute - gyro wpływa na prawą gałkę / mysz
+            s["acc"], s["gyro"] = v[11:14], v[14:17]      # before recompute - the gyro affects the right stick / the mouse
             S.recompute(s, S.remap_maps[i])
             s["batt_dsu"], s["batt_ds4"] = bd, b4
-            s["ts"] = now_us         # czas PRZYJŚCIA próbki - dla DSU lepszy niż czas budowania pakietu (jitter)
-            if s["lat"] is None and not blocked:   # pomiar najstarszej zmiany czekającej na raport (rx_ds4 - ViGEm)
+            s["ts"] = now_us         # the arrival time of the sample - better for DSU than the packet build time (jitter)
+            if s["lat"] is None and not blocked:   # measuring the oldest change waiting for a report (rx_ds4 - ViGEm)
                 s["lat"] = lat
-            if pressed and s["blat"] is None:   # osobno: najstarsza czekająca zmiana przycisku / spustu
+            if pressed and s["blat"] is None:   # separately: the oldest waiting button / trigger change
                 s["blat"] = lat
             s["ver"] += 1
         S.notify(i)
@@ -354,29 +369,29 @@ def handle(t, i, data, arr=0):
         with S.lock:
             s = S.states[i]
             s["touch"] = touch
-            if not S.mouse_mode[i]:   # w trybie myszy dotyk jest tylko zapamiętany
+            if not S.mouse_mode[i]:   # in the mouse mode the touch is only remembered
                 s["ver"] += 1
         if not S.mouse_mode[i]:
             S.notify(i)
     elif t == T_CLICK:
-        down = data[4] if data[4] <= 2 else 1     # 0 = puszczony, 1 = klik, 2 = klik dwoma palcami (PPM)
+        down = data[4] if data[4] <= 2 else 1     # 0 = released, 1 = click, 2 = a two-finger click (right button)
         if down == S.tp_down[i]:
             return
         S.tp_down[i] = down
-        S.states[i]["rtp"] = down          # widok Test: klik widać także w trybie myszy i przy blokadzie
+        S.states[i]["rtp"] = down          # the Test view: the click is visible in the mouse mode and under the lock too
         if S.states[i]["blocked"]:
             S.swallow[i] = False
             if not S.mouse_mode[i]:
-                # stan na żywo także pod blokadą (gra i tak dostaje neutralny raport): klik trzymany przed testem
-                # i puszczony w trakcie zostawał w stanie "wciśnięty" - po teście gra widziała wciśnięty touchpad,
-                # dopóki nie kliknęło się go jeszcze raz (powtórki z nadajnika odrzuca porównanie z tp_down)
+                # the live state also under the lock (the game gets a neutral report anyway): a click held before the test
+                # and released during it stayed "pressed" in the state - after the test the game saw a pressed touchpad
+                # until it was clicked once more (the sender's repeats are rejected by the comparison with tp_down)
                 with S.lock:
                     S.states[i]["tp"] = bool(down)
             return
-        shortcuts = testmode.shortcuts_on()           # widok Test: klik zostaje klikiem, bez skrótów
+        shortcuts = testmode.shortcuts_on()           # the Test view: a click stays a click, no shortcuts
         if down and shortcuts:
             rx_console.on_touch_click(i)
-        if down and shortcuts and S.states[i]["raw"][0] & PS_BIT:   # PS + klik touchpada = zmiana trybu (surowe PS)
+        if down and shortcuts and S.states[i]["raw"][0] & PS_BIT:   # PS + touchpad click = a mode change (raw PS)
             S.swallow[i] = True
             hotkeys.mark_used(i)
             if not master.check(i, "mouse"):
@@ -402,12 +417,12 @@ def handle(t, i, data, arr=0):
     elif t == T_IDENT:
         pid = BODY[T_IDENT].unpack_from(data, 4)[0].rstrip(b"\0").decode("ascii", "replace").lower()
         if pid and pid != S.pad_id[i]:
-            with S.profile_lock:              # wątek gry (set_game) nie może przeliczyć profilu w pół zmiany pada
+            with S.profile_lock:              # the game thread (set_game) must not recompute the profile halfway through a pad change
                 S.pad_id[i] = pid
                 S.override[i] = None
                 S.reload_profile(i)
-            rx_console.pad_connected(i, ident=True)   # nowy pad w slocie - jeśli to master, auto-ON trybu konsoli
-            master.mouse_follows_master()  # touchpad jako mysz: pad master (mógł właśnie dojść albo zmienić slot)
+            rx_console.pad_connected(i, ident=True)   # a new pad in the slot - if it is the master, auto-ON of the console mode
+            master.mouse_follows_master()  # touchpad as a mouse: the master pad (it may have just arrived or changed slot)
             n = S.profile_changes(i)
             print(f"Controller {i}: id {pid}, profile {S.profile_label(S.active[i])}"
                   + (f" ({n} changes)" if n else ""))
@@ -425,12 +440,12 @@ def handle(t, i, data, arr=0):
 
 
 def on_calres(i, data):
-    """Odpowiedź nadajnika na kalibrację żyroskopu -> S.gyro_cal (okno); wynik kalibracji także do dziennika."""
+    """The sender's answer to a gyro calibration -> S.gyro_cal (the window); the calibration result goes to the log too."""
     v = BODY[T_CALRES].unpack_from(data, 4)
     prev = S.gyro_cal[i]
     S.gyro_cal[i] = (v[0], v[1], v[2:5], v[5:8], v[8], time.monotonic())
     if prev is not None and prev[:5] == S.gyro_cal[i][:5]:
-        return                          # powtórka (polecenie idzie 3x - odpowiedź też)
+        return                          # a repeat (the command goes 3x - so does the answer)
     if v[0] == CAL_OK:
         print(f"Controller {i}: gyro calibrated, bias {list(v[2:5])}")
         ev.info(_("{pad}: żyroskop skalibrowany").format(pad=ev.pad_name(i)))
@@ -440,8 +455,8 @@ def on_calres(i, data):
 
 
 def on_build(data, now, t=T_BUILD):
-    """Pakiet build / build2: (commit nadajnika, czas commita, stan aktualizacji UPD_*) -> S.sender_build;
-    build2 także adresy, których użyje Wake-on-LAN nadajnika -> S.sender_wol."""
+    """A build / build2 packet: (the sender's commit, the commit time, the update state UPD_*) -> S.sender_build;
+    build2 also the addresses the sender's Wake-on-LAN will use -> S.sender_wol."""
     v = BODY[t].unpack_from(data, 4)
     b = (cstr(v[0]), v[1], v[2])
     if S.sender_build is None or S.sender_build[:3] != b:
@@ -452,14 +467,14 @@ def on_build(data, now, t=T_BUILD):
 
 
 def on_event(i, data):
-    """Pakiet event -> dziennik, gdy zdarzenia z nadajnika są włączone w panelu (powtórki odrzuca numer zdarzenia)."""
+    """An event packet -> the log, when sender events are on in the panel (repeats are rejected by the event number)."""
     if rx_settings.cur.log.sender:
         return ev.on_sender_event(i, data)
     return None
 
 
 def check_stale(now):
-    """Cisza od nadajnika: najpierw reset stanu (stale_s), potem odłączenie wirtualnego DS4 (unplug_s)."""
+    """Silence from the sender: first a state reset (stale_s), then unplugging the virtual DS4 (unplug_s)."""
     for i in range(C.NUM_PADS):
         silent = now - S.last_seen[i]
         if S.alive[i] and silent > C.STALE_S:
@@ -471,14 +486,14 @@ def check_stale(now):
             ev.warn(_("{pad}: brak sygnału przez {s} s - odłączony").format(pad=ev.pad_name(i), s=f"{C.UNPLUG_S:g}"))
             S.want[i].clear()
             S.wake[i].set()
-            # jak po pakiecie bye: następny pad w tym slocie (może inny) musi przysłać swój identyfikator - inaczej
-            # dostałby profil poprzedniego, a gdy tamten był masterem, włączyłby tryb konsoli i uprawnienia mastera
+            # like after a bye packet: the next pad in this slot (maybe another) must send its identifier - otherwise it
+            # would get the previous one's profile, and if that was the master, it would switch on the console mode and the master's rights
             clear_slot(i, forget_id=True)
 
 
 def check_key(now):
-    """Pakiety nadajnika odrzucone przez inne ustawienie klucza HMAC (proto.Codec.mismatch_t) -> ostrzeżenie w dzienniku,
-    najwyżej co KEY_WARN_S. Bez tego pady po prostu nie działały, a jedyną wskazówką był log nadajnika."""
+    """Sender packets rejected because of a different HMAC key setting (proto.Codec.mismatch_t) -> a warning in the log,
+    at most every KEY_WARN_S. Without it the pads simply did not work, and the only hint was the sender's log."""
     if now - codec.mismatch_t < 1.0 and now - _key_warned[0] >= KEY_WARN_S:
         _key_warned[0] = now
         print("Rejecting sender packets: HMAC key differs between sender and receiver (--key / key in config)")
@@ -492,20 +507,22 @@ def check_key(now):
                   "- zaktualizuj nadajnik"))
     if (now - codec.stale_t < 1.0 and now - _auth_warned["stale"] >= KEY_WARN_S
             and _first_ping[0] is not None and codec.stale_t - _first_ping[0] > CLOCK_SYNC_S):
-        # bez warunku pingu: szybki restart receivera (< 3 s) dawał fałszywy alarm - nadajnik do pierwszego pong2 od
-        # nowego procesu stempluje pakiety v3 zegarem starego (inne losowe przesunięcie), a to nie nagranie
+        # without the ping condition: a quick receiver restart (< 3 s) gave a false alarm - until the first pong2 from the
+        # new process the sender stamps v3 packets with the old one's clock (another random offset), and that is not a recording
         _auth_warned["stale"] = now
         print(f"Rejected sender packets with an expired freshness token ({codec.stale} total): replay or clock problem")
         ev.warn(_("Odrzucono przeterminowane pakiety nadajnika (powtórzone nagranie albo problem z zegarem)"))
 
 
 class SenderWatch:
-    """Nadajnik online / offline -> dziennik; pierwszy kontakt i co SCFG_S -> ustawienia dla nadajnika (scfg)."""
+    """The sender online / offline -> the log; the first contact and every SCFG_S -> the settings for the sender (scfg)."""
 
     def __init__(self):
+        """Start as offline with no settings sent yet."""
         self.online, self.t_scfg = False, 0.0
 
     def tick(self, now):
+        """Log a change of the sender's online state and, while online, send the settings every SCFG_S."""
         online = S.sender_online(now)
         if online != self.online:
             self.online = online
@@ -520,6 +537,8 @@ class SenderWatch:
 
 
 def net_loop():
+    """The network thread: receive a datagram (a timeout is the idle tick), run the periodic checks every 0.1 s, then authenticate / parse
+    the packet and dispatch it by type; per-pad packets go to handle() after the freshness and slot checks."""
     boost_thread()
     link = LinkStats(C.NUM_PADS)
     watch = SenderWatch()
@@ -529,14 +548,14 @@ def net_loop():
     while not S.stop.is_set():
         try:
             data, addr = in_sock.recvfrom(2048)
-            arr = time.perf_counter_ns()        # czas odbioru (zegar PC jak w pong2) - początek odcinka "pc"
-        except (TimeoutError, BlockingIOError):   # limit czasu odbioru (SO_RCVTIMEO): Windows / Linux
+            arr = time.perf_counter_ns()        # the arrival time (the PC clock as in pong2) - the start of the "pc" segment
+        except (TimeoutError, BlockingIOError):   # the receive timeout (SO_RCVTIMEO): Windows / Linux
             data = None
         except OSError as e:
             if getattr(e, "winerror", None) == WSAETIMEDOUT:
-                data = None                     # limit czasu odbioru (gdyby nie przyszedł jako TimeoutError)
+                data = None                     # the receive timeout (if it did not arrive as a TimeoutError)
             else:
-                # obcy, za duży datagram (WSAEMSGSIZE) albo ICMP nie mogą zatrzymywać odbioru na 10 ms
+                # a foreign, too large datagram (WSAEMSGSIZE) or ICMP must not stall reception for 10 ms
                 if getattr(e, "winerror", None) not in (10040, 10054):
                     time.sleep(0.01)
                 continue
@@ -571,23 +590,23 @@ def net_loop():
                 stats.clear()
                 t_print = now
 
-        if t == T_UPDMSG:  # powód błędu aktualizacji nadajnika (przychodzi przed pakietem build z wynikiem)
+        if t == T_UPDMSG:  # the reason for a sender update failure (arrives before the build packet with the result)
             S.peer = addr
             S.sender_update_msg = BODY[T_UPDMSG].unpack_from(data, 4)[0].rstrip(b"\0").decode("utf-8", "ignore")
             continue
-        if t in (T_BUILD, T_BUILD2):  # wersja kodu nadajnika i stan jego aktualizacji (cały nadajnik, idx 255)
+        if t in (T_BUILD, T_BUILD2):  # the sender's code version and its update state (the whole sender, idx 255)
             S.peer = addr
             on_build(data, now, t)
             continue
-        if t in (T_BTSTATE, T_BTDEV, T_BTCTRL):  # Bluetooth nadajnika (idx 255): stan, urządzenia, kontrolery
+        if t in (T_BTSTATE, T_BTDEV, T_BTCTRL):  # the sender's Bluetooth (idx 255): state, devices, controllers
             S.peer = addr
             if S.seen.fresh((WIRE[t], 255), sq, now):
                 rx_bt.on_packet(t, data, now)
             continue
-        if t == T_EVENT:  # zdarzenie nadajnika do dziennika (idx = slot pada albo 255)
+        if t == T_EVENT:  # a sender event for the log (idx = the pad's slot or 255)
             on_event(i, data)
             continue
-        if t == T_PING:   # ping -> pong2 (zegar PC dla pomiaru opóźnienia) i pong (RTT; starszy nadajnik zna tylko ten)
+        if t == T_PING:   # ping -> pong2 (the PC clock for latency measurement) and pong (RTT; an older sender knows only this)
             S.peer = addr
             t0 = BODY[T_PING].unpack_from(data, 4)[0]
             note_ping(t0, arr)
@@ -603,7 +622,7 @@ def net_loop():
             continue
         if now < S.ignore_until[i] and t != T_BYE:
             continue
-        if not S.seen.fresh((WIRE.get(t, t), i), sq, now):     # state i state2: jeden licznik
+        if not S.seen.fresh((WIRE.get(t, t), i), sq, now):     # state and state2: one counter
             continue
         S.peer = addr
         try:

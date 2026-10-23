@@ -1,4 +1,4 @@
-"""Receiver: operacje na profilach remapowania dla okna (rx_qt, rx_editor)."""
+"""Receiver: operations on remap profiles for the window (rx_qt, rx_editor)."""
 from rx_i18n import _
 import re
 
@@ -15,7 +15,10 @@ EXE_RE = re.compile(r"[a-z0-9_.()+\-][a-z0-9_.()+\- ]{0,78}\.exe")
 
 
 def game_key(slot, text):
-    """Tekst wpisany przez użytkownika ("EldenRing") -> klucz "<pad>@eldenring.exe" albo None, gdy to nie nazwa programu."""
+    """Text typed by the user ("EldenRing") -> the key "<pad>@eldenring.exe", or None when it is not a valid program name.
+
+    The text is lower-cased and ".exe" is appended when missing; EXE_RE rejects anything that is not a plain file name.
+    """
     exe = (text or "").strip().lower()
     if exe and not exe.endswith(".exe"):
         exe += ".exe"
@@ -23,7 +26,10 @@ def game_key(slot, text):
 
 
 def apply(slot, key, profile, save=False):
-    """Profil na żywo (save=False: tylko do pamięci) albo zapisany do remap.json. -> (ok, komunikat)."""
+    """Apply a profile: live (save=False: kept in memory only) or saved to remap.json -> (ok, message).
+
+    The profile is normalised first; afterwards the slot reloads its profile so the change takes effect immediately.
+    """
     prof = B.normalize_profile(profile)
     if save:
         ok, msg = S.store.save(key, prof)
@@ -35,7 +41,7 @@ def apply(slot, key, profile, save=False):
 
 
 def delete(slot, key):
-    """Usuwa profil gry. -> (ok, komunikat)."""
+    """Delete a game profile -> (ok, message). If the slot was using it as a manual override, the override is cleared."""
     if not B.is_game_key(key):
         return False, _("usuwać można tylko profile gier")
     with S.profile_lock:
@@ -47,12 +53,13 @@ def delete(slot, key):
 
 
 def use(slot, key):
-    """Profil wybrany ręcznie działa od razu na padzie (do następnej zmiany aktywnego okna). -> False, gdy go nie ma."""
+    """A manually chosen profile takes effect on the pad at once (until the next change of the active window). -> False when it does not
+    exist."""
     return S.use_profile(slot, key)
 
 
 def power_off(slot):
-    """Wyłącza pada (nadajnik rozłącza Bluetooth). -> False, gdy pad nie jest podłączony."""
+    """Switch the pad off (the sender disconnects its Bluetooth link) -> False when the pad is not connected."""
     if not S.alive[slot]:
         return False
     rx_net.send_cmd(slot, CMD_POWER_OFF)
@@ -60,7 +67,7 @@ def power_off(slot):
 
 
 def live(i):
-    """Stan pada na żywo: fizyczny i po remapowaniu (*_out = to, co widzi gra)."""
+    """Live pad state: physical and after remapping (*_out = what the game sees). Used by the profile editor to highlight inputs."""
     s = S.states[i]
     raw, st = s["raw"], s["rawst"]
     return {"connected": bool(S.alive[i]), "active": S.active[i], "gyro_on": bool(s["gyro_on"]),
@@ -71,40 +78,42 @@ def live(i):
 
 
 def test_live(i):
-    """Widok Test: czujniki i dotyk na żywo (surowe, także przy blokadzie i w trybie myszy)."""
+    """Test view: live sensors and touch (raw, also while the output is blocked and in mouse mode)."""
     s = S.states[i]
     with S.lock:
         return {"acc": tuple(s["acc"]), "gyro": tuple(s["gyro"]), "touch": s["touch"], "tp": s["rtp"],
                 "blocked": s["blocked"], "mouse": bool(S.mouse_mode[i])}
 
 
-# ---------- widok Test: blokada wyjścia, dryf gałek, kalibracja żyroskopu ----------
+# ---------- Test view: output block, stick drift, gyro calibration ----------
 def block(slot, on):
-    """Gra dostaje neutralny stan slotu (on), mysz touchpada / gyro i skróty pada nie działają; off = wszystko wraca.
-    Skróty i master zaczynają od czystego stanu - przytrzymany PS sprzed blokady nie odpali kombinacji po niej."""
+    """Block (on) or unblock the slot's output: while blocked, games get a neutral state and the touchpad / gyro mouse and
+    the pad shortcuts do nothing; off restores everything. Shortcuts and master start from a clean state - a PS button
+    held from before the block will not fire a combination after it."""
     if not S.set_blocked(slot, on):
         return False
-    hotkeys.reset(slot, keep=True)          # od wejść trzymanych teraz - nowe PS po teście trafia do gry
+    hotkeys.reset(slot, keep=True)          # start from the inputs held right now - a new PS press after the test goes to the game
     master.reset(slot, keep=True)
     if on:
-        mouse.reset(slot)               # trzymany klik touchpada (tryb myszy) zostałby wciśnięty
+        mouse.reset(slot)               # a held touchpad click (mouse mode) would stay pressed
     print(f"Controller {slot}: output to games {'blocked (test view)' if on else 'restored'}")
     return True
 
 
 def sender_calib(slot):
-    """Nadajnik tego pada zna CMD_GYRO_CAL i CMD_RAW_STICKS (v9+)."""
+    """The sender of this pad knows CMD_GYRO_CAL and CMD_RAW_STICKS (v9+); learned from the capability bits of its version packet."""
     info = S.sender_info[slot]
     return info is not None and bool(info[1] & CAP_CALIB)
 
 
 def raw_sticks(slot, secs):
-    """Pomiar dryfu: gałki bez strefy martwej nadajnika przez secs sekund (0 = koniec)."""
+    """Drift measurement: ask the sender for sticks without its deadzone for `secs` seconds (0 = end)."""
     rx_net.send_cmd(slot, CMD_RAW_STICKS, secs)
 
 
 def calibrate_gyro(slot, secs):
-    """Kalibracja żyroskopu leżącego pada przez nadajnik (wynik: S.gyro_cal). -> False, gdy pad / nadajnik nie może."""
+    """Ask the sender to calibrate the gyro of a pad lying still (the result arrives in S.gyro_cal) -> False when the pad / sender
+    cannot."""
     if not (S.alive[slot] and sender_calib(slot)):
         return False
     S.gyro_cal[slot] = None
@@ -113,18 +122,18 @@ def calibrate_gyro(slot, secs):
 
 
 def query_gyro_cal(slot):
-    """Stan kalibracji żyroskopu (zapisana na nadajniku czy nie) - odpowiedź w S.gyro_cal."""
+    """Ask for the gyro calibration status (whether a bias is saved on the sender) - the answer arrives in S.gyro_cal."""
     if S.alive[slot] and sender_calib(slot):
         rx_net.send_cmd(slot, CMD_GYRO_CAL, 0)
 
 
 def drift(slot):
-    """Korekcja dryfu gałek pada w slocie -> {"left": dz, "right": dz}."""
+    """Stick drift correction of the pad in this slot -> {"left": dz, "right": dz}."""
     return rx_padcal.drift(S.profile_key(slot))
 
 
 def set_drift(slot, values):
-    """Zapisuje korekcję dryfu pada ({gałka: dz}, 0 = usuń) i od razu przelicza profil. -> (ok, komunikat)."""
+    """Save the pad's drift correction ({stick: dz}, 0 = remove) and recompute the profile at once -> (ok, message)."""
     ok, msg = rx_padcal.set_drift(S.profile_key(slot), values)
     S.reload_profile(slot)
     return ok, msg

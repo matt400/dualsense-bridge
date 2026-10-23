@@ -1,7 +1,7 @@
-"""Receiver: model edycji profilu dla okna (bez Qt): wybór profilu, zmiany przycisków / gałek / gyro, zapis.
+"""Receiver: the profile editing model for the window (no Qt): choosing a profile, changes of buttons / sticks / gyro, saving.
 
-Zmiany działają na żywo (apply(save=False) wywołuje okno po krótkim debounce), zapis do remap.json jest osobno.
-Profil to {"buttons", "sticks", "tuning", "gyro", "triggers"} - jak w rx_buttons.normalize_profile.
+Changes take effect live (the window calls apply(save=False) after a short debounce), saving to remap.json is separate.
+A profile is {"buttons", "sticks", "tuning", "gyro", "triggers"} - as in rx_buttons.normalize_profile.
 """
 from rx_i18n import _
 import copy
@@ -14,23 +14,25 @@ from rx_shape import GYRO_DEF, RUMBLE_DEF, STICK_DEF, TRIG_DEF, TRIG_FX_DEF, TRI
 SHORT = {"cross": "✕", "circle": "○", "triangle": "△", "square": "□", "l1": "L1", "r1": "R1", "share": "SHARE",
          "options": "OPT", "ps": "PS", "l3": "L3", "r3": "R3", "dpad_up": "↑", "dpad_down": "↓", "dpad_left": "←",
          "dpad_right": "→", "l2": "L2", "r2": "R2"}
-STICK_NAME = {"left": "Lewa gałka", "right": "Prawa gałka", "none": "Wyłączona (środek)"}   # przez _() w oknie
-STICK_OF = {"left_stick": "left", "right_stick": "right"}     # część rysunku -> wyjście gałki
-L3_OF = {"left_stick": "l3", "right_stick": "r3"}             # klik gałki
+STICK_NAME = {"left": "Lewa gałka", "right": "Prawa gałka", "none": "Wyłączona (środek)"}   # translated through _() in the window
+STICK_OF = {"left_stick": "left", "right_stick": "right"}     # drawing part -> stick output
+L3_OF = {"left_stick": "l3", "right_stick": "r3"}             # stick click
 GYRO_MODES = {"off": "Wyłączone", "stick": "Prawa gałka (działa w każdej grze)", "mouse": "Mysz (strzelanki na PC, menu)"}
 NEW_GAME_HINT = "Wpisz nazwę pliku .exe gry, np. eldenring.exe"
 
 
 def empty():
+    """An empty profile."""
     return {"buttons": {}, "sticks": {}, "tuning": {}, "gyro": {}, "triggers": {}}
 
 
 def profile_name(key):
+    """Display name of a profile: the game label for a game profile, "Default" otherwise."""
     return S.profile_label(key) if B.is_game_key(key) else _("Domyślny")
 
 
 def describe_trigger(name, e):
-    """Wpis efektów spustów profilu ("l2" / "r2" / "rumble") -> opis na liście zmian."""
+    """A profile trigger effect entry ("l2" / "r2" / "rumble") -> its description in the change list."""
     if name == "rumble":
         if not e["on"]:
             return _("Wibracja z gry na spustach: wyłączona")
@@ -48,28 +50,30 @@ def describe_trigger(name, e):
 
 
 def _tuning_defaults(name):
+    """The default values a tuning entry is compared with: triggers and sticks differ."""
     return TRIG_DEF if name in B.TRIGGERS else STICK_DEF
 
 
 class Editor:
-    """Edytowany profil jednego pada (slot). Okno woła metody i odświeża widżety."""
+    """The edited profile of one pad (slot). The window calls the methods and refreshes its widgets."""
 
     def __init__(self, slot=0):
         self.slot = slot
-        self.base = None            # klucz profilu pada, dla którego załadowano stan (zmienia się, gdy nadejdzie id pada)
+        self.base = None            # key of the pad profile the state was loaded for (changes when the pad id arrives)
         self.key = None
         self.prof, self.saved, self.in_file = empty(), empty(), False
-        self._fx_mem = {}           # ostatnie wartości suwaków efektów spustów (zmiana trybu ich nie gubi)
+        self._fx_mem = {}           # last values of the trigger effect sliders (a mode change does not lose them)
         self.select()
 
-    # ---------- ładowanie ----------
+    # ---------- loading ----------
     def profiles(self):
-        """[(klucz, nazwa, czy w użyciu)] - profil pada i profile gier tego pada."""
+        """[(key, name, in use)] - the pad profile and the game profiles of this pad."""
         active = S.active[self.slot]
         return [(k, profile_name(k), k == active) for k in S.store.keys_for(S.profile_key(self.slot))]
 
     def select(self, key=None):
-        """Wczytuje profil `key` (domyślnie: w użyciu). Edytowany profil działa od razu na padzie (podgląd i test w grze)."""
+        """Load profile `key` (default: the one in use). The edited profile takes effect on the pad at once (preview and testing in a
+        game)."""
         s = self.slot
         self.base = S.profile_key(s)
         keys = S.store.keys_for(self.base)
@@ -80,35 +84,40 @@ class Editor:
             P.use(s, key)
 
     def set_slot(self, slot):
+        """Switch to another pad slot and load its profile."""
         self.slot = slot
         self.select()
 
     def sync(self):
-        """Odświeżenie co chwilę. -> True, gdy zmienił się wybrany profil (np. nadeszło id pada)."""
+        """Periodic refresh. -> True when the selected profile changed (e.g. the pad id arrived)."""
         if S.profile_key(self.slot) != self.base or self.key not in S.store.keys_for(self.base):
             self.select()
             return True
         self.saved, self.in_file = S.store.get_saved(self.key), S.store.in_file(self.key)
         return False
 
-    # ---------- zmiany ----------
+    # ---------- changes ----------
     def target_of(self, src):
-        """Na co zamienione jest wejście `src` (nazwa wejścia albo None = wyłączone)."""
+        """What input `src` is replaced with (an input name, or None = disabled)."""
         return self.prof["buttons"].get(src, src)
 
     def set_button(self, src, dst):
+        """Remap input `src` to `dst`; mapping an input to itself removes the entry."""
         if dst == src:
             self.prof["buttons"].pop(src, None)
         else:
             self.prof["buttons"][src] = dst
 
     def clear_button(self, src):
+        """Remove the remap of button `src`."""
         self.prof["buttons"].pop(src, None)
 
     def stick(self, out):
+        """The stick output `out` with defaults filled in: {"src", "inv_x", "inv_y"}."""
         return {"src": out, "inv_x": False, "inv_y": False, **self.prof["sticks"].get(out, {})}
 
     def set_stick(self, out, **patch):
+        """Change fields of a stick output; an entry equal to the default is removed."""
         e = {**self.stick(out), **patch}
         if e == {"src": out, "inv_x": False, "inv_y": False}:
             self.prof["sticks"].pop(out, None)
@@ -116,9 +125,11 @@ class Editor:
             self.prof["sticks"][out] = e
 
     def tuning(self, name):
+        """The tuning of a stick or trigger with defaults filled in."""
         return {**_tuning_defaults(name), **self.prof["tuning"].get(name, {})}
 
     def set_tuning(self, name, **patch):
+        """Change fields of a tuning entry; an entry equal to the defaults is removed."""
         e = {**self.tuning(name), **patch}
         if e == _tuning_defaults(name):
             self.prof["tuning"].pop(name, None)
@@ -126,37 +137,43 @@ class Editor:
             self.prof["tuning"][name] = e
 
     def clear_tuning(self, name):
+        """Remove the tuning entry."""
         self.prof["tuning"].pop(name, None)
 
     def is_game(self):
+        """Whether the edited profile is a game profile."""
         return B.is_game_key(self.key)
 
     def trigger_fx(self, name):
-        """Efekt spustu L2 / R2: {"mode", parametry wszystkich trybów} - suwaki pamiętają wartości innych trybów.
-        mode "inherit" = profil gry bez wpisu (jak w profilu pada)."""
+        """A trigger effect of L2 / R2: {"mode", parameters of all modes} - the sliders remember the values of other modes.
+        mode "inherit" = a game profile without an entry (as in the pad profile)."""
         e = self.prof["triggers"].get(name)
         mode = e["mode"] if e else "inherit" if self.is_game() else "off"
         return {**self._fx_mem.get(name, TRIG_FX_DEF), **(e or {}), "mode": mode}
 
     def set_trigger_fx(self, name, **patch):
+        """Change a trigger effect; the values of the sliders are remembered, and an "inherit" / default-off entry is removed from the
+        profile."""
         e = {**self.trigger_fx(name), **patch}
         self._fx_mem[name] = {k: v for k, v in e.items() if k != "mode"}
         mode = e["mode"]
         if mode == "inherit" or (mode == "off" and not self.is_game()):
-            self.prof["triggers"].pop(name, None)     # profil pada: brak wpisu = wyłączone
+            self.prof["triggers"].pop(name, None)     # pad profile: no entry = disabled
         else:
             self.prof["triggers"][name] = {"mode": mode, **{k: e[k] for k in TRIG_PARAMS[mode]}}
 
     def clear_trigger_fx(self, name):
+        """Remove the trigger effect entry."""
         self.prof["triggers"].pop(name, None)
 
     def rumble_fx(self):
-        """Wibracja z gry na spustach: {"on": True / False / None (profil gry: jak w profilu pada), "gain", "freq"}."""
+        """Game rumble on the triggers: {"on": True / False / None (game profile: as in the pad profile), "gain", "freq"}."""
         e = self.prof["triggers"].get("rumble")
         on = e["on"] if e else None if self.is_game() else False
         return {**self._fx_mem.get("rumble", RUMBLE_DEF), **(e or {}), "on": on}
 
     def set_rumble_fx(self, **patch):
+        """Change game rumble on the triggers; the same removal rules as for trigger effects."""
         e = {**self.rumble_fx(), **patch}
         self._fx_mem["rumble"] = {k: v for k, v in e.items() if k != "on"}
         if e["on"] is None or (not e["on"] and not self.is_game()):
@@ -165,30 +182,37 @@ class Editor:
             self.prof["triggers"]["rumble"] = {"on": bool(e["on"]), "gain": e["gain"], "freq": e["freq"]}
 
     def gyro(self):
+        """The gyro settings with defaults filled in."""
         return {**GYRO_DEF, **self.prof["gyro"]}
 
     def set_gyro(self, **patch):
+        """Change gyro settings; settings equal to the defaults are stored as an empty dict."""
         e = {**self.gyro(), **patch}
         self.prof["gyro"] = {} if e == GYRO_DEF else e
 
     def clear_gyro(self):
+        """Disable gyro."""
         self.prof["gyro"] = {}
 
     def reset_all(self):
+        """Reset the whole edited profile to empty."""
         self.prof = empty()
 
     def revert(self):
+        """Throw away the unsaved changes (go back to the saved profile)."""
         self.prof = copy.deepcopy(self.saved)
 
     def clear_stick(self, out):
+        """Remove the stick output entry."""
         self.prof["sticks"].pop(out, None)
 
-    # ---------- stan ----------
+    # ---------- state ----------
     def modified(self):
+        """Whether the edited profile differs from the saved one."""
         return B.normalize_profile(self.prof) != B.normalize_profile(self.saved)
 
     def status(self):
-        """-> ("ok" | "warn", tekst) do paska stanu."""
+        """-> ("ok" | "warn", text) for the status bar."""
         if self.modified():
             return "warn", _("● Zastosowano na żywo - jeszcze niezapisane")
         if B.is_game_key(self.key) and not self.in_file:
@@ -196,7 +220,7 @@ class Editor:
         return "ok", _("✓ Zgodny z zapisanym profilem")
 
     def info(self):
-        """Opis wybranego profilu pod listą."""
+        """Description of the selected profile under the list."""
         if self.key == S.active[self.slot]:
             text = _("Używany teraz.")
         elif B.is_game_key(self.key):
@@ -206,7 +230,7 @@ class Editor:
         return _("{text}  Aktywne okno: {game}.").format(text=text, game=S.game or "—")
 
     def changes(self):
-        """[(opis, cofnięcie)] - lista zmian względem domyślnych; cofnięcie usuwa jedną pozycję."""
+        """[(description, undo)] - the list of changes against the defaults; undo removes one entry."""
         L, out = {k: _(v) for k, v in B.LABELS.items()}, []
         for src, dst in self.prof["buttons"].items():
             out.append((f"{L[src]} → {_('wyłączony') if dst is None else L[dst]}", lambda s=src: self.clear_button(s)))
@@ -226,6 +250,7 @@ class Editor:
         return out
 
     def _describe_tuning(self, name):
+        """Describe a tuning entry for the change list (only the non-default parts of a stick)."""
         t = self.tuning(name)
         if name in B.TRIGGERS:
             return _("Reakcja {b}: strefa martwa {dz}, pełne od {mx}").format(b=SHORT[name], dz=t["dz"], mx=t["max"])
@@ -236,9 +261,9 @@ class Editor:
             (_("anty-strefa martwa"), f"{round(t['anti'] * 100)}%", t["anti"])) if on]
         return _("{stick} - reakcja: {parts}").format(stick=_(STICK_NAME[name]), parts=", ".join(parts))
 
-    # ---------- zapis i profile gier ----------
+    # ---------- saving and game profiles ----------
     def apply(self, save=False):
-        """Wysyła profil na pad (save=True: także do remap.json). -> (ok, komunikat)."""
+        """Send the profile to the pad (save=True: also to remap.json). -> (ok, message)."""
         ok, msg = P.apply(self.slot, self.key, self.prof, save)
         if ok and save:
             self.prof = S.store.get(self.key)
@@ -246,7 +271,7 @@ class Editor:
         return ok, msg
 
     def new_game(self, text, copy_current=True):
-        """Tworzy profil gry (tylko w pamięci, do zapisania) i wybiera go. -> (ok, komunikat)."""
+        """Create a game profile (in memory only, to be saved) and select it. -> (ok, message)."""
         key = P.game_key(self.slot, text)
         if key is None:
             return False, _(NEW_GAME_HINT)
@@ -256,7 +281,7 @@ class Editor:
         return True, _("Utworzono profil dla {exe} - zapisz go, żeby go zachować").format(exe=key.split("@", 1)[1])
 
     def delete_current(self):
-        """Usuwa wybrany profil gry. -> (ok, komunikat)."""
+        """Delete the selected game profile. -> (ok, message)."""
         ok, msg = P.delete(self.slot, self.key)
         if ok:
             self.select()

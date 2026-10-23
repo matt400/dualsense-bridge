@@ -1,7 +1,7 @@
-"""Sender: konfiguracja (DEFAULTS + argumenty CLI) i stałe urządzeń.
+"""Sender: configuration (DEFAULTS + CLI arguments) and device constants.
 
-Moduły czytają wartości z obiektu C w czasie działania (C.PORT, ...), dlatego init() musi
-zostać wywołane raz na starcie, zanim ruszy cokolwiek innego.
+Modules read values from the C object at run time (C.PORT, ...), so init() must be called once at startup,
+before anything else starts.
 """
 import argparse
 import os
@@ -14,24 +14,25 @@ DEFAULTS = {
     "host": "192.168.1.4",
     "port": 5005,
     "max_pads": 2,
-    "slots_file": "slots.json",    # pad (MAC) -> stały slot także po restarcie (gracz 1 / 2 w grze); "" = bez pamięci
-    "wol_file": "wol.json",        # Wake-on-LAN i zdarzenia do dziennika - ustawienia z okna receivera; "" = bez zapisu
-    "gyro_cal_file": "gyro_cal.json",  # kalibracja żyroskopu z okna receivera per pad (MAC); "" = bez zapisu
-    "bt_adapter": "auto",          # kontroler Bluetooth: auto (dongle USB przed wbudowanym) | builtin | manual (bez zmian)
-    "bt_file": "bt.json",          # wybór kontrolera z okna receivera (ma pierwszeństwo przed bt_adapter); "" = bez zapisu
-    "auth_file": "auth.json",      # z kluczem: zapamiętane przejście na protokół v3 (ochrona przed replay); "" = bez zapisu
+    "slots_file": "slots.json",    # pad (MAC) -> fixed slot, also across restarts (player 1 / 2 in a game); "" = no memory
+    "wol_file": "wol.json",        # Wake-on-LAN and log events - settings from the receiver window; "" = do not save
+    "gyro_cal_file": "gyro_cal.json",  # gyro calibration from the receiver window, per pad (MAC); "" = do not save
+    "bt_adapter": "auto",          # Bluetooth controller: auto (USB dongle before the built-in one) | builtin | manual (leave as is)
+    "bt_file": "bt.json",          # controller chosen in the receiver window (takes precedence over bt_adapter); "" = do not save
+    "auth_file": "auth.json",      # with a key: remembered switch to protocol v3 (replay protection); "" = do not save
     "grab_pad": True,
     "grab_touch": True,
     "tap_click": True,
     "tap_max_s": 0.2,
     "tap_max_move": 40,
     "heartbeat_s": 0.05,
-    "pad_min_dt": 0.001,           # min odstęp pakietów stanu (1 ms = 1000 Hz; było 4 ms - do 3 ms opóźnienia gałek); pierwszy po ciszy
-                                   # idzie od razu, zmiany w oknie zlewają się w jeden pakiet na końcu okna; 0 = bez limitu
-    "motion_min_dt": 0.001,        # j.w. dla ruchu; próbki gyro/acc w oknie są uśredniane
+    "pad_min_dt": 0.001,           # min gap between state packets (1 ms = 1000 Hz; it was 4 ms - up to 3 ms of stick delay); the first one
+                                   # after silence goes out at once, changes inside the window merge into one packet at its end; 0 = no
+                                   # limit
+    "motion_min_dt": 0.001,        # same for motion; gyro/acc samples inside the window are averaged
     "motion_deadband_gyro": 128,
     "motion_deadband_acc": 16,
-    "rescan_s": 2.0,               # zapasowy skan padów; nowy pad wykrywa od razu inotify na /dev/input
+    "rescan_s": 2.0,               # fallback pad scan; a new pad is detected at once by inotify on /dev/input
     "stick_deadzone": 3,
     "calibrate_s": 1.0,
     "calibrate_max_range": 4096,
@@ -39,23 +40,23 @@ DEFAULTS = {
     "autobias_s": 1.0,
     "autobias_range": 1024,
     "battery_poll_s": 5.0,
-    "touch_coalesce_ms": 2,        # DS4/DSU dotyk: max 1 pakiet na tyle ms (0 = każda zmiana)
-    "touch_deadzone": 2,           # ignoruj zmiany palca mniejsze niż tyle jednostek (szum czujnika)
-    "touch_start_move": 5,         # mysz: kursor rusza dopiero po przesunięciu o tyle (brak drgania przy tapie)
-    "gestures": True,              # 2 palce = przewijanie, tap 2 palcami = prawy przycisk myszy
-    "rumble": "auto",              # wibracja: auto (sterownik evdev i raport HID przez hidraw naraz) | evdev | hidraw | off
-    "idle_off_min": 15,            # wyłącz pada (rozłącz Bluetooth) po tylu minutach bez użycia; 0 = nigdy
-    "rt_priority": 10,             # SCHED_FIFO z tym priorytetem (1-99); 0 = zwykły planista; wymaga doas
-    "low_latency": True,           # procesor bez głębokiego uśpienia + najszybsze rdzenie (sender_rt); wymaga doas
-    "cpu_latency_us": 50,          # low_latency: max czas wybudzenia procesora [µs] (głębokie stany śpią do ~6.5 ms)
+    "touch_coalesce_ms": 2,        # DS4/DSU touch: at most 1 packet per this many ms (0 = every change)
+    "touch_deadzone": 2,           # ignore finger changes smaller than this many units (sensor noise)
+    "touch_start_move": 5,         # mouse: the cursor only starts moving after this much travel (no jitter on a tap)
+    "gestures": True,              # 2 fingers = scroll, a 2-finger tap = right mouse button
+    "rumble": "auto",              # rumble: auto (evdev driver and HID report over hidraw together) | evdev | hidraw | off
+    "idle_off_min": 15,            # switch the pad off (Bluetooth disconnect) after this many minutes of no use; 0 = never
+    "rt_priority": 10,             # SCHED_FIFO with this priority (1-99); 0 = normal scheduler; needs doas
+    "low_latency": True,           # CPU without deep sleep + the fastest cores (sender_rt); needs doas
+    "cpu_latency_us": 50,          # low_latency: max CPU wake-up time [µs] (deep states sleep up to ~6.5 ms)
     "key": "",
     "stats": False,
 }
 
-# stałe niezależne od konfiguracji
+# constants independent of the configuration
 AUTOBIAS_MAX_STEP = 2048
-BURST_DELAYS = (0.003, 0.009)      # powtórki zmiany przycisku (odporność na zgubiony pakiet)
-SETTLE_S = 0.5                     # tyle czekamy na komplet urządzeń pada (pad+motion+touch)
+BURST_DELAYS = (0.003, 0.009)      # repeats of a button change (resilience to a lost packet)
+SETTLE_S = 0.5                     # how long we wait for the complete set of pad devices (pad+motion+touch)
 PAD_ABS = (0, 1, 2, 3, 4, 5)
 STICK_AXES = (0, 1, 3, 4)
 TOUCH_W, TOUCH_H = 1919, 942
@@ -66,21 +67,31 @@ C = SimpleNamespace()
 
 
 def _beside(name):
-    """Nazwa pliku względem folderu nadajnika (usługa startuje z innego katalogu); "" = wyłączone."""
+    """Resolve a file name relative to the sender's folder (the service starts from another directory); "" = disabled.
+
+    Absolute paths and empty names are returned unchanged, so a user can point a file anywhere or switch it off.
+    """
     name = str(name or "")
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), name) if name and not os.path.isabs(name) else name
 
 
 def init(argv=None):
+    """Build the global configuration object C from DEFAULTS, the config file and the CLI flags (later wins).
+
+    Priority, lowest to highest: DEFAULTS < --config file < CLI flags (host, --key, --stats) < for the key, the PADKEY
+    environment variable is only a fallback when no key was given. Every value is coerced to its expected type and
+    clamped to a sane range here, once, so the rest of the sender can read C.* without any further validation.
+    Exits with a message if the host is missing or cannot be resolved.
+    """
     ap = argparse.ArgumentParser(description="DualSense UDP sender")
-    # default=None: inaczej host z domyślnej wartości nadpisywałby host z --config
+    # default=None: otherwise the default host would override the host from --config
     ap.add_argument("host", nargs="?", default=None, help="IP odbiornika (PC z Windows)")
     ap.add_argument("--config", help="plik konfiguracji .toml / .json")
     ap.add_argument("--key", help="wspólny klucz HMAC (uwierzytelnianie pakietów)")
     ap.add_argument("--stats", action="store_true", default=None, help="pokazuj RTT co 5 s")
     args = ap.parse_args(argv)
 
-    if args.config:                    # stare wartości domyślne w pliku -> nowe (własne ustawienia zostają)
+    if args.config:                    # old default values in the file -> new ones (the user's own settings stay)
         import sender_migrate
         sender_migrate.migrate(args.config)
     cfg = dict(DEFAULTS)

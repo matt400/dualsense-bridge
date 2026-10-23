@@ -1,4 +1,4 @@
-"""Sender: wykrywanie padów (evdev), przydział slotów, cykl życia kontrolera."""
+"""Sender: pad discovery (evdev), slot assignment, the life cycle of a controller."""
 import asyncio
 import json
 import os
@@ -17,26 +17,38 @@ from sender_rumble import Rumble
 from sender_net import emit_repeat
 
 _MAC = re.compile(r"^[0-9a-f]{2}(:[0-9a-f]{2}){5}$", re.IGNORECASE)
-_not_pads = {}       # ścieżka -> identyfikator węzła (inode, ctime) urządzenia, które nie jest padem
+_not_pads = {}       # path -> node identifier (inode, ctime) of a device that is not a pad
 
 
 def _node_id(path):
-    """Węzeł /dev/input/eventN jest tworzony od nowa przy każdym podłączeniu - (inode, ctime) go odróżnia."""
+    """A /dev/input/eventN node is created anew at every connection - (inode, ctime) tells the incarnations apart.
+
+    It lets discover() remember "this node is not a pad" without re-opening it every scan, yet look at it again when
+    the node is replaced by a new device with the same name.
+    """
     try:
         st = os.stat(path)
         return st.st_ino, st.st_ctime_ns
     except OSError:
         return None
-_first_seen = {}     # klucz -> kiedy zobaczyliśmy niekompletną grupę urządzeń
-_no_slot = set()     # pady odrzucone z braku wolnego slotu (max_pads) - komunikat raz na połączenie
+_first_seen = {}     # key -> when we first saw an incomplete group of devices
+_no_slot = set()     # pads rejected for lack of a free slot (max_pads) - the message once per connection
 
 
 def event_num(dev):
+    """The trailing number of the device path (/dev/input/event7 -> 7); 0 if there is none. Used for ordering."""
     m = re.search(r"(\d+)$", dev.path)
     return int(m.group(1)) if m else 0
 
 
 def discover():
+    """Scan /dev/input and return the not-yet-used pad devices grouped by physical pad: {key: {"pad"|"motion"|"touch": device}}.
+
+    A DualSense shows up as three evdev devices ("Wireless Controller", "... Motion Sensors", "... Touchpad") that
+    share one key (uniq = Bluetooth MAC, or phys). Devices already used by an active pad are skipped, and devices that
+    turned out not to be a DualSense are remembered per node so they are not re-opened on every scan. A duplicate
+    device of the same kind inside one group is closed immediately.
+    """
     groups = {}
     paths = evdev.list_devices()
     for p in [p for p in _not_pads if p not in paths]:
@@ -68,6 +80,7 @@ def discover():
 
 
 def close_group(g):
+    """Close every device of a discovered group, ignoring errors."""
     for d in g.values():
         try:
             d.close()
@@ -76,7 +89,7 @@ def close_group(g):
 
 
 def _load_slots():
-    """Zapamiętany przydział pad (MAC) -> slot z poprzednich uruchomień (slots_file)."""
+    """The remembered pad (MAC) -> slot assignment from earlier runs (slots_file), loaded once and cached in state."""
     if state.saved_slots is None:
         state.saved_slots = {}
         if C.SLOTS_FILE:
@@ -92,6 +105,7 @@ def _load_slots():
 
 
 def _save_slots():
+    """Write the remembered slot table to slots_file (atomically); errors are logged only."""
     if not C.SLOTS_FILE:
         return
     try:
@@ -101,8 +115,13 @@ def _save_slots():
 
 
 def pick_slot(key):
-    """Stały slot pada: ten sam pad (MAC) dostaje ten sam numer także po restarcie nadajnika, więc w grze
-    (Steam, XInput) pozostaje tym samym graczem niezależnie od kolejności włączania padów."""
+    """A fixed slot for a pad: the same pad (MAC) gets the same number even after a sender restart, so in a game
+    (Steam, XInput) it stays the same player regardless of the order in which the pads are switched on.
+
+    Preference order: the slot the pad already holds in this run, then its remembered slot, then a free slot that no
+    other known pad has reserved, finally any free slot. Returns None when all slots are in use. Only pads with a MAC
+    are written to the file (a USB pad without uniq has a changing key).
+    """
     if key in state.slots:
         return state.slots[key]
     saved = _load_slots()
@@ -111,13 +130,13 @@ def pick_slot(key):
     free = [i for i in range(C.MAX_PADS) if i not in taken]
     if not free:
         return None
-    # najpierw zapamiętany slot; potem wolny, którego nie "rezerwuje" inny znany pad; na końcu dowolny wolny
+    # first the remembered slot; then a free one that no other known pad "reserves"; finally any free one
     reserved = {v for k, v in saved.items() if k != key}
     i = pref if pref in free else next((n for n in free if n not in reserved), free[0])
     for k in [k for k, v in state.slots.items() if v == i]:
         del state.slots[k]
     state.slots[key] = i
-    if saved.get(key) != i and _MAC.match(key):   # pamiętamy tylko pady z MAC (USB bez uniq ma zmienny klucz)
+    if saved.get(key) != i and _MAC.match(key):   # only pads with a MAC are remembered (a USB pad without uniq has a changing key)
         for k in [k for k, v in saved.items() if v == i]:
             del saved[k]
         saved[key] = i
@@ -126,16 +145,19 @@ def pick_slot(key):
 
 
 def dispatch_feedback(idx, vals):
+    """Route rumble / lightbar feedback from the PC to the pad in slot idx (ignored if no pad is there)."""
     if (c := state.ctrl_by_idx(idx)) is not None:
         c.apply_feedback(*vals)
 
 
 def dispatch_triggers(idx, vals):
+    """Route adaptive-trigger settings from the PC to the pad in slot idx (ignored if no pad is there)."""
     if (c := state.ctrl_by_idx(idx)) is not None:
         c.set_triggers(vals)
 
 
 def grab(dev, label):
+    """Take exclusive access to an evdev device, so the phone's own system stops reacting to the pad's input."""
     try:
         dev.grab()
         print(f"{label}: grabbed")
@@ -147,7 +169,11 @@ KIND_ATTR = {"motion": "motion_dev", "touch": "touch_dev"}
 
 
 def attach(c, kind, dev):
-    """Podłącza urządzenie ruchu / touchpada do działającego pada (także gdy pojawi się później niż pad)."""
+    """Attach a motion / touchpad device to a running pad (also when it appears later than the pad).
+
+    The device is stored on the Ctrl and its reading loop runs as a separate task, kept in c.extra, so losing that
+    device never disconnects the pad itself. The touchpad is grabbed if configured.
+    """
     setattr(c, KIND_ATTR[kind], dev)
     if kind == "touch":
         if C.GRAB_TOUCH:
@@ -161,8 +187,8 @@ def attach(c, kind, dev):
 
 
 async def _run_extra(c, kind, dev, coro):
-    """Koniec strumienia (urządzenie zniknęło) odłącza tylko to urządzenie - pad działa dalej,
-    a supervisor dołączy je ponownie, gdy wróci."""
+    """The end of a stream (the device disappeared) detaches only that device - the pad keeps working,
+    and the supervisor attaches it again when it returns."""
     try:
         await coro
     except asyncio.CancelledError:
@@ -174,15 +200,15 @@ async def _run_extra(c, kind, dev, coro):
     finally:
         if getattr(c, KIND_ATTR[kind]) is dev:
             setattr(c, KIND_ATTR[kind], None)
-        # ostatnie wartości nie mogą zostać w odbiorniku: gyro z chwili utraty (np. 50 °/s) kręciłoby celowaniem
-        # żyroskopem bez końca, a palec przyłożony do touchpada zostałby "przyłożony" w grze
+        # the last values must not stay in the receiver: a gyro value from the moment of loss (e.g. 50 °/s) would keep turning
+        # gyro aiming forever, and a finger placed on the touchpad would stay "placed" in the game
         if kind == "touch":
             c.touch = IDLE_TP
             c.tp = 0
         else:
             c.motion = [0] * 6
-            c.bt_us = LAT_NONE                # bez urządzenia ruchu nie ma znaczników czasu pada
-        if not c.closing:                     # przy zamykaniu pada send_neutral wyśle to samo
+            c.bt_us = LAT_NONE                # without a motion device there are no pad timestamps
+        if not c.closing:                     # when the pad is closing, send_neutral sends the same thing
             if kind == "touch":
                 c.send_touch(force=True)
                 c.send_click()
@@ -198,7 +224,7 @@ async def _run_extra(c, kind, dev, coro):
 
 
 def _reject(key):
-    """Pad bez wolnego slotu: raz w logu i w dzienniku okna (wcześniej znikał bez śladu)."""
+    """A pad with no free slot: reported once in the log and in the window's event log (earlier it vanished without a trace)."""
     if key in _no_slot:
         return
     _no_slot.add(key)
@@ -207,15 +233,24 @@ def _reject(key):
 
 
 def incomplete(c):
+    """True while a pad still misses its motion or touchpad device (they can appear a moment after the pad)."""
     return c.motion_dev is None or c.touch_dev is None
 
 
 async def run_ctrl(c):
+    """Life cycle of one pad: set it up, stream it until it goes away, then clean up.
+
+    Setup reads the initial state, starts the rumble backend, grabs the pad, announces it to the receiver and starts
+    the pad and battery streams; motion and touchpad run as separate tasks. The function then waits for the first
+    main stream to finish (the pad disconnected or an error) and cancels the rest. The finally block always runs:
+    it stops every task and timer, closes the devices, sends a neutral state and a repeated "bye" so the receiver
+    removes the pad, and frees the slot's active entry.
+    """
     tasks = []
     try:
         c.init_state()
         c.rumble = Rumble(c.idx, c.pad_dev, C.RUMBLE)
-        if c.triggers != TRIG2_OFF:           # efekty spustów przyszły z PC, zanim pad był gotowy
+        if c.triggers != TRIG2_OFF:           # trigger effects came from the PC before the pad was ready
             c.rumble.set_triggers(c.triggers)
         print(f"== Controller {c.idx} ({c.key})")
         print(f"   Pad:    {c.pad_dev.name} ({c.pad_dev.path})")
@@ -224,11 +259,11 @@ async def run_ctrl(c):
         print(f"   Lightbar: {c.led or 'not found'}")
         if C.GRAB_PAD:
             grab(c.pad_dev, f"Pad {c.idx}")
-        c.send_ident()        # receiver od razu wie, który to pad (profil remapowania)
+        c.send_ident()        # the receiver knows right away which pad this is (remap profile)
         events.info(E_PAD_ON, c.idx, c.key or "")
         tasks.append(asyncio.create_task(streams.stream_pad(c)))
         tasks.append(asyncio.create_task(streams.stream_battery(c)))
-        for kind in ("motion", "touch"):          # osobne zadania: ich utrata nie rozłącza pada
+        for kind in ("motion", "touch"):          # separate tasks: losing them does not disconnect the pad
             dev = getattr(c, KIND_ATTR[kind])
             if dev is not None:
                 setattr(c, KIND_ATTR[kind], None)
@@ -271,19 +306,23 @@ async def run_ctrl(c):
 
 
 class DevWatch:
-    """inotify na /dev/input: nowy węzeł eventN (pad włączony / połączony) budzi supervisora od razu - bez tego pad
-    czekał na kolejny skan do rescan_s (średnio +1 s przy łączeniu). Bez inotify (inna platforma, brak katalogu) -
-    zwykłe skanowanie co rescan_s."""
+    """inotify on /dev/input: a new eventN node (pad switched on / connected) wakes the supervisor at once - without it a
+    pad waited for the next scan, up to rescan_s (on average +1 s when connecting). Without inotify (another platform,
+    no directory) - plain scanning every rescan_s.
+
+    The watch is created through libc with ctypes (the standard library has no inotify). Raw inotify events are never
+    parsed: any activity just sets an asyncio.Event, because the supervisor re-scans the whole directory anyway."""
 
     IN_ATTRIB, IN_CREATE = 0x004, 0x100
     IN_NONBLOCK, IN_CLOEXEC = 0o4000, 0o2000000
-    DEBOUNCE_S = 0.05             # węzły pada, ruchu i touchpada powstają razem - jeden skan na całą grupę
+    DEBOUNCE_S = 0.05             # the pad, motion and touchpad nodes appear together - one scan for the whole group
 
     def __init__(self):
         self.fd = None
         self.event = asyncio.Event()
 
     def start(self, path=b"/dev/input"):
+        """Start watching the directory for created / changed nodes; returns False if inotify is unavailable."""
         try:
             import ctypes
             libc = ctypes.CDLL(None, use_errno=True)
@@ -300,6 +339,7 @@ class DevWatch:
         return True
 
     def _readable(self):
+        """Event-loop callback: throw away the pending inotify data and raise the "something changed" flag."""
         try:
             while os.read(self.fd, 4096):
                 pass
@@ -308,7 +348,11 @@ class DevWatch:
         self.event.set()
 
     async def wait(self, timeout):
-        """Do zmiany w /dev/input albo timeout s. -> True, gdy była zmiana."""
+        """Wait for a change in /dev/input or `timeout` seconds. Returns True if there was a change.
+
+        After a change a short debounce delay lets the whole group of nodes (pad, motion, touchpad) appear before the
+        caller scans.
+        """
         try:
             await asyncio.wait_for(self.event.wait(), timeout)
         except TimeoutError:
@@ -318,6 +362,7 @@ class DevWatch:
         return True
 
     def close(self):
+        """Stop watching and close the inotify descriptor."""
         if self.fd is not None:
             try:
                 asyncio.get_running_loop().remove_reader(self.fd)
@@ -328,7 +373,7 @@ class DevWatch:
 
 
 def next_scan_s(now):
-    """Za ile następny skan: rescan_s albo wcześniej, gdy niekompletny pad czeka na resztę urządzeń (SETTLE_S)."""
+    """How long until the next scan: rescan_s, or sooner when an incomplete pad is waiting for its other devices (SETTLE_S)."""
     wait = C.RESCAN_S
     if _first_seen:
         wait = min(wait, max(0.05, SETTLE_S - (now - min(_first_seen.values())) + 0.02))
@@ -336,6 +381,7 @@ def next_scan_s(now):
 
 
 async def supervisor():
+    """Entry point of the pad supervisor: start the /dev/input watcher, run the scan loop, close the watcher on exit."""
     watch = DevWatch()
     watch.start()
     try:
@@ -345,21 +391,27 @@ async def supervisor():
 
 
 async def _supervise(watch):
+    """The scan loop: find pads, give each a slot, start its run_ctrl task, and attach late devices to running pads.
+
+    A scan runs when /dev/input changed, when a slot is still free, or when a running pad still misses a device.
+    A newly appeared pad is held back for up to SETTLE_S until its motion and touchpad devices show up (they can
+    appear a fraction of a second later), then gets a slot (or a rejection message if all are taken).
+    """
     first = True
     changed = False
     while True:
-        # pełne sloty: skan tylko po zmianie w /dev/input - nowy pad ponad max_pads dostaje komunikat (_reject)
+        # all slots full: scan only after a change in /dev/input - a new pad over max_pads gets a message (_reject)
         if changed or len(state.active) < C.MAX_PADS or any(incomplete(c) for c in state.active.values()):
             groups = discover()
             now = time.monotonic()
             for k in [k for k in _first_seen if k not in groups]:
                 del _first_seen[k]
-            _no_slot.intersection_update(groups)          # pad odszedł - przy następnym połączeniu znów komunikat
+            _no_slot.intersection_update(groups)          # the pad went away - the message appears again on the next connection
             order = sorted(groups.items(),
                            key=lambda kv: event_num(kv[1]["pad"]) if "pad" in kv[1] else 1 << 30)
             for key, g in order:
                 c = state.active.get(key)
-                if c is not None:             # pad już działa: dołącz brakujące urządzenia, które pojawiły się później
+                if c is not None:             # the pad already works: attach the missing devices that appeared later
                     for kind in ("motion", "touch"):
                         if kind in g and getattr(c, KIND_ATTR[kind]) is None and not getattr(c, "closing", False):
                             dev = g.pop(kind)
@@ -370,14 +422,14 @@ async def _supervise(watch):
                 if "pad" not in g:
                     close_group(g)
                     continue
-                # nowo pojawiony pad: urządzenia motion/touchpad bywają widoczne ułamek sekundy później
+                # a newly appeared pad: the motion / touchpad devices can show up a fraction of a second later
                 t0 = _first_seen.setdefault(key, now)
                 if not ("motion" in g and "touch" in g) and now - t0 < SETTLE_S:
                     close_group(g)
                     continue
                 idx = pick_slot(key)
-                _first_seen.pop(key, None)    # bez tego pad bez slotu trzymał next_scan_s na 0,05 s - ~17 wybudzeń/s
-                if idx is None:                # bez końca (przy pełnych slotach discover() go już nie usuwał)
+                _first_seen.pop(key, None)    # without this a pad with no slot kept next_scan_s at 0.05 s - ~17 wake-ups/s
+                if idx is None:                # endlessly (with full slots discover() no longer removed it)
                     close_group(g)
                     _reject(key)
                     continue

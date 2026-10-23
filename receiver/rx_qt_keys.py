@@ -1,9 +1,9 @@
-"""Receiver: panel „Skróty pada” - wysuwana z prawej lista wszystkich skrótów pada (ikona w nagłówku okna).
+"""Receiver: the "Pad shortcuts" panel - a drawer sliding in from the right with every pad shortcut (icon in the window header).
 
-Treść (rx_shortcuts.groups) budowana od nowa przy każdym otwarciu, więc zawsze zgadza się z bieżącymi ustawieniami:
-przycisk trybu konsoli, akcje mastera, akcja długiego PS. Korona przy skrócie = tylko pad master.
-Tryb TV: D-pad ↑ / ↓ przewija listę (rx_qt_tv: QScrollArea z fokusem), na górze listy ↑ przechodzi do „Zamknij”,
-○ zamyka panel.
+The content (rx_shortcuts.groups) is rebuilt on every open, so it always matches the current settings:
+the console-mode button, the master actions, the long-PS action. A crown next to a shortcut = master pad only.
+TV mode: D-pad up / down scrolls the list (rx_qt_tv: a focused QScrollArea), up at the top of the list moves to "Close",
+circle closes the panel.
 """
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QScrollArea, QVBoxLayout, QWidget
@@ -18,7 +18,7 @@ from rx_qt_widgets import icon_label, label
 
 
 def _keys_widget(keys: tuple[str, ...]) -> QWidget:
-    """Ikony przycisków pada; "+" i czasy ("3 s", "×2") jako tekst."""
+    """Row of pad-button icons; "+" and timings ("3 s", "×2") are rendered as text."""
     w = QWidget()
     lay = QHBoxLayout(w)
     lay.setContentsMargins(0, 0, 0, 0)
@@ -30,6 +30,8 @@ def _keys_widget(keys: tuple[str, ...]) -> QWidget:
 
 
 class ShortcutRow(QFrame):
+    """One list row: the button combination on the left, the description in the middle, an optional master crown on the right."""
+
     def __init__(self, sc: SC.Shortcut):
         super().__init__()
         self.setObjectName("row")
@@ -50,7 +52,7 @@ class ShortcutRow(QFrame):
 
 
 class KeysDrawer(SideDrawer):
-    """Wysuwany z prawej panel ze wszystkimi skrótami pada."""
+    """Right-hand drawer listing all pad shortcuts."""
 
     width_px = 460
 
@@ -58,6 +60,7 @@ class KeysDrawer(SideDrawer):
         super().__init__(host, "keys", _("SKRÓTY PADA"))
 
     def _build(self, lay: QVBoxLayout) -> None:
+        """Create the static parts: the legend line and a scroll area that will hold the shortcut rows."""
         self.legend = label("", "dim", wrap=True)
         lay.addWidget(self.legend)
         self.body = QWidget()
@@ -69,19 +72,21 @@ class KeysDrawer(SideDrawer):
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.scroll.setFocusPolicy(Qt.FocusPolicy.StrongFocus)     # tryb TV: D-pad przewija listę
+        self.scroll.setFocusPolicy(Qt.FocusPolicy.StrongFocus)     # TV mode: the D-pad scrolls the list
         self.scroll.setWidget(self.body)
         lay.addWidget(self.scroll, 1)
         QWidget.setTabOrder(self.close_btn, self.scroll)
 
     def _on_open(self) -> None:
+        """Refill on every open so the list reflects settings changed since last time."""
         self.fill()
 
     def first_focus(self) -> QWidget:
+        """The scroll area gets the initial focus, so the D-pad can scroll right away."""
         return self.scroll
 
     def fill(self) -> None:
-        """Lista od nowa z bieżących ustawień."""
+        """Rebuild the list from the current settings: drop the old rows, add a heading per group, then the rows and the group note."""
         while (item := self.list_lay.takeAt(0)) is not None:
             if (w := item.widget()) is not None:
                 w.hide()

@@ -1,16 +1,16 @@
-"""Receiver: koniec okienka "Wybierz aplikację, aby otworzyć link ms-gamebar" (Windows, rejestr HKCU, bez admina).
+"""Receiver: get rid of the "Select an app to open this ms-gamebar link" popup (Windows, HKCU registry, no admin needed).
 
-Skąd się bierze: Windows traktuje PS wirtualnego DS4 jak przycisk Xbox / Guide i próbuje otworzyć Xbox Game Bar
-(link ms-gamebar:). Gdy Game Bar jest odinstalowany, nikt nie obsługuje tego linku - przy każdym PS pojawia się
-okno wyboru aplikacji. To samo robi Win+G (akcja "gamebar" po przytrzymaniu PS) -> ms-gamingoverlay:.
+Why it happens: Windows treats the PS button of the virtual DS4 as the Xbox / Guide button and tries to open the Xbox
+Game Bar (the ms-gamebar: link). When Game Bar is uninstalled nobody handles that link, so every PS press brings up the
+app chooser. Win+G (the "gamebar" action on a long PS press) does the same through ms-gamingoverlay:.
 
 suppress():
-  1. UseNexusForGameBarEnabled = 0 - przycisk pada nie otwiera Game Bar (to samo co przełącznik w Ustawieniach
-     Windows -> Granie -> Xbox Game Bar, którego bez zainstalowanego Game Bar nie da się kliknąć)
-  2. bez Game Bar: linki ms-gamebar / ms-gamebarservices / ms-gamingoverlay dostają w HKCU\\Software\\Classes
-     cichy program (systray.exe - w Windows 10/11 nic nie robi), więc okno wyboru aplikacji się nie pojawia.
-     Klucze mają znacznik MARKER - po ponownej instalacji Game Bar są usuwane i link znów otwiera Game Bar.
-Ustawienie już obowiązujące nie jest zapisywane drugi raz. Wynik: lista opisów zmian (do dziennika zdarzeń).
+  1. UseNexusForGameBarEnabled = 0 - the pad button no longer opens Game Bar (the same as the switch in Windows
+     Settings -> Gaming -> Xbox Game Bar, which cannot be clicked when Game Bar is not installed)
+  2. without Game Bar: the ms-gamebar / ms-gamebarservices / ms-gamingoverlay links get a silent handler in
+     HKCU\\Software\\Classes (systray.exe - it does nothing on Windows 10/11), so the app chooser never appears.
+     The keys carry a MARKER value - when Game Bar is installed again they are removed and the link opens Game Bar once more.
+A setting that is already in effect is not written a second time. Result: a list of change descriptions (for the event log).
 """
 import os
 
@@ -25,11 +25,13 @@ NOOP = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "sy
 
 
 def _winreg():
+    """Import winreg lazily (it exists only on Windows), so the module still imports on Linux."""
     import winreg
     return winreg
 
 
 def _subkeys(reg, root, path):
+    """Generator over the names of the subkeys of root\\path; yields nothing when the key does not exist."""
     try:
         with reg.OpenKey(root, path) as k:
             i = 0
@@ -44,6 +46,7 @@ def _subkeys(reg, root, path):
 
 
 def _value(reg, root, path, name):
+    """Registry value `name` under root\\path, or None when the key or the value is missing."""
     try:
         with reg.OpenKey(root, path) as k:
             return reg.QueryValueEx(k, name)[0]
@@ -52,15 +55,17 @@ def _value(reg, root, path, name):
 
 
 def gamebar_installed(reg):
+    """Whether the Xbox Gaming Overlay package is registered for the current user (the package list is the source of truth)."""
     return any(n.startswith(PACKAGE_PREFIX) for n in _subkeys(reg, reg.HKEY_CURRENT_USER, PACKAGES))
 
 
 def _ours(reg, scheme):
+    """Whether the handler of this URL scheme in HKCU was created by us (it carries the MARKER value)."""
     return _value(reg, reg.HKEY_CURRENT_USER, rf"{CLASSES}\{scheme}", MARKER) is not None
 
 
 def _handled(reg, scheme):
-    """Link obsługiwany przez coś innego niż nasz klucz (np. klasyczny program w HKLM / HKCU)."""
+    """The link is handled by something other than our key (e.g. a classic program registered in HKLM / HKCU)."""
     try:
         reg.OpenKey(reg.HKEY_CLASSES_ROOT, scheme).Close()
     except OSError:
@@ -69,6 +74,7 @@ def _handled(reg, scheme):
 
 
 def _register_noop(reg, scheme):
+    """Register the silent no-op handler for a URL scheme: a protocol key whose open command runs systray.exe, marked with MARKER."""
     hk = reg.HKEY_CURRENT_USER
     with reg.CreateKey(hk, rf"{CLASSES}\{scheme}") as k:
         reg.SetValueEx(k, "", 0, reg.REG_SZ, f"URL:{scheme}")
@@ -80,6 +86,7 @@ def _register_noop(reg, scheme):
 
 
 def _remove(reg, scheme):
+    """Delete our handler key of a URL scheme (children first, since the registry cannot delete a key that has subkeys)."""
     for sub in (r"\shell\open\command", r"\shell\open", r"\shell", ""):
         try:
             reg.DeleteKey(reg.HKEY_CURRENT_USER, rf"{CLASSES}\{scheme}{sub}")
@@ -88,6 +95,11 @@ def _remove(reg, scheme):
 
 
 def suppress(reg=None):
+    """Apply both fixes (see the module docstring), writing only what is not already set -> list of change descriptions.
+
+    With Game Bar installed, stale handlers left from an earlier run are removed; without it, a silent handler is
+    registered for every scheme that nobody else handles. `reg` can be a winreg stand-in (tests).
+    """
     reg = reg or _winreg()
     done = []
     if _value(reg, reg.HKEY_CURRENT_USER, GAMEBAR_KEY, NEXUS) != 0:

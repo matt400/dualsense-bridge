@@ -1,8 +1,9 @@
-"""Receiver: wysuwany z prawej panel nad oknem - wspólna podstawa paneli Bluetooth (rx_qt_bt) i skrótów (rx_qt_keys).
+"""Receiver: a drawer sliding in from the right over the window - the common base of the Bluetooth (rx_qt_bt) and shortcuts (rx_qt_keys)
+panels.
 
-Panel leży nad oknem (nie zmienia układu): przyciemnione tło, klik w nie albo Esc zamyka. Tryb TV: otwarty panel
-zatrzymuje fokus w sobie (rx_qt_tv.PadNav pyta focus_scope()), ○ go zamyka. Podklasa buduje treść w _build(lay)
-i może dopisać _on_open() / _on_close() oraz first_focus().
+The panel lies over the window (it does not change the layout): a dimmed background, a click on it or Esc closes it. TV mode: an
+open panel keeps the focus inside itself (rx_qt_tv.PadNav asks focus_scope()), circle closes it. A subclass builds its content
+in _build(lay) and may add _on_open() / _on_close() and first_focus().
 """
 from PySide6.QtCore import QEasingCurve, QEvent, QObject, QPoint, QPropertyAnimation, Qt, Signal
 from PySide6.QtGui import QKeySequence, QShortcut
@@ -17,7 +18,7 @@ WIDTH = 380
 
 
 class SideDrawer(QFrame):
-    """Panel wysuwany z prawej nad widżetem `host` (centralny widżet okna)."""
+    """A panel sliding in from the right over the `host` widget (the window's central widget), with a scrim behind it."""
 
     opened = Signal(bool)
     width_px = WIDTH
@@ -27,12 +28,12 @@ class SideDrawer(QFrame):
         self.host = host
         self.setObjectName("drawer")
         self._open = False
-        self.scrim = QWidget(host)                 # przyciemnione tło - klik zamyka
+        self.scrim = QWidget(host)                 # dimmed background - a click closes the drawer
         self.scrim.setObjectName("scrim")
         self.scrim.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.scrim.hide()
         self.scrim.installEventFilter(self)
-        host.installEventFilter(self)              # zmiana rozmiaru okna -> panel przy prawej krawędzi
+        host.installEventFilter(self)              # window resize -> keep the panel at the right edge
         self.anim = QPropertyAnimation(self, b"pos", self)
         self.anim.setDuration(ANIM_MS)
         self.anim.setEasingCurve(QEasingCurve.Type.OutCubic)
@@ -55,31 +56,37 @@ class SideDrawer(QFrame):
                   context=Qt.ShortcutContext.WidgetWithChildrenShortcut)
         self.hide()
 
-    # ---------- dla podklas ----------
+    # ---------- for subclasses ----------
     def _build(self, lay: QVBoxLayout) -> None:
+        """Fill the drawer body below the header (the layout `lay` already holds the title row)."""
         raise NotImplementedError
 
     def _on_open(self) -> None:
-        pass
+        """Hook: called when the drawer starts opening (refresh the content here)."""
 
     def _on_close(self) -> None:
-        pass
+        """Hook: called when the drawer starts closing."""
 
     def first_focus(self) -> QWidget:
+        """The widget that gets the focus when the drawer opens (the Close button by default)."""
         return self.close_btn
 
-    # ---------- otwieranie ----------
+    # ---------- opening ----------
     def rescale(self) -> None:
+        """Recompute the width (the preferred width, but at most the host width minus a margin) and reposition."""
         self.setFixedWidth(min(px(self.width_px), max(px(280), self.host.width() - px(40))))
         self.place()
 
     def is_open(self) -> bool:
+        """Whether the drawer is open (or opening)."""
         return self._open
 
     def toggle(self) -> None:
+        """Open the drawer when closed, close it when open."""
         self.close_drawer() if self._open else self.open_drawer()
 
     def open_drawer(self) -> None:
+        """Show the scrim and the drawer, run _on_open, slide the drawer in and focus first_focus(); emits opened(True)."""
         if self._open:
             return
         self._open = True
@@ -95,6 +102,7 @@ class SideDrawer(QFrame):
         self.opened.emit(True)
 
     def close_drawer(self) -> None:
+        """Run _on_close, hide the scrim and slide the drawer out; emits opened(False). No-op when already closed."""
         if not self._open:
             return
         self._open = False
@@ -104,6 +112,7 @@ class SideDrawer(QFrame):
         self.opened.emit(False)
 
     def _slide(self, show: bool) -> None:
+        """Animate the drawer's position between "outside" (just past the right edge) and "inside" (flush with it)."""
         y = self.host.rect().top()
         inside = QPoint(self.host.width() - self.width(), y)
         outside = QPoint(self.host.width(), y)
@@ -113,11 +122,12 @@ class SideDrawer(QFrame):
         self.anim.start()
 
     def _anim_done(self) -> None:
+        """After the slide-out animation ends, hide the widget so it no longer takes part in layout or focus."""
         if not self._open:
             self.hide()
 
     def place(self) -> None:
-        """Panel przy prawej krawędzi, na całą wysokość okna (pod nagłówkiem też - jest nad wszystkim)."""
+        """Put the panel at the right edge, over the whole window height (the header too - it lies above everything)."""
         h = self.host.rect()
         self.resize(self.width(), h.height())
         if self._open and self.anim.state() != QPropertyAnimation.State.Running:
@@ -125,6 +135,7 @@ class SideDrawer(QFrame):
         self.scrim.setGeometry(h)
 
     def eventFilter(self, obj: QObject, e: QEvent) -> bool:
+        """Re-layout when the host is resized; a mouse press on the scrim closes the drawer."""
         if obj is self.host and e.type() == QEvent.Type.Resize:
             self.rescale()
         elif obj is self.scrim and e.type() == QEvent.Type.MouseButtonPress:
@@ -133,5 +144,5 @@ class SideDrawer(QFrame):
         return super().eventFilter(obj, e)
 
     def focus_scope(self) -> QWidget | None:
-        """Dla nawigacji padem: otwarty panel zatrzymuje fokus w sobie."""
+        """For pad navigation: an open drawer keeps the focus inside itself."""
         return self if self._open else None

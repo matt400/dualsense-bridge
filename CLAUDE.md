@@ -1,58 +1,58 @@
-# DualSense bridge – instrukcje dla Claude
+# DualSense bridge – instructions for Claude
 
-Pad DualSense → Bluetooth → **sender** (Linux, evdev) → UDP 5005 → **receiver** (Windows) → wirtualny DualSense
-(HIDMaestro) albo DS4 (ViGEmBus) + serwer DSU (127.0.0.1:26760). Feedback (wibracja, lightbar, spusty) idzie z powrotem.
+DualSense pad → Bluetooth → **sender** (Linux, evdev) → UDP 5005 → **receiver** (Windows) → virtual DualSense
+(HIDMaestro) or DS4 (ViGEmBus) + DSU server (127.0.0.1:26760). Feedback (rumble, lightbar, triggers) flows back.
 
 ## Stack
-- Python 3.11+ (CI: 3.12), bez frameworka, bez buildu.
-- Sender: `evdev`, asyncio, BlueZ (`busctl` / `bluetoothctl`), systemd; działa też na musl (postmarketOS, `doas`).
-- Receiver: PySide6 (okno + tray), `pythonnet` + HIDMaestro (.NET 10), `vgamepad` (ViGEm), `pycaw`, `winotify`, ctypes WinAPI.
+- Python 3.11+ (CI: 3.12), no framework, no build step.
+- Sender: `evdev`, asyncio, BlueZ (`busctl` / `bluetoothctl`), systemd; also works on musl (postmarketOS, `doas`).
+- Receiver: PySide6 (window + tray), `pythonnet` + HIDMaestro (.NET 10), `vgamepad` (ViGEm), `pycaw`, `winotify`, ctypes WinAPI.
 
-## Struktura
+## Layout
 ```
-sender/    sender_controller.py (wejście) + sender_*.py; install-service.sh, service/
-receiver/  receiver_controller.py (wejście) + rx_*.py (logika) + rx_qt*.py (okno)
-tests/     testy na Linuksie ze stubami Windows/evdev; fakebin/ = podstawiony bluetoothctl
-docs/      EN domyślnie, PL jako *.pl.md
-tools/     screenshots.py (zrzuty okna offscreen -> docs/img)
+sender/    sender_controller.py (entry point) + sender_*.py; install-service.sh, service/
+receiver/  receiver_controller.py (entry point) + rx_*.py (logic) + rx_qt*.py (window)
+tests/     Linux tests with Windows/evdev stubs; fakebin/ = fake bluetoothctl
+docs/      EN by default, PL as *.pl.md
+tools/     screenshots.py (offscreen window screenshots -> docs/img)
 ```
 
-## Twarde zasady
-- `receiver/proto.py` i `sender/proto.py` MUSZĄ być identyczne bajt w bajt (test to sprawdza). Zmiana = edytuj oba.
-- Protokół jest wstecznie zgodny: nowe pola = dłuższy wariant tego samego typu, wysyłany tylko do strony,
-  o której wiadomo, że go zna (wersja / CAP_* / pong2 / scfg). Starsza strona odrzuca nieznaną długość.
-  Nie zmieniaj formatów istniejących pakietów.
-- Gorąca ścieżka (odczyt evdev, pakowanie, odbiór UDP, budowa raportu HID) – bez alokacji i kopii, liczy się latencja.
-- Zapis plików ustawień tylko przez `proto.write_file` / `proto.write_json` (atomowo, fsync).
-- Teksty okna przez `rx_i18n` (PL + EN), nie wpisuj stringów UI na sztywno.
-- Kod Windows (ctypes, pythonnet, COM) musi się importować na Linuksie ze stubami z `tests/rxenv.py`.
+## Hard rules
+- `receiver/proto.py` and `sender/proto.py` MUST be byte-for-byte identical (a test checks this). Changing one means editing both.
+- The protocol is backward compatible: new fields = a longer variant of the same packet type, sent only to a peer
+  known to understand it (version / CAP_* / pong2 / scfg). An older peer drops an unknown length.
+  Never change the formats of existing packets.
+- Hot path (evdev read, packing, UDP receive, HID report building) – no allocations or copies, latency is what matters.
+- Settings files are written only via `proto.write_file` / `proto.write_json` (atomic, fsync).
+- Window texts go through `rx_i18n` (PL + EN); never hardcode UI strings.
+- Windows code (ctypes, pythonnet, COM) must import on Linux using the stubs from `tests/rxenv.py`.
 
-## Styl kodu
-- Pliki: `sender_<obszar>.py`, `rx_<obszar>.py`, okno `rx_qt_<obszar>.py`; snake_case.
-- Komentarze i docstringi po polsku; docstring modułu opisuje jego rolę (i w plikach wejściowych listę modułów).
-- Receiver: współdzielony stan w `rx_state` (`S.xxx`, `S.lock`); długie pętle w wątkach przez `rx_state` (run_forever).
-- Sender: asyncio; pętle owinięte w `forever()` (restart po wyjątku, nie zabijają procesu).
-- Konfiguracja: `DEFAULTS` w `sender_config` / `rx_config`, plik TOML/JSON, flagi CLI nadpisują plik.
-- Lint: `ruff` wg `pyproject.toml` (linia 140 znaków, py311).
+## Code style
+- Files: `sender_<area>.py`, `rx_<area>.py`, window `rx_qt_<area>.py`; snake_case.
+- Comments and docstrings are in English and explain how the code works (not just what, but how and why); a module docstring describes the module's role (and, in entry-point files, lists the modules). Texts shown in the window stay as `_("...")` keys (in Polish, translated in `rx_i18n`).
+- Receiver: shared state lives in `rx_state` (`S.xxx`, `S.lock`); long-running thread loops go through `rx_state` (run_forever).
+- Sender: asyncio; loops are wrapped in `forever()` (restart after an exception, never kill the process).
+- Configuration: `DEFAULTS` in `sender_config` / `rx_config`, TOML/JSON file, CLI flags override the file.
+- Lint: `ruff` per `pyproject.toml` (line length 140, py311).
 
-## Testy
+## Tests
 ```
 pip install evdev ruff PySide6-Essentials
-./tests/run_tests.sh          # z katalogu głównego; ruff + wszystkie testy, GUI w Qt offscreen
+./tests/run_tests.sh          # from the repo root; ruff + all tests, GUI in Qt offscreen
 ```
-- Testy to zwykłe skrypty (`python3 tests/test_x.py receiver|sender`), bez pytest.
-  `*_tx.py` = sender, reszta = receiver, `test_e2e*` / `test_bt` = oba.
-- Nowy plik testu dopisz do odpowiedniej listy w `tests/run_tests.sh`, inaczej nie wejdzie do CI.
-- Regresje z przeglądu błędów: `tests/test_hunt<N>.py` / `test_hunt<N>_tx.py`.
-- Ręcznie (nie da się w CI): prawdziwy pad, ViGEm, HIDMaestro, DisplaySwitch, pycaw, powiadomienia.
+- Tests are plain scripts (`python3 tests/test_x.py receiver|sender`), no pytest.
+  `*_tx.py` = sender, the rest = receiver, `test_e2e*` / `test_bt` = both.
+- Add a new test file to the matching list in `tests/run_tests.sh`, otherwise it won't run in CI.
+- Regressions from bug reviews: `tests/test_hunt<N>.py` / `test_hunt<N>_tx.py`.
+- Manual only (can't be done in CI): a real pad, ViGEm, HIDMaestro, DisplaySwitch, pycaw, notifications.
 
-## Uruchamianie
-- Receiver: `cd receiver && pip install -r requirements.txt && python receiver_controller.py` (sam podnosi się do admina; `--no-elevate`).
-- Sender: `cd sender && cp sender.example.toml sender.toml` (ustaw `host`), `sudo ./install-service.sh`;
-  log `journalctl -u dualsense-sender -f`.
-- Po zmianach UI: `python3 tools/screenshots.py` i commit PNG z `docs/img`.
+## Running
+- Receiver: `cd receiver && pip install -r requirements.txt && python receiver_controller.py` (elevates itself to admin; `--no-elevate`).
+- Sender: `cd sender && cp sender.example.toml sender.toml` (set `host`), `sudo ./install-service.sh`;
+  log: `journalctl -u dualsense-sender -f`.
+- After UI changes: run `python3 tools/screenshots.py` and commit the PNGs in `docs/img`.
 
 ## Git
-- Gałęzie: `fix/…`, `feat/…`, `docs/…`, `security/…`; zmiany przez PR z merge commitem do `main`.
-- Commity: krótki opis po polsku z prefiksem obszaru (`Receiver: …`, `Sender BT: …`, `Bug hunt N: …`, `docs: …`).
-- Dokumentacja: zmiana w EN (`docs/*.md`) wymaga odpowiednika w PL (`docs/*.pl.md`) i odwrotnie.
+- Branches: `fix/…`, `feat/…`, `docs/…`, `security/…`; changes go through a PR merged with a merge commit into `main`.
+- Commits and PR descriptions are in English: a short summary with an area prefix (`Receiver: …`, `Sender BT: …`, `Bug hunt N: …`, `docs: …`).
+- Documentation: a change in EN (`docs/*.md`) needs a matching change in PL (`docs/*.pl.md`) and vice versa.

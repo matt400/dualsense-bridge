@@ -1,10 +1,11 @@
-"""Sender: zdarzenia do dziennika w oknie receivera (pakiet event) - połączenie / rozłączenie pada, Wake-on-LAN,
-brak receivera, błędy.
+"""Sender: events for the log in the receiver window (event packet) - pad connected / disconnected, Wake-on-LAN,
+receiver missing, errors.
 
-Tylko gdy receiver je włączył (flaga SCFG_EVENTS w pakiecie scfg, zapamiętana w wol.json - działa też od startu,
-zanim receiver się odezwie). Zdarzenie czeka w kolejce (najwyżej KEEP), aż receiver odpowiada na ping, i idzie
-SENDS razy w kolejnych pingach (UDP); receiver odrzuca powtórki po numerze. Dzięki temu np. wysłany Wake-on-LAN
-pojawia się w dzienniku, gdy komputer wstanie - z prawdziwym czasem (pole wieku).
+Only active when the receiver has enabled them (the SCFG_EVENTS flag in the scfg packet, remembered in wol.json - so
+it works from startup, before the receiver says anything). An event waits in a queue (at most KEEP entries) until the
+receiver answers pings, and is then sent SENDS times on consecutive pings (UDP is lossy); the receiver drops the
+repeats by sequence number. This way, for example, a Wake-on-LAN that was sent shows up in the log once the PC
+wakes up - with its real time (the age field).
 """
 import collections
 import random
@@ -16,31 +17,41 @@ KEEP = 32
 SENDS = 2
 ARG_MAX = BODY[T_EVENT].size - 6
 enabled = False
-_queue = collections.deque(maxlen=KEEP)      # [numer, czas, poziom, kod, slot, argument, ile razy jeszcze]
+_queue = collections.deque(maxlen=KEEP)      # [number, time, level, code, slot, argument, sends left]
 _next = random.getrandbits(16)
 
 
 def add(level, code, idx=255, arg=""):
+    """Queue an event for the receiver (no-op while events are disabled).
+
+    Every event gets a 16-bit sequence number (so the receiver can drop duplicates) and a monotonic timestamp (so the
+    receiver can compute the event's age when it finally arrives). The argument text is cut on a UTF-8 character
+    boundary to fit the packet. The deque has a fixed length: if the receiver stays silent, the oldest events drop out.
+    """
     global _next
     if not enabled:
         return
     _next = (_next + 1) & 0xFFFF
-    _queue.append([_next, time.monotonic(), level, code, idx, utf8_field(arg, ARG_MAX, "…"), SENDS])   # cięcie na granicy znaku
+    _queue.append([_next, time.monotonic(), level, code, idx, utf8_field(arg, ARG_MAX, "…"), SENDS])   # cut on a character boundary
 
 
 def info(code, idx=255, arg=""):
+    """Queue an informational event."""
     add(EV_INFO, code, idx, arg)
 
 
 def warn(code, idx=255, arg=""):
+    """Queue a warning event."""
     add(EV_WARN, code, idx, arg)
 
 
 def error(code, idx=255, arg=""):
+    """Queue an error event."""
     add(EV_ERROR, code, idx, arg)
 
 
 def set_enabled(on):
+    """Turn event reporting on or off; turning it off also drops everything still waiting in the queue."""
     global enabled
     enabled = bool(on)
     if not enabled:
@@ -48,7 +59,12 @@ def set_enabled(on):
 
 
 def flush(emit, now=None):
-    """Wołane z pętli pingu, gdy receiver odpowiada: wysyła czekające zdarzenia (każde SENDS razy)."""
+    """Called from the ping loop when the receiver answers: send the waiting events, each one SENDS times in total.
+
+    Every call sends each queued event once, with its age in seconds (capped to 16 bits), and decrements its counter;
+    an event is removed once its counter reaches zero. Because the call happens on every ping, the repeats are spread
+    over consecutive pings, which makes a single lost UDP packet harmless.
+    """
     now = time.monotonic() if now is None else now
     for ev in list(_queue):
         num, t, level, code, idx, arg, left = ev
@@ -59,4 +75,5 @@ def flush(emit, now=None):
 
 
 def pending():
+    """Number of events still waiting to be (re)sent."""
     return len(_queue)

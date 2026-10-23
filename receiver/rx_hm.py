@@ -1,22 +1,22 @@
-"""Receiver: backend HIDMaestro - wirtualny DualSense (sterownik UMDF2 w trybie użytkownika, MIT, rozwijany).
-Zgodny z HIDMaestro 1.x i 2.0.x (sprawdzony z poradnikiem migracji 2.0.3). Używane wywołania: LoadDefaultProfiles,
-InstallDriver, GetProfile, CreateControllerAt, SubmitRawReport, OutputReceived, Dispose - te same w obu;
-2.0 dodaje tylko diagnostykę: ProfileLoadIssues, LastDriverInstall, TransportIndex
-i wyjątki wyprowadzone z InvalidOperationException - patrz describe_error).
+"""Receiver: the HIDMaestro backend - a virtual DualSense (a user-mode UMDF2 driver, MIT, actively developed).
+Compatible with HIDMaestro 1.x and 2.0.x (checked against the 2.0.3 migration guide). Calls used: LoadDefaultProfiles,
+InstallDriver, GetProfile, CreateControllerAt, SubmitRawReport, OutputReceived, Dispose - the same in both versions;
+2.0 only adds diagnostics: ProfileLoadIssues, LastDriverInstall, TransportIndex
+and exceptions derived from InvalidOperationException - see describe_error.
 
-HIDMaestro to biblioteka .NET (HIDMaestro.Core.dll, .NET 10) - wołana z Pythona przez pythonnet (CoreCLR). Sterownik
-siedzi w samej DLL i instaluje się przy pierwszym użyciu (InstallDriver, idempotentne). Tworzenie urządzenia wymaga
-uprawnień administratora (Windows: SeLoadDriverPrivilege) - bez nich backend się nie ładuje i receiver wraca do ViGEm.
+HIDMaestro is a .NET library (HIDMaestro.Core.dll, .NET 10) - called from Python through pythonnet (CoreCLR). The driver
+lives inside the DLL and installs on first use (InstallDriver, idempotent). Creating a device needs administrator
+rights (Windows: SeLoadDriverPrivilege) - without them the backend does not load and the receiver falls back to ViGEm.
 
-  get(cfg_path)   -> Backend (ładowany raz na ścieżkę DLL; błąd zapamiętany do reset())
-  find_dll(path)  ścieżka z ustawień albo najnowsza pobrana wersja (rx_hm_update: hidmaestro/vX.Y.Z/), potem
-                  hidmaestro/HIDMaestro.Core.dll obok receivera (wypakowana ręcznie)
-  Backend.create(slot, on_fb) -> Pad: build() pisze raport DualSense do pad.buf, submit() wysyła go bez kopiowania
+  get(cfg_path)   -> Backend (loaded once per DLL path; an error is remembered until reset())
+  find_dll(path)  the path from the settings, or the newest downloaded version (rx_hm_update: hidmaestro/vX.Y.Z/), then
+                  hidmaestro/HIDMaestro.Core.dll next to the receiver (unpacked by hand)
+  Backend.create(slot, on_fb) -> Pad: build() writes a DualSense report into pad.buf, submit() sends it without copying
 
-Gorąca ścieżka: SubmitRawReport(ReadOnlySpan<byte>) nie da się zawołać z pythonnet wprost (Span to ref struct), więc
-przy ładowaniu powstaje mała metoda IL: (kontroler, wskaźnik, długość) -> SubmitRawReport(new ReadOnlySpan(wsk, dł)).
-Raport leży w stałym buforze Pythona - jedno wywołanie delegata na raport (~4 us), bez alokacji i kopiowania po stronie
-Pythona. Interop sprawdzony z pythonnet 3.2 i .NET 10 na atrapie API HIDMaestro (te same sygnatury).
+Hot path: SubmitRawReport(ReadOnlySpan<byte>) cannot be called from pythonnet directly (Span is a ref struct), so
+loading emits a small IL method: (controller, pointer, length) -> SubmitRawReport(new ReadOnlySpan(ptr, len)).
+The report sits in a fixed Python buffer - one delegate call per report (~4 us), no allocation or copying on the
+Python side. The interop was checked with pythonnet 3.2 and .NET 10 on a mock of the HIDMaestro API (same signatures).
 """
 import ctypes
 import os
@@ -27,20 +27,20 @@ from proto import TRIG_RAW_LEN
 from rx_report import build_ds5_report
 
 DLL = "HIDMaestro.Core.dll"
-PROFILE = "dualsense"          # profil USB DualSense (054C:0CE6) z HIDMaestro
-REPORT_LEN = 63                # raport wejściowy 0x01 bez bajtu ID
-ORDER_WAIT = 10.0              # tworzenie urządzenia PnP trwa od ~0.1 s do kilku s (wyższe sloty czekają na niższe)
-OUT_REPORT = 0x02              # raport wyjściowy DualSense: silniki, efekty spustów, lightbar
+PROFILE = "dualsense"          # the USB DualSense profile (054C:0CE6) from HIDMaestro
+REPORT_LEN = 63                # input report 0x01 without the ID byte
+ORDER_WAIT = 10.0              # creating a PnP device takes from ~0.1 s to several s (higher slots wait for lower ones)
+OUT_REPORT = 0x02              # the DualSense output report: motors, trigger effects, lightbar
 HID_OUTPUT = 0                 # HMOutputSource.HidOutput
 
 
-NET_MAJOR = 10                 # HIDMaestro.Core.dll jest pod net10.0 - starszy runtime nie wczyta jej typów
+NET_MAJOR = 10                 # HIDMaestro.Core.dll targets net10.0 - an older runtime cannot load its types
 WINGET_NET = "Microsoft.DotNet.Runtime.10"
 
 
 class HMError(Exception):
-    """HIDMaestro niedostępny; missing = brak DLL (w trybie auto to zwykła sytuacja, bez ostrzeżenia);
-    need_dotnet = brak .NET 10 (okno proponuje instalację)."""
+    """HIDMaestro unavailable; missing = no DLL (in auto mode an ordinary situation, no warning);
+    need_dotnet = no .NET 10 (the window offers to install it)."""
 
     def __init__(self, msg, missing=False, need_dotnet=False):
         super().__init__(msg)
@@ -48,17 +48,20 @@ class HMError(Exception):
 
 
 _lock = threading.Lock()
-_cache = {}                    # ścieżka DLL -> Backend albo HMError (nie próbujemy w kółko - reset() przy zmianie ustawień)
+_cache = {}                    # DLL path -> Backend or HMError (no endless retries - reset() on a settings change)
 _clr_ready = False
-_loaded = None                 # załadowany Backend: jedna wersja HIDMaestro na proces (CLR nie zwalnia DLL) - nowsza
-#                                pobrana w trakcie działa od restartu receivera
+_loaded = None                 # the loaded Backend: one HIDMaestro version per process (the CLR does not unload DLLs) - a newer
+# one downloaded while running takes effect after a receiver restart
 
 
 def here():
+    """Folder of this module (where hidmaestro/ and a hand-placed DLL are looked up)."""
     return os.path.dirname(os.path.abspath(__file__))
 
 
 def candidates(cfg_path=""):
+    """DLL paths to try, in order: the configured path (a folder gets the DLL name appended), else the newest downloaded version,
+    hidmaestro/ and the receiver folder."""
     if cfg_path:
         p = os.path.expandvars(os.path.expanduser(cfg_path))
         return [os.path.join(p, DLL) if os.path.isdir(p) else p]
@@ -68,10 +71,12 @@ def candidates(cfg_path=""):
 
 
 def find_dll(cfg_path=""):
+    """The first candidate that exists, or None."""
     return next((p for p in candidates(cfg_path) if os.path.isfile(p)), None)
 
 
 def is_admin():
+    """Whether the process has administrator rights (always True off Windows)."""
     if os.name != "nt":
         return True
     try:
@@ -81,18 +86,19 @@ def is_admin():
 
 
 def loaded():
+    """The backend loaded in this process, or None."""
     return _loaded
 
 
 def reset():
-    """Zmiana ustawień: następne get() próbuje od nowa (np. po wskazaniu innej DLL). Załadowany backend zostaje."""
+    """Settings changed: the next get() tries again (e.g. after pointing to another DLL). A loaded backend stays."""
     with _lock:
         for k in [k for k, v in _cache.items() if isinstance(v, HMError)]:
             del _cache[k]
 
 
 def get(cfg_path=""):
-    """-> Backend albo HMError. Ładowanie (CoreCLR + sterownik) tylko raz - pierwszy wątek slotu płaci ~0.5-1 s."""
+    """-> Backend or HMError. Loading (CoreCLR + driver) happens once - the first slot thread pays ~0.5-1 s."""
     global _loaded
     if _loaded is not None:
         return _loaded
@@ -109,7 +115,7 @@ def get(cfg_path=""):
             except HMError as e:
                 _cache[path] = e
                 raise
-            except Exception as e:            # pythonnet / .NET: każdy wyjątek jako czytelny błąd backendu
+            except Exception as e:            # pythonnet / .NET: any exception becomes a readable backend error
                 err = HMError(f"{type(e).__name__}: {e}")
                 _cache[path] = err
                 raise err from e
@@ -117,7 +123,7 @@ def get(cfg_path=""):
         return hit
 
 
-# Wyjątki HIDMaestro 2.0 (wszystkie dziedziczą po InvalidOperationException) -> co zwykle oznaczają
+# HIDMaestro 2.0 exceptions (all derive from InvalidOperationException) -> what they usually mean
 _HM_HINTS = {
     "HMResourceInUseException": "another program or a second receiver holds this controller's index or identity",
     "HMDriverVersionException": "the installed driver does not serve this HIDMaestro version",
@@ -127,15 +133,16 @@ _HM_HINTS = {
 
 
 def describe_error(e):
-    """Błąd z HIDMaestro jako jedna czytelna linia: typ .NET, komunikat i (dla wyjątków 2.0) wskazówka. Pola HMProfileException /
-    HMDriverVersionException (ProfileId, JsonPath, Reason, Problem) są już w komunikacie - tu tylko wskazówka."""
+    """A HIDMaestro error as one readable line: the .NET type, the message and (for 2.0 exceptions) a hint. The fields of
+    HMProfileException / HMDriverVersionException (ProfileId, JsonPath, Reason, Problem) are already in the message - only the hint is
+    added."""
     name = type(e).__name__
     hint = _HM_HINTS.get(name)
     return f"{name}: {e}" + (f" ({hint})" if hint else "")
 
 
 def profile_issues(ctx, limit=3):
-    """Odrzucone pliki profili (HIDMaestro 2.0: HMContext.ProfileLoadIssues; 1.x ich nie ma -> []) jako [\"plik: ścieżka: powód\"]."""
+    """Profile files refused by HIDMaestro (2.0: HMContext.ProfileLoadIssues; 1.x has none -> []) as ["file: path: reason"]."""
     try:
         issues = list(getattr(ctx, "ProfileLoadIssues", None) or ())
     except Exception:
@@ -148,6 +155,7 @@ def profile_issues(ctx, limit=3):
 
 
 def _major(version):
+    """Major part of a version string; 0 when it is not a number."""
     try:
         return int(str(version).split(".")[0])
     except ValueError:
@@ -155,8 +163,8 @@ def _major(version):
 
 
 def net_runtimes():
-    """Zainstalowane wersje Microsoft.NETCore.App (clr_loader szuka ich jak dotnet: DOTNET_ROOT, Program Files).
-    None = nie wiadomo (brak pythonnet/clr_loader) - to nie to samo co brak .NET."""
+    """Installed Microsoft.NETCore.App versions (clr_loader looks for them like dotnet: DOTNET_ROOT, Program Files).
+    None = unknown (no pythonnet / clr_loader) - not the same as no .NET."""
     try:
         from clr_loader import find_runtimes
     except ImportError:
@@ -168,13 +176,13 @@ def net_runtimes():
 
 
 def best_runtime(runtimes=None):
-    """Najnowszy runtime >= NET_MAJOR albo None."""
+    """The newest runtime >= NET_MAJOR, or None."""
     ok = [r for r in (net_runtimes() if runtimes is None else runtimes) or () if _major(r.version) >= NET_MAJOR]
     return max(ok, key=lambda r: tuple(_major(x) for x in str(r.version).split("."))) if ok else None
 
 
 def need_dotnet():
-    """Okno: brak .NET 10. Bez pythonnet nie wiadomo - wtedy błąd pythonnet, a nie propozycja instalacji .NET."""
+    """For the window: .NET 10 is missing. Without pythonnet it is unknown - then a pythonnet error, not an offer to install .NET."""
     if os.name != "nt" or _clr_ready:
         return False
     rts = net_runtimes()
@@ -182,7 +190,8 @@ def need_dotnet():
 
 
 def install_dotnet():
-    """.NET 10 przez winget (receiver działa jako administrator - bez okien). -> (ok, opis). Wołać w tle (do kilku min)."""
+    """Install .NET 10 through winget (the receiver runs as administrator - no windows). -> (ok, description). Call in the background (up
+    to several min)."""
     import subprocess
     cmd = ["winget", "install", "--id", WINGET_NET, "--exact", "--silent", "--accept-package-agreements",
            "--accept-source-agreements", "--disable-interactivity"]
@@ -198,12 +207,12 @@ def install_dotnet():
 
 
 def _load_clr(path):
-    """CoreCLR przez pythonnet (raz na proces) i referencja do HIDMaestro.Core.dll z jej folderu (zależności obok).
-    Runtime wybierany jawnie (>= .NET 10): clr_loader bez wskazania bierze najnowszy zainstalowany, a starszy niż 10
-    wczytywał DLL bez żadnego typu - import kończył się "No module named 'HIDMaestro'"."""
+    """CoreCLR through pythonnet (once per process) and a reference to HIDMaestro.Core.dll from its folder (dependencies next to it).
+    The runtime is chosen explicitly (>= .NET 10): without a choice clr_loader takes the newest installed, and one older than 10
+    loaded the DLL with no types at all - the import ended with "No module named 'HIDMaestro'"."""
     global _clr_ready
     if not _clr_ready:
-        rts = net_runtimes()                    # najpierw .NET: konkretny błąd zamiast ogólnego "brak pythonnet"
+        rts = net_runtimes()                    # check .NET first: a specific error instead of the generic "pythonnet missing"
         rt = best_runtime(rts)
         if rt is None and rts is not None:
             found = ", ".join(sorted(str(r.version) for r in rts)) or "none"
@@ -215,7 +224,7 @@ def _load_clr(path):
         try:
             load("coreclr", runtime_spec=rt)
         except RuntimeError:
-            pass                                # runtime już załadowany (np. drugi backend po zmianie ustawień)
+            pass                                # the runtime is already loaded (e.g. a second backend after a settings change)
         except Exception as e:
             raise HMError(f".NET runtime: {e}") from e
         _clr_ready = True
@@ -228,8 +237,8 @@ def _load_clr(path):
 
 
 def submit_delegate(clr, ctrl_type):
-    """Delegat (kontroler, IntPtr, int) -> SubmitRawReport(new ReadOnlySpan<byte>((void*)ptr, len)) jako metoda IL.
-    pythonnet nie przekazuje bytes / tablic jako ReadOnlySpan, więc bez tego delegata nie ma jak wysłać raportu."""
+    """A delegate (controller, IntPtr, int) -> SubmitRawReport(new ReadOnlySpan<byte>((void*)ptr, len)) built as an IL method.
+    pythonnet does not pass bytes / arrays as a ReadOnlySpan, so without this delegate there is no way to send a report."""
     try:
         from System import Action, Array, Byte, Int32, IntPtr, Type, Void
         from System.Reflection.Emit import DynamicMethod, OpCodes
@@ -256,7 +265,7 @@ def submit_delegate(clr, ctrl_type):
 
 
 def _type_error(path):
-    """DLL wczytana, a typów nie ma: pierwszy brakujący składnik z LoaderExceptions (zależność, wersja runtime)."""
+    """The DLL loaded but has no types: the first missing component from LoaderExceptions (a dependency, the runtime version)."""
     try:
         from System.Reflection import Assembly
         Assembly.LoadFrom(path).GetTypes()
@@ -272,6 +281,8 @@ class Backend:
     order_wait = ORDER_WAIT
 
     def __init__(self, path):
+        """Load the CLR and the DLL, install the driver, find the DualSense profile and bind the IL submit delegate; any failure is an
+        HMError."""
         if not is_admin():
             raise HMError("administrator rights required (Windows needs them to create a virtual device)")
         clr = _load_clr(path)
@@ -284,29 +295,31 @@ class Backend:
         self.ctx = HMContext()
         self.ctx.LoadDefaultProfiles()
         try:
-            self.ctx.InstallDriver()           # idempotentne: ~50 ms, gdy aktualny (2.0: po zmianie wersji raz pełna instalacja)
+            self.ctx.InstallDriver()           # idempotent: ~50 ms when current (2.0: a full install once after a version change)
         except Exception as e:
             raise HMError(f"driver install: {describe_error(e)}") from e
-        last = getattr(self.ctx, "LastDriverInstall", None)          # 2.0: co zrobiła instalacja (AlreadyCurrent / Upgraded ...)
+        last = getattr(self.ctx, "LastDriverInstall", None)          # 2.0: what the install did (AlreadyCurrent / Upgraded ...)
         if last is not None:
             print(f"HIDMaestro driver: {last}")
         self.profile = self.ctx.GetProfile(PROFILE)
         if self.profile is None:
-            why = "; ".join(profile_issues(self.ctx))                # 2.0 ładuje profile ściśle - powód odrzucenia jest w ProfileLoadIssues
+            # 2.0 loads profiles strictly - the reason for refusal is in ProfileLoadIssues
+            why = "; ".join(profile_issues(self.ctx))
             raise HMError(f"HIDMaestro has no '{PROFILE}' profile" + (f" (refused: {why})" if why else ""))
         self.submit_fn = submit_delegate(clr, HMController)
         self.path = path
         print(f"HIDMaestro loaded: {path}")
 
     def create(self, slot, on_fb):
-        """Wirtualny DualSense na stałym indeksie i ze stałą tożsamością slotu: te same ścieżki urządzenia po każdym
-        odtworzeniu (Steam / gry pamiętają ustawienia pada). Stara wersja SDK bez klucza tożsamości - sam indeks."""
+        """A virtual DualSense on a fixed index and with a fixed slot identity: the same device paths after every
+        recreation (Steam / games remember the pad's settings). An old SDK without the identity key - the index alone."""
         key = f"dualsense-bridge:{slot}"
         try:
             ctrl = self.ctx.CreateControllerAt(slot, self.profile, key)
         except TypeError:
             ctrl = self.ctx.CreateControllerAt(slot, self.profile)
-        ti = getattr(ctrl, "TransportIndex", None)                   # 2.0: gdy indeks zajmuje inny program, kontroler dostaje inny
+        # 2.0: when another program holds the index, the controller gets a different one
+        ti = getattr(ctrl, "TransportIndex", None)
         if ti is not None and int(ti) != slot:
             print(f"Controller {slot}: HIDMaestro transport index {int(ti)} (slot {slot} is used by another program)")
         try:
@@ -316,26 +329,26 @@ class Backend:
             raise
 
 
-OUT_LEN = 47                                  # część raportu wyjściowego, którą czytamy
-OUT_BASE = (0, 1, 2, 3)                       # flagi ważności 0 / 1, silniki - czytane zawsze
-OUT_RGB = (44, 45, 46)                        # kolor lightbara - tylko z flagą 1 bit 2
-R2_AT, L2_AT = 10, 21                         # efekty spustów (po TRIG_RAW_LEN B) - tylko z flagą 0 bit 2 / bit 3
+OUT_LEN = 47                                  # the part of the output report we read
+OUT_BASE = (0, 1, 2, 3)                       # validity flags 0 / 1, motors - always read
+OUT_RGB = (44, 45, 46)                        # lightbar colour - only with flag 1 bit 2
+R2_AT, L2_AT = 10, 21                         # trigger effects (TRIG_RAW_LEN B each) - only with flag 0 bit 2 / bit 3
 R2_BYTES, L2_BYTES = range(R2_AT, R2_AT + TRIG_RAW_LEN), range(L2_AT, L2_AT + TRIG_RAW_LEN)
 
 
 def out_used(f0, f1):
-    """Bajty raportu wyjściowego potrzebne parse_output przy tych flagach ważności (reszty nie czytamy)."""
+    """The output report bytes parse_output needs for these validity flags (the rest is not read)."""
     return ((*OUT_RGB,) if f1 & 0x04 else ()) + (tuple(R2_BYTES) if f0 & 0x04 else ()) + (tuple(L2_BYTES) if f0 & 0x08 else ())
 
 
 def parse_output(report_id, data):
-    """Raport wyjściowy DualSense (bez bajtu ID) -> ((duży, mały) | None, (r, g, b) | None, (L2, R2) | None).
-    Flagi ważności decydują, które części gra ustawia: bit 0/1 flagi 0 = silniki, bit 2 / 3 flagi 0 = efekt prawego /
-    lewego spustu (surowe 11 B; spust bez flagi = None), bit 2 flagi 1 = kolor lightbara."""
+    """A DualSense output report (without the ID byte) -> ((large, small) | None, (r, g, b) | None, (L2, R2) | None).
+    The validity flags decide which parts the game sets: bit 0/1 of flag 0 = motors, bit 2 / 3 of flag 0 = the right / left trigger
+    effect (raw 11 B; a trigger without its flag = None), bit 2 of flag 1 = the lightbar colour."""
     if report_id != OUT_REPORT or len(data) < OUT_LEN:
         return None, None, None
     f0 = data[0]
-    motors = (data[3], data[2]) if f0 & 0x03 else None           # lewy = duży (niski), prawy = mały (wysoki)
+    motors = (data[3], data[2]) if f0 & 0x03 else None           # left = large (low), right = small (high)
     rgb = (data[44], data[45], data[46]) if data[1] & 0x04 else None
     trig = ((bytes(data[L2_AT:L2_AT + TRIG_RAW_LEN]) if f0 & 0x08 else None,
              bytes(data[R2_AT:R2_AT + TRIG_RAW_LEN]) if f0 & 0x04 else None) if f0 & 0x0C else None)
@@ -343,39 +356,42 @@ def parse_output(report_id, data):
 
 
 class Pad:
-    """Jeden wirtualny DualSense. buf ma stały adres (eksport do ctypes blokuje zmianę rozmiaru) - raport budowany
-    w miejscu i wysyłany przez delegata bez kopii po stronie Pythona."""
+    """One virtual DualSense. buf has a fixed address (the ctypes export blocks resizing) - the report is built
+    in place and sent through the delegate without a copy on the Python side."""
     kind = "hm"
     build = staticmethod(build_ds5_report)
 
     def __init__(self, backend, ctrl, on_fb):
+        """Pin the report buffer, take its address for the delegate, subscribe to the output reports and send one report to test the
+        path."""
         self.ctrl, self.on_fb = ctrl, on_fb
         self.buf = bytearray(REPORT_LEN)
         self._view = (ctypes.c_char * REPORT_LEN).from_buffer(self.buf)
         self._ptr = backend.IntPtr(ctypes.addressof(self._view))
         self._fn = backend.submit_fn
-        self._handler = self._on_output        # referencja (delegat .NET nie może zniknąć przez GC)
+        self._handler = self._on_output        # a reference (the .NET delegate must not vanish through the GC)
         ctrl.OutputReceived += self._handler
-        self.submit()                          # próba od razu: zła ścieżka wysyłki = błąd tutaj, nie w grze
+        self.submit()                          # try at once: a wrong submit path fails here, not in a game
 
     def submit(self):
+        """Send the current contents of buf to the virtual device."""
         self._fn(self.ctrl, self._ptr, REPORT_LEN)
 
     def _on_output(self, _ctrl, pkt):
-        """Wątek wyjścia HIDMaestro: tylko szybkie odczyty (SDK nadpisuje najstarsze pakiety, gdy handler stoi)."""
+        """The HIDMaestro output thread: quick reads only (the SDK overwrites the oldest packets while the handler is busy)."""
         try:
             if int(pkt.Source) != HID_OUTPUT:
                 return
             d = pkt.Data.ToArray()
             n = len(d)
-            # tylko bajty, których używa parse_output: każdy odczyt tablicy .NET przez pythonnet to osobne wywołanie
-            # (47 na raport, gry wysyłają je co klatkę - z GIL-em, którego potrzebuje wątek sieci)
+            # only the bytes parse_output uses: every .NET array read through pythonnet is a separate call
+            # (47 per report, games send them every frame - holding the GIL the network thread needs)
             if n < OUT_LEN:
                 return
             data = [0] * OUT_LEN
             for k in OUT_BASE:
                 data[k] = d[k]
-            for k in out_used(data[0], data[1]):        # spusty (22 B) tylko, gdy gra je w tym raporcie ustawia
+            for k in out_used(data[0], data[1]):        # triggers (22 B) only when the game sets them in this report
                 data[k] = d[k]
             motors, rgb, trig = parse_output(int(pkt.ReportId), data)
             if motors is not None or rgb is not None or trig is not None:
@@ -384,8 +400,9 @@ class Pad:
             pass
 
     def close(self):
+        """Unsubscribe from the output reports and dispose of the controller."""
         try:
             self.ctrl.OutputReceived -= self._handler
         except Exception:
             pass
-        self.ctrl.Dispose()                    # usuwa urządzenie z systemu
+        self.ctrl.Dispose()                    # removes the device from the system

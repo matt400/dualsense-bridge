@@ -1,6 +1,6 @@
-"""Receiver: konfiguracja (DEFAULTS + CLI), włączanie autostartu z Windows (rx_autostart), logi do pliku.
+"""Receiver: configuration (DEFAULTS + CLI), enabling autostart with Windows (rx_autostart), logging to a file.
 
-Wartości przeliczone trafiają do obiektu C; init() wywołaj raz na starcie.
+The computed values end up in the object C; call init() once at startup.
 """
 import argparse
 import os
@@ -12,64 +12,64 @@ from proto import load_config
 DEFAULTS = {
     "in_port": 5005,
     "dsu_port": 26760,
-    "dsu_bind": "127.0.0.1", # adres serwera DSU: tylko ten komputer; "0.0.0.0" = emulator na innym urządzeniu w sieci
-    "dsu_max_clients": 4,    # najwięcej subskrybentów DSU naraz (każdy dostaje strumień do dsu_hz pakietów/s)
-    "hm_min_age_days": 7,    # nowa wersja HIDMaestro instaluje się dopiero tyle dni po publikacji; 0 = od razu
-    "pads": 2,               # liczba slotów (max 4); wirtualne DS4 powstają tylko dla podłączonych
-    "mouse_pads": [0],       # które kontrolery startują w trybie myszy (gdy jest pad master: mysz ma master)
-    "pad_hz": 1000,          # max częstotliwość raportów DS4 (zlewanie serii pakietów, jak pad_min_dt nadajnika = 1 ms);
-                             # raport idzie od razu z wątku sieci, za wcześnie -> dosyła go wątek slotu; 0 = bez limitu
-    "dsu_hz": 1000,          # j.w. dla DSU; 0 = bez limitu
-    "dsu_tx_interval": 0.5,  # nie wysyłaj DSU bez zmian częściej niż to
-    "dsu_batch": False,      # wiele pakietów DSU w jednym datagramie - nie każdy klient to akceptuje
+    "dsu_bind": "127.0.0.1", # DSU server address: this computer only; "0.0.0.0" = the emulator runs on another device in the network
+    "dsu_max_clients": 4,    # the most DSU subscribers at once (each gets a stream of up to dsu_hz packets/s)
+    "hm_min_age_days": 7,    # a new HIDMaestro version is installed only this many days after it is published; 0 = at once
+    "pads": 2,               # number of slots (max 4); virtual DS4s are created only for connected pads
+    "mouse_pads": [0],       # which controllers start in mouse mode (when there is a master pad: the master has the mouse)
+    "pad_hz": 1000,          # max rate of DS4 reports (merging bursts of packets, like the sender's pad_min_dt = 1 ms);
+                             # the report is sent at once from the network thread, too early -> the slot thread sends it later; 0 = no limit
+    "dsu_hz": 1000,          # as above, for DSU; 0 = no limit
+    "dsu_tx_interval": 0.5,  # do not send unchanged DSU more often than this
+    "dsu_batch": False,      # many DSU packets in one datagram - not every client accepts that
     "acc_res": 8192.0,
     "gyro_res": 1024.0,
     "acc_sign": [1, 1, 1],
     "gyro_sign": [1, 1, 1],
-    "mouse_sens": 0.5,       # wartość startowa 0.05-5 (za szybko -> 0.35, za wolno -> 0.8); potem Ustawienia -> Mysz
-    "scroll_sens": 0.6,      # przewijanie dwoma palcami (jednostki kółka na jednostkę touchpada); 120 = 1 działka
-    "scroll_natural": False, # True = treść podąża za palcami (jak w telefonie)
-    "stale_s": 0.5,          # cisza dłuższa niż tyle -> reset stanu (anty "zablokowane przyciski")
-    "unplug_s": 10.0,        # cisza dłuższa niż tyle -> odłącz wirtualny DS4
-    "allow": "",             # np. "192.168.1.50" - tylko pakiety z tego IP
-    "key": "",               # wspólny klucz HMAC (lub zmienna środowiskowa PADKEY)
-    "stats": False,          # wypisuj statystyki pakietów co 1 s
-    "log_file": "",          # np. "receiver.log" (przydatne z pythonw / autostartem)
-    "remap_file": "remap.json",  # profile remapowania (przycisk Save w oknie)
-    "gui": True,             # okno (pady, bateria, remapowanie; --no-gui wyłącza)
-    "tray": True,            # minimalizacja do zasobnika systemowego
-    "gui_topmost": False,    # okno zawsze na wierzchu
-    "gui_start_visible": False,  # True = pokaż okno od razu po starcie
-    "gui_wait_pad": False,   # True = nie twórz okna ani ikony, dopóki żaden pad się nie połączy
-    "low_batt": 15,          # próg (%) niskiej baterii
-    "low_batt_notify": True, # powiadomienie z zasobnika przy niskiej baterii
-    "ps_modifier": True,     # PS jako klawisz skrótów: krótkie PS trafia do gry po puszczeniu (+~0.1 s), PS + przycisk = skrót
-    "ps_hold_s": 1.0,        # tyle trzymania PS (bez innych przycisków) = ps_hold_action
+    "mouse_sens": 0.5,       # initial value 0.05-5 (too fast -> 0.35, too slow -> 0.8); later Settings -> Mouse
+    "scroll_sens": 0.6,      # two-finger scrolling (wheel units per touchpad unit); 120 = 1 notch
+    "scroll_natural": False, # True = the content follows the fingers (like on a phone)
+    "stale_s": 0.5,          # silence longer than this -> reset the state (anti "stuck buttons")
+    "unplug_s": 10.0,        # silence longer than this -> disconnect the virtual DS4
+    "allow": "",             # e.g. "192.168.1.50" - only packets from this IP
+    "key": "",               # shared HMAC key (or the PADKEY environment variable)
+    "stats": False,          # print packet statistics every 1 s
+    "log_file": "",          # e.g. "receiver.log" (useful with pythonw / autostart)
+    "remap_file": "remap.json",  # remap profiles (the Save button in the window)
+    "gui": True,             # the window (pads, battery, remapping; --no-gui disables it)
+    "tray": True,            # minimise to the system tray
+    "gui_topmost": False,    # keep the window always on top
+    "gui_start_visible": False,  # True = show the window right after startup
+    "gui_wait_pad": False,   # True = do not create the window or icon until a pad connects
+    "low_batt": 15,          # low battery threshold (%)
+    "low_batt_notify": True, # tray notification on low battery
+    "ps_modifier": True,     # PS as the shortcut key: a short PS goes to the game on release (+~0.1 s), PS + button = shortcut
+    "ps_hold_s": 1.0,        # this long a PS hold (with no other buttons) = ps_hold_action
     "ps_hold_action": "gamebar",      # gamebar (Win+G) | bigpicture (Steam Big Picture) | none
-    "ps_share_action": "screenshot",  # screenshot (Win+PrtScr, do Obrazy\Zrzuty ekranu) | capture (Game Bar) | none
-    "confirm": True,         # potwierdzenia na padzie: krótka wibracja / mignięcie lightbara przy skrótach
-    "idle_lightbar": [0, 0, 128],     # kolor lightbara po mignięciu, gdy gra sama go nie ustawia
-    "game_profiles": True,   # automatyczny profil wg gry na pierwszym planie
-    "game_ignore": [],       # dodatkowe programy pomijane na liście "ostatnie gry" w edytorze (np. "obs64.exe")
+    "ps_share_action": "screenshot",  # screenshot (Win+PrtScr, to Pictures\Screenshots) | capture (Game Bar) | none
+    "confirm": True,         # confirmations on the pad: a short rumble / lightbar flash on shortcuts
+    "idle_lightbar": [0, 0, 128],     # lightbar colour after the flash, when the game does not set one itself
+    "game_profiles": True,   # automatic profile by the foreground game
+    "game_ignore": [],       # extra programs skipped in the "recent games" list in the editor (e.g. "obs64.exe")
 }
 
 CHOICES = {"ps_hold_action": ("gamebar", "bigpicture", "none"), "ps_share_action": ("screenshot", "capture", "none")}
 
 C = SimpleNamespace()
 HERE = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_CONFIG = "receiver.toml"     # wczytywany bez --config, gdy leży obok receivera
+DEFAULT_CONFIG = "receiver.toml"     # loaded without --config when it lies next to the receiver
 
 
 def default_config(folder=None):
-    """receiver.toml obok receivera albo None. Bez tego plik działał tylko z --config: wpisy w receiver.toml
-    (np. log_file) były po cichu ignorowane przy zwykłym starcie i z autostartu bez tego argumentu."""
+    """receiver.toml next to the receiver, or None. Without this the file worked only with --config: entries in receiver.toml
+    (e.g. log_file) were silently ignored on a normal start and on an autostart without that argument."""
     path = os.path.join(folder or HERE, DEFAULT_CONFIG)
     return path if os.path.isfile(path) else None
 
 
 def autostart_command(argv=None):
-    """(program, argumenty) do autostartu: pythonw zamiast python (bez konsoli), skrypt i argumenty bez --autostart,
-    ścieżka --config bezwzględna."""
+    """(program, arguments) for autostart: pythonw instead of python (no console), the script and the arguments without --autostart,
+    the --config path made absolute."""
     import subprocess
 
     exe = sys.executable
@@ -101,17 +101,22 @@ def autostart_command(argv=None):
 
 
 def set_autostart(on):
-    """Autostart z Windows: zadanie Harmonogramu przy logowaniu (bez opóźnienia - rx_autostart)."""
+    """Autostart with Windows: a Task Scheduler task at logon (no delay - rx_autostart)."""
     import rx_autostart
     if on:
         import rx_winapi
         exe, args = autostart_command()
-        print(rx_autostart.enable(exe, args, elevated=rx_winapi.is_admin()))   # jako administrator = HIDMaestro przy starcie
+        print(rx_autostart.enable(exe, args, elevated=rx_winapi.is_admin()))   # as administrator = HIDMaestro at startup
     else:
         print(rx_autostart.disable())
 
 
 def init(argv=None):
+    """Parse the command line, merge DEFAULTS <- config file <- CLI flags, validate and convert the values into the namespace C.
+
+    Also opens the log file (rotating it past 1 MB) and redirects stdout / stderr to it when log_file is set. With
+    --autostart it only enables / disables autostart and exits. Returns C.
+    """
     ap = argparse.ArgumentParser(description="DualSense UDP receiver -> ViGEm DS4 + DSU")
     ap.add_argument("--config", help=f"plik konfiguracji .toml / .json (domyślnie {DEFAULT_CONFIG} obok receivera, "
                                      "jeśli jest; --config \"\" = bez pliku)")
@@ -143,17 +148,17 @@ def init(argv=None):
 
     script_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
     C.log_handle = None
-    if cfg["log_file"]:   # logi do pliku (z rotacją przy starcie); pythonw nie ma konsoli
+    if cfg["log_file"]:   # logs to a file (rotated at startup); pythonw has no console
         lf = os.path.join(script_dir, cfg["log_file"])
         try:
             if os.path.exists(lf) and os.path.getsize(lf) > 1_000_000:
                 os.replace(lf, lf + ".1")
         except OSError:
-            # Windows: plik trzyma jeszcze inny proces (stary receiver tuż po restarcie z ustawień, podgląd logu) -
-            # bez rotacji, ale logowanie musi działać dalej
+            # Windows: another process still holds the file (the old receiver right after a restart from the settings, a log viewer) -
+            # no rotation, but logging has to keep working
             pass
         try:
-            C.log_handle = open(lf, "a", buffering=1, encoding="utf-8")  # noqa: SIM115 - log do końca procesu
+            C.log_handle = open(lf, "a", buffering=1, encoding="utf-8")  # noqa: SIM115 - the log stays open until the process ends
             sys.stdout = sys.stderr = C.log_handle
         except OSError:
             C.log_handle = None
@@ -175,7 +180,7 @@ def init(argv=None):
     C.DSU_BATCH = bool(cfg["dsu_batch"])
     C.ACC_RES = float(cfg["acc_res"])
     C.GYRO_RES = float(cfg["gyro_res"])
-    C.GYRO_TO_DS4 = 16.0 / C.GYRO_RES          # surowe gyro -> jednostki raportu DS4
+    C.GYRO_TO_DS4 = 16.0 / C.GYRO_RES          # raw gyro -> DS4 report units
     C.ACC_SIGN = tuple(cfg["acc_sign"])
     C.GYRO_SIGN = tuple(cfg["gyro_sign"])
     C.MOUSE_SENS = float(cfg["mouse_sens"])
@@ -184,13 +189,13 @@ def init(argv=None):
     C.STALE_S = float(cfg["stale_s"])
     C.UNPLUG_S = float(cfg["unplug_s"])
     C.ALLOWED_IP = cfg["allow"]
-    C.KEY = str(cfg["key"]).encode() if cfg["key"] else b""     # key = 1234 (liczba w .toml) - jak w nadajniku
+    C.KEY = str(cfg["key"]).encode() if cfg["key"] else b""     # key = 1234 (a number in .toml) - same as in the sender
     C.DEBUG = bool(cfg["stats"])
     C.USE_GUI = bool(cfg["gui"])
     C.LOW_BATT = int(cfg["low_batt"])
     C.REMAP_PATH = os.path.join(script_dir, cfg["remap_file"])
-    C.CONSOLE_PATH = os.path.join(script_dir, "console.json")   # ustawienia trybu konsoli (rx_console.py)
-    C.SETTINGS_PATH = os.path.join(script_dir, "settings.json")  # mysz i pad master (rx_settings.py, okno -> Ustawienia)
+    C.CONSOLE_PATH = os.path.join(script_dir, "console.json")   # console mode settings (rx_console.py)
+    C.SETTINGS_PATH = os.path.join(script_dir, "settings.json")  # mouse and master pad settings (rx_settings.py, window -> Settings)
     for k, allowed in CHOICES.items():
         if cfg[k] not in allowed:
             print(f"WARNING: {k} = {cfg[k]!r} is not one of {allowed} - using {DEFAULTS[k]!r}")

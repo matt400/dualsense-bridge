@@ -1,20 +1,21 @@
-"""Receiver: teksty i poziomy jakości do okna (łącze, bateria) - czyste funkcje, bez Qt, łatwe do przetestowania."""
+"""Receiver: texts and quality levels for the window (link, battery) - pure functions, no Qt, easy to test."""
 from rx_i18n import _
 import rx_latency
 import rx_state as S
 from proto import CAP_TRIG_FX, CAP_TRIGGERS, RUMBLE_EVDEV, RUMBLE_HIDRAW, WHY_ACCESS, WHY_NO_HIDRAW, WHY_NOT_FOUND, WHY_OFF
 
-INFO_MAX_AGE = 3.0   # pakiet "info" starszy niż tyle = brak danych o pingu i Hz
-LAT_WARN_MS, LAT_BAD_MS = 6.0, 15.0     # opóźnienie pad -> gra (średnia): powyżej = żółty / czerwony
+INFO_MAX_AGE = 3.0   # an "info" packet older than this = no ping / Hz data
+LAT_WARN_MS, LAT_BAD_MS = 6.0, 15.0     # pad -> game latency (mean): above = yellow / red
 
 
 def fresh_info(i, now):
+    """The latest "info" packet of the sender (rtt, pad Hz, motion Hz, receive time) or None when it is too old."""
     inf = S.info[i]
     return inf if inf and now - inf[3] < INFO_MAX_AGE else None
 
 
 def link_parts(i, now):
-    """[(rodzaj, tekst)] dla podłączonego pada: ping i Hz z nadajnika, utrata i pakiety/s liczone tutaj."""
+    """[(kind, text)] for a connected pad: ping and Hz come from the sender, loss and packets/s are computed here."""
     if not S.alive[i]:
         return []
     parts = []
@@ -30,17 +31,18 @@ def link_parts(i, now):
 
 
 def link_text(i, now):
+    """The link parts joined into one line."""
     return "  ·  ".join(t for _, t in link_parts(i, now))
 
 
 def ping_text(i, now):
-    """"ping 1.2 ms" (karta pada, gdy nie ma jeszcze pomiaru opóźnienia pad -> gra) albo "—"."""
+    """"ping 1.2 ms" (pad card, while there is no pad -> game latency measurement yet) or "—"."""
     inf = fresh_info(i, now)
     return _("ping {ms} ms").format(ms=f"{inf[0]:.1f}") if inf and inf[0] is not None else "—"
 
 
 def link_level(i, now):
-    """"ok" = dobrze, "warn" = zauważalne (ping > 5 ms / strata > 1 %), "bad" = źle (ping > 20 ms / strata > 5 %)."""
+    """"ok" = good, "warn" = noticeable (ping > 5 ms / loss > 1 %), "bad" = poor (ping > 20 ms / loss > 5 %)."""
     inf = fresh_info(i, now)
     rtt = (inf[0] if inf else None) or 0
     loss = S.link_loss or 0.0
@@ -52,67 +54,67 @@ def link_level(i, now):
 
 
 def latency(i):
-    """Opóźnienie pad -> gra z ostatnich sekund (rx_latency.Summary) albo None (brak próbek / pad odłączony)."""
+    """Pad -> game latency over the last seconds (rx_latency.Summary) or None (no samples / pad disconnected)."""
     return rx_latency.summary(i) if S.alive[i] else None
 
 
 def button_latency(i):
-    """Opóźnienie przycisk -> gra z ostatnich naciśnięć (rx_latency.Summary) albo None (pad odłączony / brak naciśnięć).
-    Zostaje po chwilowej ciszy pada - liczy się tylko przy zmianie pada w slocie albo resecie z okna."""
+    """Button -> game latency over the last presses (rx_latency.Summary) or None (pad disconnected / no presses).
+    It survives a short silence of the pad - it restarts only when the pad in the slot changes or on a reset from the window."""
     return rx_latency.buttons(i) if S.alive[i] else None
 
 
 def lat_level(summary):
-    """Poziom jakości samego opóźnienia (średnia): "ok" | "warn" | "bad" | "" (brak pomiaru)."""
+    """Quality level of the latency alone (mean): "ok" | "warn" | "bad" | "" (no measurement)."""
     if summary is None:
         return ""
     return "bad" if summary.avg > LAT_BAD_MS else "warn" if summary.avg > LAT_WARN_MS else "ok"
 
 
 def latency_level(summary, i, now):
-    """Poziom jakości z opóźnienia (średnia) i utraty pakietów: "ok" | "warn" | "bad"."""
+    """Quality level from the latency (mean) and the packet loss: "ok" | "warn" | "bad"."""
     order = ("ok", "warn", "bad")
     return max((x for x in (link_level(i, now), lat_level(summary)) if x), key=order.index, default="ok")
 
 
 def stats_text(summary):
-    """"zwykle ≤ 3.1 · max 4.0" - druga, mała część napisu opóźnienia na karcie pada. "zwykle" = 95. percentyl
-    (95 na 100 pomiarów nie wolniejszych) - "p95" nic nie mówił użytkownikowi; objaśnienie w podpowiedzi."""
+    """"usually <= 3.1 · max 4.0" - the second, small part of the latency label on the pad card. "usually" = the 95th percentile
+    (95 of 100 measurements no slower) - "p95" meant nothing to the user; the explanation is in the tooltip."""
     return _("zwykle ≤ {p95} · max {max}").format(p95=f"{summary.p95:.1f}", max=f"{summary.max:.1f}")
 
 
 def latency_parts(summary):
-    """[(klucz odcinka, opis, ms)] w kolejności drogi sygnału; Bluetooth tylko, gdy nadajnik go mierzy."""
+    """[(segment key, description, ms)] in the order of the signal path; Bluetooth only when the sender measures it."""
     rows = [("bt", _("Bluetooth (ponad minimum)"), summary.bt), ("phone", _("Telefon (jądro → wysłanie)"), summary.phone),
             ("net", _("Sieć"), summary.net), ("pc", _("PC (odbiór → wirtualny pad)"), summary.pc)]
     return [r for r in rows if r[2] is not None]
 
 
 def low_pct():
-    """Próg niskiej baterii [%] - wspólny dla ostrzeżenia na karcie i migania lightbara (Ustawienia -> Lightbar)."""
+    """Low-battery threshold [%] - shared by the card warning and the lightbar blinking (Settings -> Lightbar)."""
     import rx_settings
     return rx_settings.cur.lightbar.low_pct
 
 
 def battery_level(pct, charging, low_batt):
-    """"charge" | "bad" (poniżej progu) | "warn" (do 30 %) | "ok"."""
+    """"charge" | "bad" (below the threshold) | "warn" (up to 30 %) | "ok"."""
     return "charge" if charging else "bad" if pct <= low_batt else "warn" if pct <= 30 else "ok"
 
 
 def is_low(i, low_batt):
-    """Pad podłączony, bateria znana, nie ładuje się i jest poniżej progu."""
+    """The pad is connected, the battery is known, it is not charging and it is below the threshold."""
     pct, flags = S.batt_info[i]
     return bool(S.alive[i]) and pct <= 100 and not flags & 1 and pct <= low_batt
 
 
 
 def rumble_status(i):
-    """Wibracja pada wg nadajnika -> (tekst, poziom, podpowiedź) dla karty w oknie."""
+    """Pad rumble according to the sender -> (text, level, tooltip) for the card in the window."""
     info = S.sender_info[i]
     if info is None:
         return (_("wibracja: stary nadajnik"), "warn",
                 _("Skopiuj nowe pliki sender/ na telefon - starszy nadajnik nie wibruje bez obsługi wibracji w jądrze."))
-    bits, why = info[1] & (RUMBLE_EVDEV | RUMBLE_HIDRAW), info[2]     # reszta bitów to inne możliwości nadajnika
+    bits, why = info[1] & (RUMBLE_EVDEV | RUMBLE_HIDRAW), info[2]     # the remaining bits are other capabilities of the sender
     if not bits:
         text, tip = {
             WHY_OFF: (_("wibracja: wyłączona"), _("W sender.toml ustaw rumble = \"auto\".")),
@@ -130,8 +132,8 @@ def rumble_status(i):
 
 
 def triggers_status(i, fx=False):
-    """Czy nadajnik ustawi efekty spustów temu padowi -> (tekst, poziom); ("", "") = działa albo pad niepodłączony.
-    fx: profil używa kliku / wibracji spustu / wibracji z gry (trzeba nadajnika z CAP_TRIG_FX)."""
+    """Whether the sender will set trigger effects for this pad -> (text, level); ("", "") = works or the pad is disconnected.
+    fx: the profile uses click / trigger vibration / game vibration (needs a sender with CAP_TRIG_FX)."""
     if not S.alive[i]:
         return "", ""
     info = S.sender_info[i]
@@ -141,7 +143,7 @@ def triggers_status(i, fx=False):
         return _("Opór wymaga raportu HID na telefonie (jak wibracja przez HID) - nadajnik go nie ma."), "warn"
     if fx and not info[1] & CAP_TRIG_FX:
         return _("Klik i wibracja spustu wymagają nowszego nadajnika - kliknij Aktualizuj (opór działa)."), "warn"
-    import rx_master        # leniwie: rx_master ciągnie wątki i WinAPI, a status jest czytany też bez nich
+    import rx_master        # lazily: rx_master pulls in threads and WinAPI, and the status is also read without them
     if not rx_master.allowed(i, "triggers"):
         return _("Efekty spustów są tylko dla pada master (Ustawienia -> Master)."), "warn"
     return "", ""

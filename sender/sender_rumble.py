@@ -1,25 +1,26 @@
-"""Sender: wibracja pada - przez sterownik (evdev FF) albo bezpośrednio raportem HID (hidraw).
+"""Sender: pad rumble - through the driver (evdev FF) or directly with an HID report (hidraw).
 
-Sterownik hid-playstation obsługuje wibrację tylko z opcją jądra CONFIG_PLAYSTATION_FF - jądra telefonów
-(np. postmarketOS) często jej nie mają i wtedy pad nie wibruje wcale. Tryb "hidraw" wysyła do pada ten sam raport
-wyjściowy, który wysłałby sterownik (tryb zgodności z DS4: dwa silniki), z flagami wibracji i koloru lightbara -
-kolor idzie w tym samym raporcie, bo osobny raport sterownika (zmiana koloru przez sysfs) w tej samej chwili
-sprawiał, że pad przyjmował tylko jeden z nich. Diody gracza zostają nietknięte.
+The hid-playstation driver supports rumble only with the kernel option CONFIG_PLAYSTATION_FF - phone kernels
+(e.g. postmarketOS) often lack it, and then the pad does not rumble at all. The "hidraw" mode sends the pad the same
+output report the driver would send (DS4 compatibility mode: two motors), with the rumble and lightbar-colour flags -
+the colour travels in the same report, because a separate driver report (changing the colour through sysfs) at the
+same moment made the pad accept only one of them. The player LEDs are left untouched.
 
-  rumble = "auto"    oba naraz: evdev FF (jeśli pad go ma) i raport HID (domyślnie)
+  rumble = "auto"    both at once: evdev FF (if the pad has it) and the HID report (default)
            "evdev" / "hidraw" / "off"
 
-Raport: USB 0x02 (63 B), Bluetooth 0x31 (78 B: numer sekwencji, znacznik 0x10, na końcu CRC32 z ziarnem 0xA2).
-Ten sam raport niesie efekty spustów (adaptive triggers) z profilu na PC: opór, klik (jak spust broni), wibracja
-spustu - gry przez wirtualnego DS4 ich nie ustawią, a sterownik jądra nie ma takiej funkcji. Pad trzyma efekt spustu
-do następnej zmiany; raporty bez flag spustów (wibracja, kolor, sterownik) go nie ruszają.
-Wibracja z gry na spusty (RFX_ON w trig2) liczona jest tutaj, z tych samych pakietów wibracji - bez dodatkowego ruchu
-w sieci: L2 drga wg dużego silnika, R2 wg małego; na czas wibracji zastępuje efekt spustu, a RFX_HOLD_S po ustaniu
-wibracji spust wraca do swojego efektu.
-Efekty ustawione przez grę na wirtualnym DualSense (HIDMaestro, pakiet trig3) idą do pada surowe (11 B, jak je
-wysłała gra) - na spuście, na którym profil nic nie ustawia (profil wygrywa).
-Pad trzyma ostatnią moc silników - receiver odświeża wibrację co 0.5 s, a strażnik tutaj zatrzymuje ją, gdy
-odświeżenia ustaną (zgubione pakiety, zamknięta gra), żeby pad nie wibrował bez końca.
+The report: USB 0x02 (63 B), Bluetooth 0x31 (78 B: sequence number, tag 0x10, CRC32 with seed 0xA2 at the end).
+The same report carries the trigger effects (adaptive triggers) from the profile on the PC: resistance, a click (like
+a weapon trigger), trigger vibration - games through the virtual DS4 cannot set them, and the kernel driver has no such
+function. The pad keeps a trigger effect until the next change; reports without trigger flags (rumble, colour, the
+driver) do not touch it.
+Game rumble mapped onto the triggers (RFX_ON in trig2) is computed here, from the same rumble packets - no extra
+network traffic: L2 vibrates by the large motor, R2 by the small one; while it vibrates it replaces the trigger effect,
+and RFX_HOLD_S after the rumble stops the trigger returns to its own effect.
+Effects set by a game on the virtual DualSense (HIDMaestro, trig3 packet) go to the pad raw (11 B, as the game sent
+them) - on a trigger for which the profile sets nothing (the profile wins).
+The pad keeps the last motor strength - the receiver refreshes rumble every 0.5 s, and the watchdog here stops it when
+the refreshes cease (lost packets, a closed game), so the pad does not rumble forever.
 """
 import asyncio
 import errno
@@ -39,40 +40,45 @@ from proto import (CAP_TRIG_FX, CAP_TRIG_RAW, CAP_TRIGGERS, RFX_GAIN_MAX, RFX_HO
                    WHY_NOT_FOUND, WHY_OFF, WHY_OK, WHY_OPEN, trig2_from_legacy)
 
 FLAG0_COMPAT_VIBRATION, FLAG0_HAPTICS_SELECT = 0x01, 0x02
-FLAG0_RIGHT_TRIGGER, FLAG0_LEFT_TRIGGER = 0x04, 0x08    # valid_flag0: efekt prawego / lewego spustu z tego raportu
+FLAG0_RIGHT_TRIGGER, FLAG0_LEFT_TRIGGER = 0x04, 0x08    # valid_flag0: the right / left trigger effect from this report
 RIGHT_TRIGGER_AT, LEFT_TRIGGER_AT, TRIGGER_LEN = 10, 21, 11
-TRIG_FEEDBACK, TRIG_OFF = 0x21, 0x05      # efekty spustu: "Feedback" (opór od strefy) i wyłączenie
-TRIG_WEAPON, TRIG_VIBRATION = 0x25, 0x26  # "Weapon" (opór do punktu i kliknięcie) i "Vibration" (drganie od strefy)
-FLAG2_COMPAT_VIBRATION2 = 0x04            # nowsze oprogramowanie pada (jak use_vibration_v2 w jądrze)
-FLAG1_LIGHTBAR = 0x04                     # valid_flag1: kolor lightbara z tego raportu
-LIGHTBAR_AT = 44                          # lightbar_red / green / blue we wspólnej części raportu
-REPEAT_S = 0.02                           # zmiana wibracji / koloru wysyłana drugi raz po tylu sekundach
+TRIG_FEEDBACK, TRIG_OFF = 0x21, 0x05      # trigger effects: "Feedback" (resistance from a zone) and off
+TRIG_WEAPON, TRIG_VIBRATION = 0x25, 0x26  # "Weapon" (resistance up to a point and a click) and "Vibration" (vibration from a zone)
+FLAG2_COMPAT_VIBRATION2 = 0x04            # newer pad firmware (like use_vibration_v2 in the kernel)
+FLAG1_LIGHTBAR = 0x04                     # valid_flag1: the lightbar colour from this report
+LIGHTBAR_AT = 44                          # lightbar_red / green / blue in the common part of the report
+REPEAT_S = 0.02                           # a rumble / colour change is sent a second time after this many seconds
 OUT_TAG = 0x10
 CRC_SEED = b"\xa2"
-# błąd zapisu: tyle kolejnych błędów, zanim sposób wibracji zostanie wyłączony. Pojedynczy EIO / ETIMEDOUT przy
-# zatkanym Bluetooth to nie awaria - wcześniej wyłączał raport HID (wibracja, kolor, spusty) do rozłączenia pada.
-# Pad, którego już nie ma (ENODEV...), i błąd, który się nie zmieni (brak obsługi w jądrze, zły raport, uprawnienia),
-# wyłączają od razu.
+# write error: this many consecutive errors before a rumble method is switched off. A single EIO / ETIMEDOUT on a
+# clogged Bluetooth link is not a failure - earlier it switched off the HID report (rumble, colour, triggers) until the pad reconnected.
+# A pad that is gone (ENODEV...) and an error that will not change (no kernel support, a bad report, permissions)
+# switch it off at once.
 FAIL_MAX = 5
 FATAL_ERRNO = frozenset({errno.ENODEV, errno.ENOENT, errno.ENXIO, errno.EBADF, errno.ENOSYS, errno.EOPNOTSUPP,
                          errno.EINVAL, errno.EACCES, errno.EPERM})
 WATCHDOG_S = 1.5
-# efekty spustów z PC: receiver odświeża je co 2 s (rx_feedback.TRIG_REFRESH_S); po tylu sekundach bez odświeżenia
-# (receiver zamknięty bez sprzątania, uśpiony / wyłączony PC) spusty wracają do zwykłych - pad trzyma efekt bez końca
+# trigger effects from the PC: the receiver refreshes them every 2 s (rx_feedback.TRIG_REFRESH_S); after this many seconds without a refresh
+# (the receiver closed without cleaning up, a sleeping / switched-off PC) the triggers go back to normal - the pad keeps an effect forever
 TRIG_WATCHDOG_S = 7.0
 EFFECT_MS = 1000
 _HID_DIR = re.compile(r"^([0-9A-Fa-f]{4}):[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}\.[0-9A-Fa-f]{4}$")
 BUS_BLUETOOTH = 0x0005
-FW_REPORT, FW_SIZE, FW_VERSION_AT = 0x20, 64, 44   # raport cech z wersją oprogramowania (jak w hid-playstation)
+FW_REPORT, FW_SIZE, FW_VERSION_AT = 0x20, 64, 44   # the feature report with the firmware version (as in hid-playstation)
 VIBRATION_V2_FROM = 0x0221                         # DS_FEATURE_VERSION(2, 21)
 
 
 def _hidiocgfeature(size):
+    """Build the HIDIOCGFEATURE ioctl number (read an HID feature report of `size` bytes)."""
     return (3 << 30) | (size << 16) | (ord("H") << 8) | 0x07
 
 
 def firmware_version(fd):
-    """Wersja "update" oprogramowania pada z raportu cech 0x20 albo None (brak dostępu / inny pad)."""
+    """The pad's "update" firmware version from feature report 0x20, or None (no access / another pad).
+
+    The version is a little-endian 16-bit value at a fixed offset of the report; the first byte echoes the report id,
+    which doubles as a sanity check that the pad really answered with the expected report.
+    """
     import array
     import fcntl
     buf = array.array("B", [FW_REPORT] + [0] * (FW_SIZE - 1))
@@ -83,13 +89,13 @@ def firmware_version(fd):
     return buf[FW_VERSION_AT] | buf[FW_VERSION_AT + 1] << 8 if buf[0] == FW_REPORT else None
 
 
-OFF_EFFECT = bytes([TRIG_OFF]) + bytes(TRIGGER_LEN - 1)    # efekt Off: spust bez oporu
+OFF_EFFECT = bytes([TRIG_OFF]) + bytes(TRIGGER_LEN - 1)    # the Off effect: a trigger without resistance
 
 
 def trigger_effect(start, force):
-    """Stały opór spustu (efekt "Feedback" 0x21, 11 B): od strefy `start` (0-9, strefa = 10 % skoku) do końca, siła
-    `force` 1-8 we wszystkich tych strefach; force 0 -> efekt Off (spust bez oporu). Bity: 10 stref aktywnych
-    (2 B) i po 3 bity siły na strefę (4 B), little endian."""
+    """Constant trigger resistance (the "Feedback" effect 0x21, 11 B): from zone `start` (0-9, a zone = 10 % of the
+    travel) to the end, strength `force` 1-8 in all those zones; force 0 -> the Off effect (a trigger without
+    resistance). Bits: 10 active zones (2 B) and 3 bits of strength per zone (4 B), little endian."""
     if not force or not 0 <= start <= TRIG_START_MAX:
         return OFF_EFFECT
     out = bytearray(TRIGGER_LEN)
@@ -100,18 +106,18 @@ def trigger_effect(start, force):
 
 
 def _zones(start):
-    """Maska stref od `start` do końca skoku (10 stref)."""
+    """Bit mask of the zones from `start` to the end of the travel (10 zones)."""
     return sum(1 << z for z in range(start, 10))
 
 
 def _levels(start, level):
-    """Po 3 bity poziomu (0-7) na każdą strefę od `start` (4 B, little endian)."""
+    """3 bits of level (0-7) for each zone from `start` (4 B, little endian)."""
     return sum(level << (3 * z) for z in range(start, 10)).to_bytes(4, "little")
 
 
 def weapon_effect(pos, force):
-    """Klik jak spust broni (efekt "Weapon" 0x25): opór od strefy `pos` (2-7) narasta do strefy pos + 1 i tam puszcza
-    (kliknięcie); siła 1-8; force 0 albo zły punkt -> Off."""
+    """A click like a weapon trigger (the "Weapon" effect 0x25): resistance from zone `pos` (2-7) builds up to zone
+    pos + 1 and releases there (the click); strength 1-8; force 0 or a bad point -> Off."""
     if not force or not TRIG_CLICK_MIN <= pos <= TRIG_CLICK_MAX:
         return OFF_EFFECT
     out = bytearray(TRIGGER_LEN)
@@ -122,8 +128,8 @@ def weapon_effect(pos, force):
 
 
 def vibration_effect(start, amp, freq):
-    """Drganie spustu (efekt "Vibration" 0x26) od strefy `start` (0-9) do końca: amplituda 1-8, częstotliwość 1-255 Hz;
-    amplituda albo częstotliwość 0 -> Off."""
+    """Trigger vibration (the "Vibration" effect 0x26) from zone `start` (0-9) to the end: amplitude 1-8, frequency 1-255 Hz;
+    amplitude or frequency 0 -> Off."""
     if not amp or not freq or not 0 <= start <= TRIG_START_MAX:
         return OFF_EFFECT
     out = bytearray(TRIGGER_LEN)
@@ -135,7 +141,7 @@ def vibration_effect(start, amp, freq):
 
 
 def effect(mode, a, b, c):
-    """Efekt spustu z pakietu trig2 (tryb TFX_*, parametry a, b, c - opis w proto) -> 11 B raportu."""
+    """A trigger effect from the trig2 packet (mode TFX_*, parameters a, b, c - described in proto) -> the 11 B of the report."""
     if mode == TFX_RES:
         return trigger_effect(a, b)
     if mode == TFX_CLICK:
@@ -146,14 +152,14 @@ def effect(mode, a, b, c):
 
 
 def game_effect(raw):
-    """Efekt spustu ustawiony przez grę (11 B z raportu wyjściowego wirtualnego DualSense) albo None -> 11 B raportu.
-    Tryb 0 (gra nic nie ustawiła w tym bajcie) = Off - pad nie zostaje z efektem sprzed zmiany."""
+    """A trigger effect set by a game (11 B from the virtual DualSense's output report) or None -> the 11 B of the report.
+    Mode 0 (the game set nothing in this byte) = Off - the pad does not keep an effect from before the change."""
     return bytes(raw) if raw is not None and len(raw) == TRIGGER_LEN and raw[0] else OFF_EFFECT
 
 
 def split_triggers(vals):
-    """Pakiet trig (4), trig2 (12) albo trig3 (12 + efekty gry L2, R2 + flagi) -> (wartości trig2, (L2, R2) efekty
-    gry: surowe 11 B albo None)."""
+    """A trig (4), trig2 (12) or trig3 (12 + game effects L2, R2 + flags) packet -> (the trig2 values, (L2, R2) game
+    effects: raw 11 B or None)."""
     vals = tuple(vals)
     if len(vals) == 4:
         return trig2_from_legacy(vals), (None, None)
@@ -164,15 +170,20 @@ def split_triggers(vals):
 
 
 def rumble_amp(motor, gain):
-    """Moc silnika 0-255 i siła [%] -> amplituda drgania spustu 0-8 (0 = spust bez wibracji z gry)."""
+    """Motor strength 0-255 and gain [%] -> trigger vibration amplitude 0-8 (0 = the trigger has no game vibration).
+    The product is scaled to 0..TRIG_AMP_MAX with integer rounding (12750 = half of 25500 = 255 * 100)."""
     return min(TRIG_AMP_MAX, (motor * min(gain, RFX_GAIN_MAX) * TRIG_AMP_MAX + 12750) // 25500)
 
 
 def output_report(bt, seq, small, large, v2=None, rgb=None, triggers=None):
-    """Raport wyjściowy DualSense: wibracja i (opcjonalnie) kolor lightbara i opór spustów. small = silnik prawy
-    (słaby), large = lewy (mocny), 0..255. v2: True = oprogramowanie pada >= 2.21 (flaga "vibration v2"), False =
-    starsze, None = nieznane -> obie flagi (jak sterownik jądra: starsze pady wymagają flagi v1, nowsze v2).
-    triggers: (efekt L2, efekt R2) z trigger_effect() albo None = spusty bez zmian."""
+    """The DualSense output report: rumble and (optionally) the lightbar colour and the trigger resistance. small = the right
+    motor (weak), large = the left (strong), 0..255. v2: True = pad firmware >= 2.21 (the "vibration v2" flag), False =
+    older, None = unknown -> both flags (like the kernel driver: older pads require the v1 flag, newer ones v2).
+    triggers: (effect L2, effect R2) from trigger_effect() or None = triggers unchanged.
+
+    Layout: a 47-byte "common" part (valid flags, motors, trigger effects, lightbar) is wrapped differently per bus. USB:
+    report id 0x02 + common + padding. Bluetooth: report id 0x31, sequence number in the high nibble, tag 0x10,
+    common + padding, then a CRC32 (seeded with 0xA2) over everything before it."""
     common = bytearray(47)
     common[0] = FLAG0_HAPTICS_SELECT | (0 if v2 else FLAG0_COMPAT_VIBRATION)
     if triggers is not None:
@@ -192,6 +203,7 @@ def output_report(bt, seq, small, large, v2=None, rgb=None, triggers=None):
 
 
 def _uevent(path):
+    """Parse a sysfs uevent file (KEY=VALUE lines) into a dict; empty on any read error."""
     try:
         with open(path) as f:
             return dict(line.rstrip("\n").split("=", 1) for line in f if "=" in line)
@@ -200,8 +212,8 @@ def _uevent(path):
 
 
 def _by_uniq(uniq, sys_root):
-    """Zapas: hidraw, którego urządzenie HID ma ten sam HID_UNIQ (adres MAC pada) - gdy ścieżka w sysfs od eventN
-    do urządzenia HID jest nietypowa (inne jądro / stos Bluetooth)."""
+    """Fallback: the hidraw whose HID device has the same HID_UNIQ (the pad's MAC address) - used when the sysfs path from
+    eventN to the HID device is unusual (another kernel / Bluetooth stack). Returns (path, is_bluetooth)."""
     uniq = (uniq or "").lower()
     if not uniq:
         return None, False
@@ -214,7 +226,12 @@ def _by_uniq(uniq, sys_root):
 
 
 def find_hidraw(pad_dev, sys_root="/sys"):
-    """-> (/dev/hidrawN, czy Bluetooth) dla tego samego urządzenia HID co pad evdev, albo (None, False)."""
+    """Return (/dev/hidrawN, is Bluetooth) for the same HID device as the pad's evdev node, or (None, False).
+
+    Starting from the resolved sysfs path of the input node, it walks up the parents until it reaches the HID device
+    directory (named like 0005:054C:0CE6.0001) and looks for a hidraw child there; the bus number in that name tells
+    Bluetooth (0005) from USB. If the walk finds nothing, it falls back to matching by HID_UNIQ.
+    """
     try:
         node = os.path.realpath(f"{sys_root}/class/input/{os.path.basename(pad_dev.path)}")
     except (OSError, AttributeError):
@@ -231,13 +248,13 @@ def find_hidraw(pad_dev, sys_root="/sys"):
 
 
 def kernel_has_hidraw(sys_root="/sys"):
-    """Czy jądro ma hidraw (CONFIG_HIDRAW): klasa urządzeń hidraw w sysfs."""
+    """Whether the kernel has hidraw (CONFIG_HIDRAW): the hidraw device class exists in sysfs."""
     return os.path.isdir(f"{sys_root}/class/hidraw")
 
 
 def ensure_node(path, sys_root="/sys"):
-    """Brak /dev/hidrawN przy istniejącym urządzeniu w sysfs (system bez udev / mdev) -> mknod z numerów z sysfs
-    (tylko root). Bez wyjątków - błąd wyjdzie przy otwieraniu."""
+    """When /dev/hidrawN is missing although the device exists in sysfs (a system without udev / mdev) -> mknod using the
+    numbers from sysfs (root only). No exceptions - an error will show up when the node is opened."""
     if os.path.exists(path):
         return
     try:
@@ -250,6 +267,7 @@ def ensure_node(path, sys_root="/sys"):
 
 
 def has_ff(dev):
+    """Whether the evdev device advertises the FF_RUMBLE force-feedback effect (the kernel driver supports rumble)."""
     try:
         return ec.FF_RUMBLE in dev.capabilities().get(ec.EV_FF, [])
     except (OSError, AttributeError):
@@ -263,30 +281,33 @@ WHY_TEXT = {WHY_OK: "ok", WHY_OFF: "rumble = off / evdev in config",
 
 
 class Rumble:
-    """Wibracja jednego pada. set(small, large) przy każdym pakiecie feedbacku; close() przy rozłączeniu.
+    """Rumble of one pad. set(small, large) on every feedback packet; close() on disconnect.
 
-    W trybie "auto" działają OBA sposoby naraz, jeśli są dostępne: sterownik (evdev FF) i raport HID (hidraw).
-    Ta sama moc silników wysłana dwiema drogami nic nie psuje, a wibracja działa także wtedy, gdy jedna z nich
-    po cichu nic nie robi (jądro bez pełnej obsługi wibracji, nietypowy stos Bluetooth). Sposób, który zgłosi błąd,
-    jest wyłączany."""
+    In "auto" mode BOTH ways work at once if they are available: the driver (evdev FF) and the HID report (hidraw).
+    The same motor strength sent both ways does no harm, and rumble works also when one of them silently does nothing
+    (a kernel without full rumble support, an unusual Bluetooth stack). A way that reports an error is switched off.
+
+    Besides rumble, the HID report path also carries the lightbar colour and the adaptive-trigger effects. Several
+    timers keep the pad safe: a repeat resends a change once more shortly after (a lost report must not leave the
+    pad silent), a watchdog stops the motors when refreshes cease, and a trigger watchdog releases the triggers."""
 
     def __init__(self, idx, pad_dev, mode="auto", hidraw=None):
         self.idx, self.dev = idx, pad_dev
-        self.methods = []             # "evdev" i/lub "hidraw" - w tej kolejności
+        self.methods = []             # "evdev" and/or "hidraw" - in this order
         self.fd, self.bt, self.seq, self.ff_id, self.path = None, False, 0, None, None
         self.v2, self.fw = None, None
-        self.why = WHY_OFF if mode in ("off", "evdev") else WHY_OK   # powód braku raportu HID (pakiet do receivera)
-        self.logged = 0               # ile pierwszych poleceń wibracji zapisać w logu (diagnostyka)
-        self.fails = {}               # sposób -> liczba kolejnych błędów zapisu (FAIL_MAX)
+        self.why = WHY_OFF if mode in ("off", "evdev") else WHY_OK   # the reason for no HID report (packet to the receiver)
+        self.logged = 0               # how many of the first rumble commands to write to the log (diagnostics)
+        self.fails = {}               # method -> number of consecutive write errors (FAIL_MAX)
         self.cur = (0, 0)
-        self.rgb = None               # kolor lightbara wysyłany razem z wibracją (tylko raport HID)
-        self.trig = None              # efekty spustów (L2, R2) wysłane do pada albo None = nigdy nie ruszane
-        self.fx = None                # ustawienia spustów z PC (wartości trig2) albo None = nic nie przyszło
-        self.game_fx = (None, None)   # efekty spustów L2 / R2 ustawione przez grę (surowe 11 B) albo None
-        self._rv = [None, None]       # wibracja z gry na L2 / R2: efekt albo None
-        self._rv_off = [None, None]   # od kiedy silnik tego spustu stoi (po RFX_HOLD_S spust wraca do efektu)
+        self.rgb = None               # the lightbar colour sent together with rumble (HID report only)
+        self.trig = None              # trigger effects (L2, R2) sent to the pad, or None = never touched
+        self.fx = None                # trigger settings from the PC (trig2 values) or None = nothing arrived
+        self.game_fx = (None, None)   # L2 / R2 trigger effects set by the game (raw 11 B) or None
+        self._rv = [None, None]       # game rumble on L2 / R2: an effect or None
+        self._rv_off = [None, None]   # since when this trigger's motor has been still (after RFX_HOLD_S the trigger returns to its effect)
         self._rv_timer = None
-        self._trig_watch = None       # strażnik efektów spustów (TRIG_WATCHDOG_S bez odświeżenia z PC -> wyłączone)
+        self._trig_watch = None       # watchdog of trigger effects (TRIG_WATCHDOG_S without a refresh from the PC -> switched off)
         self.t_set = 0.0
         self._watch = None
         self._repeat = None
@@ -300,24 +321,25 @@ class Rumble:
 
     @property
     def mode(self):
-        """Główny sposób (do logów i testów): pierwszy działający albo None."""
+        """The main way (for logs and tests): the first working one, or None."""
         return self.methods[0] if self.methods else None
 
     @property
     def owns_lightbar(self):
-        """Raport HID niesie też kolor lightbara. Kolor przez sterownik (sysfs) wysyła WŁASNY raport wyjściowy pada
-        w osobnym momencie - pad przyjmował wtedy tylko jeden z nich i wibracja z przycisku testu (zmienia kolor)
-        działała co którymś naciśnięciem. Jeden raport z oboma = brak wyścigu."""
+        """The HID report also carries the lightbar colour. A colour sent through the driver (sysfs) goes out in the pad's OWN
+        output report at a separate moment - the pad then accepted only one of them, and rumble from the test button (which
+        changes the colour) worked only every few presses. One report with both = no race."""
         return "hidraw" in self.methods
 
     @property
     def bits(self):
-        """Sposoby jako bity (pakiet wersji do receivera): 1 = sterownik, 2 = raport HID, 4 = opór spustów,
-        8 = efekty spustów z trig2 (klik, wibracja, wibracja z gry), 32 = efekty spustów z gry (trig3)."""
+        """The ways as bits (the version packet to the receiver): 1 = driver, 2 = HID report, 4 = trigger resistance,
+        8 = trigger effects from trig2 (click, vibration, game vibration), 32 = trigger effects from the game (trig3)."""
         hid = "hidraw" in self.methods
         return ("evdev" in self.methods) | hid << 1 | (CAP_TRIGGERS | CAP_TRIG_FX | CAP_TRIG_RAW if hid else 0)
 
     def describe(self):
+        """A short log description of the active rumble ways (driver and/or HID reports with firmware and vibration mode)."""
         parts = []
         if "evdev" in self.methods:
             parts.append("kernel driver (evdev FF)")
@@ -328,6 +350,11 @@ class Rumble:
         return "via " + " + ".join(parts)
 
     def _open_hidraw(self, given=None):
+        """Locate and open the pad's hidraw node, read its firmware version and decide the vibration flavour. True on success.
+
+        On failure self.why records the reason (no hidraw in the kernel, node not found, no permission, other) so the
+        receiver can show it. The firmware version selects vibration v1 / v2 reports (v2 from 2.21).
+        """
         path, bt = given or find_hidraw(self.dev)
         if not path:
             self.why = WHY_NOT_FOUND if kernel_has_hidraw() else WHY_NO_HIDRAW
@@ -336,7 +363,7 @@ class Rumble:
             ensure_node(path)
         self._close_fd()
         try:
-            self.fd = os.open(path, os.O_RDWR | os.O_NONBLOCK)   # RDWR: także odczyt wersji oprogramowania
+            self.fd = os.open(path, os.O_RDWR | os.O_NONBLOCK)   # RDWR: also for reading the firmware version
         except OSError as e:
             self.why = WHY_ACCESS if e.errno in (errno.EACCES, errno.EPERM) else WHY_OPEN
             print(f"Controller {self.idx}: cannot open {path} for rumble: {e.strerror}")
@@ -347,17 +374,17 @@ class Rumble:
         self.v2 = None if self.fw is None else self.fw >= VIBRATION_V2_FROM
         return True
 
-    # ---------- sterowanie ----------
+    # ---------- control ----------
     def set(self, small, large, rgb=None):
-        """Wibracja (i kolor lightbara, gdy owns_lightbar). Zmiana idzie od razu i drugi raz po REPEAT_S
-        (zgubiony / nadpisany raport nie zostawia pada bez wibracji); bez zmian - odświeżenie najwyżej co 0.4 s."""
+        """Rumble (and the lightbar colour when owns_lightbar). A change goes out at once and a second time after REPEAT_S
+        (a lost / overwritten report does not leave the pad without rumble); with no change - a refresh at most every 0.4 s."""
         now = time.monotonic()
         if not self.methods:
             return
         rgb = rgb if rgb is not None else self.rgb
         changed = (small, large) != self.cur or rgb != self.rgb
         if not changed and now - self.t_set < 0.4:
-            return                                   # bez zmian i świeże - nic nie wysyłaj
+            return                                   # no change and fresh - send nothing
         if self.logged < 3 and (small or large):
             self.logged += 1
             print(f"Controller {self.idx}: rumble {small}/{large} from PC {self.describe()}")
@@ -369,9 +396,13 @@ class Rumble:
             self._arm_repeat()
 
     def set_triggers(self, vals):
-        """Efekty spustów z PC: wartości trig3 (trig2 + efekty gry), trig2 (12) albo starego trig (4: sam opór).
-        -> True, gdy wysłane do pada (raport HID). Receiver odświeża je co kilka sekund, więc pad po ponownym połączeniu
-        wraca do efektów z profilu i gry."""
+        """Trigger effects from the PC: trig3 values (trig2 + game effects), trig2 (12) or the old trig (4: resistance only).
+        Returns True when sent to the pad (HID report). The receiver refreshes them every few seconds, so after a reconnect
+        the pad returns to the effects from the profile and the game.
+
+        The packet is split into the profile part and the game part, remembered, and the watchdog is re-armed (a
+        refresh must keep arriving). The report is then rebuilt with the current motor values so that sending trigger
+        effects never changes the rumble."""
         vals, game = split_triggers(vals)
         if (vals, game) != (self.fx, self.game_fx):
             print(f"Controller {self.idx}: triggers L2 {vals[0:4]} R2 {vals[4:8]} game rumble {vals[8:11]}"
@@ -387,7 +418,7 @@ class Rumble:
             self.seq = (self.seq + 1) & 0x0F
             os.write(self.fd, output_report(self.bt, self.seq, *self.cur, self.v2, self.rgb, trig))
         except (BlockingIOError, InterruptedError):
-            return False                    # pełna kolejka - następne odświeżenie z PC dośle efekt
+            return False                    # a full queue - the next refresh from the PC will deliver the effect
         except OSError as e:
             self._failed("hidraw", e)
             return False
@@ -396,6 +427,7 @@ class Rumble:
         return True
 
     def _arm_trig_watch(self, on):
+        """(Re)start the trigger-effect watchdog timer when effects are active (`on`); cancel it otherwise."""
         if self._trig_watch is not None:
             self._trig_watch.cancel()
             self._trig_watch = None
@@ -406,15 +438,20 @@ class Rumble:
                 pass
 
     def _trig_expired(self):
+        """Watchdog fired: no trigger refresh from the PC for TRIG_WATCHDOG_S - release the triggers (switch all effects off)."""
         self._trig_watch = None
         if self.fx is not None and (any(self.fx) or self.game_fx != (None, None)):
             print(f"Controller {self.idx}: no trigger refresh from PC for {TRIG_WATCHDOG_S:g}s - triggers released")
             self.set_triggers(TRIG2_OFF)
 
     def _want_triggers(self, small, large, now=None):
-        """Efekty, które pad powinien mieć teraz: z profilu, na spuście bez efektu w profilu - efekt gry, a przy
-        wibracji z gry (i RFX_HOLD_S po niej) - drganie wg silnika (L2 = duży, R2 = mały). None = PC nic nie ustawił
-        (spustów nie ruszamy)."""
+        """The effects the pad should have now: from the profile; on a trigger with no profile effect - the game's effect; and
+        during game rumble (and RFX_HOLD_S after it) - vibration following the motor (L2 = large, R2 = small). None = the PC
+        set nothing (we do not touch the triggers).
+
+        For every trigger the effect is chosen in that order. With game-rumble mapping on, a motor above zero replaces the
+        trigger effect with a vibration whose amplitude follows the motor; when the motor stops, the vibration is kept for
+        RFX_HOLD_S (so it does not flicker) and then the trigger returns to its own effect."""
         fx = self.fx
         if fx is None:
             return None
@@ -442,7 +479,7 @@ class Rumble:
         return tuple(out)
 
     def _arm_rv(self, hold):
-        """Po RFX_HOLD_S ciszy silników spust ma wrócić do efektu, choćby nic więcej nie przyszło z PC."""
+        """After RFX_HOLD_S of silent motors the trigger must return to its effect, even if nothing else arrives from the PC."""
         if self._rv_timer is not None:
             self._rv_timer.cancel()
             self._rv_timer = None
@@ -453,11 +490,13 @@ class Rumble:
                 pass
 
     def _rv_expired(self):
+        """Hold time over: resend the report so the trigger falls back to its normal effect."""
         self._rv_timer = None
         if self.methods:
             self._send(*self.cur, only="hidraw")
 
     def _arm_repeat(self):
+        """Schedule one extra send REPEAT_S from now (replacing a pending one) to protect a change against a lost report."""
         if self._repeat is not None:
             self._repeat.cancel()
         try:
@@ -466,27 +505,33 @@ class Rumble:
             self._repeat = None
 
     def _send_again(self):
+        """Timer callback of _arm_repeat: resend the current rumble over the HID report."""
         self._repeat = None
         if self.methods:
             self._send(*self.cur, only="hidraw")
 
     def _send(self, small, large, only=None):
+        """Send the rumble through every active way (or only `only`), handling errors per way.
+
+        A momentarily full report queue is not a failure. A real error is counted by _failed; if that switches the
+        driver way off and no HID path is open yet, the HID report is opened as a replacement and used straight away.
+        """
         for m in list(self.methods):
             if only and m != only:
                 continue
             try:
                 (self._send_hidraw if m == "hidraw" else self._send_evdev)(small, large)
             except (BlockingIOError, InterruptedError):
-                pass        # chwilowo pełna kolejka raportów - to nie awaria; powtórka / odświeżenie dośle stan
+                pass        # the report queue is momentarily full - not a failure; a repeat / refresh will deliver the state
             except OSError as e:
                 if self._failed(m, e) and m == "evdev" and "hidraw" not in self.methods and self._open_hidraw():
                     self.methods.append("hidraw")
-                    self._send(small, large, only="hidraw")    # z tą samą obsługą błędów (wyjątek nie wyjdzie do pętli)
+                    self._send(small, large, only="hidraw")    # with the same error handling (the exception does not escape to the loop)
             else:
                 self.fails[m] = 0
 
     def _failed(self, m, e):
-        """Błąd zapisu sposobem m. -> True, gdy sposób został wyłączony (FAIL_MAX kolejnych albo pada już nie ma)."""
+        """A write error with way m. Returns True when the way was switched off (FAIL_MAX in a row, or the pad is gone)."""
         n = self.fails[m] = self.fails.get(m, 0) + 1
         if n < FAIL_MAX and e.errno not in FATAL_ERRNO:
             if n == 1:
@@ -497,10 +542,11 @@ class Rumble:
             self.methods.remove(m)
         self.fails[m] = 0
         if m == "hidraw":
-            self._close_fd()                          # bez tego deskryptor wyciekał (ponowne otwarcie nadpisywało fd)
+            self._close_fd()                          # without this the descriptor leaked (reopening overwrote fd)
         return True
 
     def _close_fd(self):
+        """Close the hidraw file descriptor if one is open."""
         if self.fd is not None:
             try:
                 os.close(self.fd)
@@ -509,7 +555,7 @@ class Rumble:
             self.fd = None
 
     def _send_hidraw(self, small, large):
-        """Wibracja (i kolor); efekty spustów tylko, gdy mają się zmienić (wibracja z gry na spustach)."""
+        """Rumble (and colour); trigger effects only when they are about to change (game rumble on the triggers)."""
         trig = self._want_triggers(small, large)
         if trig == self.trig:
             trig = None
@@ -519,6 +565,11 @@ class Rumble:
             self.trig = trig
 
     def _send_evdev(self, small, large):
+        """Rumble through the kernel force-feedback API: upload (or update) one long rumble effect and start it; stop it for 0/0.
+
+        The effect lasts EFFECT_MS, so the watchdog / refresh logic of the caller decides when it really ends. The
+        strong / weak magnitudes are scaled from 0..255 to the 16-bit range (x257).
+        """
         if small or large:
             eff = ff.Effect(ec.FF_RUMBLE, -1 if self.ff_id is None else self.ff_id, 0, ff.Trigger(0, 0),
                             ff.Replay(EFFECT_MS, 0),
@@ -530,6 +581,7 @@ class Rumble:
             self.dev.write(ec.EV_FF, self.ff_id, 0)
 
     def _arm_watchdog(self):
+        """(Re)start the rumble watchdog: if no refresh arrives within WATCHDOG_S while the motors run, they are stopped."""
         if self._watch is not None:
             self._watch.cancel()
             self._watch = None
@@ -540,11 +592,13 @@ class Rumble:
                 pass
 
     def _expired(self):
+        """Watchdog fired: the receiver stopped refreshing the rumble, so switch the motors off."""
         self._watch = None
         if self.cur != (0, 0) and time.monotonic() - self.t_set >= WATCHDOG_S - 0.05:
-            self.set(0, 0)                           # receiver przestał odświeżać - zatrzymaj silniki
+            self.set(0, 0)                           # the receiver stopped refreshing - stop the motors
 
     def close(self):
+        """Shut rumble down cleanly: cancel timers, stop the motors, release hard triggers, erase the FF effect, close the fd."""
         for name in ("_watch", "_repeat", "_rv_timer", "_trig_watch"):
             t = getattr(self, name)
             if t is not None:
@@ -552,9 +606,9 @@ class Rumble:
                 setattr(self, name, None)
         if self.cur != (0, 0):
             self._send(0, 0)
-            self.cur = (0, 0)       # set_triggers niżej wysyła raport z bieżącą mocą silników - nie może jej włączyć od nowa
+            self.cur = (0, 0)       # set_triggers below sends a report with the current motor strength - it must not switch it on again
         if self.trig is not None and any(t[0] != TRIG_OFF for t in self.trig):
-            self.set_triggers(TRIG2_OFF)         # nadajnik się zamyka - spust nie może zostać twardy
+            self.set_triggers(TRIG2_OFF)         # the sender is closing - a trigger must not stay hard
         self._arm_rv(False)
         if "evdev" in self.methods and self.ff_id is not None:
             try:
@@ -565,10 +619,10 @@ class Rumble:
         self.methods, self.cur = [], (0, 0)
 
 
-# ---------------- test z linii poleceń: doas python3 sender_rumble.py --test ----------------
+# ---------------- command-line test: doas python3 sender_rumble.py --test ----------------
 def _test():
-    """Wibruje każdym podłączonym DualSense po kolei każdym sposobem - bez sieci i receivera. Pokazuje, czy problem
-    jest w padzie / jądrze (nic nie wibruje), czy w drodze PC -> nadajnik (tu wibruje, z gry nie)."""
+    """Rumbles every connected DualSense in turn with every way - without the network and the receiver. It shows whether the problem
+    is in the pad / kernel (nothing rumbles) or on the way PC -> sender (it rumbles here, but not from the game)."""
     import evdev
     pads = [evdev.InputDevice(p) for p in evdev.list_devices()]
     pads = [d for d in pads if "Wireless Controller" in d.name and "Motion" not in d.name and "Touchpad" not in d.name]

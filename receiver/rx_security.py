@@ -1,12 +1,12 @@
-"""Receiver: kontrola ustawień bezpieczeństwa - ostrzeżenia w dzienniku przy starcie i karta Ustawienia -> Bezpieczeństwo.
+"""Receiver: security settings check - warnings in the log at startup and the Settings -> Security card.
 
-  issues()       lista problemów (Issue): brak klucza HMAC, serwer DSU dostępny z sieci, folder receivera albo Pythona
-                 zapisywalny bez uprawnień administratora (receiver działa jako administrator - zwykły program mógłby
-                 podmienić kod, który zadanie autostartu uruchamia z najwyższymi uprawnieniami)
-  log_issues()   ostrzeżenia w dzienniku zdarzeń (start receivera)
-  harden()       folder receivera tylko do zapisu dla administratorów (rx_winapi.harden_dir)
+  issues()       list of problems (Issue): no HMAC key, DSU server reachable from the network, receiver or Python folder
+                 writable without administrator rights (the receiver runs as administrator - an ordinary program could
+                 replace code that the autostart task launches with the highest privileges)
+  log_issues()   warnings in the event log (receiver startup)
+  harden()       make the receiver folder writable by administrators only (rx_winapi.harden_dir)
 
-Szczegóły i zalecenia: docs/SECURITY.md.
+Details and recommendations: docs/SECURITY.md.
 """
 import os
 import sys
@@ -21,18 +21,21 @@ LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 @dataclass(frozen=True, slots=True)
 class Issue:
     code: str        # key / dsu / folder / python
-    text: str        # opis dla użytkownika (przetłumaczony)
+    text: str        # user-facing description (translated)
 
 
 def code_dir():
+    """Folder holding the receiver's source files."""
     return os.path.dirname(os.path.abspath(__file__))
 
 
 def python_dir():
+    """Folder of the running Python interpreter."""
     return os.path.dirname(os.path.abspath(sys.executable))
 
 
 def _winapi():
+    """rx_winapi on Windows, None elsewhere (the ownership checks only make sense on Windows)."""
     if os.name != "nt":
         return None
     import rx_winapi
@@ -40,6 +43,8 @@ def _winapi():
 
 
 def issues():
+    """Collect the current security problems. Key and DSU checks work everywhere; the folder and Python ownership checks
+    run only on Windows when the receiver is elevated (admin_owned() returns None when it cannot tell, which is not reported)."""
     out = []
     if not C.KEY:
         out.append(Issue("key", _("Brak klucza HMAC: każdy w sieci lokalnej może sterować tym komputerem przez receiver "
@@ -63,6 +68,7 @@ def issues():
 
 
 def log_issues():
+    """Print every current issue and add it to the event log as a warning (called once at receiver startup)."""
     import rx_events as ev
     for i in issues():
         print(f"Security: {i.code}")
@@ -70,7 +76,7 @@ def log_issues():
 
 
 def harden():
-    """-> (ok, komunikat). Tylko Windows i receiver jako administrator."""
+    """Restrict write access to the receiver folder to administrators -> (ok, message). Windows with an elevated receiver only."""
     w = _winapi()
     if w is None or not w.is_admin():
         return False, _("Potrzebne uprawnienia administratora")
