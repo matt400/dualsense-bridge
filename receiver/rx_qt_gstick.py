@@ -9,9 +9,9 @@ touches Qt, and the preview is refreshed by the window timer (tick) from an engi
 import time
 from dataclasses import replace
 
-from PySide6.QtCore import QPointF, Qt, Signal
+from PySide6.QtCore import QEvent, QPointF, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPen
-from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QCheckBox, QFrame, QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget
 
 import rx_buttons as B
 import rx_gstick as G
@@ -21,6 +21,7 @@ from rx_qt_style import ACCENT, BAD, CARD, LINE, OK
 from rx_qt_widgets import Collapsible, Combo, SliderRow, button, field, input_items, label
 
 MSG_S = 4.0
+PREVIEW_W, PREVIEW_GAP, VIEW_PX = 360, 12, 110      # the floating preview: width and the gap to the corner of the pad drawing [px]
 STATE_TEXT = {G.ST_OFF: "Wyłączone", G.ST_HOLD: "Czeka na sprzęgło", G.ST_SAFE: "Ustaw pada blisko środka",
               G.ST_IDLE: "Uśpione (pad nieruchomy)", G.ST_CAL: "Kalibracja...", G.ST_RUN: "● Steruje"}
 CAL_TEXT = {True: "Środek ustawiony.", False: "Kalibracja nie wyszła - trzymaj pada nieruchomo przez chwilę."}
@@ -31,7 +32,7 @@ class TiltView(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.setFixedHeight(150)
+        self.setFixedSize(VIEW_PX, VIEW_PX)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.cfg = G.Config()
         self.snap = (G.ST_OFF, G.Z_DEAD, (0.0, 0.0), (0.0, 0.0), (0.0, 0.0), 0.0, False, False)
@@ -88,7 +89,6 @@ class TiltSection(QWidget):
         super().__init__()
         self.slot = 0
         self._msg_until = 0.0
-        self._preview = None             # the slot whose engine we asked to follow the pad (preview), None = none
         self.cfg = G.Config()
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
@@ -126,11 +126,10 @@ class TiltSection(QWidget):
         self.focus.toggled.connect(lambda v: self._set(focus_release=v))
         self.feedback = Combo([(k, _(v)) for k, v in G.FEEDBACKS.items()])
         self.feedback.changed.connect(lambda v: self._set(feedback=v))
-        self.view = TiltView()
-        self.numbers = label("", "dim", wrap=True)
-        self.status = label("", "dim")
         self.cats = [
-            Collapsible(_("PRZECHYŁ: PODSTAWOWE"), self.on, field(_("Zastępuje wejście pada"), self.target),
+            Collapsible(_("PRZECHYŁ: PODSTAWOWE"), self.on,
+                        label(_("Przechyl pada: przód w dół = gałka w górę, na bok = gałka w bok. Gałka na rysunku pada porusza się "
+                                "razem z nim."), "dim", wrap=True), field(_("Zastępuje wejście pada"), self.target),
                         field(_("Aktywne (sprzęgło)"), self.clutch), inv, cal_row, self.cal_note),
             Collapsible(_("PRZECHYŁ: ZAKRES I FILTR"), self._slider("deadzone"), self._slider("outer"), self._slider("smoothing"),
                         self._slider("ratio"), field(_("Krzywa odpowiedzi"), self.curve)),
@@ -138,11 +137,7 @@ class TiltSection(QWidget):
                         field(_("Przycisk na skraju zakresu"), self.sprint), self._slider("sprint_at"), self.focus),
             Collapsible(_("PRZECHYŁ: SYGNAŁ ZWROTNY"),
                         field(_("Sygnał przy skraju zakresu i powrocie do środka"), self.feedback)),
-            Collapsible(_("PRZECHYŁ: PODGLĄD"), label(_("Przechyl pada: przód w dół = gałka w górę, na bok = gałka w bok. Gałka na "
-                                                      "rysunku pada porusza się razem z nim."), "dim", wrap=True),
-                        self.view, self.numbers, self.status),
         ]
-        self.preview_cat = self.cats[-1]
         for c in self.cats:
             lay.addWidget(c)
         self.refresh()
@@ -166,8 +161,6 @@ class TiltSection(QWidget):
         return lambda v: f"{v:.1f}{unit}".replace(".0" + unit, unit)
 
     def set_slot(self, slot):
-        if slot != self.slot:
-            self.idle()
         self.slot = slot
         self.refresh()
 
@@ -198,37 +191,86 @@ class TiltSection(QWidget):
         self.sl["sprint_at"].setEnabled(cfg.sprint != "none")
         self.cal_reset.setEnabled(cfg.center is not None)
 
+    def any_open(self):
+        """Whether any tilt category is expanded - the window then shows the live preview over the pad."""
+        return any(c.is_open() for c in self.cats)
+
     def tick(self):
-        """Live preview (30 Hz from the window timer, only while this section is visible). Also asks the engine to follow the
-        pad even when the feature is off, so the tilt can be seen before it is switched on."""
+        """Calibration outcome (30 Hz from the window timer while the Gyro tab is visible): shown under the button for a moment."""
         msg, now = runner.cal_result(self.slot), time.monotonic()
         if msg is not None and not self._msg_until:
-            self._msg_until = now + MSG_S                    # the calibration result shows for a moment
+            self._msg_until = now + MSG_S
             self.refresh()                                   # the new center was saved by the thread
             self.cal_note.setText(_(CAL_TEXT[msg]))
         elif msg is not None and now > self._msg_until:
             runner.cal_result(self.slot, clear=True)
-            self._msg_until, msg = 0.0, None
+            self._msg_until = 0.0
             self.cal_note.setText("")
-        if not self.preview_cat.is_open():       # a collapsed preview costs nothing: the engine is not asked to follow the pad
+
+
+class TiltPreview(QFrame):
+    """The live preview, floating over the top-right corner of the pad drawing while a tilt category is expanded: the 2D view,
+    raw / filtered numbers and the engine state. While it is shown the engine follows the pad even if the feature is off, so the
+    tilt can be seen before it is switched on."""
+
+    def __init__(self, pad):
+        super().__init__(pad)
+        self.pad = pad
+        self.setObjectName("group")
+        self._slot = None                  # the slot whose engine we asked to follow the pad, None = none
+        lay = QHBoxLayout(self)             # compact: the view on the left, the texts on the right - fits above the pad drawing
+        lay.setContentsMargins(10, 8, 12, 8)
+        lay.setSpacing(10)
+        self.view = TiltView()
+        self.numbers = label("", "dim", wrap=True)
+        self.status = label("", "dim", wrap=True)
+        texts = QVBoxLayout()
+        texts.setSpacing(4)
+        texts.addWidget(label(_("PRZECHYŁ - PODGLĄD"), "h2"))
+        texts.addWidget(self.numbers)
+        texts.addWidget(self.status)
+        texts.addStretch(1)
+        lay.addWidget(self.view)
+        lay.addLayout(texts, 1)
+        self.setFixedWidth(PREVIEW_W)
+        pad.installEventFilter(self)       # keep the corner when the drawing is resized
+        self.hide()
+
+    def eventFilter(self, obj, event):
+        if obj is self.pad and event.type() == QEvent.Type.Resize:
+            self.place()
+        return False
+
+    def place(self):
+        self.adjustSize()
+        self.move(self.pad.width() - self.width() - PREVIEW_GAP, PREVIEW_GAP)
+
+    def tick(self, show, slot, cfg):
+        """30 Hz from the window timer: show / hide, follow the pad, refresh the view and the texts."""
+        if not show:
             self.idle()
             return
-        if self._preview != self.slot:
+        if self._slot != slot:
             self.idle()
-            self._preview = self.slot
-            runner.set_preview(self.slot, True)
-        snap = runner.snapshot(self.slot)
-        self.view.set_data(self.cfg, snap)
+            self._slot = slot
+            runner.set_preview(slot, True)
+        if not self.isVisible():
+            self.show()
+            self.raise_()
+        snap = runner.snapshot(slot)
+        self.view.set_data(cfg, snap)
         state, _zone, raw, _filt, xy, _mag, sprint, _driving = snap
-        self.numbers.setText(_("Raw: pitch {p:+.1f}°  roll {r:+.1f}°   |   Filtered output: X {x:+.0f}%  Y {y:+.0f}%{s}").format(
+        self.numbers.setText(_("Raw: pitch {p:+.1f}°  roll {r:+.1f}°\nFiltered output: X {x:+.0f}%  Y {y:+.0f}%{s}").format(
             p=raw[1], r=raw[0], x=xy[0] * 100, y=xy[1] * 100, s="  [sprint]" if sprint else ""))
-        if not self.cfg.enabled and state != G.ST_OFF:
+        if not cfg.enabled and state != G.ST_OFF:
             self.status.setText(_("Podgląd - funkcja jest wyłączona"))
         else:
             self.status.setText(_(STATE_TEXT[state]))
+        self.place()
 
     def idle(self):
-        """The section is not visible any more: the engine stops following the pad when the feature is off."""
-        if self._preview is not None:
-            runner.set_preview(self._preview, False)
-            self._preview = None
+        """Hide the preview and let the engine go back to idle when the feature is off."""
+        if self._slot is not None:
+            runner.set_preview(self._slot, False)
+            self._slot = None
+        self.hide()

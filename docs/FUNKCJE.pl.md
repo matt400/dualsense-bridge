@@ -29,7 +29,7 @@
   - po prawej profil (domyślny / per gra), zakładki **Selected**, **Gyro**, **Changes** i przycisk **Save** (Ctrl+S);
   - remapowanie przycisków i gałek, celowanie żyroskopem (prawa gałka / mysz); strefy martwe, krzywe i
     anti-deadzone w zwijanej sekcji „Zaawansowane” (otwiera się sama, gdy coś w niej zmieniono);
-  - **przechył pada jako gałka** (zakładka **Gyro**: zwinięte kategorie - podstawowe, zakres i filtr, automatyka, sygnał zwrotny, podgląd; gałka na rysunku pada rusza się razem z przechyłem): przechył pada steruje gałką analogową (albo D-padem), osobno dla każdego pada (zapis po MAC w
+  - **przechył pada jako gałka** (zakładka **Gyro**: zwinięte kategorie - podstawowe, zakres i filtr, automatyka, sygnał zwrotny; gdy któraś jest rozwinięta, w prawym górnym rogu rysunku pada pojawia się podgląd na żywo, a gałka na rysunku rusza się razem z przechyłem): przechył pada steruje gałką analogową (albo D-padem), osobno dla każdego pada (zapis po MAC w
     `gyrostick.json` obok `remap.json`, działa od razu - nie jest częścią profilu). Przód w dół = gałka w górę, lewo /
     prawo = gałka w lewo / prawo, pełny zakres 360°. Ustawienia: martwa strefa, maksymalne wychylenie, wygładzanie (EMA),
     stosunek pion / poziom, krzywa odpowiedzi (liniowa / sześcienna / agresywna), odwrócenie pitch / roll, przycisk

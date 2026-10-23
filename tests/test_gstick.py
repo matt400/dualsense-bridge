@@ -250,13 +250,19 @@ else:
     page.on.setChecked(True); page.sl["deadzone"].set(5); page.sl["deadzone"]._moved(0)
     page.target.set_data("right"); page.target.changed.emit("right")
     check(got and got[-1].target == "right" and got[-1].enabled and got[-1].deadzone == 5.0, "okno: przełączniki i suwaki emitują Config")
-    check(not page.preview_cat.is_open() and all(not c.is_open() for c in page.cats), "every tilt category starts collapsed")
-    page.tick(); check(rx_gstick_io.runner.engines[0].preview is False, "collapsed preview: the engine is not asked to follow the pad")
-    page.preview_cat.set_open(True); page.tick()
-    check(rx_gstick_io.runner.engines[0].preview is True, "open preview: the engine follows the pad")
-    check("Raw" in page.numbers.text() and page.status.text(), "podgląd diagnostyczny wypełniony")
-    page.view.resize(200, 200); page.view.grab()
-    page.refresh(replace(base, outer=10.0, deadzone=2.0)); page.view.grab()
+    check(not page.any_open() and all(not c.is_open() for c in page.cats), "every tilt category starts collapsed")
+    from PySide6.QtWidgets import QWidget
+    from rx_qt_gstick import TiltPreview
+    host = QWidget(); host.resize(600, 400); host.show(); pv = TiltPreview(host)
+    pv.tick(False, 0, page.cfg); check(not pv.isVisible() and rx_gstick_io.runner.engines[0].preview is False,
+                                       "collapsed categories: no preview, the engine is not asked to follow the pad")
+    page.cats[0].set_open(True); check(page.any_open(), "an expanded category counts")
+    pv.tick(True, 0, page.cfg)
+    check(pv.isVisible() and rx_gstick_io.runner.engines[0].preview is True, "expanded: the preview shows and the engine follows the pad")
+    check("Raw" in pv.numbers.text() and pv.status.text() and pv.x() + pv.width() >= host.width() - 20 and pv.y() < 40, "preview filled, top-right corner")
+    pv.tick(False, 0, page.cfg); check(not pv.isVisible() and rx_gstick_io.runner.engines[0].preview is False, "collapsed again: hidden, idle")
+    pv.view.resize(200, 200); pv.view.grab()
+    page.refresh(replace(base, outer=10.0, deadzone=2.0)); pv.view.set_data(replace(base, outer=10.0, deadzone=2.0), r.snapshot(0)); pv.view.grab()
 
 print("GSTICK OK" if not fails else f"FAIL  {len(fails)}")
 sys.exit(1 if fails else 0)

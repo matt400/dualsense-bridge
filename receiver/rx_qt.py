@@ -42,6 +42,7 @@ from rx_qt_keys import KeysDrawer
 from rx_qt_console import ConsoleSettings
 from rx_qt_icons import icon, pixmap
 from rx_qt_log import LogPanel
+from rx_qt_gstick import TiltPreview
 from rx_qt_pad import PadView
 from rx_qt_panels import ChangesPage, GyroPage, PartPage, ProfileBar
 from rx_qt_style import DIM, LEVEL, SEGMENT, TV_SCALE, apply_theme, px, set_prop
@@ -569,6 +570,7 @@ class MainWindow(QMainWindow):
         self.pad = PadView()
         self.pad.part_clicked.connect(self.on_part)
         lay.addWidget(self.pad, 1)
+        self.tilt_preview = TiltPreview(self.pad)     # over the pad's top-right corner while a tilt category is expanded
         row = QHBoxLayout()
         self.pad_hint = label(_("Kliknij część pada, aby ją zremapować."), "dim", wrap=True)
         row.addWidget(self.pad_hint, 1)
@@ -855,7 +857,7 @@ class MainWindow(QMainWindow):
         """On hiding: stop the live drawing, cancel a drift measurement and release the Test lock."""
         super().hideEvent(e)
         self.live_timer.stop()                 # a hidden window does not repaint the pad
-        self.gyro_page.tilt.idle()             # ... and the tilt preview does not keep the engine busy
+        self.tilt_preview.idle()               # ... and the tilt preview does not keep the engine busy
         self.test_panel.cancel()               # a drift measurement does not run in the background
         self.sync_block()                      # a hidden window (the tray) - the game gets the pad again
 
@@ -1214,10 +1216,11 @@ class MainWindow(QMainWindow):
             self._exit_hold(now, "circle" in live["pressed"])
         else:
             self.gyro_page.set_live(self.ed.key == live["active"], live["gyro_on"])
-        if self.view != "test" and self.tabs.currentWidget() is self.gyro_page:
+        on_gyro = self.view != "test" and self.tabs.currentWidget() is self.gyro_page
+        if on_gyro:
             self.gyro_page.tilt.tick()
-        else:
-            self.gyro_page.tilt.idle()
+        tilt = self.gyro_page.tilt
+        self.tilt_preview.tick(on_gyro and tilt.any_open(), self.ed.slot, tilt.cfg)
 
     @staticmethod
     def _with_tilt(live, pressed, ls, rs):

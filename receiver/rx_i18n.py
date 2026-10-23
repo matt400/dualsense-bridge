@@ -948,7 +948,7 @@ EN = {
     "PRZECHYŁ: ZAKRES I FILTR": "TILT: RANGE AND FILTER",
     "PRZECHYŁ: AUTOMATYKA": "TILT: AUTOMATION",
     "PRZECHYŁ: SYGNAŁ ZWROTNY": "TILT: FEEDBACK",
-    "PRZECHYŁ: PODGLĄD": "TILT: PREVIEW",
+    "PRZECHYŁ - PODGLĄD": "TILT - PREVIEW",
     "Przechyl pada: przód w dół = gałka w górę, na bok = gałka w bok. Gałka na rysunku pada porusza się razem z nim.":
         "Tilt the pad: front down = stick up, sideways = stick sideways. The stick in the pad drawing moves with it.",
     "Włącz (dla tego pada)": "Enable (for this pad)",
@@ -973,8 +973,8 @@ EN = {
         "The current pad position becomes the center (0, 0) - hold the pad still",
     "Zeruj środek": "Reset center",
     "Podgląd": "Preview",
-    "Raw: pitch {p:+.1f}°  roll {r:+.1f}°   |   Filtered output: X {x:+.0f}%  Y {y:+.0f}%{s}":
-        "Raw: pitch {p:+.1f}°  roll {r:+.1f}°   |   Filtered output: X {x:+.0f}%  Y {y:+.0f}%{s}",
+    "Raw: pitch {p:+.1f}°  roll {r:+.1f}°\nFiltered output: X {x:+.0f}%  Y {y:+.0f}%{s}":
+        "Raw: pitch {p:+.1f}°  roll {r:+.1f}°\nFiltered output: X {x:+.0f}%  Y {y:+.0f}%{s}",
     "D-pad": "D-pad",
     "Brak (tylko podgląd)": "None (preview only)",
     "Liniowa": "Linear",
