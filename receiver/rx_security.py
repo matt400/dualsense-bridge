@@ -4,7 +4,9 @@
                  writable without administrator rights (the receiver runs as administrator - an ordinary program could
                  replace code that the autostart task launches with the highest privileges)
   log_issues()   warnings in the event log (receiver startup)
-  harden()       make the receiver folder writable by administrators only (rx_winapi.harden_dir)
+  harden()       make the receiver folder - and, in a git checkout, the whole repository with its .git - writable by
+                 administrators only (rx_winapi.harden_dir). The updater runs git as administrator in the repository root:
+                 a user-writable .git (hooks, config) would be code that runs as administrator at the next fetch.
 
 Details and recommendations: docs/SECURITY.md.
 """
@@ -33,6 +35,23 @@ class Issue:
 def code_dir() -> str:
     """Folder holding the receiver's source files."""
     return os.path.dirname(os.path.abspath(__file__))
+
+
+def repo_root() -> str | None:
+    """Return the git repository root (the parent of the code folder), or None when the receiver is not in a checkout.
+
+    The update runs git as administrator in this folder (proto.git, cwd=root), so the root and its .git belong to the
+    code that has to be protected - not only receiver/. A copy without .git (a zip) has no such parent to protect: its
+    parent folder is just some folder (e.g. Downloads) and must not be touched.
+    """
+    root = os.path.dirname(code_dir())
+    return root if os.path.exists(os.path.join(root, ".git")) else None
+
+
+def protected_paths() -> list[str]:
+    """Return the paths that must not be writable by a regular user: the repository root and its .git, else the code folder."""
+    root = repo_root()
+    return [root, os.path.join(root, ".git")] if root else [code_dir()]
 
 
 def python_dir() -> str:
@@ -65,7 +84,7 @@ def issues() -> list[Issue]:
                                   "komputerze.")))
     w = _winapi()
     if w is not None and w.is_admin():
-        if w.admin_owned(code_dir()) is False:
+        if any(w.admin_owned(path) is False for path in protected_paths()):
             out.append(Issue("folder", _("Folder receivera należy do zwykłego użytkownika: dowolny program uruchomiony "
                                          "bez uprawnień może podmienić kod, który receiver wykonuje jako "
                                          "administrator. Użyj „Zabezpiecz folder”.")))
@@ -85,16 +104,17 @@ def log_issues() -> None:
 
 
 def harden() -> tuple[bool, str]:
-    """Restrict write access to the receiver folder to administrators and return (ok, message).
+    """Restrict write access to the receiver folder (in a git checkout: the whole repository) to administrators.
 
-    Works on Windows with an elevated receiver only.
+    Returns (ok, message). Works on Windows with an elevated receiver only.
     """
     w = _winapi()
     if w is None or not w.is_admin():
         return False, _("Potrzebne uprawnienia administratora")
-    ok, err = w.harden_dir(code_dir())
+    target = repo_root() or code_dir()           # the root's /T pass covers receiver/ and .git too
+    ok, err = w.harden_dir(target)
     if ok:
-        print(f"Security: {code_dir()} is now writable only by administrators")
+        print(f"Security: {target} is now writable only by administrators")
         return True, _("Folder zabezpieczony - zapis tylko dla administratorów")
-    print(f"Security: hardening {code_dir()} failed: {err}")
+    print(f"Security: hardening {target} failed: {err}")
     return False, _("Nie udało się zabezpieczyć folderu: {err}").format(err=err)

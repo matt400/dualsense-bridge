@@ -258,9 +258,22 @@ def effective_profile(i: int, key: str, drift: bool = True) -> Profile:
     return rx_padcal.apply_drift(prof, rx_padcal.drift(base)) if drift else prof
 
 
+_changes: dict[int, tuple[tuple[int, int, str, str], int]] = {}      # slot -> (what the count was computed for, the count)
+
+
 def profile_changes(i: int) -> int:
-    """Return the number of changes of the profile in use (pad card, log), without the drift correction (not part of the profile)."""
-    return profile_size(effective_profile(i, active[i], drift=False))
+    """Return the number of changes of the profile in use (pad card, log), without the drift correction (not part of the profile).
+
+    Cached: the pad card asks on every refresh, and building the effective profile copies and merges profile dicts. The count
+    only depends on the store (its version counts every change), the profile in use and the pad's profile key.
+    """
+    token = (id(store), store.version, active[i], profile_key(i))
+    hit = _changes.get(i)
+    if hit is not None and hit[0] == token:
+        return hit[1]
+    n = profile_size(effective_profile(i, active[i], drift=False))
+    _changes[i] = (token, n)
+    return n
 
 
 NEUTRAL_OUT = {**new_state(), "ver": None}

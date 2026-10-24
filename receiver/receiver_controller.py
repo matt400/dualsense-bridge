@@ -153,9 +153,9 @@ def elevate() -> None:
         return
     if not autostart and not _recent_try():
         import rx_autostart
+        from proto import write_file
         try:
-            with open(_guard_path(), "w") as f:
-                f.write(str(os.getpid()))
+            write_file(_guard_path(), str(os.getpid()))        # atomic: a half-written guard would still carry a fresh mtime
         except OSError:
             pass
         # the task starts the receiver with the arguments stored in it - other arguments of this start (--config, --pads...)

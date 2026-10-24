@@ -38,6 +38,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any, Final
 
+from proto import write_json
 from rx_config import C
 
 REPO: Final = "hifihedgehog/HIDMaestro"
@@ -159,10 +160,7 @@ def _save_state(checked: float, latest: str) -> None:
     """Save the check state (best effort - an I/O error is ignored)."""
     with contextlib.suppress(OSError):
         os.makedirs(root(), exist_ok=True)
-        tmp = _state_path() + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump({"checked": checked, "latest": latest}, f)
-        os.replace(tmp, _state_path())
+        write_json(_state_path(), {"checked": checked, "latest": latest})
 
 
 def _get(url: str, headers: Mapping[str, str] | None = None, timeout: float = TIMEOUT_S) -> Any:
@@ -382,8 +380,11 @@ def _check(force: bool) -> None:
     _set(latest=tag, checked=now, held_until=0.0)
     if status.version and version_tuple(status.version) >= version_tuple(tag):
         return
+    if status.version and not published:
+        # no usable date = no proof that the release has aged: block instead of waving it through (the next check retries)
+        raise OSError(f"HIDMaestro {tag}: unreadable publication date - not installing until it is known")
     ready = published + min_age_s()
-    if status.version and published and now < ready:      # a fresh release waits (also on "Check now")
+    if status.version and now < ready:                    # a fresh release waits (also on "Check now")
         _set(held_until=ready)
         print(f"HIDMaestro {tag} published {(now - published) / 3600:.0f} h ago - installing it after "
               f"{time.strftime('%Y-%m-%d %H:%M', time.localtime(ready))} (hm_min_age_days)")
