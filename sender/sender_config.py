@@ -4,6 +4,7 @@ Modules read values from the C object at run time (C.PORT, ...), so init() must 
 before anything else starts.
 """
 import argparse
+import ipaddress
 import os
 import socket
 from collections.abc import Sequence
@@ -16,7 +17,7 @@ import sender_migrate
 from proto import load_config
 
 DEFAULTS: dict[str, Any] = {
-    "host": "192.168.1.4",
+    "host": "",                    # the receiver (the PC): an IP or a name; there is no default, so a missing host is an error
     "port": 5005,
     "max_pads": 2,
     "slots_file": "slots.json",    # pad (MAC) -> fixed slot, also across restarts (player 1 / 2 in a game); "" = no memory
@@ -61,6 +62,7 @@ DEFAULTS: dict[str, Any] = {
 # constants independent of the configuration
 AUTOBIAS_MAX_STEP: Final = 2048
 BURST_DELAYS: Final = (0.003, 0.009)    # repeats of a button change (resilience to a lost packet)
+MIN_PERIOD_S: Final = 0.01              # the shortest period of a polling loop (heartbeat, pad scan, battery): never a busy loop
 SETTLE_S: Final = 0.5                   # how long we wait for the complete set of pad devices (pad+motion+touch)
 # evdev axes of the DualSense: left stick x y, L2, right stick x y, R2 - their order is the order of the state packet's axis fields
 PAD_ABS: Final = (ec.ABS_X, ec.ABS_Y, ec.ABS_Z, ec.ABS_RX, ec.ABS_RY, ec.ABS_RZ)
@@ -98,10 +100,10 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     """Parse the command line (None = sys.argv)."""
     ap = argparse.ArgumentParser(description="DualSense UDP sender")
     # default=None: otherwise the default host would override the host from --config
-    ap.add_argument("host", nargs="?", default=None, help="IP odbiornika (PC z Windows)")
-    ap.add_argument("--config", help="plik konfiguracji .toml / .json")
-    ap.add_argument("--key", help="wspólny klucz HMAC (uwierzytelnianie pakietów)")
-    ap.add_argument("--stats", action="store_true", default=None, help="pokazuj RTT co 5 s")
+    ap.add_argument("host", nargs="?", default=None, help="receiver address (the Windows PC): an IP or a host name")
+    ap.add_argument("--config", help="configuration file (.toml / .json)")
+    ap.add_argument("--key", help="shared HMAC key (packet authentication)")
+    ap.add_argument("--stats", action="store_true", default=None, help="print the RTT and report rates every 5 s")
     return ap.parse_args(argv)
 
 
@@ -119,20 +121,38 @@ def _merge_settings(args: argparse.Namespace) -> dict[str, Any]:
         if value is not None:
             cfg[name] = value
     if not cfg.get("host"):
-        raise SystemExit("Brak hosta odbiornika. Podaj argument (python sender_controller.py 192.168.1.100) "
-                         "albo ustaw host w pliku --config.")
+        raise SystemExit("No receiver host. Pass it as an argument (python sender_controller.py 192.168.1.100) "
+                         "or set host in the --config file.")
     if not cfg.get("key"):
         cfg["key"] = os.environ.get("PADKEY", "")
     return cfg
+
+
+def is_ip(host: str) -> bool:
+    """Whether ``host`` is a literal IP address (nothing to re-resolve later when the PC's address changes)."""
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return True
+
+
+def resolve(host: str) -> str:
+    """Resolve ``host`` to an IPv4 address (blocking: call from a worker thread inside the event loop).
+
+    Raises:
+        OSError: The name cannot be resolved.
+    """
+    return socket.gethostbyname(host)
 
 
 def _apply_network(cfg: dict[str, Any]) -> None:
     """Receiver address, port, pad limit and the HMAC key; exits with a message if the host cannot be resolved."""
     C.HOST = str(cfg["host"]).strip()
     try:
-        C.PC_ADDR = socket.gethostbyname(C.HOST)
+        C.PC_ADDR = resolve(C.HOST)
     except OSError as e:
-        raise SystemExit(f"Nie można rozwiązać hosta {C.HOST!r}: {e}") from None
+        raise SystemExit(f"Cannot resolve host {C.HOST!r}: {e}") from None
     C.PORT = int(cfg["port"])
     C.MAX_PADS = int(cfg["max_pads"])
     C.KEY = str(cfg["key"]).encode() if cfg["key"] else b""
@@ -151,13 +171,14 @@ def _apply_pad_tuning(cfg: dict[str, Any]) -> None:
     """Pad and motion reading: send rate limits, deadbands, calibration, autobias, polling."""
     C.GRAB_PAD = bool(cfg["grab_pad"])
     C.PAD_MIN_DT = max(0.0, float(cfg["pad_min_dt"]))
-    C.HEARTBEAT_S, C.MOTION_MIN_DT, C.RESCAN_S = (float(cfg["heartbeat_s"]), float(cfg["motion_min_dt"]),
-                                                  float(cfg["rescan_s"]))
+    # a period of 0 (or less) would turn these loops into a busy loop - and the sender runs under SCHED_FIFO
+    C.HEARTBEAT_S = max(MIN_PERIOD_S, float(cfg["heartbeat_s"]))
+    C.MOTION_MIN_DT, C.RESCAN_S = float(cfg["motion_min_dt"]), max(MIN_PERIOD_S, float(cfg["rescan_s"]))
     C.DB_GYRO, C.DB_ACC = int(cfg["motion_deadband_gyro"]), int(cfg["motion_deadband_acc"])
     C.STICK_DZ = int(cfg["stick_deadzone"])
     C.CAL_S, C.CAL_MAX_RANGE = float(cfg["calibrate_s"]), int(cfg["calibrate_max_range"])
     C.AUTOBIAS, C.AUTOBIAS_S, C.AUTOBIAS_RANGE = bool(cfg["autobias"]), float(cfg["autobias_s"]), int(cfg["autobias_range"])
-    C.BATT_POLL_S = float(cfg["battery_poll_s"])
+    C.BATT_POLL_S = max(MIN_PERIOD_S, float(cfg["battery_poll_s"]))
 
 
 def _apply_touch(cfg: dict[str, Any]) -> None:
