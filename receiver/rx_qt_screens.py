@@ -148,9 +148,11 @@ class ScreenPlacement(QMainWindow):
         self._screen_timer.start()
 
     def _screens_settled(self) -> None:
-        # a game changed the resolution - we rearrange after leaving it (_slow); before, nothing retried this and the window
-        # stayed shifted / too big when the game restored the resolution while still in the foreground
-        """The screens stopped changing: re-centre the window (after a game when one is in front) and restore its window state."""
+        """The screens stopped changing: re-centre the window (after a game when one is in front) and restore its window state.
+
+        A game changed the resolution - we rearrange after leaving it (_slow); before, nothing retried this and the window
+        stayed shifted / too big when the game restored the resolution while still in the foreground.
+        """
         self._place_pending = rx_games.in_game()
         if self._place_pending:
             return
