@@ -3,7 +3,7 @@
 Every device has one coroutine (``stream_pad``, ``stream_motion``, ``stream_touch``) that turns evdev events into the
 fields of the pad's ``Ctrl`` object and asks it to send packets. The per-device state of a loop lives in a small class
 (``_PadStream``, ``_MotionStream``, ``_TouchStream``), so that every event handler stays short and the loop itself is
-only ``async for event: handler.handle(event)``.
+only ``pump(device, handler.handle)``.
 """
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import asyncio
 import collections
 import fcntl
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Final
 
 from evdev import InputDevice, InputEvent
@@ -184,6 +184,48 @@ def _send_state_burst(c: Ctrl, loop: asyncio.AbstractEventLoop) -> None:
     wol.on_mask(c)
 
 
+async def pump(dev: InputDevice, handler: Callable[[InputEvent], None]) -> None:
+    """Feed every event of ``dev`` to ``handler`` until the device goes away.
+
+    python-evdev's ``async_read_loop()`` is convenient, but on this path it is expensive: it creates a Future for every
+    single event and, for every batch the kernel hands over, registers and removes the descriptor in the event loop again
+    (two ``epoll_ctl`` calls) and creates one more Future. Here the descriptor is registered once and the callback reads
+    whole batches with ``dev.read()``, so an event costs one handler call.
+
+    Whatever ends the loop is raised from here exactly as ``async_read_loop`` raised it: ``OSError`` when the device
+    disappears, or the exception of a handler that has a bug. The descriptor is unregistered before the function returns
+    (also on cancellation) - the caller closes the device afterwards, and a stale registration would break the next device
+    that gets the same descriptor number.
+
+    Args:
+        dev: The evdev device. Anything that is not an ``InputDevice`` (a stand-in in the tests) is read with its own
+            ``async_read_loop()``.
+        handler: Called with every event, in the order the kernel delivered them.
+    """
+    if not isinstance(dev, InputDevice):
+        async for e in dev.async_read_loop():
+            handler(e)
+        return
+    loop = asyncio.get_running_loop()
+    ended: asyncio.Future[None] = loop.create_future()
+
+    def on_readable() -> None:
+        try:
+            for e in dev.read():
+                handler(e)
+        except BlockingIOError:
+            pass                        # woken up with nothing to read: wait for the next wake-up
+        except Exception as exc:  # noqa: BLE001 - handed to the awaiting task, which treats it like an error of the read loop
+            if not ended.done():
+                ended.set_exception(exc)
+
+    loop.add_reader(dev.fd, on_readable)
+    try:
+        await ended
+    finally:
+        loop.remove_reader(dev.fd)
+
+
 def _is_report(e: InputEvent) -> bool:
     """Whether an event is SYN_REPORT, which closes one complete report of a device."""
     return e.type == ec.EV_SYN and e.code == ec.SYN_REPORT
@@ -268,8 +310,7 @@ class _PadStream:
 async def stream_pad(c: Ctrl) -> None:
     """Read the pad's buttons, sticks, triggers and D-pad and turn them into state packets (see ``_PadStream``)."""
     stream = _PadStream(c)
-    async for e in c.pad_dev.async_read_loop():
-        stream.handle(e)
+    await pump(c.pad_dev, stream.handle)
 
 
 async def heartbeat() -> None:
@@ -459,9 +500,11 @@ class _MotionStream:
 
 async def stream_motion(c: Ctrl) -> None:
     """Read the motion sensor (gyro + accelerometer), correct the gyro bias and send the averaged motion."""
+    dev = c.motion_dev
+    if dev is None:                 # detached before the task got to run: nothing to read
+        return
     stream = _MotionStream(c)
-    async for e in c.motion_dev.async_read_loop():
-        stream.handle(e)
+    await pump(dev, stream.handle)
 
 
 class _Finger:
@@ -751,9 +794,11 @@ async def stream_touch(c: Ctrl) -> None:
 
     See ``_TouchStream`` for the rules and the way it works.
     """
+    dev = c.touch_dev
+    if dev is None:                 # detached before the task got to run: nothing to read
+        return
     stream = _TouchStream(c)
-    async for e in c.touch_dev.async_read_loop():
-        stream.handle(e)
+    await pump(dev, stream.handle)
 
 
 async def stream_battery(c: Ctrl) -> None:

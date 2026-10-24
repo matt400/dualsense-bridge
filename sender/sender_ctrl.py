@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import errno
 import glob
 import os
 import time
@@ -25,6 +26,8 @@ if TYPE_CHECKING:
 
 LED_GLOB: Final = "/sys/class/leds/*:rgb:indicator"     # the kernel's RGB lightbar of a DualSense
 DEFAULT_LED_MAX_BRIGHTNESS: Final = "255"
+LED_FAIL_MAX: Final = 3                     # failed lightbar writes in a row before the lightbar is given up (until reconnect)
+LED_FATAL_ERRNO: Final = frozenset({errno.ENODEV, errno.ENOENT, errno.ENXIO})     # the LED itself is gone - no point retrying
 DEFAULT_LIGHTBAR: Final = (0, 0, 64)        # the colour a flash returns to when nothing else is known
 RGB_LEN: Final = 3
 INT16_MIN, INT16_MAX = -32768, 32767        # the mouse packet's dx / dy are signed 16-bit
@@ -118,10 +121,13 @@ class Ctrl:
         self.rumble: Rumble | None = None
         self.led: str | None = None
         self.led_color: tuple[int, int, int] | None = None
+        self._led_max: str | None = None          # max_brightness of the LED, read once (it never changes)
+        self._led_fails = 0                       # lightbar writes that failed in a row
         self.reports = {"pad": 0, "motion": 0}   # device report counters (Hz in the info packet)
         self.last_input = time.monotonic()        # the last deliberate use of the pad (for idle power-off)
         self.powering_off = 0.0
         self.closing = False          # run_ctrl is cleaning up - do not attach any new devices
+        self.sealed = False           # set once "bye" is out: a late repeat (call_later) must not send for a slot the PC has released
         self.extra: set[asyncio.Task[Any]] = set()
         self.meters: dict[str, Any] = {}          # RateMeter per device (only with --stats)
         self._state_timer: asyncio.Handle | None = None
@@ -233,6 +239,8 @@ class Ctrl:
         Args:
             force: Send even if the state is identical to the last packet.
         """
+        if self.sealed:
+            return
         key = (*self.pad, *self.hat, self.mask, self.batt, self.flags, *self.motion)
         self.pending = False
         if not force and key == self.last_key:
@@ -282,6 +290,8 @@ class Ctrl:
         Args:
             force: Send now, ignoring the coalescing window.
         """
+        if self.sealed:
+            return
         now = time.monotonic()
         wait = C.TOUCH_COALESCE_S - (now - self.last_touch_send)
         if not force and wait > 0:
@@ -301,7 +311,8 @@ class Ctrl:
 
     def send_click(self) -> None:
         """Send the touchpad click state (0 = none, 1 = click, 2 = click with two fingers)."""
-        net.emit(T_CLICK, self.idx, int(self.tp))
+        if not self.sealed:
+            net.emit(T_CLICK, self.idx, int(self.tp))
 
     def send_tap(self, flags: int) -> None:
         """Send a tap (MOUSE_TAP / MOUSE_TAP_RIGHT) with a sequence number in the high bits, three times.
@@ -320,6 +331,8 @@ class Ctrl:
 
     def send_mouse(self, dx: int, dy: int, flags: int) -> None:
         """Send a mouse movement / button packet; dx and dy are clamped to the signed 16-bit packet fields."""
+        if self.sealed:
+            return
         net.emit(T_MOUSE, self.idx, clamp(dx, INT16_MIN, INT16_MAX), clamp(dy, INT16_MIN, INT16_MAX), flags)
 
     def send_neutral(self) -> None:
@@ -336,24 +349,35 @@ class Ctrl:
 
     # ---- feedback from the PC ----
     def _led_max_brightness(self) -> str:
-        """The LED's max_brightness (what to write to ``brightness`` to light it fully)."""
-        try:
-            with open(f"{self.led}/max_brightness") as f:
-                return f.read().strip()
-        except OSError:
-            return DEFAULT_LED_MAX_BRIGHTNESS
+        """The LED's max_brightness (what to write to ``brightness`` to light it fully); read from sysfs once, then remembered."""
+        if self._led_max is None:
+            try:
+                with open(f"{self.led}/max_brightness") as f:
+                    self._led_max = f.read().strip()
+            except OSError:
+                return DEFAULT_LED_MAX_BRIGHTNESS      # not remembered: the next colour change tries again
+        return self._led_max
 
     def _write_led(self, rgb: tuple[int, int, int]) -> None:
-        """Write the colour to the sysfs LED (multi_intensity and brightness); if that fails, the lightbar is unavailable."""
+        """Write the colour to the sysfs LED (multi_intensity and brightness).
+
+        One failed write is not the end of the lightbar (the pad may be busy, or reconnecting): the colour stays unchanged, so
+        the next feedback from the PC tries again. After LED_FAIL_MAX failures in a row, or at once when the LED node is gone,
+        the lightbar is unavailable until the pad reconnects.
+        """
         try:
             with open(f"{self.led}/multi_intensity", "w") as f:
                 f.write("{} {} {}".format(*rgb))
             with open(f"{self.led}/brightness", "w") as f:
                 f.write(self._led_max_brightness())
-            self.led_color = rgb
         except OSError as e:
-            print(f"Controller {self.idx}: lightbar unavailable: {e!r}")
-            self.led = None
+            self._led_fails += 1
+            if self._led_fails >= LED_FAIL_MAX or e.errno in LED_FATAL_ERRNO:
+                print(f"Controller {self.idx}: lightbar unavailable: {e!r}")
+                self.led = None
+            return
+        self._led_fails = 0
+        self.led_color = rgb
 
     def apply_feedback(self, small: int, large: int, r: int, g: int, b: int, remember: bool = True) -> None:
         """Apply rumble (small and large motor) and the lightbar colour sent by the PC.
