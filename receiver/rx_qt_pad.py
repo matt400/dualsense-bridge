@@ -5,6 +5,7 @@ a refresh 30 times a second costs little, and hit-testing is exact (the outline,
 Keyboard / pad in TV mode (rx_qt_tv): ← / → move over the parts, Enter / Space picks a part.
 Test mode (set_test): no profile badges and no clicking; trigger values above them, fingers and the touchpad click.
 """
+import functools
 import re
 from collections.abc import Iterable, Sequence
 from typing import Any, TypeAlias
@@ -185,6 +186,12 @@ class PadView(QWidget):
         self.test = False                                 # the Test view: no badges and no clicking, touch on the drawing
         self.touch_live = ((), 0)                         # (fingers (x, y) in the DS4 scale, touchpad click 0/1/2)
         self._tf = self._inv = QTransform()
+        # paint resources that do not change between frames: the body gradient is in drawing units (the painter transform
+        # scales it), the stage gradient only depends on the widget size
+        self._body_grad = QLinearGradient(0, 96, 0, 496)
+        self._body_grad.setColorAt(0, QColor("#353b4b"))
+        self._body_grad.setColorAt(1, QColor("#1f232e"))
+        self._stage_grad: tuple[tuple[float, float], QRadialGradient] | None = None
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.setMinimumSize(320, 240)      # a 1280 px window (TV 2560×1440 at 200 %) fits in TV mode too
@@ -338,11 +345,8 @@ class PadView(QWidget):
         p.setTransform(self._tf)
         for part in self.parts[:2]:                    # the triggers are behind the body
             self._part(p, part)
-        g = QLinearGradient(0, 96, 0, 496)
-        g.setColorAt(0, QColor("#353b4b"))
-        g.setColorAt(1, QColor("#1f232e"))
         p.setPen(QPen(QColor("#4d5468"), 2.5))
-        p.setBrush(g)
+        p.setBrush(self._body_grad)
         p.drawPath(self.body)
         self._decor(p)
         for part in self.parts[2:-2]:
@@ -370,11 +374,14 @@ class PadView(QWidget):
     def _stage(self, p: QPainter) -> None:
         """The rounded background panel; the border turns accent-coloured when the widget has focus."""
         r = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
-        g = QRadialGradient(r.center().x(), r.top() + r.height() * 0.38, max(r.width(), r.height()) * 0.7)
-        g.setColorAt(0, QColor("#1d2230"))
-        g.setColorAt(1, QColor("#12151c"))
+        size = (r.width(), r.height())
+        if self._stage_grad is None or self._stage_grad[0] != size:     # rebuilt only after a resize
+            g = QRadialGradient(r.center().x(), r.top() + r.height() * 0.38, max(r.width(), r.height()) * 0.7)
+            g.setColorAt(0, QColor("#1d2230"))
+            g.setColorAt(1, QColor("#12151c"))
+            self._stage_grad = (size, g)
         p.setPen(QPen(ACCENT if self.hasFocus() else QColor("#252a36"), 1.5 if self.hasFocus() else 1))
-        p.setBrush(g)
+        p.setBrush(self._stage_grad[1])
         p.drawRoundedRect(r, 16, 16)
 
     def _decor(self, p: QPainter) -> None:
@@ -471,8 +478,9 @@ class PadView(QWidget):
         self._text(p, text, cx, cy + 4)
 
     @staticmethod
+    @functools.cache
     def _font(px: int, weight: QFont.Weight) -> QFont:
-        """The drawing font (Segoe UI) at a pixel size and weight."""
+        """The drawing font (Segoe UI) at a pixel size and weight; built once per combination (painting asks for it every frame)."""
         f = QFont("Segoe UI")
         f.setPixelSize(px)
         f.setWeight(weight)

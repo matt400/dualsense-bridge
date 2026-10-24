@@ -8,7 +8,7 @@ import html
 from dataclasses import replace
 from typing import Any
 
-from PySide6.QtGui import QShowEvent
+from PySide6.QtGui import QShowEvent, QTextCursor
 from PySide6.QtWidgets import QApplication, QFrame, QHBoxLayout, QPlainTextEdit, QVBoxLayout
 
 import rx_events as ev
@@ -120,11 +120,27 @@ class LogPanel(QFrame):
         cfg = rx_settings.cur.log
         bar = self.view.verticalScrollBar()
         at_end = bar.value() >= bar.maximum() - 4
-        for e in new:
-            if self._shown(e, cfg):
-                self.view.appendHtml(f"<span style='color:{COLOR[e.level]}'>{html.escape(ev.fmt(e))}</span>")
+        self._append([f"<span style='color:{COLOR[e.level]}'>{html.escape(ev.fmt(e))}</span>" for e in new if self._shown(e, cfg)])
         if at_end:                     # scrolled up (reading older entries) - do not jump to the end
             bar.setValue(bar.maximum())
+
+    def _append(self, rows: list[str]) -> None:
+        """Add all rows as new paragraphs in one edit block.
+
+        appendHtml per entry re-lays out the document each time; a burst of entries (or the rebuild of a long log) as a
+        single block is one layout pass and one undo step.
+        """
+        if not rows:
+            return
+        doc = self.view.document()
+        cur = QTextCursor(doc)
+        cur.beginEditBlock()
+        cur.movePosition(QTextCursor.MoveOperation.End)
+        for row in rows:
+            if not doc.isEmpty():          # the first row of an empty view goes into the existing empty paragraph
+                cur.insertBlock()
+            cur.insertHtml(row)
+        cur.endEditBlock()
 
     def rebuild(self) -> None:
         """Clear the view, apply the current line limit and re-add all matching entries from memory."""

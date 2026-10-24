@@ -232,6 +232,7 @@ class TiltPreview(QFrame):
         self.pad = pad
         self.setObjectName("group")
         self._slot: int | None = None                  # the slot whose engine we asked to follow the pad, None = none
+        self._texts: tuple[str, str] | None = None     # the texts last laid out (the size is recomputed only when they change)
         lay = QHBoxLayout(self)             # compact: the view on the left, the texts on the right - fits above the pad drawing
         lay.setContentsMargins(10, 8, 12, 8)
         lay.setSpacing(10)
@@ -270,19 +271,23 @@ class TiltPreview(QFrame):
             self.idle()
             self._slot = slot
             runner.set_preview(slot, True)
-        if not self.isVisible():
+        fresh = not self.isVisible()
+        if fresh:
             self.show()
             self.raise_()
         snap = runner.snapshot(slot)
         self.view.set_data(cfg, snap)
         state, _zone, raw, _filt, xy, _mag, sprint, _driving = snap
-        self.numbers.setText(_("Raw: pitch {p:+.1f}°  roll {r:+.1f}°\nFiltered output: X {x:+.0f}%  Y {y:+.0f}%{s}").format(
-            p=raw[1], r=raw[0], x=xy[0] * 100, y=xy[1] * 100, s="  [sprint]" if sprint else ""))
-        if not cfg.enabled and state != G.ST_OFF:
-            self.status.setText(_("Podgląd - funkcja jest wyłączona"))
-        else:
-            self.status.setText(_(STATE_TEXT[state]))
-        self.place()
+        numbers = _("Raw: pitch {p:+.1f}°  roll {r:+.1f}°\nFiltered output: X {x:+.0f}%  Y {y:+.0f}%{s}").format(
+            p=raw[1], r=raw[0], x=xy[0] * 100, y=xy[1] * 100, s="  [sprint]" if sprint else "")
+        status = _("Podgląd - funkcja jest wyłączona") if not cfg.enabled and state != G.ST_OFF else _(STATE_TEXT[state])
+        if (numbers, status) != self._texts:
+            self._texts = (numbers, status)
+            self.numbers.setText(numbers)
+            self.status.setText(status)
+            fresh = True
+        if fresh:             # a pad resize is handled by the event filter; only new texts / a fresh show need a re-layout
+            self.place()
 
     def idle(self) -> None:
         """Hide the preview and let the engine go back to idle when the feature is off."""
