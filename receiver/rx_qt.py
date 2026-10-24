@@ -16,6 +16,7 @@ from functools import cache
 import sys
 import threading
 import time
+import traceback
 from typing import Any
 
 from PySide6.QtCore import QAbstractNativeEventFilter, QEvent, QSettings, QSize, Qt, QTimer, Signal
@@ -413,6 +414,10 @@ class MainWindow(ScreenPlacement):
         self.slow_timer.setInterval(SLOW_MS)
         self.slow_timer.timeout.connect(self.slow_tick)
 
+        # set before anything is built: building / scaling can already deliver resize events to resizeEvent
+        self._fitting = False                  # place_on_screen resizes the window - this is not the user's choice
+        self._place_pending = False            # the screens changed during a game - the window goes to the centre after leaving it
+
         if self.fullscreen():                  # TV mode from startup: the scale before building (sizes in px())
             apply_theme(QApplication.instance(), TV_SCALE)
         self._build()
@@ -427,9 +432,7 @@ class MainWindow(ScreenPlacement):
         self.select_pad(self.ed.slot)
         self.pad.set_selected(None)
         self.root.setFocus()
-        self._fitting = False                  # place_on_screen resizes the window - this is not the user's choice
         self._connected = (False,) * C.NUM_PADS   # pads connected at the previous refresh (the window comes to the front)
-        self._place_pending = False            # the screens changed during a game - the window goes to the centre after leaving it
         self._restore_layout(settings)
         self.slow_tick()
         self.slow_timer.start()                # works with a hidden window too (the tray, battery, Ctrl+C)
@@ -1210,8 +1213,9 @@ class MainWindow(ScreenPlacement):
         """Every 400 ms; an error in one pass must not stop the refreshing forever."""
         try:
             self._slow()
-        except Exception as e:      # noqa: BLE001 - one bad pass must not stop the refresh timer
-            print(f"GUI refresh error: {e!r}")
+        except Exception:           # noqa: BLE001 - one bad pass must not stop the refresh timer
+            print("GUI refresh error:")
+            traceback.print_exc()
 
     def _slow(self) -> None:
         """The 400 ms pass.

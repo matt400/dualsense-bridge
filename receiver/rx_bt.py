@@ -292,7 +292,7 @@ def busy_op(mac: str, now: float | None = None) -> int | None:
     """The operation in progress for a device (from the sender or just sent) -> BT_* or None."""
     now = time.monotonic() if now is None else now
     s = status
-    if s is not None and s.result == BTR_RUNNING and s.mac == mac:
+    if s is not None and s.result == BTR_RUNNING and s.mac == mac and now - s.t < STALE_S:   # a silent sender is not busy forever
         return s.op
     p = pending
     if p is not None and p[1] == mac and now - p[2] < PENDING_S:
@@ -301,10 +301,10 @@ def busy_op(mac: str, now: float | None = None) -> int | None:
 
 
 def any_busy(now: float | None = None) -> bool:
-    """Whether any operation is in progress (reported by the sender or just sent)."""
+    """Whether any operation is in progress (reported by the sender or just sent); a state that went stale does not count."""
     now = time.monotonic() if now is None else now
     s, p = status, pending
-    return (s is not None and s.busy) or (p is not None and now - p[2] < PENDING_S)
+    return (s is not None and s.busy and now - s.t < STALE_S) or (p is not None and now - p[2] < PENDING_S)
 
 
 def send(op: int, arg: int = 0, mac: str = "") -> bool:

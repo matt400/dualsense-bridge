@@ -345,10 +345,18 @@ def apply_tv(w: int, h: int, scale: int, settle_s: float = SETTLE_S) -> str:
     """Set the TV resolution, then the scaling (0 = no change), once the only active display is the TV (after /external)."""
     end = time.monotonic() + settle_s
     while True:
-        src = active_sources()
-        if len(src) == 1:
-            break
+        try:
+            src = active_sources()
+        except OSError as e:             # a transient WinAPI failure while the topology is still changing: try again
+            src = []
+            err: OSError | None = e
+        else:
+            err = None
+            if len(src) == 1:
+                break
         if time.monotonic() >= end:
+            if err is not None:
+                raise RuntimeError(f"display query kept failing after switching to TV - resolution not changed: {err}") from err
             raise RuntimeError(f"{len(src)} active displays after switching to TV - resolution not changed")
         time.sleep(0.25)
     adapter, sid, device = src[0]
