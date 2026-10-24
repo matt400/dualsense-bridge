@@ -892,8 +892,13 @@ class ConsoleSettings(QDialog):
         rx_settings.apply(new)
         owner = self.parent()
         if hasattr(owner, "set_screen_choice"):
-            owner.set_screen_choice(self.screen_box.currentData() or "")
-            owner.set_fullscreen(self.win_mode.currentData() == "full")
+            # both setters re-place the window and raise it, so call them only for what actually changed
+            screen = self.screen_box.currentData() or ""
+            full = self.win_mode.currentData() == "full"
+            if screen != owner.screen_choice():
+                owner.set_screen_choice(screen)
+            if full != owner.fullscreen():
+                owner.set_fullscreen(full)
         self.applied.emit()
         cfg = self.collect()
         running = rx_console.ctl.cfg if rx_console.ctl else None
