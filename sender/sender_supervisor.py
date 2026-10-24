@@ -17,7 +17,7 @@ from evdev import InputDevice
 import sender_events as events
 import sender_state as state
 import sender_streams as streams
-from proto import E_ERROR, E_NO_SLOT, E_PAD_OFF, E_PAD_ON, LAT_NONE, T_BYE, TRIG2_OFF, write_json
+from proto import E_ERROR, E_NO_SLOT, E_PAD_OFF, E_PAD_ON, LAT_NONE, T_BYE, TRIG2_OFF
 from sender_config import C, IDLE_TP, SETTLE_S
 from sender_ctrl import Ctrl
 from sender_net import emit_repeat
@@ -134,11 +134,11 @@ def _load_slots() -> dict[str, int]:
 
 
 def _save_slots() -> None:
-    """Write the remembered slot table to slots_file (atomically); errors are logged only."""
+    """Write the remembered slot table to slots_file (atomically, fsync in a worker thread); errors are logged only."""
     if not C.SLOTS_FILE:
         return
     try:
-        write_json(C.SLOTS_FILE, state.saved_slots, indent=1, sort_keys=True)
+        state.write_json_later(C.SLOTS_FILE, state.saved_slots, indent=1, sort_keys=True)
     except OSError as e:
         print(f"Cannot write {C.SLOTS_FILE}: {e!r}")
 
@@ -327,13 +327,17 @@ async def _teardown(c: Ctrl, tasks: list[asyncio.Task[None]]) -> None:
     """Stop every task and timer of a pad, close its devices, and tell the receiver to remove it.
 
     A neutral state and a repeated "bye" go out so the receiver releases every button and drops the pad; the
-    slot's active entry is freed last.
+    slot's active entry is freed last. Once "bye" is out the pad is sealed: the delayed repeats that are still
+    scheduled (burst of a button change, click, tap) send nothing for the released slot.
     """
     c.closing = True
-    for t in tasks + list(c.extra):
+    running = [*tasks, *c.extra]
+    for t in running:
         t.cancel()
-    if c.extra:
-        await asyncio.gather(*c.extra, return_exceptions=True)
+    if running:
+        # wait for the read loops: each unregisters its descriptor from the event loop, which has to happen before the
+        # device is closed below (a stale registration would break the next device that gets the same descriptor number)
+        await asyncio.gather(*running, return_exceptions=True)
     c.cancel_timers()
     c.stop_feedback()
     for dev in c.devices():
@@ -343,6 +347,7 @@ async def _teardown(c: Ctrl, tasks: list[asyncio.Task[None]]) -> None:
             dev.close()
     c.send_neutral()
     emit_repeat(T_BYE, c.idx)
+    c.sealed = True
     state.active.pop(c.key, None)
     print(f"Controller {c.idx}: disconnected (waiting for reconnect)")
     events.info(E_PAD_OFF, c.idx)

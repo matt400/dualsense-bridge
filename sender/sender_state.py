@@ -1,9 +1,13 @@
-"""Sender: shared state (active pads, slot assignment, background tasks)."""
+"""Sender: shared state (active pads, slot assignment, background tasks) and the helper for writing state files."""
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Callable, Coroutine
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any
+
+from proto import write_file
 
 if TYPE_CHECKING:
     from sender_ctrl import Ctrl
@@ -14,6 +18,45 @@ bg_tasks: set[asyncio.Task[Any]] = set()
 main_task: asyncio.Task[Any] | None = None      # the main() task - cancelled on restart after an update
 restart = False                     # after main() ends: os.execv (new code after an update)
 saved_slots: dict[str, int] | None = None       # MAC -> slot remembered in slots_file (loaded on the first assignment)
+# One worker for all state files: writes run in the order they were requested, so an older version never lands after a newer one.
+_file_writer = ThreadPoolExecutor(max_workers=1, thread_name_prefix="state-files")
+
+
+def write_json_later(path: str, obj: object, *, indent: int | None = None, sort_keys: bool = False) -> None:
+    """Write ``obj`` as JSON like :func:`proto.write_json` (atomic, fsync), without stopping the event loop for the fsync.
+
+    The fsync of a phone's flash can take tens of milliseconds, and the event loop is also what reads every pad, so inside
+    the loop the file is written by a worker thread. The JSON text is made here, at call time: a later change of ``obj``
+    does not reach this write. A failed write is only logged (the callers did the same). Without a running loop (tests,
+    tools) the write is done at once and an ``OSError`` reaches the caller, as with ``write_json``.
+
+    Args:
+        path: The file to write.
+        obj: The JSON-serialisable content.
+        indent: JSON indentation (None = compact).
+        sort_keys: Sort the keys of objects.
+    """
+    text = json.dumps(obj, indent=indent, sort_keys=sort_keys) + "\n"
+    loop = running_loop()
+    if loop is None:
+        write_file(path, text)
+        return
+
+    def done(fut: asyncio.Future[None]) -> None:
+        try:
+            fut.result()
+        except OSError as e:
+            print(f"Cannot write {path}: {e!r}")
+
+    loop.run_in_executor(_file_writer, write_file, path, text).add_done_callback(done)
+
+
+def flush_writes() -> None:
+    """Wait for the writes still queued and stop the writer; call it once, when the sender is about to end or restart.
+
+    ``os.execv`` replaces the process at once and the worker thread with it, so a write that is still queued would be lost.
+    """
+    _file_writer.shutdown(wait=True)
 
 
 def spawn(coro: Coroutine[Any, Any, Any]) -> asyncio.Task[Any]:

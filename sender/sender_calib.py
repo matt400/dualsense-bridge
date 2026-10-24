@@ -16,7 +16,8 @@ from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, Final, TypeAlias
 
 import sender_net as net
-from proto import CAL_FEW, CAL_MAX_S, CAL_MOVED, CAL_OK, CALF_STORED, T_CALRES, clamp, write_json
+import sender_state as state
+from proto import CAL_FEW, CAL_MAX_S, CAL_MOVED, CAL_OK, CALF_STORED, T_CALRES, clamp
 from sender_config import BURST_DELAYS, C
 
 if TYPE_CHECKING:
@@ -65,7 +66,7 @@ def save(key: str | None, bias: Iterable[float]) -> bool:
     """Save a pad's bias (only pads with a MAC - a USB pad without uniq has a changing key).
 
     The table is updated in memory first (so the new value is used even if the file cannot be written), then written
-    atomically with proto.write_json.
+    atomically (proto.write_file, in a worker thread - see sender_state.write_json_later).
 
     Returns:
         True if saved.
@@ -77,7 +78,7 @@ def save(key: str | None, bias: Iterable[float]) -> bool:
     if not C.GYRO_CAL_FILE:
         return True
     try:
-        write_json(C.GYRO_CAL_FILE, table, indent=1, sort_keys=True)
+        state.write_json_later(C.GYRO_CAL_FILE, table, indent=1, sort_keys=True)
     except OSError as e:
         print(f"Cannot write {C.GYRO_CAL_FILE}: {e!r}")
         return False
@@ -128,8 +129,12 @@ def report(c: Ctrl, status: int, repeat: bool = False) -> None:
         loop = asyncio.get_running_loop()
     except RuntimeError:
         return
+    def again() -> None:
+        if not c.sealed:                  # the pad is gone and the slot released: a late copy would concern nobody
+            net.emit(T_CALRES, c.idx, *vals)
+
     for delay in BURST_DELAYS:
-        loop.call_later(delay, lambda: net.emit(T_CALRES, c.idx, *vals))
+        loop.call_later(delay, again)
 
 
 def request(c: Ctrl, secs: int, now: float | None = None) -> None:

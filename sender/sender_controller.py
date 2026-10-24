@@ -160,6 +160,7 @@ if __name__ == "__main__":
         asyncio.run(main())
     except (KeyboardInterrupt, asyncio.CancelledError):
         print("\nStopped.")
+    state.flush_writes()               # files still queued for the writer thread must reach the disk before exec / exit
     if state.restart:                  # after an update: new code in the same process (the service PID stays the same)
         print("Restarting with the updated code")
         sys.stdout.flush()

@@ -25,7 +25,8 @@ from typing import TYPE_CHECKING, Final
 
 import sender_events as events
 import sender_net as net
-from proto import E_WOL, E_WOL_FAIL, KEY_BIT, PAD_KEYS, SCFG_EVENTS, SCFG_WOL, WOL_PORTS, mac_bytes, mac_text, magic_packet, write_json
+import sender_state as state
+from proto import E_WOL, E_WOL_FAIL, KEY_BIT, PAD_KEYS, SCFG_EVENTS, SCFG_WOL, WOL_PORTS, mac_bytes, mac_text, magic_packet
 from sender_config import C
 
 if TYPE_CHECKING:
@@ -99,7 +100,7 @@ def save(path: str | None = None) -> None:
     if not path:
         return
     try:
-        write_json(path, {**asdict(cfg), "learned_mac": learned}, indent=2)
+        state.write_json_later(path, {**asdict(cfg), "learned_mac": learned}, indent=2)
     except OSError as e:
         print(f"WoL: cannot write {path}: {e!r}")
 
