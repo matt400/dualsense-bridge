@@ -44,6 +44,7 @@ sock_bad = False
 tx_count = 0
 rtts: collections.deque[float] = collections.deque(maxlen=RTT_HISTORY)    # bounded so it does not grow while --stats is off
 pings_sent = 0
+probes_sent = 0                       # v3 probe pings: the receiver answers them too, so they count towards the expected pongs
 pongs = 0
 fb_filter = SeqFilter(1.0)            # with a time window: a receiver restart (random seq) does not block feedback
 on_feedback: Callable[[int, tuple[int, int, int, int, int]], None] | None = None   # (idx, (small, large, r, g, b)); set in main
@@ -323,13 +324,14 @@ def _send_pings() -> None:
 
     A v3-capable receiver answers the v3 ping with v3, which switches both sides; an older one rejects it.
     """
-    global pings_sent
+    global pings_sent, probes_sent
     t0 = clock.ns()
     emit(T_PING, BROADCAST_ALL, t0)
     if codec.key and not codec.v3 and pings_sent % PROBE_EVERY == 0:
         probe = codec.pack(T_PING, BROADCAST_ALL, t0, v3=True)
         if probe is not None:
             send_raw(probe)
+            probes_sent += 1
     pings_sent += 1
 
 
@@ -345,7 +347,7 @@ def _print_stats(last_print: float, tx_prev: int) -> tuple[float, int]:
     if rtts:
         avg = sum(rtts) / len(rtts)
         print(f"RTT avg {avg:.1f} ms, max {max(rtts):.1f} ms, jitter {max(rtts) - min(rtts):.1f} ms "
-              f"({len(rtts)} pongs, {pings_sent - pongs} lost total)")
+              f"({len(rtts)} pongs, {pings_sent + probes_sent - pongs} lost total)")
         rtts.clear()
     else:
         print("RTT: no pongs in last 5 s")
