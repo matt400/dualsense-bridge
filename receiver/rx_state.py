@@ -9,7 +9,7 @@ from typing import Any, Final, TypeAlias
 
 import rx_padcal
 from proto import SeqFilter
-from rx_buttons import apply_remap, apply_sticks, pressed_inputs, profile_size
+from rx_buttons import apply_remap, apply_sticks, input_pressed, profile_size
 from rx_config import C
 from rx_gstick import drive_state
 from rx_buttons import RemapStore
@@ -191,7 +191,7 @@ def recompute(s: PadState, prof: Profile) -> None:
     lx, ly = shape_stick(lx, ly, tun.get("left"))
     rx, ry = shape_stick(rx, ry, tun.get("right"))
     s["gyro_on"] = (bool(g) and g["mode"] != "off" and not s["blocked"]
-                    and (g["hold"] == "always" or g["hold"] in pressed_inputs(*s["raw"])))
+                    and (g["hold"] == "always" or input_pressed(g["hold"], *s["raw"])))
     s["gyro_vel"] = None
     if s["gyro_on"]:
         rates = gyro_rates(s["gyro"], g, C.GYRO_RES)

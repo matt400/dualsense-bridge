@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import struct
-import time
 from collections.abc import Mapping
 from typing import Any, Final, TypeAlias
 
@@ -19,6 +18,10 @@ DPAD: Final = {(0, -1): 0, (1, -1): 1, (1, 0): 2, (1, 1): 3, (0, 1): 4,
         (-1, 1): 5, (-1, 0): 6, (-1, -1): 7, (0, 0): 8}
 NO_TOUCH: Final = (0, 0, 0, 0)
 _cache: dict[int, tuple[int, ...]] = {}
+# precompiled once: struct.pack_into(fmt, ...) looks the format up on every call, a Struct does not
+_U16: Final = struct.Struct("<H")
+_DS4_MOTION: Final = struct.Struct("<hhhhhh")        # gyro xyz + accelerometer xyz
+_DS5_MOTION: Final = struct.Struct("<hhhhhhI")       # the same + the sensor timestamp
 
 
 def ds4_bits(mask: int) -> tuple[int, ...]:
@@ -57,17 +60,18 @@ def build_report(s: Mapping[str, Any], counter: int, mmode: bool, b: bytearray |
     b[5] = sh | (0x04 if s["lt"] else 0) | (0x08 if s["rt"] else 0)
     b[6] = ((counter & 0x3F) << 2) | (1 if s["mask"] & PS_BIT else 0) | (2 if (s["tp"] and not mmode) else 0)
     b[7], b[8] = s["lt"], s["rt"]
-    # DS4 timestamp = units of 5.33 us (187.5 kHz) of real time; reports are sent on events,
-    # so a fixed increment (counter * 750) disturbed the gyro integration in apps that compute dt
-    struct.pack_into("<H", b, 9, int(time.perf_counter() * 187500) & 0xFFFF)
+    # DS4 timestamp = units of 5.33 us (187.5 kHz = 3/16 per us) of the time the sample arrived (s["ts"], us); reports are
+    # sent on events, so a fixed increment (counter * 750) disturbed the gyro integration in apps that compute dt, and the
+    # build time jitters when reports are merged (pad_hz) - the sample's own time is what dt must follow
+    _U16.pack_into(b, 9, s["ts"] * 3 // 16 & 0xFFFF)
     gx, gy, gz = s["gyro"]
     ax, ay, az = s["acc"]
     k = C.GYRO_TO_DS4
-    struct.pack_into("<hhhhhh", b, 12,
-                     clamp(int(gx * k), -32768, 32767),
-                     clamp(int(gy * k), -32768, 32767),
-                     clamp(int(gz * k), -32768, 32767),
-                     clamp(ax, -32768, 32767), clamp(ay, -32768, 32767), clamp(az, -32768, 32767))
+    _DS4_MOTION.pack_into(b, 12,
+                          clamp(int(gx * k), -32768, 32767),
+                          clamp(int(gy * k), -32768, 32767),
+                          clamp(int(gz * k), -32768, 32767),
+                          clamp(ax, -32768, 32767), clamp(ay, -32768, 32767), clamp(az, -32768, 32767))
     b[29] = s["batt_ds4"]
     b[32] = 1
     b[33] = counter & 0xFF
@@ -109,13 +113,14 @@ def build_ds5_report(s: Mapping[str, Any], counter: int, mmode: bool, b: bytearr
     gx, gy, gz = s["gyro"]
     ax, ay, az = s["acc"]
     k = C.GYRO_TO_DS4                       # the DualSense and the DS4 use the same gyro and accelerometer units
-    # sensor timestamp in units of 1/3 us of real time (like on the real pad - apps compute dt from it)
-    struct.pack_into("<hhhhhhI", b, 15,
-                     clamp(int(gx * k), -32768, 32767),
-                     clamp(int(gy * k), -32768, 32767),
-                     clamp(int(gz * k), -32768, 32767),
-                     clamp(ax, -32768, 32767), clamp(ay, -32768, 32767), clamp(az, -32768, 32767),
-                     int(time.perf_counter() * 3_000_000) & 0xFFFFFFFF)
+    # sensor timestamp in units of 1/3 us (like on the real pad - apps compute dt from it), taken from the time the sample
+    # arrived (s["ts"], us) rather than from the report build time: less jitter when reports are merged (pad_hz)
+    _DS5_MOTION.pack_into(b, 15,
+                          clamp(int(gx * k), -32768, 32767),
+                          clamp(int(gy * k), -32768, 32767),
+                          clamp(int(gz * k), -32768, 32767),
+                          clamp(ax, -32768, 32767), clamp(ay, -32768, 32767), clamp(az, -32768, 32767),
+                          s["ts"] * 3 & 0xFFFFFFFF)
     t1, t2 = (NO_TOUCH, NO_TOUCH) if mmode else s["touch"]
     put_touch_ds5(b, 32, t1)
     put_touch_ds5(b, 36, t2)

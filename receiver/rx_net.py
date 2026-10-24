@@ -427,9 +427,12 @@ def _on_bye(i: int) -> None:
         ev.info(_("{pad} rozłączony").format(pad=ev.pad_name(i)))
 
 
-def _mark_alive(i: int) -> None:
-    """Any packet from a pad proves it is there: refresh the silence timer and ask the slot thread for a virtual pad."""
-    S.last_seen[i] = time.monotonic()
+def _mark_alive(i: int, now: float) -> None:
+    """Any packet from a pad proves it is there: refresh the silence timer and ask the slot thread for a virtual pad.
+
+    now = time.monotonic() of the packet.
+    """
+    S.last_seen[i] = now
     if not S.alive[i]:
         S.alive[i] = True
         print(f"Controller {i}: data stream started")
@@ -439,8 +442,10 @@ def _mark_alive(i: int) -> None:
         rx_console.pad_connected(i)       # the master pad with an already known id -> auto-ON of the console mode
 
 
-def _on_state(t: int, i: int, data: bytes, arr: int) -> None:
+def _on_state(t: int, i: int, data: bytes, arr: int, now: float) -> None:
     """A state / state2 packet (the hot path, up to ~1 kHz per pad): sticks, triggers, buttons, battery and motion.
+
+    now = time.monotonic() at the packet's arrival; the sample time (us, s["ts"]) is derived from it.
 
     Shortcuts run only on a button change, the latency measurement only when state2 carries one.
     """
@@ -450,7 +455,7 @@ def _on_state(t: int, i: int, data: bytes, arr: int) -> None:
     if v == S.last_v[i]:
         return      # a repeat (heartbeat) - nothing changed
     S.last_v[i] = v
-    now_us = time.monotonic_ns() // 1000
+    now_us = int(now * 1_000_000)
     lx, ly, lt, rx, ry, rt, hat_x, hat_y, buttons, batt_pct, batt_flags = v[:STATE_HEAD]
     mask = buttons & MASK_ALL
     batt_dsu, batt_ds4 = batt_codes(batt_pct, batt_flags)
@@ -593,14 +598,20 @@ _HANDLERS: Final[dict[int, Callable[[int, bytes], None]]] = {
     T_TOUCH: _on_touch, T_CLICK: _on_click, T_MOUSE: _on_mouse, T_IDENT: _on_ident, T_VERSION: _on_version, T_INFO: _on_info}
 
 
-def handle(t: int, i: int, data: bytes, arr: int = 0) -> None:
-    """A packet from the sender for slot i; arr = the arrival time (perf_counter_ns) - for latency measurement."""
+def handle(t: int, i: int, data: bytes, arr: int = 0, now: float | None = None) -> None:
+    """A packet from the sender for slot i; arr = the arrival time (perf_counter_ns) - for latency measurement.
+
+    now = time.monotonic() taken by the receive loop for this packet (None = read it here, for callers outside the loop):
+    one clock read serves the silence timer and the state's sample time.
+    """
     if t == T_BYE:   # the sender: the pad disconnected -> unplug the virtual DS4
         _on_bye(i)
         return
-    _mark_alive(i)
+    if now is None:
+        now = time.monotonic()
+    _mark_alive(i, now)
     if t in STATES:
-        _on_state(t, i, data, arr)
+        _on_state(t, i, data, arr, now)
     elif t == T_CALRES:
         on_calres(i, data)
     elif (handler := _HANDLERS.get(t)) is not None:
@@ -839,7 +850,7 @@ def net_loop() -> None:
             continue
         _adopt_peer(addr, now)
         try:
-            handle(t, i, data, arr)
+            handle(t, i, data, arr, now)
         except Exception as e:  # noqa: BLE001 - a bug in one handler must not stop packet reception
             print("handle error:", repr(e))
             ev.error(_("Błąd obsługi pakietu: {err}").format(err=repr(e)))
