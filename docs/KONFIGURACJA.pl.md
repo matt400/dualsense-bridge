@@ -56,7 +56,7 @@ HIDMaestro z GitHuba (raz na dobę, do `receiver/hidmaestro/vX.Y.Z/`; nowa wersj
 już w użyciu), `hm_dll` = własna `HIDMaestro.Core.dll` albo jej folder (wtedy bez pobierania). Nadajnik zapisuje ustawienia Wake-on-LAN z okna w `sender/wol.json`.
 Nadajnik zapisuje stały przydział pad → slot w `sender/slots.json` (`slots_file = ""` wyłącza).
 Kalibracja żyroskopu z okna (widok Test) jest w `sender/gyro_cal.json` (`gyro_cal_file = ""` - bez zapisu),
-korekcja dryfu gałek w `receiver/padcal.json` (obok `remap.json`, w kopiach ustawień przy aktualizacji).
+korekcja dryfu gałek i tryb dostępności w `receiver/padcal.json` (obok `remap.json`, w kopiach ustawień przy aktualizacji).
 
 ## Aktualizacja
 

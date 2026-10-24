@@ -150,3 +150,15 @@ def set_drift(slot: int, values: dict[str, float]) -> tuple[bool, str]:
     ok, msg = rx_padcal.set_drift(S.profile_key(slot), values)
     S.reload_profile(slot)
     return ok, msg
+
+
+def access(slot: int) -> dict[str, Any]:
+    """Return the accessibility settings of the pad in this slot (rx_access format, {} = none)."""
+    return rx_padcal.access(S.profile_key(slot))
+
+
+def set_access(slot: int, cfg: dict[str, Any]) -> tuple[bool, str]:
+    """Save the pad's accessibility settings (the whole set), recompute the profile at once and return (ok, message)."""
+    ok, msg = rx_padcal.set_access(S.profile_key(slot), cfg)
+    S.reload_profile(slot)
+    return ok, msg

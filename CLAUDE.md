@@ -36,13 +36,13 @@ Every module has a docstring with its role; find the file here before opening an
 - Virtual pads: `rx_ds4` (pads on demand, backend choice), `rx_hm` (HIDMaestro), `rx_hm_update` (downloads HIDMaestro), `rx_report` (DS4 / DualSense
   reports), `rx_feedback` (game rumble, lightbar, triggers back to the pad), `rx_lightbar`, `rx_dsu` (Cemuhook server).
 - Input processing: `rx_buttons` (tables, remap, remap.json), `rx_profiles` + `rx_editor` (profile model, no Qt), `rx_shape` (sticks / triggers),
-  `rx_gyro` (gyro mouse), `rx_gstick` + `rx_gstick_io` (tilt → stick), `rx_mouse` (touchpad mouse), `rx_padcal` + `rx_drift` (drift deadzone),
+  `rx_gyro` (gyro mouse), `rx_gstick` + `rx_gstick_io` (tilt → stick), `rx_mouse` (touchpad mouse), `rx_padcal` + `rx_drift` (drift deadzone), `rx_access` + `rx_reach` (accessibility mode: range / deadzone / curve / tremor damping of the physical sticks + wizard),
   `rx_hotkeys` + `rx_shortcuts` (PS-modifier shortcuts), `rx_master` (master pad), `rx_testmode` (Test view, emergency exit).
 - Windows integration: `rx_console` (console mode monitor ↔ TV), `rx_display`, `rx_audio` (pycaw), `rx_games` (foreground program → profile, stop rumble),
   `rx_gamebar`, `rx_autostart` (Task Scheduler).
 - Support: `rx_i18n` (PL texts in code + EN dict), `rx_status`, `rx_events` (log model), `rx_latency`, `rx_security`, `rx_backup`, `rx_update` (git pull),
   `rx_bt` (sender Bluetooth model), `rx_icon`.
-- Window (PySide6): `rx_qt` (main window), `rx_qt_pad` (pad drawing), `rx_qt_panels` (right column), `rx_qt_console` (settings window), `rx_qt_test`,
+- Window (PySide6): `rx_qt` (main window), `rx_qt_pad` (pad drawing), `rx_qt_panels` (right column), `rx_qt_console` (settings window), `rx_qt_test`, `rx_qt_access` (accessibility panel of the Test view),
   `rx_qt_bt`, `rx_qt_tv` (pad control in TV mode), `rx_qt_drawer`, `rx_qt_keys`, `rx_qt_log`, `rx_qt_gstick`, `rx_qt_screens` (screen / fullscreen placement),
   `rx_qt_style`, `rx_qt_icons`, `rx_qt_widgets`.
 

@@ -7,6 +7,7 @@ import traceback
 from collections.abc import Callable
 from typing import Any, Final, TypeAlias
 
+import rx_access
 import rx_padcal
 from proto import SeqFilter
 from rx_buttons import apply_remap, apply_sticks, input_pressed, profile_size
@@ -73,6 +74,7 @@ def new_state() -> PadState:
         "raw": (0, 0, 0, 0, 0),                                          # (mask, hatx, haty, l2, r2) raw
         "fwd": (0, 0, 0),                    # (mask, hatx, haty) passed to the remap - without inputs consumed by shortcuts
         "rawst": (128, 128, 128, 128),                                   # (lx, ly, rx, ry) raw
+        "ast": (128, 128, 128, 128),         # the raw sticks after the accessibility mode (rx_access) - its damping needs the last one
         "acc": (0, 0, 0), "gyro": (0, 0, 0),
         "touch": ((0, 0, 0, 0), (0, 0, 0, 0)), "tp": False,
         "rtp": 0,                            # live touchpad click (0/1/2), also in mouse mode - the Test view
@@ -180,14 +182,19 @@ def notify(i: int) -> None:
 def recompute(s: PadState, prof: Profile) -> None:
     """Recompute the output state from the raw inputs according to the profile; call under lock.
 
-    The steps: button remap -> stick swap / inversion -> stick and trigger shaping -> gyro.
+    The steps: accessibility mode (physical sticks) -> button remap -> stick swap / inversion -> stick and trigger shaping
+    -> gyro.
     """
     tun, g = prof["tuning"], prof["gyro"]
     lt, rt = s["raw"][3:5]
     fwd_mask, fwd_hx, fwd_hy = s["fwd"]
     s["mask"], s["hx"], s["hy"], lt, rt = apply_remap(prof["buttons"], fwd_mask, fwd_hx, fwd_hy, lt, rt)
     s["lt"], s["rt"] = shape_trigger(lt, tun.get("l2")), shape_trigger(rt, tun.get("r2"))
-    lx, ly, rx, ry = apply_sticks(prof["sticks"], *s["rawst"])
+    st = s["rawst"]
+    if acc := prof.get("access"):           # only while the pad's accessibility mode is on (rx_padcal.apply_corrections)
+        st = rx_access.apply(acc, st, s["ast"])
+    s["ast"] = st
+    lx, ly, rx, ry = apply_sticks(prof["sticks"], *st)
     lx, ly = shape_stick(lx, ly, tun.get("left"))
     rx, ry = shape_stick(rx, ry, tun.get("right"))
     s["gyro_on"] = (bool(g) and g["mode"] != "off" and not s["blocked"]
@@ -249,13 +256,14 @@ def effective_profile(i: int, key: str, drift: bool = True) -> Profile:
 
     A game profile inherits from the pad profile the trigger effects it does not set itself (the other parts of a game
     profile replace the pad profile as a whole, as before); this pad's stick drift correction (rx_padcal) works in every
-    profile as a minimum deadzone (drift=False - without it: the number of profile changes).
+    profile as a minimum deadzone and so does its accessibility mode, which reshapes the physical sticks before the profile
+    (drift=False - without both: the number of profile changes).
     """
     prof = store.get(key)
     base = profile_key(i)
     if key != base:
         prof["triggers"] = merge_triggers(store.get(base)["triggers"], prof["triggers"])
-    return rx_padcal.apply_drift(prof, rx_padcal.drift(base)) if drift else prof
+    return rx_padcal.apply_corrections(prof, base) if drift else prof
 
 
 _changes: dict[int, tuple[tuple[int, int, str, str], int]] = {}      # slot -> (what the count was computed for, the count)

@@ -6,6 +6,8 @@ state. Refresh: tick() from the window clock (30 Hz) only while the view is visi
   Motion:    gyro [°/s] and accelerometer [g], 3 axes, the last CHART_S seconds, the scale adapts to the motion.
   Sticks:    position (square-root scale - small deviations are visible), the dead zone from the drift correction and the last measurement;
              "Measure drift" (rx_drift) -> a dead zone proposal -> "Apply" saves the pad's correction (rx_padcal).
+  Accessibility: range, dead zone, curve and tremor damping of the sticks per pad + the "adjust to the hand" wizard
+             (rx_qt_access, rx_access, rx_reach); the stick scope shows the range ring.
   Gyroscope: "Calibrate" - the sender computes the offset of the pad lying still and stores it per pad (proto CMD_GYRO_CAL).
 """
 import functools
@@ -25,6 +27,7 @@ import rx_state as S
 from proto import CAL_FEW, CAL_MOVED, CAL_OK, CAL_RUNNING, CAL_STATUS, CALF_STORED
 from rx_config import C
 from rx_i18n import _
+from rx_qt_access import AccessPanel
 from rx_qt_icons import icon
 from rx_qt_panels import _vbox, scrolled
 from rx_qt_style import ACCENT, BORDER, DIM, FG, LINE, MUTED, OK, TRACK, WARN, px, set_prop
@@ -157,6 +160,7 @@ class StickScope(QWidget):
         self.trail = {"left": deque(maxlen=TRAIL), "right": deque(maxlen=TRAIL)}
         self.dz: dict[str, float] = {}         # drift correction {stick: dz}
         self.peak: dict[str, float] = {}       # the last measurement {stick: peak}
+        self.reach: dict[str, float] = {}      # the accessibility range {stick: outer} - the ring where the output is full
         self.setMinimumHeight(px(132))
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
@@ -182,6 +186,12 @@ class StickScope(QWidget):
         """Set the dead zone circles and the measurement peaks; repaint on change."""
         if (dz, peak) != (self.dz, self.peak):
             self.dz, self.peak = dict(dz), dict(peak)
+            self.update()
+
+    def set_reach(self, reach: Mapping[str, float]) -> None:
+        """Set the accessibility range rings ({stick: outer}); repaint on change."""
+        if dict(reach) != self.reach:
+            self.reach = dict(reach)
             self.update()
 
     def clear(self) -> None:
@@ -220,6 +230,10 @@ class StickScope(QWidget):
                 p.setPen(QPen(QColor(ACCENT), 1.5, Qt.PenStyle.DashLine))
                 p.setBrush(QColor(76, 141, 255, 40))
                 p.drawEllipse(c, rad * self._r(d), rad * self._r(d))
+            if rc := self.reach.get(name):
+                p.setPen(QPen(QColor(OK), 1.5, Qt.PenStyle.DashLine))
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.drawEllipse(c, rad * self._r(rc), rad * self._r(rc))
             if pk := self.peak.get(name):
                 p.setPen(QPen(QColor(WARN), 1.3))
                 p.setBrush(Qt.BrushStyle.NoBrush)
@@ -281,6 +295,7 @@ class TestPanel(QWidget):
         self._build_lock(lay, block_on)
         self._build_motion(lay)
         self._build_drift(lay)
+        self._build_access(lay)
         self._build_gyro(lay)
         lay.addStretch(1)
         self._buttons = (self.measure, self.apply, self.cal_btn)
@@ -313,7 +328,8 @@ class TestPanel(QWidget):
         lay.addLayout(_head("target", _("GAŁKI - DRYF")))
         self.scope = StickScope()
         self.scope.setToolTip(_("Skala pierwiastkowa: małe odchyłki są powiększone. Kropkowane okręgi: 5% i 25% "
-                                "wychylenia; niebieski: strefa martwa z korekcji dryfu; żółty: szczyt ostatniego pomiaru."))
+                                "wychylenia; niebieski: strefa martwa z korekcji dryfu; żółty: szczyt ostatniego pomiaru; zielony: "
+                                "zasięg z trybu dostępności."))
         lay.addWidget(self.scope)
         self.drift_hint = label(_("Puść gałki i odłóż pad - pomiar trwa {s} s.").format(s=f"{D.MEASURE_S:g}"), "dim", wrap=True)
         lay.addWidget(self.drift_hint)
@@ -343,6 +359,13 @@ class TestPanel(QWidget):
         row.addWidget(self.clear_btn)
         lay.addLayout(row)
 
+    def _build_access(self, lay: QVBoxLayout) -> None:
+        """The accessibility mode of the sticks (its own widget); its range ring is drawn in the stick scope."""
+        lay.addLayout(_head("target", _("DOSTĘPNOŚĆ - GAŁKI")))
+        self.access = AccessPanel()
+        self.access.reach_changed.connect(self.scope.set_reach)
+        lay.addWidget(self.access)
+
     def _build_gyro(self, lay: QVBoxLayout) -> None:
         """The gyro calibration: a hint, a progress bar, the state text and the button."""
         lay.addLayout(_head("gyro", _("ŻYROSKOP - KALIBRACJA")))
@@ -364,12 +387,14 @@ class TestPanel(QWidget):
         """Switch the panel to another pad and reset the view."""
         if slot != self.slot:
             self.slot = slot
+            self.access.set_slot(slot)
             self.reset_view()
 
     def activate(self, on: bool) -> None:
         """Entering the Test view (ask for the calibration state from the sender) / leaving it (cancel the measurement)."""
         if on:
             self._query(time.monotonic())
+            self.access.refresh()
         else:
             self.cancel()
 
@@ -379,7 +404,9 @@ class TestPanel(QWidget):
         P.query_gyro_cal(self.slot)
 
     def cancel(self) -> None:
-        """Abort a running drift measurement and hide its progress bar (it must not reappear on the next visit)."""
+        """Abort a running drift measurement and wizard, save a pending accessibility edit, hide the progress bars."""
+        self.access.cancel()
+        self.access.flush()
         if self.run is not None:
             self.run.cancel()
             self.run = None
@@ -420,6 +447,7 @@ class TestPanel(QWidget):
             b.setIconSize(QSize(px(18), px(18)))
         self.drift_bar.setFixedHeight(px(5))
         self.cal_bar.setFixedHeight(px(5))
+        self.access.rescale()
 
     # ---------- drift ----------
     def start_drift(self) -> None:
@@ -581,6 +609,7 @@ class TestPanel(QWidget):
         self.acc_chart.push(v / C.ACC_RES for v in t["acc"])
         self.scope.set_pos(live["ls"], live["rs"])
         self._drift_tick(now)
+        self.access.tick(now)
         self._cal_tick(now)
         if self._state() != self._shown:
             self.refresh()
