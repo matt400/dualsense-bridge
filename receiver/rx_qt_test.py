@@ -8,6 +8,7 @@ state. Refresh: tick() from the window clock (30 Hz) only while the view is visi
              "Measure drift" (rx_drift) -> a dead zone proposal -> "Apply" saves the pad's correction (rx_padcal).
   Gyroscope: "Calibrate" - the sender computes the offset of the pad lying still and stores it per pad (proto CMD_GYRO_CAL).
 """
+import functools
 import math
 import time
 from collections import deque
@@ -46,12 +47,18 @@ def _nice(v: float) -> float:
     return next(m * k for m in (1, 2, 5, 10) if m * k >= v)
 
 
-def _font(size: int, bold: bool = False) -> QFont:
-    """The chart font (Segoe UI) at a DPI-scaled pixel size."""
+@functools.cache
+def _font_px(pixels: int, bold: bool) -> QFont:
+    """The chart font (Segoe UI) at a pixel size; cached - the charts ask for it on every repaint."""
     f = QFont("Segoe UI")
-    f.setPixelSize(px(size))
+    f.setPixelSize(pixels)
     f.setBold(bold)
     return f
+
+
+def _font(size: int, bold: bool = False) -> QFont:
+    """The chart font at a DPI-scaled size (the cache is keyed by the scaled pixels, so a scale change builds a new font)."""
+    return _font_px(px(size), bold)
 
 
 def pct(v: float, digits: int = 0) -> str:
@@ -266,6 +273,7 @@ class TestPanel(QWidget):
         self.cal_t0: float | None = None              # gyro calibration: when the command was sent (None = nothing running)
         self.cal_note: tuple[str, str] | None = None  # (text, level) of the calibration result that should stay visible
         self.query_t = 0.0               # when we last asked the sender for the calibration state
+        self._shown: tuple[Any, ...] | None = None    # the state refresh() last drew (tick() redraws only when it differs)
         body = QWidget()
         lay = _vbox(body)
         _vbox(self).addWidget(scrolled(body))
@@ -535,8 +543,15 @@ class TestPanel(QWidget):
         return text, ""
 
     # ---------- refreshing ----------
+    def _state(self) -> tuple[Any, ...]:
+        """Everything refresh() shows, as a comparable tuple: when it is unchanged there is nothing to redraw."""
+        i = self.slot
+        return (i, bool(S.alive[i]), self.run is not None, id(self.result), self.cal_t0, self.cal_note, S.gyro_cal[i],
+                P.sender_calib(i), tuple(sorted(P.drift(i).items())))
+
     def refresh(self) -> None:
         """Buttons and descriptions (on a state change, not every frame)."""
+        self._shown = self._state()
         i = self.slot
         alive = bool(S.alive[i])
         busy = self.run is not None
@@ -567,6 +582,7 @@ class TestPanel(QWidget):
         self.scope.set_pos(live["ls"], live["rs"])
         self._drift_tick(now)
         self._cal_tick(now)
-        self.refresh()
+        if self._state() != self._shown:
+            self.refresh()
         return t
 

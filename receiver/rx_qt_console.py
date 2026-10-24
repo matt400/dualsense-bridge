@@ -22,6 +22,7 @@ Nine tabs:
 saves console.json and asks the window owner to restart the receiver (the saved signal) - after the restart
 startup_mode applies as with autostart.
 """
+import threading
 import time
 from collections.abc import Iterable, Sequence
 from typing import Any
@@ -74,6 +75,7 @@ class ConsoleSettings(QDialog):
     elevate = Signal()          # Pads: restart the receiver as administrator (HIDMaestro)
     applied = Signal()          # mouse / master saved and in effect (no restart) - the window refreshes the pad cards
     captured = Signal(str)      # the button name from the network thread (Qt queues it to the window thread)
+    outputs_listed = Signal(object)     # (generation, tv, pc, names, error) from the audio listing thread
 
     def __init__(self, parent: QWidget | None = None) -> None:
         """Create the dialog: the capture timer (a pad button pick times out), the captured signal hookup and the tabs."""
@@ -161,7 +163,7 @@ class ConsoleSettings(QDialog):
         self.tv_scale = Combo([(v, f"{v} %" if v else _("— bez zmiany —")) for v in (0, *DPI_VALUES)])
         self.tv, self.pc = Combo(), Combo()
         refresh = button(_("Odśwież listę urządzeń"), small=True)
-        refresh.clicked.connect(lambda: self.refresh())     # clicked passes `checked` - not as a device
+        refresh.clicked.connect(lambda: self.refresh_async())     # clicked passes `checked` - not as a device
         self.startup = Combo([(m, _(STARTUP_LABELS[m])) for m in STARTUP_MODES])
         tv = group(_("TELEWIZOR I DŹWIĘK"),
                    pair(field(_("Rozdzielczość TV po włączeniu"), self.tv_res), field(_("Skalowanie TV"), self.tv_scale)),
@@ -239,6 +241,8 @@ class ConsoleSettings(QDialog):
         self.vpad_net.clicked.connect(self._net_install)
         self._net_busy = False
         self._net_msg = ""
+        self._audio_gen = 0         # the newest audio listing; an older one that finishes late is dropped
+        self.outputs_listed.connect(self._outputs_ready)
         self._hm_timer = QTimer(self, interval=500)
         self._hm_timer.timeout.connect(self._vpad_state)
         backend = group(_("WIRTUALNE PADY"),
@@ -740,7 +744,7 @@ class ConsoleSettings(QDialog):
         self.win_mode.set_data("full" if getattr(owner, "fullscreen", lambda: False)() else "window")
         self.lang.set_data(rx_settings.cur.ui.lang)
         self.pick.setEnabled(rx_console.ctl is not None)
-        self.refresh(cfg.audio_tv, cfg.audio_pc)
+        self.refresh_async(cfg.audio_tv, cfg.audio_pc)
         self._status("")
 
     def refresh(self, tv: str | None = None, pc: str | None = None) -> None:
@@ -751,12 +755,45 @@ class ConsoleSettings(QDialog):
         """
         tv = self.tv.currentData() if tv is None else tv
         pc = self.pc.currentData() if pc is None else pc
+        self._audio_gen += 1                # a listing still running in the background is now stale
         try:
             names = [name for _, name in rx_audio.list_outputs()]
-            self._status("")
+            err = None
         except Exception as e:      # noqa: BLE001 - any audio backend failure is shown, not fatal
-            names = []
-            self._status(_("Nie można odczytać urządzeń audio: {err} (pip install pycaw)").format(err=repr(e)), "bad")
+            names, err = [], e
+        self._show_outputs(tv, pc, names, err)
+
+    def refresh_async(self, tv: str | None = None, pc: str | None = None) -> None:
+        """refresh() without blocking the window: the COM enumeration (can take a while, e.g. a TV that is waking up) runs in a thread.
+
+        The lists keep their current items until the result arrives.
+        """
+        tv = self.tv.currentData() if tv is None else tv
+        pc = self.pc.currentData() if pc is None else pc
+        self._audio_gen += 1
+        gen = self._audio_gen
+
+        def run() -> None:
+            try:
+                names, err = [name for _, name in rx_audio.list_outputs()], None
+            except Exception as e:      # noqa: BLE001 - reported in the window like in refresh()
+                names, err = [], e
+            self.outputs_listed.emit((gen, tv, pc, names, err))      # queued to the window thread
+
+        threading.Thread(target=run, name="audio outputs", daemon=True).start()
+
+    def _outputs_ready(self, result: Any) -> None:
+        """The audio listing thread finished: show it, unless a newer listing was started meanwhile."""
+        gen, tv, pc, names, err = result
+        if gen == self._audio_gen:
+            self._show_outputs(tv, pc, names, err)
+
+    def _show_outputs(self, tv: str | None, pc: str | None, names: list[str], err: Exception | None) -> None:
+        """Fill both audio combos (or show the error); a device chosen earlier but absent stays as "unavailable"."""
+        if err is None:
+            self._status("")
+        else:
+            self._status(_("Nie można odczytać urządzeń audio: {err} (pip install pycaw)").format(err=repr(err)), "bad")
         for combo, current in ((self.tv, tv), (self.pc, pc)):
             items = [("", _(NO_AUDIO)), *((n, n) for n in names)]
             if current and current not in names:

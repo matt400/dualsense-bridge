@@ -42,7 +42,9 @@ Po powrocie po jednej stronie do wersji bez protokołu v3 usuń `auth.json` po d
 - **Folder receivera.** Receiver (i zadanie autostartu z najwyższymi uprawnieniami) uruchamia kod ze swojego folderu
   jako administrator. Jeśli folder należy do Twojego zwykłego konta, każdy uruchomiony przez Ciebie program może ten kod
   zmienić. Ustawienia → Bezpieczeństwo → **Zabezpiecz folder** oddaje folder Administratorom (zwykli użytkownicy
-  tylko czytają); receiver dalej zapisuje ustawienia i się aktualizuje. Python zainstalowany „tylko dla tego
+  tylko czytają); receiver dalej zapisuje ustawienia i się aktualizuje. Gdy receiver działa z klona gita, obejmuje to
+  całe repozytorium razem z `.git`: aktualizacja uruchamia tam git jako administrator, więc `.git` zapisywalny dla
+  Ciebie (hooki, konfiguracja) uruchomiłby kod jako administrator przy następnym sprawdzeniu aktualizacji. Python zainstalowany „tylko dla tego
   użytkownika” ma ten sam problem - zainstaluj go dla wszystkich użytkowników.
 - **Folder nadajnika.** Usługa działa jako root, a kod leży w folderze użytkownika. `doas ./install-service.sh
   --own-root ...` oddaje repozytorium rootowi (przycisk Aktualizuj dalej działa; `setup-update-key.sh` uruchamiaj

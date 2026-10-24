@@ -208,8 +208,10 @@ class RemapStore:
         """Create the store and load ``path`` (remap.json)."""
         self.path = path
         self._lock = threading.Lock()
+        self._write_lock = threading.Lock()      # file writes only; never taken while holding _lock
         self.saved: dict[str, Profile] = {}
         self.live: dict[str, Profile] = {}
+        self.version = 0          # +1 on every change of a profile: cached values derived from the profiles go stale by comparing it
         self.load()
 
     @staticmethod
@@ -239,6 +241,7 @@ class RemapStore:
                 if profile_size(p) or is_game_key(k):
                     self.saved[k] = p
             self.live = {}
+            self.version += 1
         print(f"Remap profiles loaded from {self.path}: {sorted(self.saved) or 'none'}")
 
     def get(self, key: str) -> Profile:
@@ -275,30 +278,42 @@ class RemapStore:
         """Set the live (unsaved) version of a profile."""
         with self._lock:
             self.live[key] = normalize_profile(p)
+            self.version += 1
 
     def save(self, key: str, p: Any) -> tuple[bool, str]:
         """Save the profile to the file (atomically) and return (ok, message)."""
         p = normalize_profile(p)
         with self._lock:
+            self.version += 1
             self.live[key] = p
             if profile_size(p) or is_game_key(key):
                 self.saved[key] = p
             else:
                 self.saved.pop(key, None)
-            return self._write()
+        return self._write()
 
     def delete(self, key: str) -> tuple[bool, str]:
         """Delete a profile (from memory and from the file) and return (ok, message)."""
         with self._lock:
+            self.version += 1
             self.live.pop(key, None)
             if self.saved.pop(key, None) is None:
                 return True, _("Usunięto")
-            return self._write("Usunięto - {file}")
+        return self._write("Usunięto - {file}")
 
     def _write(self, done: str = "Zapisano - {file}") -> tuple[bool, str]:
-        """Write atomically (temporary file + replace) - an interruption does not corrupt remap.json; call with _lock held."""
+        """Write atomically (temporary file + replace) - an interruption does not corrupt remap.json.
+
+        Call WITHOUT _lock: write_json fsyncs, and the network thread waits on that lock in get() for every identification
+        packet - a save from the window would show up as a latency spike. _write_lock serialises the writers and the
+        snapshot of `saved` is taken inside it, so the file always ends up holding the latest state. Profiles are only
+        ever replaced, never edited in place, so a shallow copy is a consistent snapshot.
+        """
         try:
-            write_json(self.path, {"version": FILE_VERSION, "profiles": self.saved}, indent=2, sort_keys=True)
+            with self._write_lock:
+                with self._lock:
+                    snapshot = dict(self.saved)
+                write_json(self.path, {"version": FILE_VERSION, "profiles": snapshot}, indent=2, sort_keys=True)
         except OSError as e:
             return False, _("Zapis nieudany: {err}").format(err=e)
         return True, _(done).format(file=os.path.basename(self.path))

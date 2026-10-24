@@ -20,7 +20,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Final
 
-from proto import write_file
+from proto import write_file, write_json
 from rx_config import C
 from rx_i18n import _
 
@@ -82,8 +82,7 @@ def create(reason: str = "update", commit: str = "", new: str = "") -> Backup | 
     for name, src in present.items():
         shutil.copy2(src, os.path.join(path, name))
     meta = {"time": now, "commit": commit[:SHORT_COMMIT], "new": new[:SHORT_COMMIT], "reason": reason if reason in REASONS else "manual"}
-    with open(os.path.join(path, META), "w", encoding="utf-8") as f:
-        json.dump(meta, f, indent=2)
+    write_json(os.path.join(path, META), meta, indent=2)
     prune()
     return _read(path)
 

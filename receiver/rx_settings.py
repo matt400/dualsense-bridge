@@ -408,15 +408,17 @@ def apply(s: Settings) -> None:
 def update(path: str | None = None, **sections: Any) -> tuple[bool, str]:
     """Change part of the settings at once (``update(master=...)``) and save them when path is given.
 
+    When the save fails nothing is applied: the running settings never differ from the file silently.
+
     Returns:
         (ok, message).
     """
     with _lock:                      # read-modify-write and the file write in one piece: the file always holds the last change
         s = replace(cur, **sections)
-        apply(s)
         if path:
             try:
-                save(s, path)
+                save(s, path)        # before apply(): a failed save must not leave a setting active that the file does not hold
             except OSError as e:
                 return False, _("Nie udało się zapisać {path}: {err}").format(path=os.path.basename(path), err=e)
+        apply(s)
     return True, _("Zapisano")
