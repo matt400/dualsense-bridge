@@ -17,9 +17,11 @@ from __future__ import annotations
 import errno
 import glob
 import os
+import sys
 import struct
 from typing import BinaryIO, Final
 
+SWITCH_INTERVAL_S: Final = 0.0005     # default is 0.005
 CPU_DMA_LATENCY: Final = "/dev/cpu_dma_latency"   # PM QoS interface: the request lives as long as the file stays open
 RUNTIME_NICE: Final = -10         # a little above normal priority; works without the real-time policy as well
 MIN_DISTINCT_CAPACITIES: Final = 2    # fewer distinct cpu_capacity values = identical cores, nothing to pin to
@@ -135,6 +137,16 @@ def realtime(priority: int) -> str | None:
     return f"SCHED_FIFO {priority}"
 
 
+def short_switch_interval() -> str:
+    """Shorten the GIL switch interval so the event loop is not kept waiting by a worker thread running Python code.
+
+    With the default 5 ms a thread that wants the GIL (the loop, after a pad report arrived) may wait that long for the
+    running one to give it up. Worker threads here (sysfs, BlueZ calls) are short, so more frequent switching costs little.
+    """
+    sys.setswitchinterval(SWITCH_INTERVAL_S)
+    return f"GIL switch interval {SWITCH_INTERVAL_S * 1000:g} ms"
+
+
 def setup(low_latency: bool, cpu_latency_us: int, rt_priority: int) -> None:
     """Apply every latency tweak once at sender startup; each step is independent, so one failing does not block the rest.
 
@@ -147,7 +159,7 @@ def setup(low_latency: bool, cpu_latency_us: int, rt_priority: int) -> None:
         pass                  # without privileges the priority simply stays normal
     results = [realtime(rt_priority)]            # each step returns a description of what it set, or None
     if low_latency:
-        results += [hold_cpu_latency(cpu_latency_us), pin_fast_cpus()]
+        results += [hold_cpu_latency(cpu_latency_us), pin_fast_cpus(), short_switch_interval()]
     done = [r for r in results if r]
     if done:
         print("Low latency: " + ", ".join(done))

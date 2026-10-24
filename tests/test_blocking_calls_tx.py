@@ -2,6 +2,7 @@
   - the rumble backend (a synchronous HID feature request over Bluetooth) is opened in a worker thread, and a pad that
     disappears while it opens does not leak the hidraw descriptor
   - the /dev/input scan (opens every new node) runs in a worker thread, its result is applied on the loop
+  - the sysfs adapter scan (btadapter.scan) runs in a worker thread
   - a big BlueZ GetManagedObjects answer (crowded scan) is parsed in a worker thread, a small one inline
 python3 tests/test_blocking_calls_tx.py sender"""
 import asyncio, json, sys, threading, time, types
@@ -123,5 +124,29 @@ async def bt_cases():
         check(len(b.devices) == min(n, SB.BT_DEV_MAX) and b.adapter == "/org/bluez/hci0", f"{n} devices: the list is the same either way")
 
 asyncio.run(bt_cases())
+
+# ---------- 4. adapter scan ----------
+async def adapter_case():
+    btadapter = SB.btadapter
+    seen = {}
+    def slow_scan(root):
+        seen["thread"] = threading.get_ident()
+        time.sleep(SLOW_S)
+        return ()
+    real = btadapter.scan
+    btadapter.scan = slow_scan
+    try:
+        b = SB.Bluetooth(run=None, emit=lambda *a: None)
+        b.sysfs = "/nonexistent"
+        ticks = [0]
+        t = asyncio.create_task(ticker(ticks))
+        await b.check_adapters()
+        t.cancel()
+    finally:
+        btadapter.scan = real
+    check(seen.get("thread") not in (None, MAIN), "btadapter.scan runs in a worker thread")
+    check(ticks[0] >= SLOW_S / 0.01 / 2, f"the loop kept running during the adapter scan ({ticks[0]} ticks)")
+
+asyncio.run(adapter_case())
 print("SENDER OK" if not fails else f"FAILED: {len(fails)}")
 sys.exit(1 if fails else 0)

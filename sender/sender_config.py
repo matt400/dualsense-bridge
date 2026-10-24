@@ -14,7 +14,9 @@ from typing import Any, Final
 from evdev import ecodes as ec
 
 import sender_migrate
-from proto import load_config
+from proto import PERMISSION_BITS, load_config
+
+GROUP_OTHER_BITS: Final = 0o077         # chmod bits of "group" and "other"
 
 DEFAULTS: dict[str, Any] = {
     "host": "",                    # the receiver (the PC): an IP or a name; there is no default, so a missing host is an error
@@ -107,6 +109,20 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     return ap.parse_args(argv)
 
 
+def _warn_if_key_exposed(path: str) -> None:
+    """Warn when the config file holds the HMAC key but its group / other permission bits are set.
+
+    install-service.sh makes the file 0600. A copy, an editor that recreates the file, or a config migration of an older
+    version (it rewrote the file as 0644) can undo that; the key lets anyone on the network send commands to the sender.
+    """
+    try:
+        mode = os.stat(path).st_mode & PERMISSION_BITS
+    except OSError:
+        return
+    if mode & GROUP_OTHER_BITS:
+        print(f"WARNING: {path} holds the HMAC key but is readable by other users (mode {mode:o}) - chmod 600 {path}")
+
+
 def _merge_settings(args: argparse.Namespace) -> dict[str, Any]:
     """Merge the settings, lowest priority first: DEFAULTS, the --config file, the CLI flags (host, --key, --stats).
 
@@ -115,7 +131,10 @@ def _merge_settings(args: argparse.Namespace) -> dict[str, Any]:
     if args.config:                    # old default values in the file -> new ones (the user's own settings stay)
         sender_migrate.migrate(args.config)
     cfg = dict(DEFAULTS)
-    cfg.update(load_config(args.config, DEFAULTS))
+    from_file = load_config(args.config, DEFAULTS)
+    cfg.update(from_file)
+    if from_file.get("key"):
+        _warn_if_key_exposed(args.config)
     for name in ("host", "key", "stats"):
         value = getattr(args, name)
         if value is not None:

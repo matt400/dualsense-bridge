@@ -16,7 +16,7 @@ import sys
 from collections.abc import Callable
 from typing import Final
 
-from proto import write_file
+from proto import PERMISSION_BITS, write_file
 
 Change = tuple[str, str, str, str]      # (key, old text, new text, reason)
 
@@ -66,6 +66,18 @@ def migrate_text(text: str) -> tuple[str, list[Change]]:
     return "".join(out), done
 
 
+def _write_backup(path: str, text: str, mode: int) -> None:
+    """Write the backup copy with the permissions of the original (the file may hold the HMAC key).
+
+    ``open(path, "w")`` would create it as 0644. ``mode`` is also set on a backup that already exists: an older run of the
+    sender wrote it world-readable, and O_CREAT does not touch the permissions of an existing file.
+    """
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        os.fchmod(f.fileno(), mode)           # before the content is written
+        f.write(text)
+
+
 def migrate(path: str, log: Callable[[str], None] = print) -> list[Change]:
     """Migrate the file in place and return the list of changes (empty = nothing to do, no file, or a write error - logged).
 
@@ -86,9 +98,8 @@ def migrate(path: str, log: Callable[[str], None] = print) -> list[Change]:
         return []
     try:
         st = os.stat(path)
-        with open(path + ".bak", "w", encoding="utf-8") as f:
-            f.write(text)
-        write_file(path, new)
+        _write_backup(path + ".bak", text, st.st_mode & PERMISSION_BITS)
+        write_file(path, new)                       # keeps the permissions of the file it replaces
         if hasattr(os, "chown"):
             for p in (path, path + ".bak"):
                 try:

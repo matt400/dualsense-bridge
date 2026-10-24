@@ -420,7 +420,7 @@ class Bluetooth:
         if self.sysfs is None:
             return
         try:
-            ctrls = btadapter.scan(self.sysfs)
+            ctrls = await asyncio.to_thread(btadapter.scan, self.sysfs)     # sysfs reads must not stall the pad loop
         except OSError:
             ctrls = ()
         if not force and ctrls == self.ctrls and not self.adapter_err:

@@ -46,6 +46,14 @@ R.os.nice = denied
 assert R.realtime(10) is None and R.pin_fast_cpus(root) is None
 R.hold_cpu_latency = lambda us: None
 R.setup(True, 50, 10)                                    # bez uprawnień: tylko logi, bez wyjątku
+import sys as _sys
+_old_interval = _sys.getswitchinterval()
+R.pin_fast_cpus = lambda *a: None
+R.setup(False, 50, 0)
+assert _sys.getswitchinterval() == _old_interval, "bez low_latency interwał GIL się nie zmienia"
+R.setup(True, 50, 0)
+assert abs(_sys.getswitchinterval() - R.SWITCH_INTERVAL_S) < 1e-9, "low_latency skraca interwał przełączania GIL"
+_sys.setswitchinterval(_old_interval)
 ok("SCHED_FIFO z RESET_ON_FORK; bez doas wszystko pomija bez błędu")
 # ---------- musl (postmarketOS): funkcja libc zwraca ENOSYS -> syscall wprost ----------
 import errno

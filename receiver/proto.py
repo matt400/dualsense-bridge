@@ -146,6 +146,7 @@ MAC_LEN: Final = 8                                      # the HMAC-SHA256 is tru
 TOKEN: Final = struct.Struct("!I")
 TRAILER3: Final = TOKEN.size + MAC_LEN
 UINT32_MASK: Final = 0xFFFFFFFF
+PERMISSION_BITS: Final = 0o7777                         # st_mode & this = the chmod value (rwx for user / group / other + setuid etc.)
 UINT32_MODULUS: Final = 1 << 32
 NS_PER_MS: Final = 1_000_000
 EPOCH_BASE_BITS: Final = 60                             # ~36 years in ns: the clock plus its base still fits the ping's "Q"
@@ -734,7 +735,8 @@ def write_file(path: str, content: str | bytes) -> None:
 
     An interrupted write, a power loss, or a PC sleep / shutdown right after the write (master actions) will not leave an
     empty or truncated file. Without the fsync, ``os.replace`` could swap in a file whose data had not reached the disk yet.
-    A failed write removes the temporary file.
+    A failed write removes the temporary file. The new file keeps the permission bits of the one it replaces (POSIX): a
+    config file that holds the HMAC key and was made 0600 must not come back from a rewrite as 0644.
 
     Args:
         path: The destination file.
@@ -742,7 +744,13 @@ def write_file(path: str, content: str | bytes) -> None:
     """
     temp_path = path + ".tmp"
     try:
+        mode: int | None = os.stat(path).st_mode & PERMISSION_BITS
+    except OSError:
+        mode = None             # a new file: the default permissions
+    try:
         with open(temp_path, "wb") as f:
+            if mode is not None and sys.platform != "win32":
+                os.fchmod(f.fileno(), mode)         # before the content is written: the file is never readable with data in it
             f.write(content.encode("utf-8") if isinstance(content, str) else content)
             f.flush()
             os.fsync(f.fileno())
