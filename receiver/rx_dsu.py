@@ -25,7 +25,6 @@ EVENT_DATA: Final = 0x100002
 MAX_SLOTS_QUERY: Final = 4         # a slot-info request lists at most this many slots
 CLIENT_HDR_LEN: Final = 20         # "DSUC" + version + length + crc + client id + event number
 INFO_COUNT_END: Final = 24         # the slot-info request: 4 bytes of count after the header, then one byte per slot
-CRC_OFFSET: Final = 8
 RECV_SIZE: Final = 2048
 CLIENT_TTL_S: Final = 5.0          # a subscription expires when the client does not renew it
 WSA_MSGSIZE: Final = 10040         # datagram too large
@@ -46,7 +45,7 @@ DSU_B2: Final = {308: 0x80, 304: 0x40, 305: 0x20, 307: 0x10, 311: 0x08, 310: 0x0
 DSU_DPAD: Final = {(hx, hy): ((0x10 if hy == -1 else 0) | (0x20 if hx == 1 else 0) |
                        (0x40 if hy == 1 else 0) | (0x80 if hx == -1 else 0))
             for hx in (-1, 0, 1) for hy in (-1, 0, 1)}
-DSU_HDR: Final = struct.Struct("<4sHHII")
+DSU_HDR_EVENT: Final = struct.Struct("<4sHHIII")    # "DSUS", version, length, crc, server id + the event number that opens every payload
 DSU_INFO: Final = struct.Struct("<BBBB6sB")
 DSU_DATA: Final = struct.Struct("<BBBB6sBBIBBBBBBBB12s12sQ6f")   # the whole 0x100002 data packet in a single pack
 DSU_TOUCH: Final = struct.Struct("<BBHHBBHH")
@@ -87,10 +86,10 @@ def dsu_pkt(event: int, payload: bytes) -> bytes:
     The "DSUS" header (protocol version, length, server id) + the event number + the payload; the CRC32 is computed over
     the whole packet with the CRC field zeroed.
     """
-    body = struct.pack("<I", event) + payload
-    pkt = bytearray(DSU_HDR.pack(b"DSUS", PROTOCOL_VERSION, len(body), 0, SERVER_ID) + body)
-    struct.pack_into("<I", pkt, CRC_OFFSET, zlib.crc32(pkt) & 0xFFFFFFFF)
-    return bytes(pkt)
+    length = 4 + len(payload)                                    # the event number + the payload
+    head = DSU_HDR_EVENT.pack(b"DSUS", PROTOCOL_VERSION, length, 0, SERVER_ID, event)
+    crc = zlib.crc32(payload, zlib.crc32(head))                  # over the whole packet with the CRC field zeroed, no joined copy
+    return DSU_HDR_EVENT.pack(b"DSUS", PROTOCOL_VERSION, length, crc, SERVER_ID, event) + payload
 
 
 def shared(slot: int) -> bytes:

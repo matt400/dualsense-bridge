@@ -90,6 +90,49 @@ def pressed_inputs(mask: int, hx: int, hy: int, lt: int, rt: int) -> set[str]:
     return out
 
 
+_BUTTON_OF_BIT: Final = {BIT[code]: name for name, code in BUTTON_CODES.items()}   # one mask bit -> the input name
+_DIR_SOURCES: Final = tuple((name, dx, dy) for name, (dx, dy) in DIRS.items())
+
+
+def input_pressed(name: str, mask: int, hx: int, hy: int, lt: int, rt: int) -> bool:
+    """Tell whether one input is active; the same rule as ``name in pressed_inputs(...)`` without building the set.
+
+    The hot path (S.recompute, every state packet) asks about a single input (the gyro "hold" button).
+    """
+    code = BUTTON_CODES.get(name)
+    if code is not None:
+        return bool(mask & BIT[code])
+    if name == "l2":
+        return lt >= TRIG_ON
+    if name == "r2":
+        return rt >= TRIG_ON
+    d = DIRS.get(name)
+    if d is None:
+        return False
+    return hx * d[0] > 0 if d[0] else hy * d[1] > 0
+
+
+def _active_sources(mask: int, hx: int, hy: int, lt: int, rt: int) -> list[tuple[str, int]]:
+    """List the inputs that are active right now as (name, value): buttons and D-pad directions 255, triggers their value.
+
+    Walks only the set bits of the mask, so an idle pad costs a few comparisons instead of a pass over all 17 inputs.
+    """
+    act: list[tuple[str, int]] = []
+    bits = mask
+    while bits:
+        low = bits & -bits                 # the lowest set bit
+        bits ^= low
+        if (name := _BUTTON_OF_BIT.get(low)) is not None:    # bits that are not remappable buttons (touchpad...) are skipped
+            act.append((name, BYTE_MAX))
+    if hx or hy:
+        act.extend((name, BYTE_MAX) for name, dx, dy in _DIR_SOURCES if ((hx == dx) if dx else (hy == dy)))
+    if lt:
+        act.append(("l2", lt))
+    if rt:
+        act.append(("r2", rt))
+    return act
+
+
 def apply_remap(m: ButtonMap, mask: int, hx: int, hy: int, lt: int, rt: int) -> tuple[int, int, int, int, int]:
     """Remap the raw (mask, hatx, haty, l2, r2) with a normalised map ``m``.
 
@@ -99,16 +142,7 @@ def apply_remap(m: ButtonMap, mask: int, hx: int, hy: int, lt: int, rt: int) -> 
     if not m:
         return mask, hx, hy, lt, rt
     out_mask = dirs = olt = ort = 0
-    for src in INPUTS:
-        if src in BUTTON_CODES:
-            v = BYTE_MAX if mask & BIT[BUTTON_CODES[src]] else 0
-        elif src in DIRS:
-            dx, dy = DIRS[src]
-            v = BYTE_MAX if ((hx == dx) if dx else (hy == dy)) else 0
-        else:
-            v = lt if src == "l2" else rt
-        if not v:
-            continue
+    for src, v in _active_sources(mask, hx, hy, lt, rt):
         dst = m.get(src, src)
         if dst is None:
             continue
