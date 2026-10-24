@@ -18,6 +18,7 @@ import ipaddress
 import json
 import os
 import string
+import threading
 from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass, field, fields, replace
 from typing import Any, ClassVar, Final, TypeAlias
@@ -343,6 +344,9 @@ def _section(cls: Any, raw: dict[str, Any] | None, base: Any, name: str) -> Any:
 
 cur = Settings()
 _listeners: list[Callable[[Settings, Settings], None]] = []
+# apply() / update() from the window thread and from timer threads (rx_master claim) must not interleave: update() reads `cur`,
+# builds the new object and saves it - two of them at once would lose one change. Re-entrant: a listener may call update().
+_lock = threading.RLock()
 
 
 def defaults(mouse_sens: float = 0.5, low_batt: int = 15) -> Settings:
@@ -392,12 +396,13 @@ def on_change(fn: Callable[[Settings, Settings], None]) -> None:
 def apply(s: Settings) -> None:
     """Make `s` the current settings with one assignment, then notify the listeners (a failing listener is only logged)."""
     global cur
-    old, cur = cur, s
-    for fn in _listeners:
-        try:
-            fn(old, s)
-        except Exception as e:  # noqa: BLE001 - one broken listener must not stop the others or the change
-            print(f"Settings listener error: {e!r}")
+    with _lock:
+        old, cur = cur, s
+        for fn in _listeners:
+            try:
+                fn(old, s)
+            except Exception as e:  # noqa: BLE001 - one broken listener must not stop the others or the change
+                print(f"Settings listener error: {e!r}")
 
 
 def update(path: str | None = None, **sections: Any) -> tuple[bool, str]:
@@ -406,11 +411,12 @@ def update(path: str | None = None, **sections: Any) -> tuple[bool, str]:
     Returns:
         (ok, message).
     """
-    s = replace(cur, **sections)
-    apply(s)
-    if path:
-        try:
-            save(s, path)
-        except OSError as e:
-            return False, _("Nie udało się zapisać {path}: {err}").format(path=os.path.basename(path), err=e)
+    with _lock:                      # read-modify-write and the file write in one piece: the file always holds the last change
+        s = replace(cur, **sections)
+        apply(s)
+        if path:
+            try:
+                save(s, path)
+            except OSError as e:
+                return False, _("Nie udało się zapisać {path}: {err}").format(path=os.path.basename(path), err=e)
     return True, _("Zapisano")

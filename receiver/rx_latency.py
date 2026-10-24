@@ -125,7 +125,8 @@ def summary(i: int, now_ns: int | None = None) -> Summary | None:
     start = (now_ns or time.perf_counter_ns()) - int(WINDOW_S * NS_PER_S)
     with _lock:
         d = _samples.get(i)
-        rows = [r[1:] for r in d if r[0] >= start] if d else []
+        snap = list(d) if d else []       # a plain copy only; filtering outside keeps the network thread's append waiting ~20 us
+    rows = [r[1:] for r in snap if r[0] >= start]
     return _summarize(rows) if len(rows) >= MIN_SAMPLES else None
 
 
