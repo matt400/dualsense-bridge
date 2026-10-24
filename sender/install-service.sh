@@ -29,11 +29,11 @@ live() { [ -z "$ROOT" ]; }           # prawdziwa instalacja (nie test)
 
 if live; then
 	if [ "$(id -u)" -ne 0 ]; then
-		echo "Uruchom jako root: doas $0 $*" >&2
+		echo "Run as root: doas $0 $*" >&2
 		exit 1
 	fi
 	if [ ! -d /run/systemd/system ]; then
-		echo "Ten system nie działa na systemd - usługa nadajnika wymaga systemd." >&2
+		echo "This system does not run systemd - the sender service needs systemd." >&2
 		exit 1
 	fi
 fi
@@ -42,7 +42,7 @@ if [ "${1:-}" = "--remove" ]; then
 	live && { systemctl disable --now "$NAME" || true; }
 	rm -f "$UNIT" "$ENVF"
 	live && systemctl daemon-reload
-	echo "Usunięto usługę $NAME"
+	echo "Removed the $NAME service"
 	exit 0
 fi
 
@@ -65,8 +65,8 @@ fi
 # The folder goes into the unit unquoted (WorkingDirectory, the script path, ReadWritePaths) - safe characters only.
 case $REPO in
 	*[!A-Za-z0-9/._+:-]*)
-		echo "Folder nadajnika ma spację lub znak specjalny: $DIR" >&2
-		echo "Przenieś repozytorium do folderu o prostej nazwie (np. ~/dualsense-bridge) i uruchom skrypt ponownie." >&2
+		echo "The sender folder has a space or a special character: $DIR" >&2
+		echo "Move the repository to a folder with a plain name (e.g. ~/dualsense-bridge) and run the script again." >&2
 		exit 1 ;;
 esac
 
@@ -83,7 +83,7 @@ HAS_KEY=0
 NEXT_KEY=0
 for a in "$@"; do
 	case $a in
-		*"$NL"*) echo "Argument z nową linią nie jest obsługiwany" >&2; exit 1 ;;
+		*"$NL"*) echo "An argument with a newline is not supported" >&2; exit 1 ;;
 	esac
 	if [ $NEXT_KEY -eq 1 ]; then
 		KEY=$a; HAS_KEY=1; NEXT_KEY=0; continue
@@ -95,7 +95,7 @@ for a in "$@"; do
 	ARGS="${ARGS:+$ARGS }$(dq "$a")"
 done
 if [ $NEXT_KEY -eq 1 ]; then
-	echo "--key bez wartości" >&2
+	echo "--key without a value" >&2
 	exit 1
 fi
 
@@ -122,16 +122,16 @@ chmod 600 "$UNIT"
 if [ $OWN_ROOT -eq 1 ]; then
 	live && chown -R 0:0 "$REPO"
 	live && chmod -R go-w "$REPO"
-	echo "Repozytorium $REPO należy teraz do roota (git pull z okna działa jako root)"
+	echo "Repository $REPO is now owned by root (git pull from the window runs as root)"
 elif [ "$(stat -c %u "$REPO")" -ne 0 ]; then
-	echo "UWAGA: kod nadajnika należy do użytkownika $(stat -c %U "$REPO"), a usługa działa jako root - ten użytkownik" \
-		"(i każdy jego program) może zmienić kod wykonywany jako root. Zabezpieczenie: doas $0 --own-root ..." >&2
+	echo "WARNING: the sender code is owned by user $(stat -c %U "$REPO") but the service runs as root - that user" \
+		"(and any program of theirs) can change code that runs as root. To prevent it: doas $0 --own-root ..." >&2
 fi
 if live; then
 	systemctl daemon-reload
 	systemctl enable --now "$NAME"
 	systemctl restart "$NAME"
 fi
-echo "Usługa $NAME (systemd) działa jako root: $DIR/sender_controller.py $*"
+echo "Service $NAME (systemd) runs as root: $DIR/sender_controller.py $*"
 echo "Log: journalctl -u $NAME -f"
-echo "Wyłącz swój poprzedni autostart nadajnika - dwa nadajniki naraz walczą o pady."
+echo "Disable any previous sender autostart - two senders at once fight over the pads."

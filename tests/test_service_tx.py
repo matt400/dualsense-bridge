@@ -77,7 +77,7 @@ assert NASTY[2] not in unit and "--key" not in systemd_argv(unit), "klucz nie w 
 assert env_value(envf) == NASTY[2] and oct(os.stat(envf).st_mode & 0o777) == "0o600", "klucz w pliku 0600"
 assert f"WorkingDirectory={TX}" in unit
 assert oct(os.stat(os.path.join(root, "etc/systemd/system/dualsense-sender.service")).st_mode & 0o777) == "0o600"
-assert "Wyłącz swój poprzedni autostart" in r.stdout and "journalctl -u dualsense-sender" in r.stdout
+assert "Disable any previous sender autostart" in r.stdout and "journalctl -u dualsense-sender" in r.stdout
 r = run(root, "192.168.1.4", "--key=abc", "--stats")
 unit = open(os.path.join(root, "etc/systemd/system/dualsense-sender.service")).read()
 assert r.returncode == 0 and env_value(envf) == "abc" and systemd_argv(unit)[3:] == ["192.168.1.4", "--stats"], r.stderr
@@ -90,7 +90,7 @@ assert run(tempfile.mkdtemp(), "192.168.1.4", "--key").returncode == 1, "--key b
 ok("systemd: klucz ze spacją, cudzysłowem, $, %, ', \\, &, |, ; i ` w pliku środowiska 0600 (nie w ExecStart), "
    "--key=X, usuwanie")
 r = run(tempfile.mkdtemp(), "192.168.1.4", "--key", "a\nb")
-assert r.returncode == 1 and "nową linią" in r.stderr, r.stderr
+assert r.returncode == 1 and "with a newline" in r.stderr, r.stderr
 ok("argument z nową linią: czytelny błąd zamiast zepsutego pliku usługi")
 
 # ---------- bez sender.toml i bez argumentów ----------

@@ -154,6 +154,9 @@ if __name__ == "__main__":
     sender_rt.setup(C.LOW_LATENCY, C.CPU_LATENCY_US, C.RT_PRIORITY)
     gc.collect()
     gc.freeze()   # objects created at startup are moved out of the GC's reach - shorter GC pauses
+    # gen0 runs after 50k net allocations instead of 700: the short-lived state tuples do not trigger a collection every few
+    # packets. The GC stays on - asyncio creates reference cycles (futures, exceptions with tracebacks)
+    gc.set_threshold(50_000, 20, 100)
     sender_update.init()
     events.info(E_START, BROADCAST_IDX, sender_update.version[0] or "?")
     try:

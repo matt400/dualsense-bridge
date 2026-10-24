@@ -22,9 +22,9 @@ Change = tuple[str, str, str, str]      # (key, old text, new text, reason)
 
 # key -> (old default values, new default value, reason)
 CHANGES: Final[dict[str, tuple[tuple[float, ...], float, str]]] = {
-    "pad_min_dt": ((0.004,), 0.001, "limiter 4 ms -> 1 ms (szybsze gałki)"),
-    "motion_min_dt": ((0.004,), 0.001, "limiter ruchu 4 ms -> 1 ms (szybsze gyro)"),
-    "touch_coalesce_ms": ((5, 50), 2, "dotyk co 2 ms"),
+    "pad_min_dt": ((0.004,), 0.001, "limiter 4 ms -> 1 ms (faster sticks)"),
+    "motion_min_dt": ((0.004,), 0.001, "motion limiter 4 ms -> 1 ms (faster gyro)"),
+    "touch_coalesce_ms": ((5, 50), 2, "touch every 2 ms"),
 }
 FLOAT_EPSILON: Final = 1e-9       # config numbers are compared as floats: 0.004 must match 0.004000
 _LINE = re.compile(r"^(?P<lead>\s*)(?P<key>[A-Za-z_]+)(?P<eq>\s*=\s*)(?P<val>[-+0-9.eE]+)(?P<rest>\s*(#.*)?)$")
@@ -106,6 +106,6 @@ def migrate(path: str, log: Callable[[str], None] = print) -> list[Change]:
 if __name__ == "__main__":
     target = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(os.path.abspath(__file__)), "sender.toml")
     if not os.path.exists(target):
-        print(f"{target}: brak pliku - nic do migracji")
+        print(f"{target}: no such file, nothing to migrate")
     elif not migrate(target):
-        print(f"{target}: nic do zmiany (nowe wartości domyślne albo własne ustawienia)")
+        print(f"{target}: nothing to change (already on the new defaults, or custom values)")
