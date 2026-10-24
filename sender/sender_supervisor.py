@@ -79,6 +79,9 @@ def discover() -> dict[str, Group]:
     turned out not to be a DualSense are remembered per node so they are not re-opened on every scan. A duplicate
     device of the same kind inside one group is closed immediately.
 
+    Blocking (opens every new node): the supervisor runs it in a worker thread, so a pad connecting does not stall the
+    read loops of the pads that are already playing.
+
     Returns:
         ``{key: {"pad"|"motion"|"touch": device}}``.
     """
@@ -86,7 +89,7 @@ def discover() -> dict[str, Group]:
     paths = evdev.list_devices()
     for gone in [p for p in _not_pads if p not in paths]:
         del _not_pads[gone]
-    busy = {d.path for c in state.active.values() for d in c.devices()}
+    busy = {d.path for c in list(state.active.values()) for d in c.devices()}    # list(): atomic - discover may run in a worker thread
     for path in paths:
         if path in busy:
             continue
@@ -285,7 +288,29 @@ def _announce(c: Ctrl) -> None:
     print(f"   Lightbar: {c.led or 'not found'}")
 
 
-def _start_pad(c: Ctrl) -> list[asyncio.Task[None]]:
+def _close_late_rumble(fut: asyncio.Future[Rumble]) -> None:
+    """Done-callback for a rumble backend that nobody waits for any more (the pad went away while it was opening): close it."""
+    if not fut.cancelled() and fut.exception() is None:
+        fut.result().close()
+
+
+async def _open_rumble(c: Ctrl) -> Rumble:
+    """Create the rumble backend in a worker thread.
+
+    The constructor reads the pad's firmware version with a synchronous HID feature request. Over Bluetooth that is a
+    round trip to the pad: tens of ms normally and up to seconds on a bad link - on the event loop it stopped the read
+    loops of every other pad. The thread is shielded: if the pad disappears (the task is cancelled) while it is still
+    opening, the finished backend is closed when it arrives instead of leaking its hidraw descriptor.
+    """
+    fut = asyncio.ensure_future(asyncio.to_thread(Rumble, c.idx, c.pad_dev, C.RUMBLE))
+    try:
+        return await asyncio.shield(fut)
+    except asyncio.CancelledError:
+        fut.add_done_callback(_close_late_rumble)
+        raise
+
+
+async def _start_pad(c: Ctrl) -> list[asyncio.Task[None]]:
     """Set the pad up: initial state, rumble backend, grab, announcement; start its main streams and attach the extras.
 
     Returns:
@@ -293,7 +318,7 @@ def _start_pad(c: Ctrl) -> list[asyncio.Task[None]]:
         does not disconnect the pad.
     """
     c.init_state()
-    c.rumble = Rumble(c.idx, c.pad_dev, C.RUMBLE)
+    c.rumble = await _open_rumble(c)
     if c.triggers != TRIG2_OFF:           # trigger effects came from the PC before the pad was ready
         c.rumble.set_triggers(c.triggers)
     _announce(c)
@@ -361,7 +386,7 @@ async def run_ctrl(c: Ctrl) -> None:
     """
     tasks: list[asyncio.Task[None]] = []
     try:
-        tasks = _start_pad(c)
+        tasks = await _start_pad(c)
         await _wait_first(c, tasks)
     except OSError as e:
         print(f"Controller {c.idx}: device error: {e}")
@@ -495,9 +520,8 @@ def _start_new_pad(key: str, group: Group, now: float) -> None:
     state.spawn(run_ctrl(c))
 
 
-def _scan_once() -> None:
-    """Discover pads once: attach late devices to running pads, start new pads in slot order of their event node."""
-    groups = discover()
+def _apply_scan(groups: dict[str, Group]) -> None:
+    """Act on a scan result: attach late devices to running pads, start new pads in slot order of their event node."""
     now = time.monotonic()
     for key in [k for k in _first_seen if k not in groups]:
         del _first_seen[key]
@@ -513,6 +537,11 @@ def _scan_once() -> None:
             _start_new_pad(key, group, now)
 
 
+async def _scan_once() -> None:
+    """Discover pads once (in a worker thread: opening the nodes blocks) and act on the result on the event loop."""
+    _apply_scan(await asyncio.to_thread(discover))
+
+
 async def _supervise(watch: DevWatch) -> None:
     """The scan loop: find pads, give each a slot, start its run_ctrl task, and attach late devices to running pads.
 
@@ -525,7 +554,7 @@ async def _supervise(watch: DevWatch) -> None:
     while True:
         # all slots full: scan only after a change in /dev/input - a new pad over max_pads gets a message (_reject)
         if changed or len(state.active) < C.MAX_PADS or any(incomplete(c) for c in state.active.values()):
-            _scan_once()
+            await _scan_once()
             if first and not state.active:
                 print("No DualSense found yet - connect controller (bluetoothctl), waiting...")
             first = False

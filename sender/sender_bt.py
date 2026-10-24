@@ -48,6 +48,7 @@ BUSCTL, BLUETOOTHCTL = "busctl", "bluetoothctl"
 BLUEZ, ADAPTER, DEVICE = "org.bluez", "org.bluez.Adapter1", "org.bluez.Device1"
 COD_MAJOR_SHIFT, COD_MAJOR_MASK, COD_MAJOR_PERIPHERAL = 8, 0x1F, 0x05      # Bluetooth class of device: major class (5 = peripheral)
 COD_MINOR_SHIFT, COD_MINOR_MASK, COD_MINOR_JOYSTICK, COD_MINOR_GAMEPAD = 2, 0x0F, 1, 2
+PARSE_OFFLOAD_BYTES: Final = 32 * 1024   # a GetManagedObjects answer longer than this (~35 devices) is parsed in a worker thread
 CALL_S, CONNECT_S, PAIR_S = 5.0, 25.0, 40.0   # limits of D-Bus calls [s] (pairing waits for the pad)
 IDLE_S = 5.0                 # the adapter state with no panel open
 TICK_S = 1.0                 # the state and the list with the panel open / during a scan
@@ -367,7 +368,10 @@ class Bluetooth:
             return
         try:
             info: dict[str, Any] = {}
-            self.state, self.adapter, self.devices = parse_objects(out, self.prefer(), info)
+            if len(out) > PARSE_OFFLOAD_BYTES:        # a crowded scan: milliseconds of JSON on a phone - not on the pad's event loop
+                self.state, self.adapter, self.devices = await asyncio.to_thread(parse_objects, out, self.prefer(), info)
+            else:
+                self.state, self.adapter, self.devices = parse_objects(out, self.prefer(), info)
             self.adapter_addr, self.adapter_count = info["address"], info["count"]
         except (ValueError, KeyError, IndexError, TypeError, AttributeError) as e:
             print(f"Bluetooth: unexpected busctl output: {e!r}")
