@@ -12,10 +12,45 @@ DualSense pad → Bluetooth → **sender** (Linux, evdev) → UDP 5005 → **rec
 ```
 sender/    sender_controller.py (entry point) + sender_*.py; install-service.sh, service/
 receiver/  receiver_controller.py (entry point) + rx_*.py (logic) + rx_qt*.py (window)
-tests/     Linux tests with Windows/evdev stubs; fakebin/ = fake bluetoothctl
-docs/      EN by default, PL as *.pl.md
+tests/     Linux tests with Windows/evdev stubs (rxenv.py); fakebin/ = fake bluetoothctl; run_tests.sh = the CI entry
+docs/      EN by default, PL as *.pl.md (user docs, not needed for code work)
 tools/     screenshots.py (offscreen window screenshots -> docs/img)
+update.bat, .github/workflows/tests.yml
 ```
+Modules import each other by flat name (no packages): run things from inside `receiver/` or `sender/`.
+
+## Module map
+Every module has a docstring with its role; find the file here before opening anything.
+
+**Sender** (`sender/`)
+- Core: `sender_controller` (main, `forever()`), `sender_config` (DEFAULTS + CLI), `sender_supervisor` (pad discovery, slots, pad lifecycle),
+  `sender_ctrl` (`Ctrl`: one pad, packets), `sender_streams` (evdev read loops, heartbeat), `sender_net` (UDP, feedback, pongs), `sender_state`.
+- Feedback and features: `sender_rumble` (evdev FF / hidraw), `sender_calib` (gyro calibration per MAC), `sender_wol` (Wake-on-LAN from the pad),
+  `sender_control` (PC commands, idle power-off, info), `sender_events` (event packets), `sender_batt`, `sender_update`.
+- System: `sender_bt` + `sender_btadapter` (BlueZ driven from the receiver window, several adapters), `sender_rt` (low-latency mode, needs root),
+  `sender_migrate` (sender.toml migration), `sender_ioctl`.
+
+**Receiver** (`receiver/`)
+- Core: `receiver_controller` (main), `rx_config` (DEFAULTS + CLI), `rx_state` (`S.xxx`, `run_forever`), `rx_net` (packet receive, events, silence),
+  `rx_winapi` (timer, SendInput, single instance, UDP sockets), `rx_settings` (settings.json, changed without restart).
+- Virtual pads: `rx_ds4` (pads on demand, backend choice), `rx_hm` (HIDMaestro), `rx_hm_update` (downloads HIDMaestro), `rx_report` (DS4 / DualSense
+  reports), `rx_feedback` (game rumble, lightbar, triggers back to the pad), `rx_lightbar`, `rx_dsu` (Cemuhook server).
+- Input processing: `rx_buttons` (tables, remap, remap.json), `rx_profiles` + `rx_editor` (profile model, no Qt), `rx_shape` (sticks / triggers),
+  `rx_gyro` (gyro mouse), `rx_gstick` + `rx_gstick_io` (tilt → stick), `rx_mouse` (touchpad mouse), `rx_padcal` + `rx_drift` (drift deadzone),
+  `rx_hotkeys` + `rx_shortcuts` (PS-modifier shortcuts), `rx_master` (master pad), `rx_testmode` (Test view, emergency exit).
+- Windows integration: `rx_console` (console mode monitor ↔ TV), `rx_display`, `rx_audio` (pycaw), `rx_games` (foreground program → profile, stop rumble),
+  `rx_gamebar`, `rx_autostart` (Task Scheduler).
+- Support: `rx_i18n` (PL texts in code + EN dict), `rx_status`, `rx_events` (log model), `rx_latency`, `rx_security`, `rx_backup`, `rx_update` (git pull),
+  `rx_bt` (sender Bluetooth model), `rx_icon`.
+- Window (PySide6): `rx_qt` (main window), `rx_qt_pad` (pad drawing), `rx_qt_panels` (right column), `rx_qt_console` (settings window), `rx_qt_test`,
+  `rx_qt_bt`, `rx_qt_tv` (pad control in TV mode), `rx_qt_drawer`, `rx_qt_keys`, `rx_qt_log`, `rx_qt_gstick`, `rx_qt_screens` (screen / fullscreen placement),
+  `rx_qt_style`, `rx_qt_icons`, `rx_qt_widgets`.
+
+**Large files** – grep or read by range, never whole: `rx_i18n` (~1000, translation dicts), `proto` (~960, two identical copies), `rx_qt`, `rx_qt_console`,
+`sender_rumble`, `sender_bt`, `rx_net`.
+
+**Runtime files** (gitignored, never commit, no need to read): `*.toml` except `*.example.toml`, `remap.json`, `settings.json`, `console.json`, `slots.json`,
+`wol.json`, `gyro_cal.json`, `bt.json`, `auth.json` (HMAC key), `padcal.json`, `receiver_ui.ini`, `receiver/backups/`, `receiver/hidmaestro/`.
 
 ## Hard rules
 - `receiver/proto.py` and `sender/proto.py` MUST be byte-for-byte identical (a test checks this). Changing one means editing both.
@@ -36,15 +71,18 @@ tools/     screenshots.py (offscreen window screenshots -> docs/img)
 - Lint and types: `ruff` and `mypy` per `pyproject.toml` (line length 140, py311). New functions get type annotations; a
   return type is required for new code (`-> None` included). Do not annotate the ViGEm notification callback in
   `rx_feedback.make_cb`: vgamepad compares its signature, annotations included.
+- Docstrings follow the Google convention (ruff `D`); complexity is capped (C901 max 12, PLR0912 / PLR0915): split a long function instead of adding `noqa`.
 - Per-pad state lists in `rx_state` are `None` until `init()`; they are declared with their real types on purpose.
 
 ## Tests
 ```
 pip install evdev ruff mypy PySide6-Essentials
-./tests/run_tests.sh          # from the repo root; ruff + mypy + all tests, GUI in Qt offscreen
+./tests/run_tests.sh          # from the repo root; ruff + mypy + all tests, GUI in Qt offscreen (output text is Polish)
+python3 tests/test_x.py receiver|sender                          # one test (e2e / bt take both: ... receiver sender)
+ruff check receiver sender tests                                 # lint only
+(cd receiver && python3 -m mypy --config-file ../pyproject.toml --platform win32 .)   # types; sender: same without --platform
 ```
-- Tests are plain scripts (`python3 tests/test_x.py receiver|sender`), no pytest.
-  `*_tx.py` = sender, the rest = receiver, `test_e2e*` / `test_bt` = both.
+- Tests are plain scripts, no pytest. `*_tx.py` = sender, the rest = receiver, `test_e2e*` / `test_bt` = both.
 - Add a new test file to the matching list in `tests/run_tests.sh`, otherwise it won't run in CI.
 - Regressions from bug reviews go into topic-named tests (e.g. `test_atomic_writes.py`, `test_bt_scan_lifecycle_tx.py`), not numbered ones.
 - Manual only (can't be done in CI): a real pad, ViGEm, HIDMaestro, DisplaySwitch, pycaw, notifications.
