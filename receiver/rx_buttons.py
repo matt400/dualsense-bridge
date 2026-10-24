@@ -211,6 +211,7 @@ class RemapStore:
         self._write_lock = threading.Lock()      # file writes only; never taken while holding _lock
         self.saved: dict[str, Profile] = {}
         self.live: dict[str, Profile] = {}
+        self.version = 0          # +1 on every change of a profile: cached values derived from the profiles go stale by comparing it
         self.load()
 
     @staticmethod
@@ -240,6 +241,7 @@ class RemapStore:
                 if profile_size(p) or is_game_key(k):
                     self.saved[k] = p
             self.live = {}
+            self.version += 1
         print(f"Remap profiles loaded from {self.path}: {sorted(self.saved) or 'none'}")
 
     def get(self, key: str) -> Profile:
@@ -276,11 +278,13 @@ class RemapStore:
         """Set the live (unsaved) version of a profile."""
         with self._lock:
             self.live[key] = normalize_profile(p)
+            self.version += 1
 
     def save(self, key: str, p: Any) -> tuple[bool, str]:
         """Save the profile to the file (atomically) and return (ok, message)."""
         p = normalize_profile(p)
         with self._lock:
+            self.version += 1
             self.live[key] = p
             if profile_size(p) or is_game_key(key):
                 self.saved[key] = p
@@ -291,6 +295,7 @@ class RemapStore:
     def delete(self, key: str) -> tuple[bool, str]:
         """Delete a profile (from memory and from the file) and return (ok, message)."""
         with self._lock:
+            self.version += 1
             self.live.pop(key, None)
             if self.saved.pop(key, None) is None:
                 return True, _("Usunięto")

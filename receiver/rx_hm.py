@@ -23,8 +23,9 @@ import ctypes
 import os
 import sys
 import threading
+import time
 from collections.abc import Callable, Sequence
-from typing import Any, TypeAlias
+from typing import Any, Final, TypeAlias
 
 from proto import TRIG_RAW_LEN
 from rx_report import build_ds5_report
@@ -40,6 +41,7 @@ HID_OUTPUT = 0                 # HMOutputSource.HidOutput
 
 NET_MAJOR = 10                 # HIDMaestro.Core.dll targets net10.0 - an older runtime cannot load its types
 WINGET_NET = "Microsoft.DotNet.Runtime.10"
+RUNTIMES_TTL_S: Final = 30.0   # how long a list of installed .NET runtimes is reused (finding them starts the dotnet host)
 
 
 class HMError(Exception):
@@ -58,6 +60,7 @@ class HMError(Exception):
 _lock = threading.Lock()
 _cache: dict[str, "Backend | HMError"] = {}   # DLL path -> Backend or HMError (no endless retries - reset() on a settings change)
 _clr_ready = False
+_runtimes: tuple[float, list[Any]] | None = None   # (when, the runtimes) of the last probe - the window asks every ~0.5 s
 _loaded: "Backend | None" = None   # the loaded Backend: one HIDMaestro version per process (the CLR does not unload DLLs) - a newer
 # one downloaded while running takes effect after a receiver restart
 
@@ -103,9 +106,11 @@ def loaded() -> "Backend | None":
 
 def reset() -> None:
     """Settings changed: the next get() tries again (e.g. after pointing to another DLL). A loaded backend stays."""
+    global _runtimes
     with _lock:
         for k in [k for k, v in _cache.items() if isinstance(v, HMError)]:
             del _cache[k]
+        _runtimes = None
 
 
 def get(cfg_path: str = "") -> "Backend":
@@ -178,16 +183,23 @@ def _major(version: object) -> int:
 def net_runtimes() -> list[Any] | None:
     """Installed Microsoft.NETCore.App versions (clr_loader looks for them like dotnet: DOTNET_ROOT, Program Files).
 
-    None = unknown (no pythonnet / clr_loader) - not the same as no .NET.
+    None = unknown (no pythonnet / clr_loader) - not the same as no .NET. The probe runs the dotnet host, so the answer is
+    kept for RUNTIMES_TTL_S (and dropped by reset()): the settings window polls it while a download is running.
     """
+    global _runtimes
     try:
         from clr_loader import find_runtimes
     except ImportError:
         return None
+    now = time.monotonic()
+    if _runtimes is not None and now - _runtimes[0] < RUNTIMES_TTL_S:
+        return list(_runtimes[1])
     try:
-        return [r for r in find_runtimes() if r.name == "Microsoft.NETCore.App"]
+        found = [r for r in find_runtimes() if r.name == "Microsoft.NETCore.App"]
     except Exception:  # noqa: BLE001 - clr_loader probing failed: treat as no runtime found
-        return []
+        found = []
+    _runtimes = (now, found)
+    return list(found)
 
 
 def best_runtime(runtimes: list[Any] | None = None) -> Any:

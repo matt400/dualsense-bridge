@@ -374,6 +374,7 @@ class MainWindow(ScreenPlacement):
     update_done = Signal(object)          # rx_update.Result from the update thread
     update_progress = Signal(int)         # the update stage (percent) from the update thread
     test_escaped = Signal()               # Options + Create on the pad ended the Test view (the network thread, rx_testmode)
+    _bar_state: tuple[Any, ...] | None    # what the profile bar shows (update_profile_bar skips an unchanged state)
 
     def __init__(self, settings: QSettings) -> None:
         """Restore the saved state (pad, view, geometry), create the timers, build the UI and the tray.
@@ -396,7 +397,7 @@ class MainWindow(ScreenPlacement):
         self.part = None                       # the selected pad part (name) or None
         self.warned = [False] * C.NUM_PADS     # a low battery notification sent once per discharge
         self.note_text, self.note_until = None, 0.0
-        self.low_any, self.tip, self.online = False, None, None
+        self.low_any, self.tip, self.online, self._bar_state = False, None, None, None
         # the update banner state and the percent shown while updating (never goes back)
         self._banner_sig, self._upd_notified, self._sender_stale, self._upd_pct = None, None, None, 0
         self.settings_dlg: ConsoleSettings | None = None   # the console mode settings window (created on first opening)
@@ -1122,16 +1123,23 @@ class MainWindow(ScreenPlacement):
     # ---------- refreshing the view ----------
     def refresh_all(self) -> None:
         """Reload every panel from the current profile."""
-        self.update_profile_bar()
+        self.update_profile_bar(force=True)
         self.part_page.refresh()
         self.gyro_page.refresh()
         self.pad.set_profile(self.ed.prof)
         self.update_changes()
         self.update_status()
 
-    def update_profile_bar(self) -> None:
-        """Refresh the profile list (with the programs seen recently)."""
-        self.profile_bar.reload(self.ed.profiles(), self.ed.key, self.ed.info(), list(rx_games.recent))
+    def update_profile_bar(self, force: bool = False) -> None:
+        """Refresh the profile list (with the programs seen recently).
+
+        The 400 ms pass calls this all the time; the widgets are touched only when something they show changed (force: after
+        an edit, when the combo may have been changed by the user).
+        """
+        state = (tuple(self.ed.profiles()), self.ed.key, self.ed.info(), tuple(rx_games.recent))
+        if force or state != self._bar_state:
+            self._bar_state = state
+            self.profile_bar.reload(list(state[0]), state[1], state[2], list(state[3]))
 
     def update_changes(self) -> None:
         """Refresh the list of changes and the tab title with their count."""
@@ -1278,13 +1286,24 @@ def session_end(*_args: Any) -> None:
         print("Windows session ending - console mode switched off")
 
 
+NATIVE_MSG_TYPES = (b"windows_generic_MSG", "windows_generic_MSG")
+
+
 class SessionEndFilter(QAbstractNativeEventFilter):
     """WM_QUERYENDSESSION straight from the message loop - works also when Qt does not raise commitDataRequest."""
+
+    def __init__(self) -> None:
+        """Resolve the MSG structure lazily, once: the filter sees every native message of the process."""
+        super().__init__()
+        self._msg: Any = None
+
     def nativeEventFilter(self, event_type: Any, message: Any) -> tuple[bool, int]:
         """Look for WM_QUERYENDSESSION in native Windows messages and run session_end; never swallows the message."""
-        if event_type in (b"windows_generic_MSG", "windows_generic_MSG"):
-            import ctypes.wintypes
-            if ctypes.wintypes.MSG.from_address(int(message)).message == WM_QUERYENDSESSION:
+        if event_type in NATIVE_MSG_TYPES:
+            if self._msg is None:
+                import ctypes.wintypes
+                self._msg = ctypes.wintypes.MSG
+            if self._msg.from_address(int(message)).message == WM_QUERYENDSESSION:
                 session_end()
         return False, 0
 
