@@ -483,7 +483,8 @@ class GyroPage(QWidget):
         self.aim_cat = Collapsible(_("CELOWANIE ŻYROSKOPEM"), aim)
         lay.addWidget(self.aim_cat)
         self.tilt = TiltSection()           # per pad, not per profile: the tilt of the pad as a stick (rx_gstick_io)
-        self.tilt.changed.connect(lambda cfg: runner.set_config(self.ed.slot, cfg))
+        self.tilt.changed.connect(lambda cfg: runner.set_config(self.ed.slot, cfg, save=False))   # live, no disk
+        self.tilt.committed.connect(lambda slot, cfg: runner.set_config(slot, cfg))                # debounced write
         lay.addWidget(self.tilt)
         lay.addStretch(1)
 

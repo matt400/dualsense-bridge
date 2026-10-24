@@ -593,5 +593,5 @@ class Segmented(QFrame):
         self.buttons[key].setChecked(True)
 
     def value(self) -> str:
-        """The key of the checked option."""
-        return next(k for k, b in self.buttons.items() if b.isChecked())
+        """The key of the checked option; the first one when nothing is checked yet (never raises)."""
+        return next((k for k, b in self.buttons.items() if b.isChecked()), next(iter(self.buttons), ""))
