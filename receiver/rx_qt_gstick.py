@@ -180,6 +180,7 @@ class TiltSection(QWidget):
         """Edit the settings of another pad."""
         self.flush()                                         # an edit of the old pad must not be lost or land on the new one
         self.slot = slot
+        self.cal_note.setText("")                            # the calibration note belongs to the pad it was made on
         self.refresh()
 
     def _set(self, **patch: Any) -> None:
