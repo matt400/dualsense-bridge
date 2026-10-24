@@ -494,6 +494,8 @@ def recv_timeout(sk: socket.socket, seconds: float) -> None:
 def bind_udp(port: int, what: str, rcvbuf: int = 0, host: str = "0.0.0.0") -> socket.socket:
     """Bind a UDP socket (optionally with a bigger receive buffer); on failure print which port (`what`) is taken and exit."""
     sk = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):     # Windows: without it another process (even a non-admin one) can bind the
+        sk.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)    # same port with SO_REUSEADDR and steal packets
     if rcvbuf:
         sk.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, rcvbuf)
     try:

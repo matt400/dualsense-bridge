@@ -28,6 +28,7 @@ from typing import Any, TypeAlias
 
 from proto import TRIG_RAW_LEN
 from rx_report import build_ds5_report
+from rx_state import NEUTRAL_OUT
 
 DLL = "HIDMaestro.Core.dll"
 PROFILE = "dualsense"          # the USB DualSense profile (054C:0CE6) from HIDMaestro
@@ -404,10 +405,12 @@ class Pad:
     def __init__(self, backend: Backend, ctrl: Any, on_fb: Callable[..., None]) -> None:
         """Pin the report buffer, take its address for the delegate.
 
-        Subscribe to the output reports and send one report to test the path.
+        Subscribe to the output reports and send one neutral report to test the path.
         """
         self.ctrl, self.on_fb = ctrl, on_fb
-        self.buf = bytearray(REPORT_LEN)
+        # an all-zero buffer is not neutral: sticks 0/0 and the D-pad nibble 0 (= up). A game that polls the new pad
+        # before the first real report would see that as input, so the first submit() sends centred sticks, no buttons.
+        self.buf = build_ds5_report(NEUTRAL_OUT, 0, False)
         self._view = (ctypes.c_char * REPORT_LEN).from_buffer(self.buf)
         self._ptr = backend.IntPtr(ctypes.addressof(self._view))
         self._fn = backend.submit_fn
