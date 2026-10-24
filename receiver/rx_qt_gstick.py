@@ -14,8 +14,8 @@ from collections.abc import Callable
 from dataclasses import replace
 from typing import Any
 
-from PySide6.QtCore import QEvent, QObject, QPointF, Qt, Signal
-from PySide6.QtGui import QColor, QPainter, QPaintEvent, QPen
+from PySide6.QtCore import QEvent, QObject, QPointF, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QHideEvent, QPainter, QPaintEvent, QPen
 from PySide6.QtWidgets import QCheckBox, QFrame, QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget
 
 import rx_buttons as B
@@ -26,6 +26,7 @@ from rx_qt_style import ACCENT, BAD, CARD, LINE, OK
 from rx_qt_widgets import Collapsible, Combo, SliderRow, button, field, input_items, label
 
 MSG_S = 4.0
+SAVE_DELAY_MS = 300      # settings are written this long after the last edit (a slider drag = one write)
 PREVIEW_W, PREVIEW_GAP, VIEW_PX = 360, 12, 110      # the floating preview: width and the gap to the corner of the pad drawing [px]
 STATE_TEXT = {G.ST_OFF: "Wyłączone", G.ST_HOLD: "Czeka na sprzęgło", G.ST_SAFE: "Ustaw pada blisko środka",
               G.ST_IDLE: "Uśpione (pad nieruchomy)", G.ST_CAL: "Kalibracja...", G.ST_RUN: "● Steruje"}
@@ -91,13 +92,19 @@ class TiltView(QWidget):
 class TiltSection(QWidget):
     """The settings of the pad selected in the window. Changes leave through `changed(Config)`; tick() feeds the preview."""
 
-    changed = Signal(object)         # the pad's new G.Config
+    changed = Signal(object)         # the pad's new G.Config, on every step (the engine follows it live)
+    committed = Signal(int, object)  # (slot, G.Config) once the edits calmed down for SAVE_DELAY_MS: time to write it to disk
 
     def __init__(self) -> None:
         """Build the collapsible categories for slot 0 and load its settings."""
         super().__init__()
         self.slot = 0
         self._msg_until = 0.0
+        self._pending: tuple[int, G.Config] | None = None      # the last edit that was not committed yet
+        self._save_timer = QTimer(self)                        # restarted by every edit: a drag becomes one write, not dozens
+        self._save_timer.setSingleShot(True)
+        self._save_timer.setInterval(SAVE_DELAY_MS)
+        self._save_timer.timeout.connect(self.flush)
         self.cfg = G.Config()
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
@@ -171,6 +178,7 @@ class TiltSection(QWidget):
 
     def set_slot(self, slot: int) -> None:
         """Edit the settings of another pad."""
+        self.flush()                                         # an edit of the old pad must not be lost or land on the new one
         self.slot = slot
         self.refresh()
 
@@ -178,7 +186,21 @@ class TiltSection(QWidget):
         cfg = G.normalize(G.to_raw(replace(self.cfg, **patch)))      # the same limits as when the file is loaded (outer > deadzone)
         self.cfg = cfg
         self.changed.emit(cfg)
+        self._pending = (self.slot, cfg)
+        self._save_timer.start()
         self.refresh(cfg, reload=False)
+
+    def flush(self) -> None:
+        """Commit the pending edit now (timer, pad switch, window hidden)."""
+        self._save_timer.stop()
+        pending, self._pending = self._pending, None
+        if pending is not None:
+            self.committed.emit(*pending)
+
+    def hideEvent(self, event: QHideEvent) -> None:
+        """Do not leave an edit unsaved when the tab or the window goes away."""
+        self.flush()
+        super().hideEvent(event)
 
     def _calibrate(self) -> None:
         runner.calibrate(self.slot)
