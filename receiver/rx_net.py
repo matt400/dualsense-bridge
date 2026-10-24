@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import contextlib
+import heapq
+import itertools
 import os
 import socket
 import threading
@@ -179,6 +181,27 @@ def close() -> None:
         in_sock.close()
 
 
+_peer_t: list[float] = [float("-inf")]   # when (monotonic) a fresh, non-ping packet last came from S.peer
+
+
+def _adopt_peer(addr: tuple[str, int], now: float, from_ping: bool = False) -> None:
+    """Remember `addr` as the sender's address (feedback, pongs and commands go there).
+
+    A ping is not checked for freshness (FRESH_EXEMPT), so with an HMAC key an old captured ping replayed from another IP
+    must not take the address over while the real sender is alive. A ping may therefore only set the address when there is
+    none, it is the same one, or no fresh packet came from the current one for SENDER_TIMEOUT (a restarted sender with a new
+    source port - its first packets are pings until it learns our clock). Every other accepted packet is fresh and
+    sets the address as before. Without a key anyone can spoof the sender anyway, so the old behaviour stays.
+    """
+    cur = S.peer
+    if from_ping:
+        if C.KEY and cur is not None and cur != addr and now - _peer_t[0] <= S.SENDER_TIMEOUT:
+            return
+    else:
+        _peer_t[0] = now
+    S.peer = addr
+
+
 def send_peer(pkt: bytes | None) -> None:
     """Send a packet to the sender (ignored while it is unknown or the packet is None); send errors are dropped."""
     p = S.peer
@@ -188,17 +211,39 @@ def send_peer(pkt: bytes | None) -> None:
 
 
 REPEAT_DELAYS: Final = (0.01, 0.03, 0.06)   # repeats of packets that must not get lost (commands, triggers, scfg) [s]
-_repeats: set[threading.Timer] = set()                      # scheduled repeats (threading.Timer)
-_repeats_lock = threading.Lock()
+# Pending repeats: a heap of (due time, sequence number, packet) served by ONE thread. A threading.Timer per copy started an
+# OS thread each (~0.2 ms of CPU and a GIL fight with the network thread), and a game that changes trigger effects every frame
+# queued hundreds of them per second. The sequence number only keeps the tuples comparable (packets are never compared).
+_repeat_heap: list[tuple[float, int, bytes]] = []
+_repeat_cv = threading.Condition()
+_repeat_seq = itertools.count()
+_repeat_thread: threading.Thread | None = None
+REPEAT_IDLE_S: Final = 0.5                  # the idle scheduler wakes this often only to notice S.stop
 
 
-def _repeat_fire(pkt: bytes, timer: threading.Timer) -> None:
-    """Timer callback: send a scheduled repeat unless flush_repeats already did."""
-    with _repeats_lock:
-        if timer not in _repeats:
-            return                    # already sent by flush_repeats
-        _repeats.discard(timer)
-    send_peer(pkt)
+def _repeat_loop() -> None:
+    """The scheduler thread: send every queued repeat when it is due; ends when the receiver stops."""
+    while not S.stop.is_set():
+        with _repeat_cv:
+            wait = REPEAT_IDLE_S
+            if _repeat_heap:
+                wait = min(wait, _repeat_heap[0][0] - time.monotonic())
+            if wait > 0:
+                _repeat_cv.wait(wait)     # woken early by a new repeat or by flush_repeats
+                continue
+            pkt = heapq.heappop(_repeat_heap)[2]
+        send_peer(pkt)                    # outside the lock: a slow send does not block send_repeat
+
+
+def _ensure_repeat_thread() -> None:
+    """Start the scheduler thread on first use (and again if it ended, e.g. after a stop in tests)."""
+    global _repeat_thread
+    t = _repeat_thread
+    if t is None or not t.is_alive():
+        with _repeat_cv:
+            t = _repeat_thread
+            if t is None or not t.is_alive():
+                _repeat_thread = S.start_thread("repeats", _repeat_loop)
 
 
 def send_repeat(pkt: bytes | None, n: int) -> None:
@@ -210,22 +255,24 @@ def send_repeat(pkt: bytes | None, n: int) -> None:
     if pkt is None:
         return
     send_peer(pkt)
-    for d in REPEAT_DELAYS[:max(0, n - 1)]:
-        timer = threading.Timer(d, _repeat_fire)
-        timer.args, timer.daemon = (pkt, timer), True
-        with _repeats_lock:
-            _repeats.add(timer)
-        timer.start()
+    if n <= 1:
+        return
+    now = time.monotonic()
+    with _repeat_cv:
+        for d in REPEAT_DELAYS[:n - 1]:
+            heapq.heappush(_repeat_heap, (now + d, next(_repeat_seq), pkt))
+        _repeat_cv.notify()
+    _ensure_repeat_thread()
 
 
 def flush_repeats() -> None:
-    """Scheduled repeats at once (receiver shutdown - the socket is about to vanish; tests)."""
-    with _repeats_lock:
-        pending = list(_repeats)
-        _repeats.clear()
-    for timer in pending:
-        timer.cancel()
-        send_peer(timer.args[0])  # type: ignore[index]
+    """Scheduled repeats at once, in due order (receiver shutdown - the socket is about to vanish; tests)."""
+    with _repeat_cv:
+        pending = [pkt for _due, _n, pkt in sorted(_repeat_heap)]
+        _repeat_heap.clear()
+        _repeat_cv.notify_all()
+    for pkt in pending:
+        send_peer(pkt)
 
 
 def send_feedback(i: int, vals: Sequence[int]) -> None:
@@ -710,19 +757,19 @@ def _receive() -> tuple[bytes | None, tuple[str, int], int] | None:
 def _on_control(t: int, i: int, sq: int, data: bytes, addr: tuple[str, int], now: float, arr: int) -> bool:
     """Handle the packets about the sender itself (update, build, Bluetooth, events, ping); False = a per-pad packet."""
     if t == T_UPDMSG:  # the reason for a sender update failure (arrives before the build packet with the result)
-        S.peer = addr
+        _adopt_peer(addr, now)
         S.sender_update_msg = BODY[T_UPDMSG].unpack_from(data, 4)[0].rstrip(b"\0").decode("utf-8", "ignore")
     elif t in (T_BUILD, T_BUILD2, T_BUILD3):  # the sender's code version and its update state (the whole sender, idx 255)
-        S.peer = addr
+        _adopt_peer(addr, now)
         on_build(data, now, t)
     elif t in (T_BTSTATE, T_BTDEV, T_BTCTRL):  # the sender's Bluetooth (idx 255): state, devices, controllers
-        S.peer = addr
+        _adopt_peer(addr, now)
         if S.seen.fresh((WIRE[t], NO_PAD), sq, now):
             rx_bt.on_packet(t, data, now)
     elif t == T_EVENT:  # a sender event for the log (idx = the pad's slot or 255)
         on_event(i, data)
     elif t == T_PING:   # ping -> pong2 (the PC clock for latency measurement) and pong (RTT; an older sender knows only this)
-        S.peer = addr
+        _adopt_peer(addr, now, from_ping=True)
         t0 = BODY[T_PING].unpack_from(data, 4)[0]
         note_ping(t0, arr)
         send_peer(codec.pack(T_PONG2, i, t0, clock.ns() // 1000))
@@ -759,17 +806,18 @@ def net_loop() -> None:
     t_check = time.monotonic()
     while not S.stop.is_set():
         received = _receive()
-        if received is None:
-            continue
-        data, addr, arr = received
-
         now = time.monotonic()
+        # before the skip below: junk datagrams (WSAEMSGSIZE) must not starve the silence checks - with the sender gone and
+        # junk still arriving, check_stale would never run and the last pad state (held buttons) would stay
         if now - t_check >= CHECK_EVERY_S:
             t_check = now
             check_stale(now)
             link.tick(now)
             watch.tick(now)
             check_key(now)
+        if received is None:
+            continue
+        data, addr, arr = received
         if not data or (C.ALLOWED_IP and addr[0] != C.ALLOWED_IP):
             continue
 
@@ -789,7 +837,7 @@ def net_loop() -> None:
             continue
         if not _accepted(t, i, sq, now):
             continue
-        S.peer = addr
+        _adopt_peer(addr, now)
         try:
             handle(t, i, data, arr)
         except Exception as e:  # noqa: BLE001 - a bug in one handler must not stop packet reception

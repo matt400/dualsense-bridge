@@ -109,16 +109,22 @@ def make_cb(i: int):  # noqa: ANN201 - the return type would only be the unannot
     def cb(client, target, large_motor, small_motor, led_number, user_data):  # noqa: ANN001, ANN202 - see above
         try:
             f = fb[i]
+            # Wake the feedback thread only for a real change: games repeat the same rumble state every frame, and f["t"]
+            # alone needs no wake-up (_wait_time computes the refresh deadline from it).
+            changed = not f["set"] or (f["large"], f["small"]) != (int(large_motor), int(small_motor))
             f["large"], f["small"] = int(large_motor), int(small_motor)
             f["t"] = time.monotonic()
             if hasattr(led_number, "Red"):
-                f["r"], f["g"], f["b"] = int(led_number.Red), int(led_number.Green), int(led_number.Blue)
+                rgb = (int(led_number.Red), int(led_number.Green), int(led_number.Blue))
+                changed = changed or not f["rgb"] or (f["r"], f["g"], f["b"]) != rgb
+                f["r"], f["g"], f["b"] = rgb
                 f["note"] = f["note"] or not f["rgb"]
                 f["rgb"] = True
             f["set"] = True
-        except Exception:  # noqa: BLE001, S110 - driver thread: a malformed callback must never raise into ViGEm
-            pass
-        fb_event.set()
+        except Exception:  # noqa: BLE001 - driver thread: a malformed callback must never raise into ViGEm
+            changed = True
+        if changed:
+            fb_event.set()
     return cb
 
 
@@ -133,22 +139,30 @@ def game(i: int, large: int | None = None, small: int | None = None, rgb: Sequen
         f = fb[i]
     except IndexError:
         return
+    changed = not f["set"]                      # only a real change wakes the feedback thread (games repeat reports every frame)
     if trig is not None and any(t is not None for t in trig):
         new = tuple(bytes(t) if t is not None else old for t, old in zip(trig, f["trig"], strict=True))
         if new != f["trig"]:
             f["trig_note"] = f["trig_note"] or f["trig"] == NO_GAME_TRIG
             f["trig"], f["trig_owner"] = new, S.game     # the whole tuple is replaced - the feedback thread reads a consistent one
+            changed = True
     if large is not None:
-        f["large"], f["small"] = int(large), int(small or 0)
-        f["t"] = time.monotonic()
+        motors = (int(large), int(small or 0))
+        changed = changed or (f["large"], f["small"]) != motors
+        f["large"], f["small"] = motors
+        f["t"] = time.monotonic()               # refresh only: _wait_time derives the RUMBLE_REFRESH_S deadline from it
     elif rgb is not None or trig is not None:
         f["t_other"] = time.monotonic()        # a game report without motors (GAME_RUMBLE_GAP_S)
+        changed = changed or bool(f["large"] or f["small"])   # rumble running: the gap timer must be re-evaluated
     if rgb is not None:
-        f["r"], f["g"], f["b"] = (int(c) for c in rgb)
+        new_rgb = tuple(int(c) for c in rgb)
+        changed = changed or not f["rgb"] or (f["r"], f["g"], f["b"]) != new_rgb
+        f["r"], f["g"], f["b"] = new_rgb
         f["note"] = f["note"] or not f["rgb"]
         f["rgb"] = True
     f["set"] = True
-    fb_event.set()
+    if changed:
+        fb_event.set()
 
 
 def forget_ended_games(running: Callable[[str], bool]) -> list[int]:
