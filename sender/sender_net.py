@@ -9,6 +9,7 @@ import time
 from collections.abc import Callable
 from typing import Any, Final
 
+import sender_config
 import sender_events as events
 import sender_state as state
 from proto import (BODY, E_NET_DOWN, E_NO_RECEIVER, NS_PER_MS, RTT_NONE, SCFG_BATT, UINT32_MASK, Codec, EpochClock, SeqFilter,
@@ -30,6 +31,7 @@ ALIVE_S: Final = 3.0                  # no pong for this long = the receiver is 
 NO_REPLY_WARN_S: Final = 4.0          # no pong at all this long after the start = probably a wrong address / key
 STATS_EVERY_S: Final = 5.0
 SOCK_RETRY_S: Final = 1.0
+RESOLVE_AFTER_S: Final = 10.0         # no pong for this long: a host NAME may point elsewhere now (the PC got a new DHCP lease)
 REPEAT_DELAYS: Final = (0.01, 0.03)   # emit_repeat repeats [s]
 PROBE_EVERY: Final = 4                # with a key, before switching to v3: an extra v3 ping every this many pings (1/s)
 RTT_HISTORY: Final = 64
@@ -339,7 +341,7 @@ def _print_stats(last_print: float, tx_prev: int) -> tuple[float, int]:
         for name, meter in c.meters.items():
             report = meter.report()
             if report:
-                print(f"Pad {c.idx} {name}: {report[0]:.0f} Hz, przerwa p99 {report[1]:.1f} ms, max {report[2]:.1f} ms")
+                print(f"Pad {c.idx} {name}: {report[0]:.0f} Hz, gap p99 {report[1]:.1f} ms, max {report[2]:.1f} ms")
     if rtts:
         avg = sum(rtts) / len(rtts)
         print(f"RTT avg {avg:.1f} ms, max {max(rtts):.1f} ms, jitter {max(rtts) - min(rtts):.1f} ms "
@@ -383,15 +385,42 @@ async def pinger() -> None:
             last_print, tx_prev = _print_stats(last_print, tx_prev)
 
 
+async def _reresolve(started: float) -> bool:
+    """Look the receiver's host name up again once it has been silent for RESOLVE_AFTER_S; True when its address changed.
+
+    The address is resolved at startup only, so after a new DHCP lease of the PC a name would keep pointing at the old
+    one until a restart. The lookup runs in a worker thread (DNS can take seconds and must not stop pad reading).
+    A literal IP and a failed lookup change nothing; while the receiver answers nothing is done at all.
+    """
+    if time.monotonic() - max(last_pong, started) < RESOLVE_AFTER_S or sender_config.is_ip(C.HOST):
+        return False
+    try:
+        addr = await asyncio.to_thread(sender_config.resolve, C.HOST)
+    except OSError:
+        return False
+    if addr == C.PC_ADDR:
+        return False
+    print(f"Receiver {C.HOST} moved: {C.PC_ADDR} -> {addr}")
+    C.PC_ADDR = addr
+    return True
+
+
 async def sock_keeper() -> None:
-    """Once a second make sure a usable socket exists (create it, or recreate it after a send error).
+    """Once a second make sure a usable socket exists (create it, or recreate it after a send error or a new receiver address).
 
     Logs only on transitions (network up -> down and back) so a long outage does not flood the log, and raises an
-    event to the receiver window when the network goes down.
+    event to the receiver window when the network goes down. A receiver that stays silent for RESOLVE_AFTER_S gets its
+    host name resolved again every RESOLVE_AFTER_S (see _reresolve).
     """
+    global sock_bad
     loop = asyncio.get_running_loop()
+    started = t_check = time.monotonic()
     up = True
     while True:
+        if time.monotonic() - t_check >= RESOLVE_AFTER_S:
+            t_check = time.monotonic()
+            if await _reresolve(started):
+                sock_bad = True
         if sock is None or sock_bad:
             ok = open_sock(loop)
             if ok != up:
