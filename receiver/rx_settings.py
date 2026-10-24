@@ -109,8 +109,11 @@ MASTER_ACTIONS: Final = {
     "close_game": ("Zamknij grę", True),
     "sleep": ("Uśpij komputer", True),
     "shutdown": ("Wyłącz komputer", True),
+    "swap": ("Zamień graczy P1 ↔ P2 (przy dwóch padach)", False),
 }
 ABSENT: Final = {"all": "każdy pad może wszystko", "nobody": "zastrzeżone funkcje są wyłączone"}
+DEFAULT_ACTIONS: Final = {"pause": "options", "close_game": "triangle", "sleep": "", "shutdown": "", "swap": "square"}
+ADDED_LATER: Final = frozenset({"swap"})   # actions added after the first release: absent in an old settings.json = default, not "off"
 # buttons that can pair with PS: without the PS shortcut buttons (Share, D-pad) and R3 (PS + R3 = claiming the master)
 COMBO_BUTTONS: Final = tuple(n for n in BUTTON_CODES if n not in ("ps", "share", "r3"))
 
@@ -129,7 +132,7 @@ def _actions(v: Any) -> dict[str, str]:
     out: dict[str, str] = {}
     used: set[str] = set()
     for k in MASTER_ACTIONS:
-        b = v.get(k, "")
+        b = v.get(k, DEFAULT_ACTIONS[k] if k in ADDED_LATER else "")      # a file from before the action: its default button
         if b and (b not in COMBO_BUTTONS or b in used):
             print(f"Settings: master action {k} = {b!r} ignored (unknown or already used)")
             b = ""
@@ -145,8 +148,7 @@ class MasterConfig:
     pad: str = ""                   # pad id (a MAC as in remap.json or "slotN"); "" = no master
     when_absent: str = "all"        # the master is not connected: all | nobody
     only_master: tuple[str, ...] = ("console", "actions", "ps_hold")
-    actions: dict[str, str] = field(default_factory=lambda: {"pause": "options", "close_game": "triangle",
-                                                   "sleep": "", "shutdown": ""})
+    actions: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_ACTIONS))
     claim_hold: bool = True         # PS + R3 held for CLAIM_S seconds on a pad = that pad becomes the master
 
     V: ClassVar[Validators] = None

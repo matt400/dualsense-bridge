@@ -37,7 +37,7 @@ Every module has a docstring with its role; find the file here before opening an
   reports), `rx_feedback` (game rumble, lightbar, triggers back to the pad), `rx_lightbar`, `rx_dsu` (Cemuhook server).
 - Input processing: `rx_buttons` (tables, remap, remap.json), `rx_profiles` + `rx_editor` (profile model, no Qt), `rx_shape` (sticks / triggers),
   `rx_gyro` (gyro mouse), `rx_gstick` + `rx_gstick_io` (tilt → stick), `rx_mouse` (touchpad mouse), `rx_padcal` + `rx_drift` (drift deadzone),
-  `rx_hotkeys` + `rx_shortcuts` (PS-modifier shortcuts), `rx_master` (master pad), `rx_testmode` (Test view, emergency exit).
+  `rx_hotkeys` + `rx_shortcuts` (PS-modifier shortcuts), `rx_master` (master pad), `rx_swap` (temporary P1 <-> P2 swap), `rx_testmode` (Test view, emergency exit).
 - Windows integration: `rx_console` (console mode monitor ↔ TV), `rx_display`, `rx_audio` (pycaw), `rx_games` (foreground program → profile, stop rumble),
   `rx_gamebar`, `rx_autostart` (Task Scheduler).
 - Support: `rx_i18n` (PL texts in code + EN dict), `rx_status`, `rx_events` (log model), `rx_latency`, `rx_security`, `rx_backup`, `rx_update` (git pull),

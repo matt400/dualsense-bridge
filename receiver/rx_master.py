@@ -7,7 +7,7 @@ Settings -> Master) or on the pad: PS + R3 held for CLAIM_S seconds (claim_hold;
   allowed(i, feature)  whether pad i may use a feature from MASTER_FEATURES (console mode, PS, shortcuts...);
                        a feature that is not restricted, or no master in the settings = anyone may;
                        a master set but not connected -> according to when_absent (all / nobody)
-  PS + button          system actions (pause, close the game, sleep, shut down the PC); dangerous ones need
+  PS + button          system actions (pause, close the game, sleep, shut down the PC, swap players P1 <-> P2); dangerous ones need
                        holding for HOLD_S (a short rumble = "keep holding"); the button of the combination does not reach the game,
                        and PS does not either after release (like the PS shortcuts of rx_hotkeys). The buttons of the PS shortcuts (Share,
                        D-pad, touchpad click) and R3 (the master claim) are not available to actions.
@@ -294,13 +294,29 @@ def _closable_window(i: int) -> int | None:
     return hwnd
 
 
+def _swap(i: int) -> None:
+    """PS + the swap button: swap / restore the players P1 <-> P2 (rx_swap); both pads get the confirmation, a refusal is a red blink."""
+    import rx_swap                           # rx_swap is only needed by this action - import here
+    ok, msg = rx_swap.toggle()
+    print(f"Controller {i}: master action swap -> {msg}")
+    if ok:
+        for j in rx_swap.connected():
+            F.pulse(j, "action")
+    else:
+        F.pulse(i, "denied")
+        ev.warn(msg)
+
+
 def _do(i: int, action: str) -> None:
     """Perform a master action.
 
     Pause (Esc), close the foreground game window (never the desktop, Steam or this receiver), sleep or shut down the PC
-    (through console mode's power-off notification). Errors are logged, never raised.
+    (through console mode's power-off notification), swap the players. Errors are logged, never raised.
     """
     try:
+        if action == "swap":
+            _swap(i)
+            return
         hwnd = 0
         if action == "close_game":
             closable = _closable_window(i)

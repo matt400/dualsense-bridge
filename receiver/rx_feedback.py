@@ -25,6 +25,7 @@ import rx_events as ev
 import rx_lightbar as L
 import rx_settings
 import rx_state as S
+import rx_swap
 from proto import CAP_TRIG_FX, CAP_TRIG_RAW, STATE_CHARGING, TRG3_L2, TRG3_R2, TRIG2_OFF, TRIG_RAW_LEN, clamp
 from rx_config import C
 from rx_i18n import _
@@ -108,7 +109,7 @@ def make_cb(i: int):  # noqa: ANN201 - the return type would only be the unannot
     # No annotations on purpose: vgamepad compares inspect.signature() with its own dummy_callback, return annotation included.
     def cb(client, target, large_motor, small_motor, led_number, user_data):  # noqa: ANN001, ANN202 - see above
         try:
-            f = fb[i]
+            f = fb[rx_swap.route(i)]            # virtual pad i -> the physical pad it is fed by (swapped players)
             # Wake the feedback thread only for a real change: games repeat the same rumble state every frame, and f["t"]
             # alone needs no wake-up (_wait_time computes the refresh deadline from it).
             changed = not f["set"] or (f["large"], f["small"]) != (int(large_motor), int(small_motor))
@@ -136,7 +137,7 @@ def game(i: int, large: int | None = None, small: int | None = None, rgb: Sequen
     separately, with their own validity flags. trig = (L2, R2): the raw 11 B effect or None (that trigger unchanged).
     """
     try:
-        f = fb[i]
+        f = fb[rx_swap.route(i)]                # virtual pad i -> the physical pad it is fed by (swapped players)
     except IndexError:
         return
     changed = not f["set"]                      # only a real change wakes the feedback thread (games repeat reports every frame)

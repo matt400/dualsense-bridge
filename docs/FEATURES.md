@@ -157,9 +157,12 @@
   | PS + Options | pause the game (Esc) |
   | PS + △ (hold ~1 s) | close the game (doesn't close the desktop or Steam) |
   | to be set | put the PC to sleep, shut down the PC (10 s for `shutdown /a`) |
+  | PS + □ | swap players P1 ↔ P2 while exactly two pads are connected; press again to swap back |
 
   The button from the combo (and PS itself) doesn't reach the game. PS shortcut buttons (Share, D-pad) and R3 can't
   be used for actions. When the master isn't connected: anyone can (default) or nobody.
+  The swap changes only which pad feeds which virtual pad - nothing is re-plugged, so the game keeps its player assignment.
+  Rumble, lightbar and trigger effects follow the player. It ends by itself when a pad connects or leaves.
 - **Settings** (tray icon → Settings, or the button in the window), seven tabs:
   - **Console mode:** you pick the pad button by pressing it on the pad, times are number fields, audio devices are
     lists of active Windows outputs, "Test" turns the mode on for 10 s with the values from the window. Changing console

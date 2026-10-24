@@ -21,6 +21,7 @@ import rx_master as master
 import rx_mouse as mouse
 import rx_settings
 import rx_state as S
+import rx_swap
 import rx_testmode as testmode
 from proto import (BATT_CHARGING, BATT_UNKNOWN, BODY, CAL_MOVED, CAL_OK, CLICK_PRESSED, CLICK_TWO_FINGERS, LAT_NONE, NO_PAD, PAD_KEYS,
                    RTT_NONE, SCFG_BATT, SCFG_EVENTS, SCFG_WOL, STATE_CHARGING, STATE_FIELDS, WIRE, Codec, EpochClock,
@@ -418,6 +419,7 @@ def _latency(lat: Sequence[int], arr: int) -> tuple[int, int, int, int] | None:
 def _on_bye(i: int) -> None:
     """The sender reports that the pad disconnected: unplug the virtual pad and ignore late packets for a moment."""
     was = S.want[i].is_set() or S.alive[i]
+    rx_swap.end(_("pad się rozłączył"))      # before the virtual pad goes away: the routing and the game feedback return first
     clear_slot(i, forget_id=True)
     S.want[i].clear()
     S.wake[i].set()
@@ -435,6 +437,7 @@ def _mark_alive(i: int) -> None:
         print(f"Controller {i}: data stream started")
     if not S.want[i].is_set():
         ev.info(_("{pad} połączony").format(pad=ev.pad_name(i)))   # after a short silence the DS4 stayed - this is not a new connection
+        rx_swap.end(_("połączył się pad"))    # the swap was made for the pair that was connected then
         S.want[i].set()   # the slot thread will create the virtual DS4
         rx_console.pad_connected(i)       # the master pad with an already known id -> auto-ON of the console mode
 
@@ -658,6 +661,7 @@ def check_stale(now: float) -> None:
         if S.want[i].is_set() and silent > C.UNPLUG_S:
             print(f"Controller {i}: no data for {C.UNPLUG_S}s - unplugging virtual DS4")
             ev.warn(_("{pad}: brak sygnału przez {s} s - odłączony").format(pad=ev.pad_name(i), s=f"{C.UNPLUG_S:g}"))
+            rx_swap.end(_("pad się rozłączył"))
             S.want[i].clear()
             S.wake[i].set()
             # like after a bye packet: the next pad in this slot (maybe another) must send its identifier - otherwise it
