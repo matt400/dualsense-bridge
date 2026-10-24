@@ -244,6 +244,8 @@ console.json.tmp
 console.json.bad
 # settings from the window (mouse, master pad) and the fixed pad-to-slot assignment of the sender
 settings.json
+!.claude/settings.json
+.claude/settings.local.json
 settings.json.tmp
 slots.json
 slots.json.tmp

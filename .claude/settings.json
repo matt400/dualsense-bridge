@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./tests/run_tests.sh)",
+      "Bash(python3 tests/:*)",
+      "Bash(python3 tools/screenshots.py:*)",
+      "Bash(ruff check:*)",
+      "Bash(python3 -m mypy:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)"
+    ],
+    "deny": [
+      "Read(./**/__pycache__/**)",
+      "Read(./**/*.pyc)",
+      "Read(./**/*.zip)",
+      "Read(./**/*.log)",
+      "Read(./docs/img/**)",
+      "Read(./tests/*.png)",
+      "Read(./.venv/**)",
+      "Read(./receiver/hidmaestro/**)",
+      "Read(./receiver/backups/**)",
+      "Read(./receiver/*.json)",
+      "Read(./sender/*.json)",
+      "Read(./receiver/receiver.toml)",
+      "Read(./sender/sender.toml)"
+    ]
+  }
+}
