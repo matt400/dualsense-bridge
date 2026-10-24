@@ -42,7 +42,9 @@ After going back to a version without protocol v3 on one side, delete `auth.json
 - **Receiver folder.** The receiver (and the autostart task with highest privileges) runs code from its folder as
   administrator. If the folder belongs to your regular account, any program you run can change that code. Settings →
   Security → **Secure folder** gives the folder to Administrators (read-only for regular users); the receiver still
-  saves settings and updates itself. Python installed "for this user only" has the same problem - install it for all
+  saves settings and updates itself. When the receiver runs from a git checkout this covers the whole repository
+  including `.git`: the updater runs git as administrator there, so a `.git` you can write to (hooks, config) would
+  run code as administrator at the next update check. Python installed "for this user only" has the same problem - install it for all
   users.
 - **Sender folder.** The service runs as root, the code is in your user's folder. `sudo ./install-service.sh --own-root
   ...` gives the repository to root (the Update button keeps working; run `setup-update-key.sh` with `sudo`/`doas`

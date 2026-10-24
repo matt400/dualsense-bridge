@@ -58,7 +58,7 @@ U._get = opener
 def release(tag, data):
     url = f"https://github.com/r/{tag}/HIDMaestro-{tag}.zip"
     SERVED[url.replace("github.com", "storage")] = data
-    return {"tag_name": tag, "assets": [{"name": f"HIDMaestro-{tag}-arm64.zip", "browser_download_url": url + "arm"},
+    return {"tag_name": tag, "published_at": "2020-01-01T00:00:00Z", "assets": [{"name": f"HIDMaestro-{tag}-arm64.zip", "browser_download_url": url + "arm"},
                                         {"name": f"HIDMaestro-{tag}.zip", "browser_download_url": url}]}
 
 # ---------- pierwsze pobranie: tylko DLL i zależności, przez Range ----------
