@@ -371,10 +371,11 @@ class TestPanel(QWidget):
         P.query_gyro_cal(self.slot)
 
     def cancel(self) -> None:
-        """Abort a running drift measurement."""
+        """Abort a running drift measurement and hide its progress bar (it must not reappear on the next visit)."""
         if self.run is not None:
             self.run.cancel()
             self.run = None
+        self._bar(self.drift_bar, None)
 
     def reset_view(self) -> None:
         """Clear charts, results and bars after a pad change, and ask for the calibration state."""
