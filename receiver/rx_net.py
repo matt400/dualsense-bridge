@@ -20,9 +20,10 @@ import rx_mouse as mouse
 import rx_settings
 import rx_state as S
 import rx_testmode as testmode
-from proto import (BATT_UNKNOWN, BODY, CAL_MOVED, CAL_OK, CLICK_PRESSED, CLICK_TWO_FINGERS, LAT_NONE, NO_PAD, PAD_KEYS, RTT_NONE,
-                   SCFG_EVENTS, SCFG_WOL, STATE_CHARGING, STATE_FIELDS, WIRE, Codec, EpochClock,
-                   T_BTCTRL, T_BTDEV, T_BTSTATE, T_BUILD, T_BUILD2, T_BYE, T_CALRES, T_CLICK, T_CMD, T_EVENT, T_FB, T_IDENT, T_INFO,
+from proto import (BATT_CHARGING, BATT_UNKNOWN, BODY, CAL_MOVED, CAL_OK, CLICK_PRESSED, CLICK_TWO_FINGERS, LAT_NONE, NO_PAD, PAD_KEYS,
+                   RTT_NONE, SCFG_BATT, SCFG_EVENTS, SCFG_WOL, STATE_CHARGING, STATE_FIELDS, WIRE, Codec, EpochClock,
+                   T_BTCTRL, T_BTDEV, T_BTSTATE, T_BUILD, T_BUILD2, T_BUILD3, T_BYE, T_CALRES, T_CLICK, T_CMD, T_EVENT, T_FB,
+                   T_IDENT, T_INFO,
                    T_MOUSE, T_PING, T_PONG, T_PONG2, T_SCFG, T_STATE, T_STATE2, T_TOUCH, T_TRIG, T_TRIG2, T_TRIG3, T_UPDMSG,
                    T_VERSION, TRIG2_OFF, clamp, cstr, mac_bytes, mac_text)
 from rx_buttons import BUTTON_CODES, MASK_ALL, PS_BIT, TRIG_ON
@@ -248,10 +249,13 @@ def send_triggers(i: int, vals: Sequence[Any], repeat: int = 1) -> None:
 
 
 def scfg_values(s: rx_settings.Settings | None = None) -> tuple[Any, ...]:
-    """Return the settings for the sender (the scfg packet): Wake-on-LAN and events for the log."""
+    """Return the settings for the sender (the scfg packet): Wake-on-LAN and events for the log.
+
+    SCFG_BATT is always on: it only tells the sender that this receiver understands build3 (the sender device's battery).
+    """
     s = s or rx_settings.cur
     w = s.wol
-    flags = (SCFG_WOL if w.enabled else 0) | (SCFG_EVENTS if s.log.sender else 0)
+    flags = SCFG_BATT | (SCFG_WOL if w.enabled else 0) | (SCFG_EVENTS if s.log.sender else 0)
     return (flags, mac_bytes(w.mac) or bytes(6), socket.inet_aton(w.bcast) if w.bcast else bytes(4),
             PAD_KEYS.index(BUTTON_CODES[w.button]), w.hold_ms)
 
@@ -573,18 +577,20 @@ def on_calres(i: int, data: bytes) -> None:
 
 
 def on_build(data: bytes, now: float, t: int = T_BUILD) -> None:
-    """Handle a build / build2 packet.
+    """Handle a build / build2 / build3 packet.
 
-    (the sender's commit, the commit time, the update state UPD_*) go to S.sender_build; build2 also the addresses the
-    sender's Wake-on-LAN will use (S.sender_wol).
+    (the sender's commit, the commit time, the update state UPD_*) go to S.sender_build; build2 / build3 also the addresses
+    the sender's Wake-on-LAN will use (S.sender_wol); build3 the battery of the sender's device (S.sender_batt). A packet
+    without the battery clears it: the sender lost its battery or runs an older version.
     """
     v = BODY[t].unpack_from(data, 4)
     b = (cstr(v[0]), v[1], v[2])
     if S.sender_build is None or S.sender_build[:3] != b:
         print(f"Sender build {b[0] or '?'} (update state {v[2]})")
     S.sender_build = (*b, now)
-    if t == T_BUILD2:
+    if t in (T_BUILD2, T_BUILD3):
         S.sender_wol = (mac_text(v[3]), socket.inet_ntoa(v[4]) if any(v[4]) else "")
+    S.sender_batt = (min(v[5] & ~BATT_CHARGING, 100), bool(v[5] & BATT_CHARGING)) if t == T_BUILD3 else None
 
 
 def on_event(i: int, data: bytes) -> ev.Event | None:
@@ -655,6 +661,7 @@ class SenderWatch:
             else:
                 ev.warn(_("Nadajnik offline - brak pakietów od {s} s").format(s=f"{S.SENDER_TIMEOUT:g}"))
                 S.sender_wol = None
+                S.sender_batt = None
         if online and now - self.t_scfg >= SCFG_S:
             self.t_scfg = now
             send_scfg()
@@ -705,7 +712,7 @@ def _on_control(t: int, i: int, sq: int, data: bytes, addr: tuple[str, int], now
     if t == T_UPDMSG:  # the reason for a sender update failure (arrives before the build packet with the result)
         S.peer = addr
         S.sender_update_msg = BODY[T_UPDMSG].unpack_from(data, 4)[0].rstrip(b"\0").decode("utf-8", "ignore")
-    elif t in (T_BUILD, T_BUILD2):  # the sender's code version and its update state (the whole sender, idx 255)
+    elif t in (T_BUILD, T_BUILD2, T_BUILD3):  # the sender's code version and its update state (the whole sender, idx 255)
         S.peer = addr
         on_build(data, now, t)
     elif t in (T_BTSTATE, T_BTDEV, T_BTCTRL):  # the sender's Bluetooth (idx 255): state, devices, controllers

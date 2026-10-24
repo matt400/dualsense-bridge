@@ -9,7 +9,7 @@ import rx_latency as L
 import rx_lightbar as LB
 import rx_net
 import rx_settings as R
-from proto import (BODY, E_PAD_ON, E_WOL, EV_WARN, LAT_NONE, PAD_KEYS, SCFG_EVENTS, SCFG_WOL, T_BUILD2, T_EVENT, T_SCFG,
+from proto import (BODY, E_PAD_ON, E_WOL, EV_WARN, LAT_NONE, PAD_KEYS, SCFG_BATT, SCFG_EVENTS, SCFG_WOL, T_BUILD2, T_EVENT, T_SCFG,
                    T_STATE2, Codec)
 from rx_buttons import TRIG_ON
 
@@ -126,14 +126,14 @@ assert not sent, "nadajnik jeszcze nieznany (start receivera) - bez wysyłki"
 R.apply(R.defaults())
 S.peer = ("192.168.1.50", 5005)
 v = rx_net.scfg_values()
-assert v == (SCFG_WOL, bytes(6), bytes(4), PAD_KEYS.index(315), 1000), v
+assert v == (SCFG_WOL | SCFG_BATT, bytes(6), bytes(4), PAD_KEYS.index(315), 1000), v
 sent.clear()
 R.update(None, wol=R.WolConfig(mac="AA-BB-CC-DD-EE-FF".lower().replace("-", ":"), bcast="192.168.1.255", button="triangle",
                                hold_ms=2000), log=R.LogConfig(sender=True))
 rx_net.flush_repeats()
 sc = [x for x in sent if x[0] == T_SCFG]
 assert len(sc) == 3 and sc[0][1] == 255, "zmiana od razu, 3 kopie (UDP)"
-assert BODY[T_SCFG].unpack_from(sc[0][3], 4) == (SCFG_WOL | SCFG_EVENTS, bytes.fromhex("aabbccddeeff"),
+assert BODY[T_SCFG].unpack_from(sc[0][3], 4) == (SCFG_WOL | SCFG_EVENTS | SCFG_BATT, bytes.fromhex("aabbccddeeff"),
                                                  socket.inet_aton("192.168.1.255"), PAD_KEYS.index(307), 2000)
 sent.clear()
 R.update(None, mouse=R.MouseConfig(sens=1.0))

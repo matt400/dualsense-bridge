@@ -51,6 +51,7 @@ QLabel[level="ok"] {{ color: {OK}; }}
 QLabel[level="warn"] {{ color: {WARN}; }}
 QLabel[level="bad"] {{ color: {BAD}; }}
 QLabel#pill {{ background: {TRACK}; border: 1px solid {BORDER}; border-radius: {p(11)}; padding: {p(3)} {p(10)}; font-size: {p(12)}; }}
+QLabel#pill[battery="true"] {{ background: transparent; }}     /* BatteryPill paints the track and the charge itself */
 
 QFrame#card {{ background: {CARD}; border: 1px solid {BORDER}; border-radius: {p(14)}; }}
 QFrame#card:hover {{ border-color: {LINE}; }}

@@ -72,8 +72,9 @@ def link(i: int, batt: int, ping: int) -> None:
 
 
 def online() -> None:
-    """Mark the sender as online (fresh packet, no loss)."""
+    """Mark the sender as online (fresh packet, no loss), a phone sender with a battery that is charging."""
     S.last_pkt, S.link_loss, S.peer = time.monotonic(), 0.0, ("192.168.1.50", 5005)
+    S.sender_batt = (78, True)
 
 
 # ---------- dwa pady, pad 1 master, profil z remapem i efektem spustu ----------

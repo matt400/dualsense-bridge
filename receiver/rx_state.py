@@ -29,6 +29,7 @@ SENDER_TIMEOUT: Final = 3.0                       # silence longer than this (3 
 peer = None        # address of the last sender (for feedback / pong)
 sender_build = None  # (commit, commit time, update state UPD_*, receive time) from the sender's build packet
 sender_update_msg = ""  # the reason for the last sender update failure (the updmsg packet)
+sender_batt = None  # (percent, charging) of the sender device's own battery (build3); None = no battery / an older sender
 sender_wol = None  # (the PC's MAC, broadcast) - what the sender's Wake-on-LAN will use (the build2 packet); "" = it does not know
 last_pkt = 0.0     # when the last valid packet arrived - for the online indicator
 store: RemapStore = None   # the remap profiles (set by init)

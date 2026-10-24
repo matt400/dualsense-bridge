@@ -1,8 +1,10 @@
 """Receiver: small window widgets.
 
 A slider with a value, a button with confirmation, an animated progress ring, a battery bar, a switch, a collapsible
-"Advanced" section, a latency segment bar.
+"Advanced" section, a latency segment bar, the sender pill that shows the sender device's battery.
 """
+import math
+import time
 from collections.abc import Callable, Iterable
 from typing import Any
 
@@ -11,7 +13,7 @@ from PySide6.QtGui import QColor, QFontMetrics, QIcon, QPainter, QPainterPath, Q
 from PySide6.QtWidgets import (QButtonGroup, QComboBox, QFrame, QHBoxLayout, QLabel, QLayout, QPushButton, QSlider, QSpinBox,
                                QVBoxLayout, QWidget)
 
-from rx_qt_style import ACCENT_HI, LINE, OK, TRACK, px, set_prop
+from rx_qt_style import ACCENT_HI, CHARGE, LINE, OK, TRACK, px, set_prop
 
 
 def label(text: str = "", role: str | None = None, wrap: bool = False) -> QLabel:
@@ -461,6 +463,88 @@ class BatteryBar(QWidget):
         if self.pct:
             p.setBrush(self.color)
             p.drawRoundedRect(QRectF(0, 0, max(w * self.pct / 100, h), h), h / 2, h / 2)   # min. width = a dot
+
+
+class BatteryPill(QLabel):
+    """The sender pill ("● Sender online (87%)"); with a battery its charge is the background, filled from the left.
+
+    The fill colour follows the level (the caller picks it). While the device charges, a wave runs along the top edge of
+    the pill (inside the top padding, over the filled part only) - the background itself stays still. Without a battery
+    (pct = None) it is a plain QSS pill. The wave is a repaint timer that runs only while charging, only for a visible
+    window, and not while `animate()` says no (a game in the foreground: the window is not worth any CPU then).
+    """
+
+    FILL_ALPHA = 90            # the text on top must stay readable
+    WAVE_MS = 50               # 20 frames a second is smooth enough for a slow wave
+    WAVE_PERIOD_S = 1.6        # the wave moves one wavelength in this time
+
+    def __init__(self, animate: Callable[[], bool] = lambda: True) -> None:
+        """A pill without a battery; `animate` is asked before every wave frame."""
+        super().__init__("")
+        self.setTextFormat(Qt.TextFormat.PlainText)
+        self.setObjectName("pill")
+        self._animate = animate
+        self._pct: int | None = None
+        self._color = QColor(OK)
+        self._charging = False
+        self._timer = QTimer(self)
+        self._timer.setInterval(self.WAVE_MS)
+        self._timer.timeout.connect(self._tick)
+
+    def set_battery(self, pct: int | None, color: Any = OK, charging: bool = False) -> None:
+        """Show the charge level (None = no battery: a plain pill); repaints only when something changed."""
+        color = QColor(color)
+        if (pct, color, charging) == (self._pct, self._color, self._charging):
+            return
+        self._pct, self._color, self._charging = pct, color, charging
+        set_prop(self, "battery", pct is not None)      # the QSS drops the opaque background, so the fill can be painted
+        if charging and pct and not self._timer.isActive():
+            self._timer.start()
+        elif not (charging and pct):
+            self._timer.stop()
+        self.update()
+
+    def _tick(self) -> None:
+        """One wave frame - skipped while the window is hidden / minimised or a game is in the foreground."""
+        if self.isVisible() and not self.window().isMinimized() and self._animate():
+            self.update()
+
+    def _wave(self, width: float) -> QPainterPath:
+        """The band along the top edge, `width` px wide, with a wavy lower edge that moves to the right."""
+        wavelength, amp, base = px(26), px(1.5), px(3)
+        phase = 2 * math.pi * ((time.monotonic() % self.WAVE_PERIOD_S) / self.WAVE_PERIOD_S)
+        path = QPainterPath()
+        path.moveTo(0, 0)
+        step = max(px(3), 2)
+        x = 0.0
+        while x < width:
+            path.lineTo(x, base + amp * (1 + math.sin(2 * math.pi * x / wavelength - phase)))
+            x += step
+        path.lineTo(width, base + amp * (1 + math.sin(2 * math.pi * width / wavelength - phase)))
+        path.lineTo(width, 0)
+        path.closeSubpath()
+        return path
+
+    def paintEvent(self, e: QPaintEvent) -> None:
+        """Paint the track, the charge fill and (charging) the wave; then the QLabel draws the border and the text."""
+        if self._pct is not None:
+            p = QPainter(self)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            w, h = self.width(), self.height()
+            shape = QPainterPath()
+            shape.addRoundedRect(QRectF(0.5, 0.5, w - 1, h - 1), px(11), px(11))     # the radius of QLabel#pill in the QSS
+            p.setClipPath(shape)
+            p.fillPath(shape, QColor(TRACK))
+            fill_w = w * self._pct / 100
+            fill = QColor(self._color)
+            fill.setAlpha(self.FILL_ALPHA)
+            p.fillRect(QRectF(0, 0, fill_w, h), fill)
+            if self._charging and fill_w > 0:
+                wave = QColor(CHARGE)
+                wave.setAlpha(210)
+                p.fillPath(self._wave(fill_w), wave)
+            p.end()                       # the QLabel paints on the same device right after this
+        super().paintEvent(e)
 
 
 class Segmented(QFrame):
