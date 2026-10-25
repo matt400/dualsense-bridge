@@ -80,8 +80,8 @@
     chart and min / avg / max; green / amber / red marks the value. The same connection time is shown in small text on
     the pad card. The RSSI and link quality come from a new `btlink` packet (the sender asks the controller with HCI Read
     RSSI / Read Link Quality, needs root); an older sender or a controller that does not support the commands shows a
-    dash. For Bluetooth Classic the RSSI is relative to the controller's optimal range (0 = inside, negative = dB below
-    it), not dBm;
+    dash. The RSSI is shown in dBm as the controller reports it (above -65 is green, below -80 red); many controllers do
+    not compute the link quality (they answer 0) and then a dash is shown instead of 0 %;
     **Restart** is also in the tray menu;
   - **full screen = TV mode:** a larger interface (readable from the couch) and controlling the window with the pad
     while the window is active: D-pad - navigation, ✕ - select, ○ - back / leave full screen, L1 / R1 - previous / next

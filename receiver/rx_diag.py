@@ -32,7 +32,7 @@ JITTER_GAIN: Final = 16                # RFC 3550: J += (|D| - J) / 16
 RTT_WARN_MS, RTT_BAD_MS = 8.0, 25.0
 JITTER_WARN_MS, JITTER_BAD_MS = 2.0, 8.0
 LOSS_WARN_PCT, LOSS_BAD_PCT = 0.5, 2.0
-RSSI_WARN_DB, RSSI_BAD_DB = -3, -10    # relative to the golden receive power range: 0 = inside it, negative = below
+RSSI_WARN_DBM, RSSI_BAD_DBM = -65, -80  # most controllers report dBm: stronger than -65 is good, weaker than -80 is poor
 QUALITY_WARN_PCT, QUALITY_BAD_PCT = 78, 50
 
 
@@ -63,7 +63,7 @@ class Series:
 
 @dataclass
 class Link:
-    """The last btlink reading of a pad: RSSI [dB, relative to the golden range] and quality (0-255); None = not read."""
+    """The last btlink reading of a pad: RSSI [dBm] and quality (1-255); None = not read (quality 0 = the controller has none)."""
     rssi: int | None
     quality: int | None
     hci: int
@@ -161,7 +161,7 @@ def on_btlink(data: bytes, now: float | None = None) -> None:
     i = slot_of(mac_text(mac))
     if i is None or i >= len(pads):
         return
-    pads[i].link = Link(rssi if flags & BTL_RSSI else None, quality if flags & BTL_LQ else None, hci, now)
+    pads[i].link = Link(rssi if flags & BTL_RSSI else None, quality if flags & BTL_LQ and quality else None, hci, now)   # 0 = not computed
 
 
 def link_of(i: int, now: float | None = None) -> Link | None:
@@ -219,9 +219,9 @@ def loss_level(pct: float | None) -> str:
     return _level(pct, LOSS_WARN_PCT, LOSS_BAD_PCT)
 
 
-def rssi_level(db: float | None) -> str:
-    """Colour class of the RSSI (relative to the golden range: 0 and above is fine)."""
-    return _level(db, RSSI_WARN_DB, RSSI_BAD_DB, higher_is_worse=False)
+def rssi_level(dbm: float | None) -> str:
+    """Colour class of the RSSI [dBm]."""
+    return _level(dbm, RSSI_WARN_DBM, RSSI_BAD_DBM, higher_is_worse=False)
 
 
 def quality_level(pct: float | None) -> str:

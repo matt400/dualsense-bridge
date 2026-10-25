@@ -84,6 +84,9 @@ assert lk is not None and (lk.rssi, lk.quality, lk.hci) == (-4, 200, 1), "the MA
 rx_diag.on_btlink(btlink(MAC, 0, 120, BTL_LQ), now)
 lk = rx_diag.link_of(0, now)
 assert lk.rssi is None and lk.quality == 120, "no BTL_RSSI flag = no RSSI"
+rx_diag.on_btlink(btlink(MAC, -30, 0, BTL_RSSI | BTL_LQ), now)
+lk = rx_diag.link_of(0, now)
+assert lk.rssi == -30 and lk.quality is None, "link quality 0 = the controller does not compute it: no data, not 0 %"
 rx_diag.on_btlink(btlink("11:22:33:44:55:66", -1, 1, BTL_RSSI), now)
 assert rx_diag.link_of(1, now) is None, "an unknown MAC is ignored"
 assert rx_diag.link_of(0, now + rx_diag.LINK_STALE_S + 0.1) is None, "a stale reading is not shown"
@@ -111,7 +114,7 @@ L = rx_diag
 assert [L.rtt_level(x) for x in (None, 1, 10, 30)] == ["", "ok", "warn", "bad"]
 assert [L.jitter_level(x) for x in (None, 0.5, 3, 9)] == ["", "ok", "warn", "bad"]
 assert [L.loss_level(x) for x in (None, 0, 1, 5)] == ["", "ok", "warn", "bad"]
-assert [L.rssi_level(x) for x in (None, 0, -5, -12)] == ["", "ok", "warn", "bad"]
+assert [L.rssi_level(x) for x in (None, -30, -70, -85)] == ["", "ok", "warn", "bad"]
 assert [L.quality_level(x) for x in (None, 95, 60, 30)] == ["", "ok", "warn", "bad"]
 ok("level functions")
 

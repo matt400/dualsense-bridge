@@ -245,12 +245,13 @@ class PadCard(QFrame):
         self.hz = Tile(_("Raport pada (Bluetooth)"), d.hz, "Hz", 50.0,
                        _("Ile raportów na sekundę nadajnik dostaje od pada przez Bluetooth. "
                          "Spadki oznaczają, że radio gubi albo opóźnia pakiety."), digits=0)
-        self.rssi = Tile(_("Sygnał Bluetooth (RSSI)"), d.rssi, "dB", 6.0,
-                         _("Odczyt kontrolera Bluetooth nadajnika, względem zakresu optymalnego (nie dBm): 0 = w zakresie, "
-                           "wartości ujemne = tyle dB poniżej. Brak danych: starszy nadajnik albo kontroler nie podaje odczytu."),
+        self.rssi = Tile(_("Sygnał Bluetooth (RSSI)"), d.rssi, "dBm", 6.0,
+                         _("Moc sygnału pada odczytana przez kontroler Bluetooth nadajnika, w dBm: im bliżej zera, tym lepiej "
+                           "(powyżej -65 dobrze, poniżej -80 słabo). Brak danych: starszy nadajnik albo kontroler nie podaje odczytu."),
                          zero_based=False, digits=0)
         self.quality = Tile(_("Jakość łącza Bluetooth"), d.quality, "%", 100.0,
-                            _("Jakość łącza według kontrolera Bluetooth nadajnika (0-100 %). Nie każdy kontroler ją podaje."),
+                            _("Jakość łącza według kontrolera Bluetooth nadajnika (0-100 %). "
+                              "Wiele kontrolerów jej nie liczy - wtedy widać kreskę."),
                             fixed=(0.0, 100.0), digits=0)
         lay.addLayout(_row([self.hz, self.rssi, self.quality]))
         self.tiles = (self.hz, self.rssi, self.quality)
