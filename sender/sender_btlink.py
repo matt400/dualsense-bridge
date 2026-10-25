@@ -46,7 +46,14 @@ HCI_COMMAND_PKT, HCI_EVENT_PKT = 0x01, 0x04
 EVT_CMD_COMPLETE, EVT_CMD_STATUS = 0x0E, 0x0F
 OPCODE_LINK_QUALITY: Final = (0x05 << 10) | 0x0003      # OGF 5 (status parameters), OCF 3
 OPCODE_RSSI: Final = (0x05 << 10) | 0x0005              # OGF 5, OCF 5
-FILTER: Final = struct.pack("<IIIH", 1 << HCI_EVENT_PKT, (1 << EVT_CMD_COMPLETE) | (1 << EVT_CMD_STATUS), 0, 0)
+_FILTER_MASKS: Final = (1 << HCI_EVENT_PKT, (1 << EVT_CMD_COMPLETE) | (1 << EVT_CMD_STATUS), 0)    # packet types, events 0-31, events 32-63
+# struct hci_filter in the three sizes seen: the kernel's own copy (16 bytes), the bare fields (14), and the userspace one with
+# a 64-bit `unsigned long` type_mask (24). Some kernels refuse a size they did not expect, so they are tried in turn.
+FILTERS: Final = (
+    struct.pack("<IIIHxx", *_FILTER_MASKS, 0),
+    struct.pack("<IIIH", *_FILTER_MASKS, 0),
+    struct.pack("<QIIHxxxxxx", *_FILTER_MASKS, 0),
+)
 REPLY_MIN_LEN: Final = 10                 # Command Complete with a status, a handle and one value: 4 + 3 + 3 bytes
 REPLY_WAIT_S: Final = 0.15                # how long one command may wait for its answer
 HCI_NAME = re.compile(r"hci(\d+)$")
@@ -112,6 +119,22 @@ def find_handle(buf: bytes, mac: str) -> int | None:
     return found
 
 
+def set_filter(s: socket.socket) -> None:
+    """Let only Command Complete / Command Status events through the socket (a socket with no filter receives nothing).
+
+    Raises:
+        OSError: When the kernel refuses every layout of the filter (the last error is raised).
+    """
+    err: OSError | None = None
+    for flt in FILTERS:
+        try:
+            s.setsockopt(SOL_HCI, HCI_FILTER, flt)
+            return
+        except OSError as e:
+            err = e
+    raise err if err is not None else OSError("no HCI filter layout")
+
+
 class RawHci:
     """The real transport: raw HCI sockets (Linux, root)."""
 
@@ -150,10 +173,10 @@ class RawHci:
             self.libc = ctypes.CDLL(None, use_errno=True)
         s = socket.socket(AF_BLUETOOTH, socket.SOCK_RAW, BTPROTO_HCI)
         try:
-            s.setsockopt(SOL_HCI, HCI_FILTER, FILTER)
             addr = struct.pack("<HHH", AF_BLUETOOTH, dev, HCI_CHANNEL_RAW)     # struct sockaddr_hci
             if self.libc.bind(s.fileno(), addr, len(addr)) != 0:
                 raise OSError(ctypes.get_errno(), "bind(HCI) failed")
+            set_filter(s)                                                       # after the bind, as BlueZ's hci_send_req does
             s.settimeout(REPLY_WAIT_S)
         except OSError:
             s.close()
