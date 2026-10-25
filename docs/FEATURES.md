@@ -94,6 +94,15 @@
       (×1.25, rounded up to 1 %, min. 3 %); "Apply" saves it immediately as the **pad drift correction**
       (`receiver/padcal.json`, per MAC). It works in all profiles of this pad, game profiles too, as the minimum
       deadzone (a larger one from the profile stays) and follows the physical stick when sticks are swapped;
+    - **accessibility mode** (per pad, for a player who cannot push a stick all the way, e.g. with a hardware overlay):
+      a switch plus sliders for a chosen stick - **range** (the game gets full deflection at e.g. 70 % of the travel,
+      scaled radially), inner deadzone, response curve and **tremor damping** (a movement below the threshold is
+      ignored; a threshold rather than a filter, so no added latency). It works on the physical stick before the
+      profile, so it follows the stick through swaps and applies in every profile, game profiles too; the values stay
+      saved when the switch is off (`receiver/padcal.json`). "Adjust to the hand" is a wizard: drift at rest, then the
+      player circles the stick as far as is comfortable (6 s) - the range is the weakest direction, so every direction
+      can reach 100 %. The result goes into the sliders (still editable, "Restore recommended"); all controls can be
+      driven from another pad through TV mode;
     - **gyro calibration:** the pad lies still for 3 s, the sender computes the offset and saves it on the sender per
       pad (`sender/gyro_cal.json`); a calibrated pad no longer calibrates when the sender starts (no need to put it
       down then), autobias still fine-tunes the offset in memory. Requires sender v9;

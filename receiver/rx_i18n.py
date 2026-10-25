@@ -766,9 +766,44 @@ EN: Final[dict[str, str]] = {
     "GAŁKI - DRYF": "STICKS - DRIFT",
     "Dryf gałek": "Stick drift",
     "Skala pierwiastkowa: małe odchyłki są powiększone. Kropkowane okręgi: 5% i 25% wychylenia; niebieski: strefa "
-    "martwa z korekcji dryfu; żółty: szczyt ostatniego pomiaru.":
+    "martwa z korekcji dryfu; żółty: szczyt ostatniego pomiaru; zielony: zasięg z trybu dostępności.":
         "Square-root scale: small deviations are magnified. Dotted circles: 5% and 25% deflection; blue: deadzone from "
-        "the drift correction; yellow: peak of the last measurement.",
+        "the drift correction; yellow: peak of the last measurement; green: range from the accessibility mode.",
+    "DOSTĘPNOŚĆ - GAŁKI": "ACCESSIBILITY - STICKS",
+    "Tryb dostępności tego pada": "Accessibility mode for this pad",
+    "Zasięg, strefa martwa, krzywa i tłumienie drżenia gałek tego pada - działa od razu we wszystkich jego profilach "
+    "(także profilach gier). Po wyłączeniu ustawienia zostają zapisane.":
+        "Range, deadzone, curve and tremor damping of this pad's sticks - applies at once in all its profiles (game "
+        "profiles too). The settings stay saved when it is switched off.",
+    "Gałka": "Stick",
+    "Obie gałki": "Both sticks",
+    "Zasięg - przy tylu % wychylenia gra dostaje pełne": "Range - the game gets full deflection at this % of the travel",
+    "Krzywa odpowiedzi (poniżej 1× małe ruchy mocniejsze)": "Response curve (below 1× small movements are stronger)",
+    "Tłumienie drżenia": "Tremor damping",
+    "Ruch gałki mniejszy niż ten próg (od ostatniej wartości) jest ignorowany - bez opóźnienia, ale też bez wygładzania "
+    "dużych ruchów.":
+        "A stick movement smaller than this threshold (from the last value) is ignored - no added delay, but large "
+        "movements are not smoothed either.",
+    "Przywróć zalecane": "Restore recommended",
+    "Wraca do wartości z ostatniego kreatora (dla tej gałki).": "Goes back to the values from the last wizard run (for this stick).",
+    "Usuwa ustawienia trybu dostępności tego pada": "Removes this pad's accessibility settings",
+    "Ustawienia trybu dostępności usunięte": "Accessibility settings removed",
+    "Kreator mierzy dryf w spoczynku, a potem zasięg: obracaj gałką dookoła, tak daleko, jak jest wygodnie. Wyniki "
+    "trafiają do suwaków - możesz je dalej zmieniać.":
+        "The wizard measures drift at rest, then the reach: circle the stick as far as is comfortable. The results go "
+        "into the sliders - you can still change them.",
+    "Gałki do kalibracji": "Sticks to calibrate",
+    "Dostosuj do ręki": "Adjust to the hand",
+    "Przerwij": "Stop",
+    "Puść gałki i odłóż pad - mierzę dryf…": "Let go of the sticks and put the pad down - measuring drift…",
+    "Przygotuj się: za chwilę obracaj gałką dookoła ({s}).": "Get ready: in a moment circle the stick around ({s}).",
+    "Obracaj gałką dookoła, tak daleko jak wygodnie ({s})…": "Circle the stick around, as far as is comfortable ({s})…",
+    "Gałka się ruszała - puść obie gałki i zacznij jeszcze raz.": "A stick was moving - let go of both sticks and start again.",
+    "{s}: nie widzę pełnego koła - obróć gałką dookoła, w każdą stronę.":
+        "{s}: I do not see a full circle - turn the stick all the way around, in every direction.",
+    "{s}: gałka prawie się nie ruszała - spróbuj jeszcze raz.": "{s}: the stick hardly moved - try again.",
+    "Gotowe - tryb dostępności włączony.": "Done - accessibility mode is on.",
+    "{s}: zasięg {o}, strefa martwa {d}": "{s}: range {o}, deadzone {d}",
     "Puść gałki i odłóż pad - pomiar trwa {s} s.": "Let go of the sticks and put the pad down - the measurement takes {s} s.",
     "Zmierz dryf": "Measure drift",
     "Mierzę…": "Measuring…",

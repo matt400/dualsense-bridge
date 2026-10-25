@@ -1,11 +1,14 @@
-"""Receiver: hardware correction of pads - a deadzone against stick drift, separately for every pad (MAC).
+"""Receiver: hardware correction of pads - a deadzone against stick drift and the accessibility mode, per pad (MAC).
 
 Drift is a trait of a particular pad, not a player preference, so it is not part of the profiles: it applies in ALL
 profiles of that pad (also game profiles that replace the pad profile) as a minimum deadzone:
     output deadzone = max(deadzone from the profile, drift of the physical stick that feeds it)
 It is computed for the physical stick, so swapping the sticks in a profile does not break it. The padcal.json file lives
 next to remap.json:
-    {"version": 1, "pads": {"aa:bb:cc:dd:ee:ff": {"drift": {"left": 0.07, "right": 0.04}}}}
+    {"version": 1, "pads": {"aa:bb:cc:dd:ee:ff": {"drift": {"left": 0.07, "right": 0.04},
+                                                    "access": {"on": true, "right": {"outer": 0.7}}}}}
+The accessibility settings (rx_access: range, deadzone, curve and tremor damping of the physical sticks) are per pad too and
+apply in every profile; they take effect only while "on" is true (the values stay stored when it is switched off).
 """
 from __future__ import annotations
 
@@ -14,6 +17,7 @@ import os
 import threading
 from typing import Any, Final
 
+import rx_access
 from proto import write_json
 from rx_config import C
 from rx_i18n import _
@@ -27,6 +31,7 @@ DZ_DECIMALS: Final = 3
 
 _lock = threading.Lock()
 _pads: dict[str, dict[str, float]] | None = None             # pad key -> {"left": dz, "right": dz} (non-zero values only)
+_access: dict[str, rx_access.Access] = {}                    # pad key -> normalised accessibility settings (loaded with _pads)
 
 
 def path() -> str:
@@ -55,12 +60,15 @@ def _load() -> dict[str, dict[str, float]]:
     global _pads
     if _pads is None:
         _pads = {}
+        _access.clear()
         try:
             with open(path(), encoding="utf-8") as f:
                 raw = json.load(f).get("pads", {})
             for k, v in raw.items():
                 if d := _clean((v or {}).get("drift")):
                     _pads[str(k).lower()] = d
+                if a := rx_access.normalize((v or {}).get("access")):
+                    _access[str(k).lower()] = a
         except FileNotFoundError:
             pass
         except (OSError, ValueError, AttributeError) as e:
@@ -95,14 +103,46 @@ def set_drift(key: str | None, values: dict[str, float]) -> tuple[bool, str]:
             pads[key] = d
         else:
             pads.pop(key, None)
-        return _write(pads)
+        return _write()
 
 
-def _write(pads: dict[str, dict[str, float]]) -> tuple[bool, str]:
-    """Write atomically (temporary file + replace) through proto.write_json; call with _lock held."""
+def access(key: str | None) -> rx_access.Access:
+    """Return the accessibility settings of a pad (rx_access.normalize format; {} = none)."""
+    with _lock:
+        _load()
+        return {k: dict(v) if isinstance(v, dict) else v for k, v in _access.get((key or "").lower(), {}).items()}
+
+
+def set_access(key: str | None, cfg: Any) -> tuple[bool, str]:
+    """Replace the pad's accessibility settings (normalised first; an empty result removes them) and save at once.
+
+    Returns:
+        ``(ok, message)``.
+    """
+    key = (key or "").lower()
+    with _lock:
+        _load()
+        if a := rx_access.normalize(cfg):
+            _access[key] = a
+        else:
+            _access.pop(key, None)
+        return _write()
+
+
+def _write() -> tuple[bool, str]:
+    """Write atomically (temporary file + replace) through proto.write_json; call with _lock held, after _load()."""
     p = path()
+    pads = _load()
+    entries: dict[str, dict[str, Any]] = {}
+    for k in sorted(set(pads) | set(_access)):
+        e: dict[str, Any] = {}
+        if k in pads:
+            e["drift"] = pads[k]
+        if k in _access:
+            e["access"] = _access[k]
+        entries[k] = e
     try:
-        write_json(p, {"version": FILE_VERSION, "pads": {k: {"drift": v} for k, v in pads.items()}}, indent=2, sort_keys=True)
+        write_json(p, {"version": FILE_VERSION, "pads": entries}, indent=2, sort_keys=True)
     except OSError as e:
         return False, _("Zapis nieudany: {err}").format(err=e)
     return True, _("Zapisano - {file}").format(file=os.path.basename(p))
@@ -127,3 +167,18 @@ def apply_drift(prof: Profile, d: dict[str, float]) -> Profile:
             continue
         tun[out] = {**cur, "dz": dz, "outer": max(cur["outer"], round(dz + OUTER_GAP, DZ_DECIMALS))}
     return prof
+
+
+def apply_corrections(prof: Profile, key: str | None) -> Profile:
+    """Apply everything stored for the pad to the profile: the accessibility mode and the drift deadzone.
+
+    The accessibility settings (only when the mode is on) are attached as prof["access"]; rx_state.recompute applies them to
+    the PHYSICAL sticks before the profile's stick mapping. They are not part of the stored profile: like the drift
+    correction they are added on the way out of effective_profile. The drift deadzone is run through the accessibility
+    transformation first (rx_access.drift_after), because that stage runs before it.
+    """
+    d = drift(key)
+    if rt := rx_access.runtime(access(key)):
+        prof["access"] = rt
+        d = rx_access.drift_after(rt, d)
+    return apply_drift(prof, d)

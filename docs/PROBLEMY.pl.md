@@ -11,6 +11,7 @@
 | Gyro kręci w złą stronę | edytor → Gyro aim → „Invert horizontal / vertical” |
 | Celownik / kamera powoli „płynie” sama | widok Test → wykres gyro przy leżącym padzie; jeśli nie jest płaski - „Kalibruj żyroskop” |
 | Postać idzie sama / kamera się kręci (gałka) | widok Test → „Zmierz dryf” → „Zastosuj” (korekcja dryfu tego pada) |
+| Nie da się dociągnąć gałki do końca (nakładka, słaba ręka) | widok Test → Dostępność → „Dostosuj do ręki” albo suwak zasięgu ręcznie |
 | Ruch odwrócony w emulatorze (DSU) | `acc_sign` / `gyro_sign` w konfiguracji receivera |
 | Emulator na innym urządzeniu nie widzi serwera DSU | od przeglądu bezpieczeństwa słucha tylko na tym komputerze: `dsu_bind = "0.0.0.0"` w `receiver.toml` |
 | Pady nie działają po powrocie do starszej wersji (z `key`) | usuń `auth.json` obok nowszej strony (tam zapamiętany jest protokół v3) |

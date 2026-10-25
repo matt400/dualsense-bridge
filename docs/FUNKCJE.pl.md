@@ -88,6 +88,15 @@
       (×1,25, w górę do 1 %, min. 3 %); „Zastosuj” zapisuje ją od razu jako **korekcję dryfu pada**
       (`receiver/padcal.json`, per MAC). Działa we wszystkich profilach tego pada, także w profilach gier, jako
       minimum strefy martwej (większa z profilu zostaje) i idzie za gałką fizyczną przy zamianie gałek;
+    - **tryb dostępności** (per pad, dla gracza, który nie dociąga gałki do końca, np. z nakładką na pada): przełącznik i
+      suwaki dla wybranej gałki - **zasięg** (gra dostaje pełne wychylenie np. przy 70 % drogi gałki, skalowane
+      promieniowo), wewnętrzna strefa martwa, krzywa odpowiedzi i **tłumienie drżenia** (ruch poniżej progu jest
+      ignorowany; próg, nie filtr, więc bez dodatkowego opóźnienia). Działa na gałce fizycznej przed profilem, więc
+      idzie za gałką przy zamianie i obowiązuje we wszystkich profilach, także w profilach gier; wartości zostają
+      zapisane po wyłączeniu przełącznika (`receiver/padcal.json`). „Dostosuj do ręki” to kreator: dryf w spoczynku,
+      potem gracz obraca gałką dookoła, tak daleko, jak jest wygodnie (6 s) - zasięg to najsłabszy kierunek, więc
+      każdy kierunek sięga 100 %. Wynik trafia do suwaków (dalej do zmiany, „Przywróć zalecane”); całość da się
+      obsłużyć innym padem przez tryb TV;
     - **kalibracja żyroskopu:** pad leży nieruchomo 3 s, nadajnik liczy offset i zapisuje go na nadajniku per pad
       (`sender/gyro_cal.json`); skalibrowany pad nie kalibruje się już przy starcie nadajnika (nie trzeba go wtedy
       odkładać), autobias dalej dostraja offset w pamięci. Wymaga nadajnika v9;

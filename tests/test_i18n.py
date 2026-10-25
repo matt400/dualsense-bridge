@@ -12,6 +12,7 @@ from rx_bt import DONE_TEXT, OP_TEXT, RESULT_TEXT, STATE_TEXT
 from rx_qt_bt import ACTION as BT_ACTION, ADAPTER_MODES, ADAPTER_TIPS, CTRL_KIND
 import rx_gstick
 from rx_qt_gstick import CAL_TEXT, STATE_TEXT as GS_STATE
+from rx_qt_access import CHOICES as ACCESS_CHOICES, STICK_NAME as ACCESS_STICK
 from rx_shortcuts import HOLD_ACTION, SHARE_ACTION
 
 keys = set()
@@ -25,6 +26,7 @@ keys |= set(LABELS.values()) | set(STICK_NAME.values()) | set(GYRO_MODES.values(
 keys |= {t for t, _ in MASTER_FEATURES.values()} | {t for t, _ in MASTER_ACTIONS.values()} | set(ABSENT.values())
 keys |= {*rx_gstick.TARGETS.values(), *rx_gstick.CURVES.values(), *rx_gstick.FEEDBACKS.values(), *GS_STATE.values(), *CAL_TEXT.values()}
 keys |= set(HOLD_ACTION.values()) | set(SHARE_ACTION.values())
+keys |= set(ACCESS_STICK.values()) | {t for _k, t in ACCESS_CHOICES}
 keys |= set(LIGHT_MODES.values()) | set(LOG_LEVELS.values()) | set(VPAD_BACKENDS.values()) | set(SENDER_TEXT.values()) | set(EXTRA_TIPS.values())
 keys |= {*STATE_TEXT.values(), *OP_TEXT.values(), *DONE_TEXT.values(), *RESULT_TEXT.values(), "Operacja", "gotowe",
          "nie udało się", "błąd odczytu stanu", *BT_ACTION.values(), *(t for _m, t in ADAPTER_MODES),
