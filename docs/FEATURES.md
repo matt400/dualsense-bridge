@@ -34,7 +34,7 @@
     a wave runs along its top edge while the device charges. A Raspberry Pi or another device without a battery shows
     no percentage; an older sender simply doesn't send it;
   - in the middle, a live pad drawing: click a button, trigger or stick to remap or tune it;
-  - on the right, the profile (default / per game), the **Selected**, **Gyro**, **Changes** tabs and the **Save**
+  - on the right, the profile (default / per game), the **Selected**, **Rumble**, **Gyro**, **Changes** tabs and the **Save**
     button (Ctrl+S);
   - remapping buttons and sticks, gyro aiming (right stick / mouse); deadzones, curves and anti-deadzone in the
     collapsible "Advanced" section (it opens by itself when something in it was changed). While the **Gyro aiming**
@@ -55,7 +55,7 @@
     point, strength, frequency). A game going through a virtual DS4 can't send this, so the sender sets it with a HID
     report. A game profile can override them or leave them "As in the pad profile"; in Settings → Master they can be
     reserved for the master only;
-  - **game rumble on the triggers** (a stand-in): L2 vibrates like the large motor, R2 like the small one, with
+  - **game rumble on the triggers** (the **Rumble** tab, a stand-in): L2 vibrates like the large motor, R2 like the small one, with
     adjustable strength and frequency; while rumbling it replaces the trigger effect, after a moment of quiet the effect
     returns. The sender computes it from the same rumble packets - no extra network traffic. Click, vibration and game
     rumble require sender v8 (older ones get resistance only);

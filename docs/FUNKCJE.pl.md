@@ -33,7 +33,7 @@
     przy niskim); podczas ładowania po jej górnej krawędzi płynie fala. Raspberry Pi i inne urządzenia bez baterii
     nie pokazują procentów; starszy nadajnik po prostu ich nie wysyła;
   - na środku rysunek pada na żywo: kliknij przycisk, spust albo gałkę, żeby ją zremapować lub dostroić;
-  - po prawej profil (domyślny / per gra), zakładki **Selected**, **Gyro**, **Changes** i przycisk **Save** (Ctrl+S);
+  - po prawej profil (domyślny / per gra), zakładki **Selected**, **Rumble**, **Gyro**, **Changes** i przycisk **Save** (Ctrl+S);
   - remapowanie przycisków i gałek, celowanie żyroskopem (prawa gałka / mysz); strefy martwe, krzywe i
     anti-deadzone w zwijanej sekcji „Zaawansowane” (otwiera się sama, gdy coś w niej zmieniono). Gdy sekcja
     **Celowanie żyroskopem** jest rozwinięta, w prawym górnym rogu rysunku pada pojawia się podgląd na żywo (jak przy
@@ -52,7 +52,7 @@
     **klik** jak spust broni (punkt 20-70 % skoku i siła) albo **drgania** (od którego miejsca, siła,
     częstotliwość). Gra przez wirtualnego DS4 tego nie wyśle, więc ustawia to nadajnik raportem HID. Profil gry
     może je nadpisać albo zostawić „jak w profilu pada”; w Ustawienia → Master można je zastrzec tylko dla mastera;
-  - **wibracja z gry na spustach** (namiastka): L2 drga jak duży silnik, R2 jak mały, z ustawianą siłą
+  - **wibracja z gry na spustach** (zakładka **Rumble**, namiastka): L2 drga jak duży silnik, R2 jak mały, z ustawianą siłą
     i częstotliwością; na czas wibracji zastępuje efekt spustu, po chwili ciszy efekt wraca. Liczy to nadajnik
     z tych samych pakietów wibracji - bez dodatkowego ruchu w sieci. Klik, drgania i wibracja z gry wymagają
     nadajnika v8 (starszy dostaje sam opór);

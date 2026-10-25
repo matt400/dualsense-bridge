@@ -64,10 +64,10 @@ CONFIG_VERSION: Final = 3
 # the "Test" button: this many seconds in the ON mode, then OFF by itself (extend, the monitor does not stay black)
 TEST_S: Final = 10.0
 APP_NAME: Final = "DualSense bridge"
-# a trigger as the mode button: pressed from a deep press, released below half
-# (hysteresis - trigger jitter around the threshold does not give a "double click")
-TRIG_HI: Final = 192
-TRIG_LO: Final = 96
+# a trigger as the mode button: pressed from half travel, released when it falls below half of the deepest point of that
+# press (hysteresis - jitter does not give a "double click", but a quick double tap that only lets the trigger go part
+# of the way back still counts as two presses; a fixed low release threshold made such taps merge into one)
+TRIG_HI: Final = 128
 RESTART_ENV: Final = "DSB_CONSOLE_ON" # a restart from the window: "1" / "0" = the console mode before the restart (stays the same)
 DISPLAY_ARG: Final = {"extend": "/extend", "internal": "/internal", "tv": "/external"}
 VERIFY_AFTER_S: Final = (3.0, 10.0, 25.0)   # after switching on: check whether the picture is on the TV only (and retry). After startup
@@ -273,6 +273,7 @@ class Console:
         self._detect = detector(cfg.toggle_button)
         self._trigger = cfg.toggle_button in ("l2", "r2")
         self._down = [False] * C.NUM_PADS
+        self._peak = [0] * C.NUM_PADS       # the deepest trigger value of the current press (the release threshold is half of it)
         self._last_click = [0.0] * C.NUM_PADS
         self._capture: Callable[[str], None] | None = None                # a callback called with the name of the next pressed button
         self._cap_prev: list[set[str]] = []
@@ -287,8 +288,7 @@ class Console:
     def on_state(self, i: int, mask: int, hx: int, hy: int, lt: int, rt: int) -> None:
         """Called on every change of the pad's raw state. Comparisons only - no system commands."""
         if self._trigger:
-            v = lt if self.cfg.toggle_button == "l2" else rt
-            down = v >= (TRIG_LO if self._down[i] else TRIG_HI)
+            down = self._trigger_down(i, lt if self.cfg.toggle_button == "l2" else rt)
         else:
             down = self._detect(mask, hx, hy, lt, rt)
         rising = down and not self._down[i]
@@ -315,6 +315,21 @@ class Console:
             self._jobs.put(self._toggle)
         else:
             self._last_click[i] = now
+
+    def _trigger_down(self, i: int, v: int) -> bool:
+        """Hysteresis of the trigger as a button: down from TRIG_HI, up when v drops below half of this press's peak.
+
+        rx_net calls on_state only when a trigger moves to another 1/8 step (32 units), so the release threshold is rounded
+        up to such a step: a fall below it is then always a step change and cannot go unnoticed.
+        """
+        if not self._down[i]:
+            if v < TRIG_HI:
+                return False
+            self._peak[i] = v
+            return True
+        if v > self._peak[i]:
+            self._peak[i] = v
+        return v >= (((self._peak[i] >> 1) + 31) >> 5) << 5
 
     def pad_connected(self, i: int, ident: bool = False) -> None:
         """The pad in slot i has just connected (the first packet after silence) or sent a new identifier (ident).
@@ -373,7 +388,9 @@ class Console:
         """
         mask, hx, hy, lt, rt = S.states[i]["raw"]
         if self._trigger:
-            self._down[i] = (lt if self.cfg.toggle_button == "l2" else rt) >= TRIG_HI
+            self._down[i] = False           # judge the current value as a fresh press, not against the old press's peak
+            self._peak[i] = 0
+            self._down[i] = self._trigger_down(i, lt if self.cfg.toggle_button == "l2" else rt)
         else:
             self._down[i] = self._detect(mask, hx, hy, lt, rt)
         self._last_click[i] = 0.0

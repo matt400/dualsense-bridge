@@ -1,4 +1,4 @@
-"""Receiver: the window's right column panels - profile choice, the editor of the selected pad part, gyro and the list of changes.
+"""Receiver: the window's right column panels - profile choice, selected pad part, game rumble, gyro and the list of changes.
 
 On top only what changes most often (what a button does, where a stick comes from, trigger resistance); response tuning
 (dead zones, curves) is in the collapsible "Advanced" section, opened by itself when something in it was changed.
@@ -199,7 +199,7 @@ class PartPage(QWidget):
     def _button_page(self) -> QScrollArea:
         """The page for a button or trigger.
 
-        The target combo and reset; for L2 / R2 also the trigger effect, game rumble and the response tuning.
+        The target combo and reset; for L2 / R2 also the trigger effect and the response tuning.
         """
         w = QWidget()
         lay = _vbox(w)
@@ -221,7 +221,7 @@ class PartPage(QWidget):
         return scrolled(w)
 
     def _trigger_block(self) -> QWidget:
-        """L2 / R2 only: the trigger effect, game rumble on the triggers and the (collapsed) response tuning."""
+        """L2 / R2 only: the trigger effect and the (collapsed) response tuning (game rumble has its own tab: RumblePage)."""
         self.trig = QWidget()
         tl = _vbox(self.trig)
         tl.addSpacing(4)
@@ -244,21 +244,6 @@ class PartPage(QWidget):
             tl.addWidget(row)
         tl.addWidget(label(_("Gra przez DS4 nie ustawi efektów DualSense, więc robi to nadajnik. W profilu gry "
                              "„Jak w profilu pada” bierze ustawienie z profilu domyślnego."), "dim", wrap=True))
-
-        tl.addSpacing(4)
-        tl.addWidget(label(_("WIBRACJA Z GRY NA SPUSTACH"), "h2"))
-        self.rv_on = Combo()
-        self.rv_on.changed.connect(lambda v: self._rumble_fx(on={"inherit": None, "on": True, "off": False}[v]))
-        tl.addWidget(field(_("Wibracja z gry"), self.rv_on))
-        gain_lo, _hi, _d = RUMBLE_LIMITS["gain"]
-        self.rv_gain = SliderRow(_("Siła (względem wibracji pada)"), gain_lo, RFX_GAIN_MAX, 10, "%")
-        self.rv_freq = SliderRow(_("Częstotliwość drgań"), 1, TRIG_FREQ_MAX, 1, fmt=lambda v: f"{round(v)} Hz")
-        self.rv_gain.changed.connect(lambda v: self._rumble_fx(gain=round(v)))
-        self.rv_freq.changed.connect(lambda v: self._rumble_fx(freq=round(v)))
-        tl.addWidget(self.rv_gain)
-        tl.addWidget(self.rv_freq)
-        tl.addWidget(label(_("Namiastka wibracji spustów: L2 drga jak duży silnik pada, R2 jak mały. Na czas wibracji "
-                             "zastępuje efekt spustu, po chwili ciszy efekt wraca. Wspólne dla L2 i R2."), "dim", wrap=True))
         self.fx_warn = label("", wrap=True)
         tl.addWidget(self.fx_warn)
         self.tdz = SliderRow(_("Strefa martwa (ignoruj lekkie dotknięcia do)"), 0, 200, 1)
@@ -341,13 +326,6 @@ class PartPage(QWidget):
                 self._show_fx(self.ed.trigger_fx(self.name))
             self.edited.emit()
 
-    def _rumble_fx(self, **patch: Any) -> None:
-        """Patch the game-rumble-on-triggers settings (shared by L2 and R2)."""
-        self.ed.set_rumble_fx(**patch)
-        if "on" in patch:
-            self._show_rumble(self.ed.rumble_fx())
-        self.edited.emit()
-
     def _show_fx(self, fx: dict[str, Any]) -> None:
         """The sliders of the effect mode (the rest hidden) and the hint."""
         self.fx_hint.setText(_(FX_MODES[fx["mode"]][1]))
@@ -355,14 +333,6 @@ class PartPage(QWidget):
         for k, row in self.fx.items():
             row.setVisible(k in shown)
             row.set(fx[k] * (10 if k in ("start", "pos") else 1))
-        self.update_caps()
-
-    def _show_rumble(self, rv: dict[str, Any]) -> None:
-        """Show the game rumble settings; the sliders only when it is on."""
-        self.rv_gain.set(rv["gain"])
-        self.rv_freq.set(rv["freq"])
-        self.rv_gain.setVisible(bool(rv["on"]))
-        self.rv_freq.setVisible(bool(rv["on"]))
         self.update_caps()
 
     def _stick(self, **patch: Any) -> None:
@@ -421,11 +391,7 @@ class PartPage(QWidget):
             game = ed.is_game()
             self.fx_mode.set_items([(k, _(v[0])) for k, v in FX_MODES.items() if game or k != "inherit"])
             self.fx_mode.set_data(fx["mode"])
-            self.rv_on.set_items([(k, _(v)) for k, v in RUMBLE_ON.items() if game or k != "inherit"])
-            rv = ed.rumble_fx()
-            self.rv_on.set_data(RUMBLE_KEY[rv["on"]])
             self._show_fx(fx)
-            self._show_rumble(rv)
         self.stack.setCurrentIndex(1)
 
     def update_caps(self) -> None:
@@ -436,6 +402,67 @@ class PartPage(QWidget):
             self.fx_warn.setText(("⚠  " + text) if text else "")
         self.fx_warn.setVisible(bool(text))
         set_prop(self.fx_warn, "level", level)
+
+
+class RumblePage(QWidget):
+    """Game rumble on the triggers (a stand-in for trigger rumble): on / off, strength and frequency, shared by L2 and R2."""
+
+    edited = Signal()
+
+    def __init__(self, ed: Editor) -> None:
+        """Build the on / off combo (in a game profile also "as in the pad profile"), the two sliders and the hint."""
+        super().__init__()
+        self.ed = ed
+        w = QWidget()
+        lay = _vbox(w)
+        _vbox(self).addWidget(scrolled(w))
+        lay.addWidget(label(_("WIBRACJA Z GRY NA SPUSTACH"), "h2"))
+        self.mode = Combo()
+        self.mode.changed.connect(lambda v: self._set(on={"inherit": None, "on": True, "off": False}[v]))
+        lay.addWidget(field(_("Wibracja z gry"), self.mode))
+        gain_lo, _hi, _d = RUMBLE_LIMITS["gain"]
+        self.gain = SliderRow(_("Siła (względem wibracji pada)"), gain_lo, RFX_GAIN_MAX, 10, "%")
+        self.freq = SliderRow(_("Częstotliwość drgań"), 1, TRIG_FREQ_MAX, 1, fmt=lambda v: f"{round(v)} Hz")
+        self.gain.changed.connect(lambda v: self._set(gain=round(v)))
+        self.freq.changed.connect(lambda v: self._set(freq=round(v)))
+        lay.addWidget(self.gain)
+        lay.addWidget(self.freq)
+        lay.addWidget(label(_("Namiastka wibracji spustów: L2 drga jak duży silnik pada, R2 jak mały. Na czas wibracji "
+                              "zastępuje efekt spustu, po chwili ciszy efekt wraca. Wspólne dla L2 i R2."), "dim", wrap=True))
+        self.warn = label("", wrap=True)
+        lay.addWidget(self.warn)
+        lay.addStretch(1)
+
+    def _set(self, **patch: Any) -> None:
+        """Patch the game rumble settings; switching it on / off shows / hides the sliders."""
+        self.ed.set_rumble_fx(**patch)
+        if "on" in patch:
+            self._show(self.ed.rumble_fx())
+        self.edited.emit()
+
+    def _show(self, rv: dict[str, Any]) -> None:
+        """Load the values into the sliders (without triggering changes); they are visible only while the rumble is on."""
+        self.gain.set(rv["gain"])
+        self.freq.set(rv["freq"])
+        self.gain.setVisible(bool(rv["on"]))
+        self.freq.setVisible(bool(rv["on"]))
+        self.update_caps()
+
+    def refresh(self) -> None:
+        """Load the game rumble of the edited profile into the widgets."""
+        rv = self.ed.rumble_fx()
+        game = self.ed.is_game()
+        self.mode.set_items([(k, _(v)) for k, v in RUMBLE_ON.items() if game or k != "inherit"])
+        self.mode.set_data(RUMBLE_KEY[rv["on"]])
+        self._show(rv)
+
+    def update_caps(self) -> None:
+        """A warning when this pad's sender will not apply the rumble (every 400 ms from the window - a cheap read)."""
+        text, level = ST.triggers_status(self.ed.slot, True) if self.ed.rumble_fx()["on"] else ("", "")
+        if text != self.warn.text():
+            self.warn.setText(("⚠  " + text) if text else "")
+        self.warn.setVisible(bool(text))
+        set_prop(self.warn, "level", level)
 
 
 class GyroPage(QWidget):

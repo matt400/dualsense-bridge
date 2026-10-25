@@ -111,7 +111,7 @@ ok("ustawienia: zakładki w pionie po lewej, tryb padów zapisany i zastosowany 
 # ---------- podgląd celowania gyro ----------
 win = rx_qt.create_window(os.path.join(TMP, "ui2.ini")); win.resize(1180, 760); win.show(); pump(120)
 feed(T_IDENT, 0, b"aa:aa:aa:aa:aa:01")
-win.tabs.setCurrentIndex(1); pump()                               # zakładka Gyro
+win.tabs.setCurrentIndex(2); pump()                               # zakładka Gyro
 win.gyro_page.aim_cat.set_open(False)
 win.ed.set_gyro(mode="stick", sens=1.0, anti=0.2); win.refresh_all()
 state(0, gyro=(0, -512, 0)); win.live_tick(); pump()

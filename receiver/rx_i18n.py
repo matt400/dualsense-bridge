@@ -399,6 +399,7 @@ EN: Final[dict[str, str]] = {
     "Zmiana języka działa po restarcie receivera.": "The language changes after the receiver restarts.",
     "Przejęcie na padzie: PS + R3 przez {s} s": "Take over on the pad: PS + R3 for {s} s",
     "Wibracja": "Rumble",
+    "Wibracje": "Rumble",
     # ---------- rumble ----------
     "wibracja: stary nadajnik": "rumble: old sender",
     "Skopiuj nowe pliki sender/ na telefon - starszy nadajnik nie wibruje bez obsługi wibracji w jądrze.":
