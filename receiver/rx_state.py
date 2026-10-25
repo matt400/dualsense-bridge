@@ -47,6 +47,7 @@ wake: list[threading.Event] = None       # wakes the slot thread after a state c
 want: list[threading.Event] = None       # set = the virtual pad should exist
 plugged: list[bool] = None               # the virtual pad is plugged in
 last_seen: list[float] = None            # when the pad last sent a packet (monotonic)
+connected_at: list[float | None] = None  # when the pad connected (monotonic; None = not connected) - the pad card shows how long ago
 alive: list[bool] = None                 # the pad is sending
 ignore_until: list[float] = None         # mute a slot until then (after a bye packet)
 mouse_mode: list[bool] = None            # the touchpad drives the mouse
@@ -92,7 +93,7 @@ def new_state() -> PadState:
 
 def init(store_: RemapStore) -> None:
     """Create the per-slot lists for C.NUM_PADS pads and bind the remap store."""
-    global states, wake, want, plugged, last_seen, alive, ignore_until, mouse_mode
+    global states, wake, want, plugged, last_seen, connected_at, alive, ignore_until, mouse_mode
     global tp_down, swallow, last_v, last_touch, batt_info, pad_id, remap_maps, store
     global override, active, info, pps, sender_info, probe, gyro_cal
     n = C.NUM_PADS
@@ -102,6 +103,7 @@ def init(store_: RemapStore) -> None:
     want = [threading.Event() for _ in range(n)]     # set = the virtual DS4 should exist
     plugged = [False] * n                            # the virtual DS4 is plugged into ViGEm
     last_seen = [0.0] * n
+    connected_at = [None] * n
     alive = [False] * n
     ignore_until = [0.0] * n                         # a short "mute" of the slot after a bye packet
     mouse_mode = [i in C.MOUSE_PADS for i in range(n)]

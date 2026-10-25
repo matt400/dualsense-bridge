@@ -22,7 +22,7 @@
     pady, albo **stała liczba** - zawsze pierwsze N slotów (podłączony pad spoza nich też się pojawia). Strzałka w
     nagłówku kolumny zwija ją do wąskiego paska z numerami padów (więcej miejsca na rysunek i edytor); wybór jest
     zapamiętywany;
-  - **dziennik zdarzeń** na dole okna (ikona listy w nagłówku): połączenia i rozłączenia padów, nadajnik online /
+  - **dziennik zdarzeń** na dole okna (ikona listy w menu bocznym): połączenia i rozłączenia padów, nadajnik online /
     offline, zmiana mastera, tryb konsoli, błędy, aktualizacje, niska bateria; filtr poziomu (wszystko / ostrzeżenia i
     błędy / tylko błędy), limit linii, kopiowanie, czyszczenie (dwa kliknięcia). Ikona nadajnika włącza **zdarzenia z
     nadajnika** (domyślnie wyłączone): połączenie pada z nadajnikiem, wysłany Wake-on-LAN, utrata kontaktu z receiverem,
@@ -64,16 +64,29 @@
   - profile per gra (`gra.exe`), które włączają się same, gdy gra jest aktywnym oknem;
   - zmiany działają na padzie od razu, zapis do `remap.json` jest osobno;
   - akcje nieodwracalne (wyłączenie pada, usunięcie profilu, reset, restart receivera) wymagają drugiego kliknięcia;
-  - nagłówek z samymi ikonami (pełny ekran, ustawienia, aktualizuj, restart, zakończ - opis w podpowiedzi);
+  - **pionowe menu boczne z samymi ikonami** obok listy padów, pogrupowane według przeznaczenia: Diagnostyka,
+    Bluetooth, skróty pada, dziennik zdarzeń | pełny ekran, ustawienia | (na dole) aktualizuj, restart, zakończ - opis
+    w podpowiedzi. Aktualizacja, restart i zakończenie nadal wymagają drugiego kliknięcia (czerwony przycisk, pytanie
+    w podpowiedzi). Pigułka nadajnika jest po prawej stronie nagłówka;
+  - **Diagnostyka** (pierwsza ikona menu bocznego): monitorowanie łącza na żywo w osobnej zakładce. Górna karta to
+    łącze sieciowe z nadajnikiem: opóźnienie (RTT), jitter (RFC 3550, z pingów nadajnika, bez wspólnego zegara),
+    utrata pakietów (luki w numeracji) z sumami utraconych / spóźnionych / zdublowanych, pakiety stanu na sekundę.
+    Niżej karta każdego podłączonego pada: częstotliwość raportów przez Bluetooth, sygnał (RSSI) i jakość łącza
+    odczytane przez kontroler Bluetooth nadajnika, czas połączenia pada i liczba ponownych połączeń. Każda wartość ma
+    wykres z ostatniej minuty oraz min / śr / max; zielony / bursztynowy / czerwony oznacza stan. Czas połączenia widać
+    też małym tekstem na karcie pada. RSSI i jakość łącza przychodzą w nowym pakiecie `btlink` (nadajnik pyta kontroler
+    poleceniami HCI Read RSSI / Read Link Quality, wymaga roota); starszy nadajnik albo kontroler bez tych poleceń
+    pokazuje kreskę. W Bluetooth Classic RSSI jest względne do zakresu optymalnego kontrolera (0 = w zakresie, wartość
+    ujemna = tyle dB poniżej), a nie w dBm;
     **Restart** jest też w menu zasobnika;
   - **pełny ekran = tryb TV:** większy interfejs (czytelny z kanapy) i sterowanie oknem padem, gdy okno jest
     aktywne: D-pad - poruszanie się, ✕ - wybór, ○ - wstecz / wyjście z pełnego ekranu, L1 / R1 - poprzedni / następny
     pad, PS trzymane - zwykłe skróty;
   - przyciski pada pokazane jako ikony (z pełną nazwą w podpowiedzi);
-  - **Skróty pada** (ikona pada w nagłówku): wysuwany z prawej panel ze wszystkimi skrótami pada, zbudowany z
+  - **Skróty pada** (ikona pada w menu bocznym): wysuwany z prawej panel ze wszystkimi skrótami pada, zbudowany z
     bieżących ustawień (przycisk trybu konsoli, akcje mastera, długie PS); korona = tylko pad master. W trybie TV:
     D-pad do ikony, ✕ otwiera, D-pad przewija, ○ zamyka;
-  - **Bluetooth nadajnika z okna** (nadajnik za telewizorem nie potrzebuje ekranu): ikona Bluetooth w nagłówku z kropką
+  - **Bluetooth nadajnika z okna** (nadajnik za telewizorem nie potrzebuje ekranu): ikona Bluetooth w menu bocznym z kropką
     stanu (zielona - działa, niebieska - skanuje, żółta - wyłączony, czerwona - błąd, szara - brak danych) otwiera
     wysuwany z prawej panel: **skanowanie** (z odliczaniem, samo kończy się po 30 s - skan zabiera radio połączonym
     padom), lista urządzeń (pady na górze, siła sygnału w trakcie skanu, stan) i przyciski **Sparuj** (parowanie,
@@ -183,7 +196,7 @@
     od razu; same sloty ustawia `pads` w `receiver.toml`, domyślnie 4) - oraz backend wirtualnych padów, HIDMaestro i
     stała kolejność graczy;
   - **Okno:** ekran, na którym pojawia się okno (zawsze na środku; gdy ekranu nie ma - na dostępnym), okno albo
-    pełny ekran (też F11 i przycisk w nagłówku), język: polski / English (zmiana po restarcie). Po przełączeniu ekranów
+    pełny ekran (też F11 i przycisk w menu bocznym), język: polski / English (zmiana po restarcie). Po przełączeniu ekranów
     (tryb konsoli, rozdzielczość / skalowanie TV) okno wraca na środek i mieści się na ekranie (zmniejszone na TV,
     na monitorze wraca do swojego rozmiaru). Połączenie pada wyciąga okno na wierzch - ale nie w trakcie gry (ta sama
     lista programów co w Trybie konsoli);
@@ -252,7 +265,9 @@
 | Karty padów (bateria, opóźnienie pad → gra), klik w część pada = remap | R2: efekt adaptacyjnego spustu (klik) |
 | ![Widok Test](img/test_view.png) | ![Bluetooth nadajnika](img/bt_drawer.png) |
 | Widok Test: wejścia na żywo, żyroskop, dryf gałek z propozycją strefy martwej | Bluetooth nadajnika: skan, parowanie, łączenie z PC |
-| ![Ustawienia: tryb konsoli](img/settings_console.png) | ![Ustawienia: pad master](img/settings_master.png) |
-| Ustawienia → Tryb konsoli | Ustawienia → Master |
+| ![Diagnostyka](img/diagnostics.png) | ![Ustawienia: tryb konsoli](img/settings_console.png) |
+| Diagnostyka: łącze sieciowe i Bluetooth każdego pada | Ustawienia → Tryb konsoli |
+| ![Ustawienia: pad master](img/settings_master.png) | |
+| Ustawienia → Master | |
 
 Zrzuty są w wersji angielskiej, z danymi-atrapą: `python3 tools/screenshots.py` (patrz [ROZWOJ.pl.md](ROZWOJ.pl.md)).

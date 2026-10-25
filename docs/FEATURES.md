@@ -23,7 +23,7 @@
     **dynamic** - only connected pads, or **fixed** - the first N slots always (a connected pad beyond them shows too).
     The arrow in the column header folds it to a narrow strip with the pad numbers (more room for the drawing and the
     editor); the choice is remembered;
-  - **event log** at the bottom of the window (list icon in the header): pad connections and disconnections, sender
+  - **event log** at the bottom of the window (list icon in the side menu): pad connections and disconnections, sender
     online / offline, master change, console mode, errors, updates, low battery; level filter (everything / warnings
     and errors / errors only), line limit, copy, clear (two clicks). The sender icon turns on **sender events**
     (off by default): pad connecting to the sender, Wake-on-LAN sent, lost contact with the receiver, errors - the
@@ -68,17 +68,30 @@
   - per-game profiles (`game.exe`) that switch on by themselves when the game is the active window;
   - changes apply to the pad immediately, saving to `remap.json` is separate;
   - irreversible actions (pad power-off, profile deletion, reset, receiver restart) require a second click;
-  - an icon-only header (full screen, settings, update, restart, quit - description in the tooltip);
+  - an **icon-only side menu** next to the pad list, grouped by purpose: Diagnostics, Bluetooth, pad shortcuts, event log |
+    full screen, settings | (at the bottom) update, restart, quit - description in the tooltip. Update, restart and quit
+    still need a second click (the red button; the question is in the tooltip). The sender pill sits on the right of
+    the header;
+  - **Diagnostics** (first icon of the side menu): live link monitoring in a separate tab. The top card is the
+    network link to the sender: round trip, jitter (RFC 3550, from the sender's pings, no common clock needed), packet
+    loss (gaps in the sequence numbers) with lost / late / duplicated totals, state packets per second. Below, a card
+    per connected pad: report rate over Bluetooth, signal (RSSI) and link quality read by the sender's Bluetooth
+    controller, how long the pad has been connected and how many times it reconnected. Each value has a one-minute
+    chart and min / avg / max; green / amber / red marks the value. The same connection time is shown in small text on
+    the pad card. The RSSI and link quality come from a new `btlink` packet (the sender asks the controller with HCI Read
+    RSSI / Read Link Quality, needs root); an older sender or a controller that does not support the commands shows a
+    dash. For Bluetooth Classic the RSSI is relative to the controller's optimal range (0 = inside, negative = dB below
+    it), not dBm;
     **Restart** is also in the tray menu;
   - **full screen = TV mode:** a larger interface (readable from the couch) and controlling the window with the pad
     while the window is active: D-pad - navigation, ✕ - select, ○ - back / leave full screen, L1 / R1 - previous / next
     pad, PS held - regular shortcuts;
   - pad buttons shown as icons (with the full name in the tooltip);
-  - **Pad shortcuts** (pad icon in the header): a panel sliding in from the right with all pad shortcuts, built from
+  - **Pad shortcuts** (pad icon in the side menu): a panel sliding in from the right with all pad shortcuts, built from
     the current settings (console mode button, master actions, long PS); crown = master pad only. In TV mode:
     D-pad to the icon, ✕ opens, D-pad scrolls, ○ closes;
   - **sender Bluetooth from the window** (a sender behind the TV doesn't need a screen): the Bluetooth icon in the
-    header with a status dot (green - working, blue - scanning, yellow - off, red - error, grey - no data) opens a
+    side menu with a status dot (green - working, blue - scanning, yellow - off, red - error, grey - no data) opens a
     panel sliding in from the right: **scanning** (with a countdown, stops by itself after 30 s - scanning takes radio
     time from connected pads), a device list (pads on top, signal strength during the scan, state) and the buttons
     **Pair** (pairing, trust and connection), **Connect**, **Disconnect**, **Forget**, and with the adapter off
@@ -191,7 +204,7 @@
     immediately; the slots themselves are set by `pads` in `receiver.toml`, 4 by default) - plus the virtual pad
     backend, HIDMaestro and the fixed player order;
   - **Window:** the screen the window appears on (always centred; when the screen is missing - on an available one),
-    window or full screen (also F11 and the header button), language: Polski / English (takes effect after a restart).
+    window or full screen (also F11 and the side menu button), language: Polski / English (takes effect after a restart).
     After switching screens (console mode, TV resolution / scaling) the window returns to the centre and fits the
     screen (shrunk on the TV, back to its own size on the monitor). A pad connecting brings the window to the front -
     but not during a game (the same program list as in Console mode);
@@ -265,7 +278,9 @@
 | Pad cards (battery, pad → game latency), click a part of the pad to remap it | R2: adaptive trigger effect (click) |
 | ![Test view](img/test_view.png) | ![Sender Bluetooth](img/bt_drawer.png) |
 | Test view: live inputs, gyro, stick drift with a proposed deadzone | Sender Bluetooth: scan, pair, connect from the PC |
-| ![Settings: console mode](img/settings_console.png) | ![Settings: master pad](img/settings_master.png) |
-| Settings → Console mode | Settings → Master |
+| ![Diagnostics](img/diagnostics.png) | ![Settings: console mode](img/settings_console.png) |
+| Diagnostics: network link and Bluetooth link of each pad | Settings → Console mode |
+| ![Settings: master pad](img/settings_master.png) | |
+| Settings → Master | |
 
 The screenshots are generated with mock data: `python3 tools/screenshots.py` (see [DEVELOPMENT.md](DEVELOPMENT.md)).

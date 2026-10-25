@@ -106,7 +106,7 @@ Removing the service: `sudo ./install-service.sh --remove`.
 
 ### 3. Pad
 
-1. In the window on the PC click the **Bluetooth** icon in the header, then **Scan**.
+1. In the window on the PC click the **Bluetooth** icon in the side menu, then **Scan**.
 2. On the pad hold **Create + PS** until the lightbar starts blinking fast.
 3. Click **Pair** next to the pad in the list.
 
@@ -116,7 +116,7 @@ turn it on first.
 
 ## First steps
 
-- **Pad shortcuts:** the pad icon in the window header shows all shortcuts (e.g. PS + Share = screenshot).
+- **Pad shortcuts:** the pad icon in the side menu shows all shortcuts (e.g. PS + Share = screenshot).
 - **Console mode** (picture and sound on the TV): in Settings → Console mode pick the TV and PC audio devices. Then
   pressing R2 twice on the pad switches the screens.
 - **Remapping:** click a button or stick on the pad drawing in the window. **Save** stores the profile.

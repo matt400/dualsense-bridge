@@ -254,12 +254,12 @@ card0.rumble.click(); pump()
 assert pulses == [(0, "test", True)] and card0.rumble.toolTip().startswith("Test wibracji"), pulses
 ok("pełny ekran (F11, przycisk, ustawienia), język (restart, okno po angielsku), lista programów, test wibracji")
 
-# ---------- przycisk Restart w nagłówku i ikona okna ----------
+# ---------- przycisk Restart w bocznym menu i ikona okna ----------
 from PySide6.QtWidgets import QPushButton
 btn = next(b for b in win.findChildren(QPushButton) if b.toolTip().startswith("Restart"))
 S.restart = False; closed.clear()
 btn.click(); pump()
-assert S.restart is False and btn.text() == "Restart?", "pierwszy klik tylko uzbraja (ikona pokazuje pytanie)"
+assert S.restart is False and btn.compact and btn.text() == "" and btn.property("armed") is True, "pierwszy klik tylko uzbraja (czerwony przycisk, pytanie w dymku)"
 btn.click(); pump()
 assert S.restart is True and closed, "drugi klik: restart receivera"
 S.restart = False
@@ -277,14 +277,14 @@ btn = win.update_btn
 assert btn.text() == "" and btn.toolTip().startswith("Aktualizuj") and not btn.icon().isNull(), "sama ikona"
 S.restart = False; closed.clear()
 btn.click(); btn.click(); pump(20)
-assert not btn.isEnabled() and btn.text().startswith("Aktualizuję…") and btn.text().endswith("%"), "w trakcie: zablokowany, z procentami"
+assert not btn.isEnabled() and btn.text() == "" and btn.label_text.startswith("Aktualizuję…") and btn.label_text.endswith("%"), "w trakcie: zablokowany, procenty w dymku (wąskie menu)"
 assert win.update_ring.running() and not btn.icon().isNull(), "obok napisu kręci się kółko"
-win.update_progress.emit(60); pump(); assert btn.text() == "Aktualizuję… 60%", btn.text()
-win.update_progress.emit(30); pump(); assert btn.text() == "Aktualizuję… 60%", "procenty nie cofają się"
+win.update_progress.emit(60); pump(); assert btn.label_text == "Aktualizuję… 60%" == btn.toolTip(), btn.label_text
+win.update_progress.emit(30); pump(); assert btn.label_text == "Aktualizuję… 60%", "procenty nie cofają się"
 pump(300)
 assert btn.isEnabled() and "najnowszą" in win.status.text() and S.restart is False, "brak zmian - bez restartu"
-assert btn.text() == "" and not win.update_ring.running(), "po aktualizacji znów sama ikona"
-win.update_progress.emit(50); pump(); assert btn.text() == "", "spóźniony sygnał po zakończeniu jest ignorowany"
+assert btn.label_text == "" and not win.update_ring.running(), "po aktualizacji znów sama ikona"
+win.update_progress.emit(50); pump(); assert btn.label_text == "", "spóźniony sygnał po zakończeniu jest ignorowany"
 btn.click(); btn.click(); pump(500)
 assert S.restart is True and closed and "Zaktualizowano" in btn.toolTip(), "nowa wersja -> restart receivera"
 S.restart = False

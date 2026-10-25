@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QMenu, QPushBu
                                QSystemTrayIcon, QTabWidget, QToolButton, QVBoxLayout, QWidget)
 
 import rx_console
+import rx_diag
 import rx_ds4
 import rx_events as ev
 import rx_feedback as F
@@ -44,6 +45,7 @@ from rx_config import C
 from rx_editor import Editor
 from rx_icon import ICON_LOW, ICON_OK, icon_png, render_icon
 from rx_qt_bt import BtDrawer, indicator_button
+from rx_qt_diag import DiagPage, age_text
 from rx_qt_keys import KeysDrawer
 from rx_qt_console import ConsoleSettings
 from rx_qt_icons import icon, pixmap
@@ -53,6 +55,7 @@ from rx_qt_gyro import PREVIEW_GAP, GyroPreview
 from rx_qt_pad import PadView
 from rx_qt_panels import ChangesPage, GyroPage, PartPage, ProfileBar, RumblePage
 from rx_qt_screens import ScreenPlacement
+from rx_qt_sidebar import SideMenu
 from rx_qt_style import DIM, LEVEL, SEGMENT, TV_SCALE, apply_theme, px, set_prop
 from rx_qt_test import TestPanel
 from rx_qt_tv import PadNav
@@ -117,7 +120,7 @@ class PadCard(QFrame):
         The status line and the body with the battery, latency, button latency and the profile line.
         """
         super().__init__()
-        self.slot, self._key, self._lat = slot, None, None
+        self.slot, self._key, self._lat, self._since = slot, None, None, ("", "")
         self.setObjectName("card")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         lay = QVBoxLayout(self)
@@ -150,6 +153,9 @@ class PadCard(QFrame):
         head.addSpacing(px(2))
         head.addWidget(label(_("Pad {n}").format(n=self.slot + 1), "name"))
         head.addWidget(self.crown)
+        self.since = label("", "small")                # how long the pad has been connected - small, between the name and the buttons
+        head.addSpacing(px(4))
+        head.addWidget(self.since)
         head.addStretch(1)
         head.addWidget(self.rumble)
         head.addWidget(self.off)
@@ -298,10 +304,24 @@ class PadCard(QFrame):
             *PadCard._rows(summ),
             dim.format(_("Tylko przyciski, D-pad i spusty (wciśnięcie / puszczenie) - bez gałek i żyroskopu."))])
 
+    def _show_since(self, now: float) -> None:
+        """"1 h 12 min": how long the pad has been connected (the tooltip has the clock time); changes at most once a second."""
+        since = S.connected_at[self.slot]
+        if since is None or not S.alive[self.slot]:
+            sig = ("", "")
+        else:
+            at = time.strftime("%H:%M:%S", time.localtime(time.time() - (now - since)))
+            sig = (age_text(now - since), _("Połączony od {t}").format(t=at))
+        if sig != self._since:
+            self._since = sig
+            self.since.setText(sig[0])
+            self.since.setToolTip(sig[1])
+
     def update_state(self, now: float) -> bool:
         """Refresh the card (only what changed). -> True when the pad's battery is running low."""
         i = self.slot
         alive, want = bool(S.alive[i]), S.want[i].is_set()
+        self._show_since(now)
         shown = alive and self.isVisible()     # the window in the tray: no latency median computing
         if shown:
             self._update_latency(now)
@@ -478,10 +498,21 @@ class MainWindow(ScreenPlacement):
         body = QHBoxLayout(main)
         body.setContentsMargins(px(16), px(16), px(16), px(16))
         body.setSpacing(px(16))
+        self.side = self._side_menu()            # first: the creation order of the buttons is the keyboard / pad focus order
+        body.addWidget(self.side)
         body.addWidget(self._left())
-        body.addLayout(self._center(), 1)
-        body.addWidget(self._right())
-        self.log_panel = LogPanel()             # the event log: slides out from the bottom (the header icon), the height can be set
+        work = QWidget()                         # the pad drawing + the editor ...
+        wl = QHBoxLayout(work)
+        wl.setContentsMargins(0, 0, 0, 0)
+        wl.setSpacing(px(16))
+        wl.addLayout(self._center(), 1)
+        wl.addWidget(self._right())
+        self.diag_page = DiagPage()              # ... or the diagnostics (the side menu's icon)
+        self.main_stack = QStackedWidget()
+        self.main_stack.addWidget(work)
+        self.main_stack.addWidget(self.diag_page)
+        body.addWidget(self.main_stack, 1)
+        self.log_panel = LogPanel()             # the event log: slides out from the bottom (the side menu icon), the height can be set
         self.split = QSplitter(Qt.Orientation.Vertical)
         self.split.setChildrenCollapsible(False)
         self.split.setHandleWidth(px(4))
@@ -490,8 +521,8 @@ class MainWindow(ScreenPlacement):
         self.split.setStretchFactor(0, 1)
         self.log_panel.setMinimumHeight(px(120))
         outer.addWidget(self.split, 1)
-        self.bt_drawer = BtDrawer(root)          # slides in over the window from the right (the Bluetooth icon in the header)
-        self.keys_drawer = KeysDrawer(root)      # the list of pad shortcuts (the pad icon in the header)
+        self.bt_drawer = BtDrawer(root)          # slides in over the window from the right (the Bluetooth icon in the side menu)
+        self.keys_drawer = KeysDrawer(root)      # the list of pad shortcuts (the pad icon in the side menu)
         self.drawers = {self.bt_drawer: self.bt_btn, self.keys_drawer: self.keys_btn}
         for d in self.drawers:
             d.opened.connect(lambda on, d=d: self._drawer_opened(d, on))
@@ -499,11 +530,11 @@ class MainWindow(ScreenPlacement):
         # allowed squeezing the window so that the right panel overlapped the drawing
 
     def _header(self) -> QFrame:
-        """The name and version on the left; on the right the sender state and icon-only buttons (tooltips with descriptions)."""
+        """The name and version on the left, the sender state on the right (the actions live in the side menu)."""
         bar = QFrame()
         bar.setObjectName("header")
         lay = QHBoxLayout(bar)
-        lay.setContentsMargins(px(20), px(8), px(12), px(8))
+        lay.setContentsMargins(px(20), px(8), px(16), px(8))
         lay.setSpacing(px(6))
         title = label("DualSense bridge")
         title.setObjectName("title")
@@ -512,6 +543,22 @@ class MainWindow(ScreenPlacement):
         self.version_lbl.setToolTip(_("Ostatnia zmiana: {s}").format(s=subject) if subject else
                                     _("Wersja nieznana - folder nie jest klonem git"))
         self.sender = BatteryPill(lambda: not rx_games.in_game())     # no wave animation while a game is in the foreground
+        lay.addWidget(title)
+        lay.addSpacing(px(6))
+        lay.addWidget(self.version_lbl, 0, Qt.AlignmentFlag.AlignBottom)
+        lay.addStretch(1)
+        lay.addWidget(self.sender)
+        return bar
+
+    def _side_menu(self) -> SideMenu:
+        """The vertical icon menu: panels and views, then the window, then (pinned to the bottom) update, restart and quit.
+
+        Icon-only buttons with tooltips; the confirming ones (update, restart, quit) never grow a label in the narrow column.
+        """
+        self.diag_btn = icon_button("diag", _("Diagnostyka") + " - " + _("Opóźnienie, jitter i straty pakietów w sieci oraz jakość "
+                                                                         "łącza Bluetooth każdego pada na żywo"))
+        self.diag_btn.setCheckable(True)
+        self.diag_btn.toggled.connect(self.show_diag)
         self.bt_btn, self._bt_refresh = indicator_button(self.toggle_bt)   # the sender's Bluetooth: a status dot + the panel
         self.keys_btn = icon_button("keys", _("Skróty pada") + " - " + _("Wszystkie skróty pada w tym receiverze"))
         self.keys_btn.clicked.connect(self.toggle_keys)
@@ -520,31 +567,25 @@ class MainWindow(ScreenPlacement):
         self.log_btn.toggled.connect(self.show_log)
         self.fs_btn = icon_button("fullscreen", _("Pełny ekran (F11)"))
         self.fs_btn.clicked.connect(self.toggle_fullscreen)
-        settings_btn = icon_button("gear", _("Ustawienia") + " - " + _("Tryb konsoli, mysz touchpada, pad master, okno, język"))
-        settings_btn.clicked.connect(self.open_settings)
-        self.update_btn = ConfirmButton(_("Aktualizuj"), _("Aktualizować?"), iconic="update",
+        self.settings_btn = icon_button("gear", _("Ustawienia") + " - " + _("Tryb konsoli, mysz touchpada, pad master, okno, język"))
+        self.settings_btn.clicked.connect(self.open_settings)
+        self.update_btn = ConfirmButton(_("Aktualizuj"), _("Aktualizować?"), iconic="update", compact=True,
                                         tip=_("Aktualizuj") + " - " + _("Pobiera nową wersję z GitHuba (git pull) dla "
                                                                         "receivera i nadajnika; oba uruchamiają się od nowa"))
         self.update_btn.confirmed.connect(self.start_update)
         self.update_ring = ProgressRing(self.update_btn)      # turns next to "Updating… 40%" while the update runs
-        restart_btn = ConfirmButton("Restart", "Restart?", iconic="restart",
-                                    tip="Restart - " + _("Uruchamia receiver od nowa (pady na chwilę znikną, niezapisane "
-                                                         "zmiany profilu przepadną)"))
-        restart_btn.confirmed.connect(self.restart)
-        quit_btn = ConfirmButton(_("Zakończ"), _("Zakończyć?"), iconic="power",
-                                 tip=_("Zakończ") + " - " + _("Zatrzymuje receiver - wirtualne pady znikają"))
-        quit_btn.confirmed.connect(self.quit)
-        lay.addWidget(title)
-        lay.addSpacing(px(6))
-        lay.addWidget(self.version_lbl, 0, Qt.AlignmentFlag.AlignBottom)
-        lay.addStretch(1)
-        lay.addWidget(self.sender)
-        lay.addSpacing(px(10))
-        for b in (self.bt_btn, self.keys_btn, self.log_btn, self.fs_btn, settings_btn, self.update_btn, restart_btn,
-                  quit_btn):
-            lay.addWidget(b)
-        self._iconic = [self.bt_btn, self.keys_btn, self.log_btn, self.fs_btn, settings_btn, self.update_btn, restart_btn, quit_btn]
-        return bar
+        self.restart_btn = ConfirmButton("Restart", "Restart?", iconic="restart", compact=True,
+                                         tip="Restart - " + _("Uruchamia receiver od nowa (pady na chwilę znikną, niezapisane "
+                                                              "zmiany profilu przepadną)"))
+        self.restart_btn.confirmed.connect(self.restart)
+        self.quit_btn = ConfirmButton(_("Zakończ"), _("Zakończyć?"), iconic="power", compact=True,
+                                      tip=_("Zakończ") + " - " + _("Zatrzymuje receiver - wirtualne pady znikają"))
+        self.quit_btn.confirmed.connect(self.quit)
+        menu = SideMenu()
+        menu.group(self.diag_btn, self.bt_btn, self.keys_btn, self.log_btn)
+        menu.group(self.fs_btn, self.settings_btn)
+        menu.bottom(self.update_btn, self.restart_btn, self.quit_btn)
+        return menu
 
     def _banner(self) -> QFrame:
         """A bar under the header, visible only when there is something to do.
@@ -611,7 +652,7 @@ class MainWindow(ScreenPlacement):
         lay.addLayout(head)
         self.cards = [PadCard(i) for i in range(C.NUM_PADS)]
         for c in self.cards:
-            c.clicked.connect(self.select_pad)
+            c.clicked.connect(self._card_clicked)
             c.master_changed.connect(self.slow_tick)
             lay.addWidget(c)
         self.minis: dict[int, QPushButton] = {}       # the folded column: a button per pad (the number), a click = edit this pad
@@ -763,8 +804,8 @@ class MainWindow(ScreenPlacement):
         apply_theme(QApplication.instance(), k)
         self._style_pads_toggle()
         self.right_col.setFixedWidth(px(340))
-        for b in self._iconic:
-            b.setIconSize(QSize(px(20), px(20)))
+        self.side.rescale()
+        self.diag_page.rescale()
         for c in self.cards:
             c.bar.setFixedHeight(px(8))
             c.lat_bar.setFixedHeight(px(5))
@@ -955,7 +996,7 @@ class MainWindow(ScreenPlacement):
         if not self.update_ring.running():
             return
         self._upd_pct = max(self._upd_pct, pct)
-        self.update_btn.setText(f"{_('Aktualizuję…')} {self._upd_pct}%")
+        self.update_btn.set_label(f"{_('Aktualizuję…')} {self._upd_pct}%")
         self.update_ring.set_value(self._upd_pct)
 
     def _update_stuck(self, run: int) -> None:
@@ -1037,6 +1078,20 @@ class MainWindow(ScreenPlacement):
         QApplication.instance().quit()
 
     # ---------- selection and changes ----------
+    def _card_clicked(self, slot: int) -> None:
+        """A click on a pad card edits that pad - so it also leaves the diagnostics, which would hide the editor."""
+        self.diag_btn.setChecked(False)
+        self.select_pad(slot)
+
+    def show_diag(self, on: bool) -> None:
+        """The Diagnostics icon: swap the pad drawing + editor for the diagnostics tab (and back)."""
+        self.main_stack.setCurrentIndex(1 if on else 0)
+        if on:
+            self.diag_page.refresh()
+        self.diag_btn.setToolTip(_("Zamknij diagnostykę") if on else
+                                 _("Diagnostyka") + " - " + _("Opóźnienie, jitter i straty pakietów w sieci oraz jakość "
+                                                              "łącza Bluetooth każdego pada na żywo"))
+
     def select_pad(self, slot: int) -> None:
         """Edit another pad: apply pending changes, switch the editor and the Test panel, then refresh everything."""
         self.flush()
@@ -1297,6 +1352,9 @@ class MainWindow(ScreenPlacement):
             self._screens_settled()
         self._pads_connected()
         self.update_pad_column()
+        rx_diag.sample(now)                        # the history behind the Diagnostics tab fills also while the tab is closed
+        if self.diag_btn.isChecked() and self.isVisible():
+            self.diag_page.refresh(now)
         online = S.sender_online(now)
         build = S.sender_build[:2] if S.sender_build else None
         batt = S.sender_batt if online else None

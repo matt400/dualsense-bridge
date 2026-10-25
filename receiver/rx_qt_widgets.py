@@ -9,10 +9,10 @@ import time
 from collections.abc import Callable, Iterable
 from typing import Any
 
-from PySide6.QtCore import QEvent, QObject, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QObject, QPoint, QRect, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFontMetrics, QIcon, QPainter, QPainterPath, QPaintEvent, QPen, QPixmap, QWheelEvent
 from PySide6.QtWidgets import (QButtonGroup, QComboBox, QFrame, QHBoxLayout, QLabel, QLayout, QPushButton, QSlider, QSpinBox,
-                               QStackedWidget, QVBoxLayout, QWidget)
+                               QStackedWidget, QToolTip, QVBoxLayout, QWidget)
 
 from rx_qt_style import ACCENT_HI, CHARGE, LINE, OK, TRACK, px, set_prop
 
@@ -243,10 +243,18 @@ class ConfirmButton(QPushButton):
     confirmed = Signal()
 
     def __init__(self, text: str, armed: str = "Sure?", timeout_ms: int = 3000, small: bool = False,
-                 iconic: str | None = None, tip: str = "") -> None:
-        """`iconic` = an icon name: an icon-only button whose text becomes the tooltip (`tip` overrides it)."""
+                 iconic: str | None = None, tip: str = "", compact: bool = False) -> None:
+        """`iconic` = an icon name: an icon-only button whose text becomes the tooltip (`tip` overrides it).
+
+        `compact` is for a narrow strip (the side menu): the button never grows a label. Armed, it turns red and the question
+        shows as a tooltip next to it; set_label() puts a status text in the tooltip instead of on the button.
+        """
         super().__init__("" if iconic else text)
         self._text, self._armed = ("" if iconic else text), armed
+        self.compact = compact
+        self.label_text = ""
+        if compact:
+            self.setProperty("compact", True)
         self.setProperty("small", small)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFocusPolicy(Qt.FocusPolicy.TabFocus)
@@ -268,14 +276,29 @@ class ConfirmButton(QPushButton):
             self.disarm()
             self.confirmed.emit()
         else:
-            self.setText(self._armed)
+            if self.compact:
+                QToolTip.showText(self.mapToGlobal(QPoint(self.width(), 0)), self._armed, self, QRect(), self._timer.interval())
+            else:
+                self.setText(self._armed)
             set_prop(self, "armed", True)
             self._timer.start()
+
+    def set_label(self, text: str) -> None:
+        """A status text for the button (e.g. "Updating... 40%"): on the button, or in its tooltip when compact."""
+        self.label_text = text
+        if self.compact:
+            self.setToolTip(text)
+        else:
+            self.setText(text)
 
     def disarm(self) -> None:
         """Back to the normal label and style (also called by the timeout)."""
         self._timer.stop()
-        self.setText(self._text)
+        if self.compact:
+            QToolTip.hideText()
+        else:
+            self.setText(self._text)
+        self.label_text = ""
         set_prop(self, "armed", False)
 
 

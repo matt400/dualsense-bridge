@@ -37,6 +37,7 @@ QWidget {{ background: transparent; }}
 QToolTip {{ background: {CARD_HI}; color: {FG}; border: 1px solid {LINE}; border-radius: 6px; padding: {p(6)} {p(8)}; }}
 
 #header {{ background: {CARD}; border-bottom: 1px solid {BORDER}; }}
+#sidebar {{ background: {CARD}; border: 1px solid {BORDER}; border-radius: {p(14)}; }}
 #banner {{ background: #2a2210; border-bottom: 1px solid #5c4a12; }}
 #title {{ font-size: {p(16)}; font-weight: 700; letter-spacing: 0.3px; }}
 #hint, .dim {{ color: {DIM}; }}
@@ -65,6 +66,8 @@ QWidget#scrim {{ background: rgba(0, 0, 0, 120); }}
 QScrollArea#keys {{ border: 1px solid transparent; border-radius: {p(8)}; }}
 QScrollArea#keys:focus {{ border-color: {ACCENT_HI}; }}
 QFrame#group {{ background: {CARD}; border: 1px solid {BORDER}; border-radius: {p(12)}; }}
+QFrame#tile {{ background: {CARD_HI}; border: 1px solid {BORDER}; border-radius: {p(12)}; }}
+QScrollArea#diag {{ background: transparent; border: none; }}
 QFrame#hsep {{ background: {BORDER}; min-width: 1px; max-width: 1px; }}
 QFrame#vsep {{ background: {BORDER}; min-height: 1px; max-height: 1px; }}
 
@@ -83,6 +86,7 @@ QPushButton[iconic="true"] {{ background: transparent; border: 1px solid transpa
 QPushButton[iconic="true"]:hover:!disabled {{ background: {TRACK}; border-color: {LINE}; }}
 QPushButton[iconic="true"]:focus {{ border-color: {ACCENT_HI}; }}
 QPushButton[iconic="true"][armed="true"] {{ background: {ARMED}; color: #ffffff; border-color: {ARMED}; padding: {p(5)} {p(10)}; }}
+QPushButton[iconic="true"][armed="true"][compact="true"] {{ padding: {p(5)}; }}
 QPushButton[iconic="true"][mini="true"] {{ padding: {p(2)}; border-radius: {p(6)}; }}
 QPushButton[iconic="true"]:checked {{ background: {TRACK}; border-color: {ACCENT}; }}
 QFrame#logpanel {{ background: {CARD}; border-top: 1px solid {BORDER}; }}

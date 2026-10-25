@@ -1059,4 +1059,41 @@ EN: Final[dict[str, str]] = {
         "disconnected ones); a connected pad beyond that number appears too. Takes effect right after saving.",
     "Liczba slotów w receiverze: {n} (opcja pads w receiver.toml albo --pads) - więcej wymaga zmiany tej wartości i restartu.":
         "Slots in the receiver: {n} (the pads option in receiver.toml or --pads) - more needs that value changed and a restart.",
+    "Diagnostyka": "Diagnostics",
+    "Zamknij diagnostykę": "Close diagnostics",
+    "Opóźnienie, jitter i straty pakietów w sieci oraz jakość łącza Bluetooth każdego pada na żywo":
+        "Live network delay, jitter and packet loss, and the Bluetooth link quality of each pad",
+    "SIEĆ  ·  NADAJNIK ↔ RECEIVER": "NETWORK  ·  SENDER ↔ RECEIVER",
+    "Opóźnienie sieci (RTT)": "Network delay (RTT)",
+    "Czas obiegu pinga: receiver → nadajnik → receiver (mediana z ostatnich pomiarów nadajnika). Na kablu zwykle poniżej 2 ms.":
+        "Ping round trip: receiver → sender → receiver (the median of the sender's latest measurements). Usually under 2 ms "
+        "on a cable.",
+    "Jitter": "Jitter",
+    "Jak bardzo odstępy między pingami nadajnika różnią się po drodze (RFC 3550). Skoki jittera to opóźnienia, które czujesz "
+    "jako szarpnięcia.":
+        "How much the spacing of the sender's pings changes on the way (RFC 3550). Jitter spikes are delays you feel as stutter.",
+    "Utrata pakietów": "Packet loss",
+    "Odsetek pakietów nadajnika, których zabrakło w ostatniej sekundzie (luki w numeracji). Spóźnione i zdublowane pakiety są "
+    "liczone osobno i nie wliczają się do strat.":
+        "The share of the sender's packets missing in the last second (gaps in the numbering). Late and duplicated packets are "
+        "counted separately and are not part of the loss.",
+    "Pakiety stanu na sekundę": "State packets per second",
+    "Ile pakietów stanu padów dociera na sekundę (wszystkie pady razem).":
+        "How many pad state packets arrive per second (all pads together).",
+    "Raport pada (Bluetooth)": "Pad report rate (Bluetooth)",
+    "Ile raportów na sekundę nadajnik dostaje od pada przez Bluetooth. Spadki oznaczają, że radio gubi albo opóźnia pakiety.":
+        "How many reports per second the sender gets from the pad over Bluetooth. Drops mean the radio loses or delays packets.",
+    "Sygnał Bluetooth (RSSI)": "Bluetooth signal (RSSI)",
+    "Odczyt kontrolera Bluetooth nadajnika, względem zakresu optymalnego (nie dBm): 0 = w zakresie, wartości ujemne = tyle dB "
+    "poniżej. Brak danych: starszy nadajnik albo kontroler nie podaje odczytu.":
+        "A reading from the sender's Bluetooth controller, relative to the optimal range (not dBm): 0 = inside the range, "
+        "negative = that many dB below it. No data: an older sender, or the controller gives no reading.",
+    "Jakość łącza Bluetooth": "Bluetooth link quality",
+    "Jakość łącza według kontrolera Bluetooth nadajnika (0-100 %). Nie każdy kontroler ją podaje.":
+        "Link quality as reported by the sender's Bluetooth controller (0-100 %). Not every controller provides it.",
+    "min {lo} · śr {avg} · max {hi}": "min {lo} · avg {avg} · max {hi}",
+    "utracone {lost} · spóźnione {late} · zdublowane {dup}": "lost {lost} · late {late} · duplicated {dup}",
+    "połączony od {t}": "connected for {t}",
+    "ponowne połączenia: {n}": "reconnects: {n}",
+    "Połączony od {t}": "Connected since {t}",
 }

@@ -10,7 +10,8 @@ Files: proto.py (shared), rx_config.py, rx_state.py, rx_buttons.py (remap + rema
        rx_winapi.py, rx_mouse.py, rx_report.py, rx_net.py, rx_dsu.py, rx_ds4.py,
        rx_console.py + rx_audio.py (console mode: monitor / TV, console.json),
        rx_settings.py (settings.json: mouse, master pad), rx_master.py (master pad: permissions, PS + button),
-       window: rx_qt.py (window, tray), rx_qt_screens.py (screen, full screen, placement), rx_qt_pad.py (pad drawing),
+       window: rx_qt.py (window, tray), rx_qt_sidebar.py (the side menu), rx_qt_diag.py + rx_diag.py (the Diagnostics tab and its data),
+       rx_qt_screens.py (screen, full screen, placement), rx_qt_pad.py (pad drawing),
        rx_qt_panels.py, rx_qt_widgets.py, rx_qt_style.py,
        rx_qt_console.py (settings window: console, mouse, master, window), rx_qt_icons.py (button icons),
        rx_i18n.py (window language: Polish / English), rx_events.py + rx_qt_log.py (event log in the window),
@@ -194,6 +195,7 @@ def _init_modules() -> None:
     """Load the settings and initialise every module that holds per-pad state; nothing runs in the background yet."""
     import rx_buttons
     import rx_console
+    import rx_diag
     import rx_ds4
     import rx_dsu
     import rx_gstick_io
@@ -210,6 +212,7 @@ def _init_modules() -> None:
     S.init(rx_buttons.RemapStore(C.REMAP_PATH))
     rx_settings.apply(rx_settings.load(C.SETTINGS_PATH, rx_settings.defaults(C.MOUSE_SENS, C.LOW_BATT)))
     rx_i18n.set_lang(rx_settings.cur.ui.lang)     # window and notification language (Settings -> Window)
+    rx_diag.init(C.NUM_PADS)
     rx_mouse.init(C.NUM_PADS)
     rx_hotkeys.init(C.NUM_PADS)
     rx_master.init(C.NUM_PADS)
