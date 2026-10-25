@@ -87,6 +87,9 @@ for i in (1, 1):
     state(1, rt=255); time.sleep(0.03); state(1); time.sleep(0.03)
 time.sleep(0.3)
 check(not c.on and (1, "denied") in pulses, f"pad 1 (nie master): podwójne R2 nic nie przełącza, czerwone mignięcie: {pulses}")
+import rx_events
+check(sum("tylko pad master" in e.text or "master pad only" in e.text for e in rx_events.since(0)) == 1,
+      "nie master: odmowa jest w logu okna (raz, mimo dwóch kliknięć w krótkim odstępie)")
 state(0, rt=255); time.sleep(0.03); state(0); time.sleep(0.03); state(0, rt=255); time.sleep(0.03); state(0)
 check(wait_for(lambda: c.on), "master: podwójne R2 przełącza tryb konsoli")
 c.close(restart=True); rx_console.ctl = None

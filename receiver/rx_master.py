@@ -18,6 +18,7 @@ system actions run in a separate thread.
 from __future__ import annotations
 
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import replace
 from typing import Any, Final
@@ -109,11 +110,24 @@ def allowed(i: int, feature: str) -> bool:
     return m.when_absent == "all" if ms is None else i == ms
 
 
+DENIED_LOG_GAP_S: Final = 3.0                      # one window log entry per pad and feature this often (a PS tap checks on every press)
+_denied_at: dict[tuple[int, str], float] = {}     # (slot, feature) -> when the denial was last written to the window log
+
+
 def check(i: int, feature: str) -> bool:
-    """Run allowed() and flash the pad red when it is not allowed (a child knows it is not a malfunction)."""
+    """Run allowed() and flash the pad red when it is not allowed (a child knows it is not a malfunction).
+
+    The denial also goes to the window log: the red blink alone is easy to miss (a lightbar colour set by the pad's own
+    setting) and the console output is not visible when the receiver starts from autostart.
+    """
     if allowed(i, feature):
         return True
     print(f"Controller {i}: {feature} - only the master pad can do that")
+    now = time.monotonic()
+    if now - _denied_at.get((i, feature), -DENIED_LOG_GAP_S) >= DENIED_LOG_GAP_S:
+        _denied_at[i, feature] = now
+        label = rx_settings.MASTER_FEATURES.get(feature, (feature,))[0]
+        ev.warn(_("{pad}: {feature} - tylko pad master (Ustawienia → Master)").format(pad=ev.pad_name(i), feature=_(label)))
     F.pulse(i, "denied")
     return False
 

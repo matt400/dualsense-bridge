@@ -660,6 +660,7 @@ EN: Final[dict[str, str]] = {
     "Nadajnik offline - brak pakietów od {s} s": "Sender offline - no packets for {s} s",
     "Błąd obsługi pakietu: {err}": "Packet handling error: {err}",
     "Master: {pad}": "Master: {pad}",
+    "{pad}: {feature} - tylko pad master (Ustawienia → Master)": "{pad}: {feature} - master pad only (Settings → Master)",
     "brak": "none",
     "Tryb konsoli: {what} - błąd: {err}": "Console mode: {what} - error: {err}",
     "Tryb konsoli: przełączenie pominięte - na pierwszym planie {exe}": "Console mode: switch skipped - {exe} in the foreground",
