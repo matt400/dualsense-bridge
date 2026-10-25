@@ -86,6 +86,11 @@ to the receiver from which scfg arrived; the receiver sends btcmd only after bts
                                round, number, how many, flags BTC_*, N of hciN, device name (UTF-8); a round goes along with the
                                device list, only from a sender with a controller choice (the mode in btstate); an older receiver
                                rejects the unknown length
+  btlink  (type 12) "6sbBBB"    sender -> PC (idx 255): the radio link of one connected pad (the Diagnostics tab) - MAC, RSSI [dB],
+                               link quality 0-255, flags BTL_* (which of the two values were really read), N of hciN. One packet per
+                               connected pad, with every btstate while the window is interested (BT_LIST). RSSI is the controller's
+                               Read RSSI: for Bluetooth Classic it is relative to the Golden Receive Power Range (0 = inside, negative =
+                               below), not dBm. An older receiver rejects the unknown length
 
 Format v3 (only with an HMAC key) - protection against replaying a recorded packet (replay):
   a header with version 3 instead of 2, the body as above, then the freshness token "!I" and 8 B of HMAC-SHA256 (computed over the whole
@@ -164,10 +169,11 @@ T_TRIG3 = 0x20F                                                     # trigger ef
 T_BUILD3 = 0x30D                                                    # build2 + the sender device's battery
 T_BTDEV, T_BTSTATE, T_BTCMD = 0x109, 0x10C, 0x20A                                                 # Bluetooth (v10+)
 T_BTCTRL = 0x209                                                    # the sender's Bluetooth controllers (the choice from the window)
+T_BTLINK = 0x30C                                                    # the radio link of a connected pad: RSSI, link quality
 WIRE: Final[dict[int, int]] = {
     T_STATE2: T_STATE, T_PONG2: T_PONG, T_SCFG: T_CMD, T_CALRES: T_INFO, T_BUILD2: T_BUILD, T_TRIG2: T_TRIG,
     T_BTDEV: T_IDENT, T_BTSTATE: T_VERSION, T_BTCMD: T_CMD, T_BTCTRL: T_IDENT, T_TRIG3: T_TRIG,
-    T_BUILD3: T_BUILD,
+    T_BUILD3: T_BUILD, T_BTLINK: T_VERSION,
 }
 FRESH_EXEMPT = frozenset({T_PING})
 
@@ -254,6 +260,7 @@ BT_SCAN_MAX_S: Final = 30     # a scan takes the radio from connected pads (dela
 BT_ACTIVE_S: Final = 6.0      # for this long after the last btcmd the sender sends the device list every second
 BT_RSSI_NONE: Final = -128
 BT_DEV_MAX: Final = 32        # the most devices in a round
+BTL_RSSI, BTL_LQ = 1, 2       # btlink flags: the RSSI value was read, the link quality value was read (the controller may not support one)
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Packet bodies (network byte order). The comment on each entry is the field order.
@@ -287,6 +294,7 @@ BODY: Final[dict[int, struct.Struct]] = {
     T_BTSTATE: struct.Struct("!BBBBBHBB6s"),    # BTS_*, BTF_*, scan [s], connected, in the list, round, op, BTR_*, MAC
     T_BTDEV: struct.Struct("!HBB6sbB32s"),      # round, number, how many, MAC, RSSI, BTD_*, name
     T_BTCTRL: struct.Struct("!HBBBB40s"),       # round, number, how many, BTC_*, N of hciN, device name
+    T_BTLINK: struct.Struct("!6sbBBB"),         # MAC, RSSI [dB], link quality 0-255, BTL_*, N of hciN
 }
 STATE_FIELDS: Final = 17                        # the state fields in state / state2 (without the latency measurement)
 BODY_LEN: Final = {ptype: body.size for ptype, body in BODY.items()}

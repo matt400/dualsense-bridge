@@ -13,6 +13,7 @@ from typing import Any, Final
 
 import rx_bt
 import rx_console
+import rx_diag
 import rx_events as ev
 import rx_feedback as F
 import rx_hotkeys as hotkeys
@@ -25,7 +26,7 @@ import rx_swap
 import rx_testmode as testmode
 from proto import (BATT_CHARGING, BATT_UNKNOWN, BODY, CAL_MOVED, CAL_OK, CLICK_PRESSED, CLICK_TWO_FINGERS, LAT_NONE, NO_PAD, PAD_KEYS,
                    RTT_NONE, SCFG_BATT, SCFG_EVENTS, SCFG_WOL, STATE_CHARGING, STATE_FIELDS, WIRE, Codec, EpochClock,
-                   T_BTCTRL, T_BTDEV, T_BTSTATE, T_BUILD, T_BUILD2, T_BUILD3, T_BYE, T_CALRES, T_CLICK, T_CMD, T_EVENT, T_FB,
+                   T_BTCTRL, T_BTDEV, T_BTLINK, T_BTSTATE, T_BUILD, T_BUILD2, T_BUILD3, T_BYE, T_CALRES, T_CLICK, T_CMD, T_EVENT, T_FB,
                    T_IDENT, T_INFO,
                    T_MOUSE, T_PING, T_PONG, T_PONG2, T_SCFG, T_STATE, T_STATE2, T_TOUCH, T_TRIG, T_TRIG2, T_TRIG3, T_UPDMSG,
                    T_VERSION, TRIG2_OFF, clamp, cstr, mac_bytes, mac_text)
@@ -83,6 +84,7 @@ class LinkStats:
         self.t_last = 0.0
         self.rate = 0.0              # packets/s from the last window (all types)
         self.expected = self.got = 0
+        self.late = self.dup = 0     # late and duplicated packets in this window (the Diagnostics tab)
         self.states = [0] * n
         self.t0 = time.monotonic()
 
@@ -96,7 +98,11 @@ class LinkStats:
         if self.last is not None:
             d = (sq - self.last) & SEQ_MASK
             if d == 0 or d >= SEQ_HALF:
-                return                       # a duplicate or a late one - does not move the counter
+                if d == 0:                   # a duplicate or a late one - does not move the counter
+                    self.dup += 1
+                else:
+                    self.late += 1
+                return
             limit = max(self.MIN_JUMP, (now - self.t_last) * max(self.rate, self.RATE_MIN) * self.RATE_MARGIN)
             if d <= limit:
                 self.expected += d
@@ -112,7 +118,8 @@ class LinkStats:
         if self.got:
             self.rate = self.got / dt
         S.pps[:] = [n / dt for n in self.states]
-        self.expected = self.got = 0
+        rx_diag.net.window(S.link_loss, max(0, self.expected - self.got), self.late, self.dup, sum(S.pps))
+        self.expected = self.got = self.late = self.dup = 0
         self.states = [0] * len(self.states)
         self.t0 = now
 
@@ -422,6 +429,7 @@ def _on_bye(i: int) -> None:
     rx_swap.end(_("pad się rozłączył"))      # before the virtual pad goes away: the routing and the game feedback return first
     clear_slot(i, forget_id=True)
     S.want[i].clear()
+    S.connected_at[i] = None
     S.wake[i].set()
     S.ignore_until[i] = time.monotonic() + 1.0   # late packets must not recreate it
     if was:
@@ -439,6 +447,8 @@ def _mark_alive(i: int, now: float) -> None:
         S.alive[i] = True
         print(f"Controller {i}: data stream started")
     if not S.want[i].is_set():
+        S.connected_at[i] = now                  # the pad card shows how long ago
+        rx_diag.pad_connected(i)
         ev.info(_("{pad} połączony").format(pad=ev.pad_name(i)))   # after a short silence the DS4 stayed - this is not a new connection
         rx_swap.end(_("połączył się pad"))    # the swap was made for the pair that was connected then
         S.want[i].set()   # the slot thread will create the virtual DS4
@@ -674,6 +684,7 @@ def check_stale(now: float) -> None:
             ev.warn(_("{pad}: brak sygnału przez {s} s - odłączony").format(pad=ev.pad_name(i), s=f"{C.UNPLUG_S:g}"))
             rx_swap.end(_("pad się rozłączył"))
             S.want[i].clear()
+            S.connected_at[i] = None
             S.wake[i].set()
             # like after a bye packet: the next pad in this slot (maybe another) must send its identifier - otherwise it
             # would get the previous one's profile, and if that was the master, it would switch on the console mode and the master's rights
@@ -781,12 +792,17 @@ def _on_control(t: int, i: int, sq: int, data: bytes, addr: tuple[str, int], now
         _adopt_peer(addr, now)
         if S.seen.fresh((WIRE[t], NO_PAD), sq, now):
             rx_bt.on_packet(t, data, now)
+    elif t == T_BTLINK:  # the radio link of a connected pad (RSSI, link quality) for the Diagnostics tab
+        _adopt_peer(addr, now)
+        if S.seen.fresh((WIRE[t], NO_PAD), sq, now):
+            rx_diag.on_btlink(data, now)
     elif t == T_EVENT:  # a sender event for the log (idx = the pad's slot or 255)
         on_event(i, data)
     elif t == T_PING:   # ping -> pong2 (the PC clock for latency measurement) and pong (RTT; an older sender knows only this)
         _adopt_peer(addr, now, from_ping=True)
         t0 = BODY[T_PING].unpack_from(data, 4)[0]
         note_ping(t0, arr)
+        rx_diag.on_ping(t0, arr)
         send_peer(codec.pack(T_PONG2, i, t0, clock.ns() // 1000))
         send_peer(codec.pack(T_PONG, i, t0))
     else:

@@ -27,7 +27,7 @@ rx_i18n.set_lang("en")
 C.cfg["tray"] = False
 C.CONSOLE_PATH = os.path.join(TMP, "console.json")
 
-import rx_audio, rx_bt as RB, rx_console, rx_drift as D, rx_latency, rx_master, rx_qt   # noqa: E402,E401
+import rx_audio, rx_bt as RB, rx_console, rx_diag, rx_drift as D, rx_latency, rx_master, rx_qt   # noqa: E402,E401
 from proto import (BTD_CONNECTED, BTD_PAD, BTD_PAIRED, BTD_TRUSTED, BTS_OK, CAP_CALIB,   # noqa: E402
                    RUMBLE_HIDRAW, T_BTDEV, T_BTSTATE, T_IDENT, T_TOUCH, mac_bytes)
 from rx_console import Console, ConsoleConfig                     # noqa: E402
@@ -89,6 +89,7 @@ online()
 link(0, 78, 1.1)
 link(1, 41, 1.3)
 
+rx_diag.init(C.NUM_PADS)                                          # as receiver_controller does, before the window
 win = rx_qt.create_window(os.path.join(TMP, "ui.ini"))
 win.resize(*SIZE)
 win.show()
@@ -139,6 +140,36 @@ win.live_tick()
 tick()
 save(win, "test_view")
 win.seg.buttons["out"].click()
+pump()
+
+# ---------- 3b. Diagnostyka: sieć i łącze Bluetooth każdego pada ----------
+for k in range(rx_diag.HISTORY):
+    a = k / 7
+    rx_diag.net.rtt.add(1.6 + 0.5 * math.sin(a) + (6 if k in (60, 61) else 0))
+    rx_diag.net.jitter.add(0.4 + 0.2 * math.sin(a * 1.7) ** 2)
+    rx_diag.net.loss.add(0.0 if k not in (90, 91) else 1.2)
+    rx_diag.net.pps.add(480 + 12 * math.sin(a))
+    for i, p in enumerate(rx_diag.pads):
+        p.hz.add(250 - 3 * i + 2 * math.sin(a + i))
+        p.pps.add(240 - 4 * i + 3 * math.sin(a + i))
+        p.rssi.add(-1 - 5 * i - 1.5 * abs(math.sin(a / 2)))
+        p.quality.add(96 - 14 * i - 4 * abs(math.sin(a / 3)))
+rx_diag.net.lost, rx_diag.net.late, rx_diag.net.dup = 3, 1, 0
+for i, p in enumerate(rx_diag.pads):
+    p.connects = 1 + i
+    p.link = rx_diag.Link(-2 - 5 * i, 240 - 40 * i, 0, time.monotonic() + 3600)
+S.connected_at[0], S.connected_at[1] = time.monotonic() - 2535, time.monotonic() - 312
+tick()
+rx_diag.net.jitter_ms, rx_diag.net.loss_pct, rx_diag.net._pps = 0.5, 0.0, 480.0     # what the next samples will show
+rx_diag.net._last_ping = time.monotonic()
+S.pps[:] = [240.0, 236.0]
+win.diag_btn.click()
+pump(150)
+win.slow_tick()
+win.diag_page.refresh()
+pump()
+save(win, "diagnostics")
+win.diag_btn.click()
 pump()
 
 # ---------- 4. Bluetooth nadajnika: wysuwany panel ----------

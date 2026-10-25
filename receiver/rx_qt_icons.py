@@ -24,7 +24,7 @@ EXTRA_TIPS = {"crown": "Pad master", "mouse": "Touchpad jako mysz", "touchpad": 
               "trash": "Wyczyść", "phone": "Nadajnik", "lightbar": "Lightbar", "wake": "Wake-on-LAN",
               "target": "Dryf gałek", "gyro": "Kalibracja żyroskopu", "shield": "Blokada wyjścia do gry",
               "pulse": "Ruch pada", "bluetooth": "Bluetooth nadajnika", "keys": "Skróty pada",
-              "collapse": "Zwiń kolumnę padów", "expand": "Rozwiń kolumnę padów"}
+              "collapse": "Zwiń kolumnę padów", "expand": "Rozwiń kolumnę padów", "diag": "Diagnostyka"}
 SIZES = (16, 20, 24, 32, 48)
 GRID_MID = 12                         # the centre of the 24x24 icon grid
 
@@ -431,6 +431,14 @@ def _keys(p: QPainter) -> None:
         p.drawEllipse(QPointF(x, y), 1.1, 1.1)
 
 
+def _diag(p: QPainter) -> None:
+    """Four rising signal bars over a baseline, the last one in the accent colour - the network / Bluetooth diagnostics."""
+    p.setPen(Qt.PenStyle.NoPen)
+    for k, (h, c) in enumerate(((6, DIM), (9.5, DIM), (13, DIM), (17, QColor("#4c8dff")))):
+        p.setBrush(c)
+        p.drawRoundedRect(QRectF(3.5 + k * 4.6, 20.5 - h, 3.2, h), 1.2, 1.2)
+
+
 def _fold(p: QPainter, toward_left: bool) -> None:
     """A bar (the window's edge) and a chevron: the pad column folds towards it (points left) or unfolds from it (points right)."""
     p.setPen(_pen(FG, 1.8))
@@ -466,7 +474,7 @@ def _draw(p: QPainter, name: str) -> None:
          "stopwatch": _stopwatch, "plus": _plus, "press": _press, "reset": _reset, "log": _log, "copy": _copy,
          "trash": _trash, "phone": _phone, "lightbar": _lightbar, "wake": _wake, "target": _target, "gyro": _gyro,
          "shield": _shield, "pulse": _pulse, "bluetooth": _bluetooth, "keys": _keys, "usb": _usb,
-         "collapse": _collapse, "expand": _expand}[name](p)
+         "collapse": _collapse, "expand": _expand, "diag": _diag}[name](p)
 
 
 def pixmap(name: str, size: int = 24, dim: bool = False) -> QPixmap:
@@ -497,4 +505,4 @@ def has_icon(name: str) -> bool:
     return name in FACE or name in BADGES or name.startswith("dpad_") or name in (
         "ps", "share", "options", "crown", "mouse", "touchpad", "tv", "power", "restart", "window", "fullscreen", "rumble", "gear",
         "update", "backup", "stopwatch", "plus", "press", "reset", "log", "copy", "trash", "phone", "lightbar", "wake",
-        "target", "gyro", "shield", "pulse", "bluetooth", "keys", "usb", "collapse", "expand")
+        "target", "gyro", "shield", "pulse", "bluetooth", "keys", "usb", "collapse", "expand", "diag")

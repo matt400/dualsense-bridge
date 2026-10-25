@@ -27,7 +27,7 @@ Every module has a docstring with its role; find the file here before opening an
   `sender_ctrl` (`Ctrl`: one pad, packets), `sender_streams` (evdev read loops, heartbeat), `sender_net` (UDP, feedback, pongs), `sender_state`.
 - Feedback and features: `sender_rumble` (evdev FF / hidraw), `sender_calib` (gyro calibration per MAC), `sender_wol` (Wake-on-LAN from the pad),
   `sender_control` (PC commands, idle power-off, info), `sender_events` (event packets), `sender_batt`, `sender_update`.
-- System: `sender_bt` + `sender_btadapter` (BlueZ driven from the receiver window, several adapters), `sender_rt` (low-latency mode, needs root),
+- System: `sender_bt` + `sender_btadapter` (BlueZ driven from the receiver window, several adapters), `sender_btlink` (RSSI / link quality of connected pads over raw HCI, the `btlink` packet), `sender_rt` (low-latency mode, needs root),
   `sender_migrate` (sender.toml migration), `sender_ioctl`.
 
 **Receiver** (`receiver/`)
@@ -41,9 +41,9 @@ Every module has a docstring with its role; find the file here before opening an
 - Windows integration: `rx_console` (console mode monitor ↔ TV), `rx_display`, `rx_audio` (pycaw), `rx_games` (foreground program → profile, stop rumble),
   `rx_gamebar`, `rx_autostart` (Task Scheduler).
 - Support: `rx_i18n` (PL texts in code + EN dict), `rx_status`, `rx_events` (log model), `rx_latency`, `rx_security`, `rx_backup`, `rx_update` (git pull),
-  `rx_bt` (sender Bluetooth model), `rx_icon`.
+  `rx_bt` (sender Bluetooth model), `rx_diag` (network / Bluetooth link numbers for the Diagnostics tab, no Qt), `rx_icon`.
 - Window (PySide6): `rx_qt` (main window, the foldable pad column), `rx_qt_pad` (pad drawing), `rx_qt_panels` (right column), `rx_qt_console` (settings window, tabs in a left column), `rx_qt_test`, `rx_qt_access` (accessibility panel of the Test view),
-  `rx_qt_bt`, `rx_qt_tv` (pad control in TV mode), `rx_qt_drawer`, `rx_qt_keys`, `rx_qt_log`, `rx_qt_gstick`, `rx_qt_gyro` (gyro aim preview), `rx_qt_screens` (screen / fullscreen placement),
+  `rx_qt_sidebar` (the vertical icon menu), `rx_qt_diag` (Diagnostics tab: tiles, charts), `rx_qt_bt`, `rx_qt_tv` (pad control in TV mode), `rx_qt_drawer`, `rx_qt_keys`, `rx_qt_log`, `rx_qt_gstick`, `rx_qt_gyro` (gyro aim preview), `rx_qt_screens` (screen / fullscreen placement),
   `rx_qt_style`, `rx_qt_icons`, `rx_qt_widgets`.
 
 **Large files** – grep or read by range, never whole: `rx_i18n` (~1000, translation dicts), `proto` (~960, two identical copies), `rx_qt`, `rx_qt_console`,

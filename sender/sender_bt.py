@@ -31,15 +31,16 @@ from subprocess import DEVNULL, PIPE
 from typing import Any, Final
 
 import sender_btadapter as btadapter
+import sender_btlink as btlink
 import sender_net as net
 import sender_state as state
 from proto import (BODY, BTA_MANUAL, BTA_PICK, BTC_ACTIVE, BTC_BLOCKED, BTC_FIXED, BTC_PICKED, BTC_USB,
                    BTD_CONNECTED, BTD_PAD, BTD_PAIRED, BTD_TRUSTED, BTF_BUSY, BTF_HAS_BUILTIN, BTF_HAS_USB,
-                   BTF_MODE_SHIFT, BTF_ON_USB, BTF_SCANNING, BTR_AUTH, BTR_BUSY, BTR_DENIED, BTR_FAILED, BTR_NONE,
+                   BTF_MODE_SHIFT, BTF_ON_USB, BTF_SCANNING, BTL_LQ, BTL_RSSI, BTR_AUTH, BTR_BUSY, BTR_DENIED, BTR_FAILED, BTR_NONE,
                    BTR_NOT_FOUND, BTR_OFF, BTR_OK, BTR_RUNNING, BTR_TIMEOUT, BTS_BLOCKED, BTS_DENIED, BTS_ERROR,
                    BTS_NO_ADAPTER, BTS_NO_SERVICE, BTS_NO_TOOL, BTS_OFF, BTS_OK, BT_ACTIVE_S, BT_ADAPTER,
                    BT_ADAPTER_USE, BT_CONNECT, BT_DEV_MAX, BT_DISCONNECT, BT_LIST, BT_PAIR, BT_POWER, BT_REMOVE,
-                   BT_RSSI_NONE, BT_SCAN_MAX_S, BT_SCAN_START, BT_SCAN_STOP, T_BTCTRL, T_BTDEV, T_BTSTATE, clamp,
+                   BT_RSSI_NONE, BT_SCAN_MAX_S, BT_SCAN_START, BT_SCAN_STOP, T_BTCTRL, T_BTDEV, T_BTLINK, T_BTSTATE, clamp,
                    mac_bytes, mac_text, utf8_field)
 from sender_config import C
 
@@ -52,6 +53,7 @@ PARSE_OFFLOAD_BYTES: Final = 32 * 1024   # a GetManagedObjects answer longer tha
 CALL_S, CONNECT_S, PAIR_S = 5.0, 25.0, 40.0   # limits of D-Bus calls [s] (pairing waits for the pad)
 IDLE_S = 5.0                 # the adapter state with no panel open
 TICK_S = 1.0                 # the state and the list with the panel open / during a scan
+LINK_S = 1.0                 # the pads' RSSI / link quality is read at most this often (the Diagnostics tab keeps the panel "open")
 DUP_S = 0.5                  # btcmd arrives 3x (UDP) - repeats of the same operation within this time are skipped
 NAME_MAX = BODY[T_BTDEV].size - 12
 CTRL_NAME_MAX = BODY[T_BTCTRL].size - 6
@@ -215,9 +217,15 @@ class Bluetooth:
     the controller through sender_btadapter, and periodically reports everything to the receiver window (loop()).
     """
 
-    def __init__(self, run: Runner = run_cmd, emit: Callable[..., None] | None = None, sysfs: Path | None = None) -> None:
-        """Create the manager; ``run`` and ``emit`` are replaceable for tests, ``sysfs=None`` disables the controller choice."""
+    def __init__(self, run: Runner = run_cmd, emit: Callable[..., None] | None = None, sysfs: Path | None = None,
+                 links: btlink.LinkReader | None = None) -> None:
+        """Create the manager; ``run``, ``emit`` and ``links`` are replaceable for tests, ``sysfs=None`` disables the controller choice.
+
+        Without ``links`` the pads' radio link is read through raw HCI sockets when there is a sysfs (the real sender),
+        otherwise not at all.
+        """
         self.run = run
+        self.links = links if links is not None else btlink.LinkReader(btlink.RawHci(sysfs) if sysfs is not None else None)
         self.emit = emit or (lambda *a: net.emit(*a))
         self.state = BTS_ERROR
         self.adapter = ""
@@ -246,6 +254,7 @@ class Bluetooth:
         self.pick: btadapter.Ctrl | None = None
         self.adapter_err = ""
         self.untrusted: set[str] = set()             # pads for which Trusted could not be set (trust_pads)
+        self.link_t = float("-inf")                  # when the pads' radio link was last read (send_links)
 
     # ---------- commands from the window (the asyncio loop thread, from on_readable) ----------
     def on_command(self, op: int, arg: int, mac: bytes, now: float | None = None) -> None:
@@ -778,6 +787,22 @@ class Bluetooth:
             for k, (cflags, index, label) in enumerate(rows):
                 self.emit(T_BTCTRL, 255, self.cgen, k, len(rows), cflags, index, utf8_field(label, CTRL_NAME_MAX, "…"))
 
+    async def send_links(self, now: float) -> None:
+        """Send a btlink packet (RSSI, link quality) for every connected pad, at most once per LINK_S.
+
+        The reading is a few blocking syscalls on raw HCI sockets, so it runs in a worker thread. A pad the controller
+        could not be asked about (not connected there, no permission) is simply left out.
+        """
+        if now - self.link_t < LINK_S:
+            return
+        self.link_t = now
+        macs = [d.mac for d in self.devices if d.flags & BTD_CONNECTED and d.flags & BTD_PAD]
+        if not macs:
+            return
+        for mac, link in await asyncio.to_thread(self.links.sample, macs):
+            flags = (BTL_RSSI if link.rssi is not None else 0) | (BTL_LQ if link.quality is not None else 0)
+            self.emit(T_BTLINK, 255, mac_bytes(mac), clamp(link.rssi or 0, -127, 127), link.quality or 0, flags, clamp(link.hci, 0, 255))
+
     async def loop(self) -> None:
         """Report the state to the receiver.
 
@@ -798,6 +823,8 @@ class Bluetooth:
                     if not self.running:
                         await self.refresh()          # during an operation it refreshes itself (BlueZ is busy)
                     self.send(full=active)
+                    if active and not self.running and self.links.hci is not None:
+                        await self.send_links(now)
                 elif now - t_adapter >= IDLE_S and not self.running:
                     # controller choice and link policy without a receiver: the phone starts while the PC is off (a pad wakes it
                     # through Wake-on-LAN), the receiver is not running - earlier the dongle and the lack of SNIFF waited for the window on

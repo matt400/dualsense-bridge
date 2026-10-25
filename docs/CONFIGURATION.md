@@ -72,7 +72,7 @@ The **Update** button in the window (or in the tray icon menu) updates **both si
 While it runs, the button shows a turning ring and the stage as a percent (download, settings backup, libraries, sender).
 
 The version (commit and date) is in the window header next to the name, and the sender's version next to "Sender
-online". A bar with a notice appears below the header (the **Update** button is in the header) when:
+online". A bar with a notice appears below the header (the **Update** button is in the side menu) when:
 - a newer version is on GitHub - "Update available: 3 changes - title of the latest" (the window checks this in the
   background 20 s after start and every 30 min, without downloading code and without a login prompt; also a one-time
   tray notification);

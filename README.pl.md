@@ -106,7 +106,7 @@ Usunięcie usługi: `sudo ./install-service.sh --remove`.
 
 ### 3. Pad
 
-1. W oknie na PC kliknij ikonę **Bluetooth** w nagłówku, potem **Skanuj**.
+1. W oknie na PC kliknij ikonę **Bluetooth** w menu bocznym, potem **Skanuj**.
 2. Na padzie przytrzymaj **Create + PS**, aż lightbar zacznie szybko migać.
 3. Przy padzie na liście kliknij **Sparuj**.
 
@@ -115,7 +115,7 @@ albo pad PS4 (ViGEmBus). Kolejność graczy jest stała: pad 2 nie zostanie grac
 
 ## Pierwsze kroki
 
-- **Skróty pada:** ikona pada w nagłówku okna pokazuje wszystkie skróty (np. PS + Share = zrzut ekranu).
+- **Skróty pada:** ikona pada w menu bocznym pokazuje wszystkie skróty (np. PS + Share = zrzut ekranu).
 - **Tryb konsoli** (obraz i dźwięk na TV): w Ustawieniach → Tryb konsoli wybierz urządzenia audio TV i PC. Potem
   dwa naciśnięcia R2 na padzie przełączają ekrany.
 - **Remapowanie:** kliknij przycisk albo gałkę na rysunku pada w oknie. **Zapisz** zapisuje profil.
