@@ -9,7 +9,7 @@
 # dsu_max_clients = 4   # the most DSU subscribers at a time
 # hm_min_age_days = 7   # a new HIDMaestro version installs only this many days after its release (an unsigned release
 #   ends up in the administrator process - swapped releases usually disappear within days); 0 = at once
-# pads = 2   # the number of slots (max 4); virtual pads are created only for connected ones
+# pads = 4   # the number of slots (max 4); virtual pads are created only for connected ones
 # mouse_pads = [0]   # which controllers start in the mouse mode (with a master pad: the master has the mouse)
 # pad_hz = 1000   # the highest DS4 report rate (merging bursts of packets, like the sender's pad_min_dt = 1 ms); 0 = no limit
 # dsu_hz = 1000   # same for DSU; 0 = no limit

@@ -1,6 +1,6 @@
 """Receiver: the settings window (tray -> Settings, or a button in the window header).
 
-Nine tabs:
+Nine tabs, in a column on the left (horizontal text, one under another):
 
   Console mode  the pad button is chosen by pressing it on the pad (rx_console.arm_capture), the audio devices are a list of
                 active Windows outputs (rx_audio, Refresh); "Test" switches the console mode on for a few seconds
@@ -11,8 +11,9 @@ Nine tabs:
                 or the default for all; the low battery threshold (the same drives the warning on the pad card)
   Wake-on-LAN   PS + button held on the pad when the receiver does not answer -> the sender wakes the PC; the MAC
                 and broadcast typed in or automatic (detected by the sender - shown here)
-  Pads          virtual pads: HIDMaestro (DualSense) / ViGEmBus (DS4), the path to HIDMaestro.Core.dll, the fixed order
-                of players (rx_settings.VpadConfig, rx_ds4); without administrator rights - a restart as administrator
+  Pads          which pad cards the window shows (only connected / a fixed number, rx_settings.UiConfig); virtual pads:
+                HIDMaestro (DualSense) / ViGEmBus (DS4), the path to HIDMaestro.Core.dll, the fixed order of players
+                (rx_settings.VpadConfig, rx_ds4); without administrator rights - a restart as administrator
   Window        the screen the window appears on (receiver_ui.ini, MainWindow.place_on_screen)
   Backups       copies of settings.json / console.json / remap.json from updates (rx_backup): restore (two clicks,
                 then a receiver restart) or make a copy now
@@ -25,13 +26,14 @@ startup_mode applies as with autostart.
 import threading
 import time
 from collections.abc import Iterable, Sequence
+from dataclasses import replace
 from typing import Any
 
 from rx_i18n import _
 from PySide6.QtCore import QPoint, QRect, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QHideEvent, QPixmap
 from PySide6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QDialog, QGridLayout, QHBoxLayout, QLayout, QLineEdit,
-                               QPlainTextEdit, QScrollArea, QTabWidget, QVBoxLayout, QWidget)
+                               QPlainTextEdit, QScrollArea, QVBoxLayout, QWidget)
 
 import rx_audio
 import rx_backup
@@ -52,18 +54,18 @@ from rx_display import DPI_VALUES
 from rx_i18n import LANGS
 from rx_qt_icons import icon
 from rx_qt_style import set_prop
-from rx_qt_widgets import (Combo, ConfirmButton, SliderRow, button, field, group, icon_button, icon_label, input_items, label,
-                           left, pair, spinbox)
+from rx_qt_widgets import (Combo, ConfirmButton, SideTabs, SliderRow, button, field, group, icon_button, icon_label, input_items,
+                           label, left, pair, spinbox)
 from rx_settings import (ABSENT, COMBO_BUTTONS, DEFAULT_PAD, LIGHT_MODES, LOW_PCT, MASTER_ACTIONS, MASTER_FEATURES, MOUSE_LIMITS,
-                         VPAD_BACKENDS, WOL_BUTTONS, WOL_HOLD_MS, LightbarConfig, MasterConfig, MouseConfig, PadLight, VpadConfig,
-                         WolConfig)
+                         PADS_COUNT, VPAD_BACKENDS, WOL_BUTTONS, WOL_HOLD_MS, LightbarConfig, MasterConfig, MouseConfig, PadLight,
+                         UiConfig, VpadConfig, WolConfig)
 
 CAPTURE_TIMEOUT_MS = 15000
 LUMA_DARK_TEXT = 380      # R + G + B above this (of 765) is a light colour: the button text turns black
 NO_AUDIO = "— nie zmieniaj dźwięku —"
 TV_RESOLUTIONS = ((0, 0), (1920, 1080), (2560, 1440), (3840, 2160))
 STARTUP_LABELS = {"extend": "Rozszerz: oba ekrany aktywne", "internal": "Tylko monitor"}
-PREF_SIZE = QSize(860, 780)   # the settings window size on a big screen (a smaller screen -> a smaller one, with scrolling)
+PREF_SIZE = QSize(1060, 780)  # the settings window size on a big screen (a smaller screen -> a smaller one, with scrolling)
 FRAME_GUESS = QSize(16, 40)   # the Windows frame and title bar, before the window is shown
 FIT_MARGIN = 24
 RESTORE_RESTART_MS = 1500     # after restoring a backup: the message is visible this long, then the receiver restarts
@@ -82,7 +84,7 @@ class ConsoleSettings(QDialog):
         super().__init__(parent)
         self.setObjectName("root")
         self.setWindowTitle(_("Ustawienia"))
-        self.setMinimumWidth(640)
+        self.setMinimumWidth(720)
         self.resize(PREF_SIZE)
         self.toggle_button = ConsoleConfig().toggle_button
         self.captured.connect(self._on_captured)
@@ -96,9 +98,7 @@ class ConsoleSettings(QDialog):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(18, 12, 18, 12)
         lay.setSpacing(8)
-        self.tabs = QTabWidget()
-        self.tabs.tabBar().setDrawBase(False)
-        self.tabs.tabBar().setExpanding(False)
+        self.tabs = SideTabs()
         self.tabs.addTab(_page(self._console_tab()), icon("tv"), _("Tryb konsoli"))
         self.tabs.addTab(_page(self._mouse_tab()), icon("mouse"), _("Mysz"))
         self.tabs.addTab(_page(self._master_tab()), icon("crown"), _("Master"))
@@ -254,13 +254,26 @@ class ConsoleSettings(QDialog):
                         self.vpad_auto,
                         field(_("Własna HIDMaestro.Core.dll (plik albo folder; puste = pobrana automatycznie)"), self.vpad_dll),
                         self.vpad_now, row_of(self.vpad_check, self.vpad_net, self.vpad_admin))
+        self.pads_mode = Combo([("dynamic", _("Dynamiczna: tylko podłączone pady")), ("fixed", _("Stała: zawsze te same sloty"))])
+        self.pads_mode.changed.connect(lambda _v: self._pads_view_state())
+        self.pads_count = spinbox(PADS_COUNT[0], min(PADS_COUNT[1], C.NUM_PADS))
+        self.pads_count_row = field(_("Liczba padów, które są zawsze widoczne"), self.pads_count)
+        shown = group(_("PADY W OKNIE"),
+                      label(_("Dynamiczna: kolumna po lewej pokazuje tylko podłączone pady. Stała: zawsze widać pierwsze pady "
+                              "z listy (także rozłączone); podłączony pad spoza tej liczby też się pojawia. Działa od razu po "
+                              "zapisaniu."), "dim", wrap=True),
+                      field(_("Liczba padów"), self.pads_mode),
+                      self.pads_count_row)
+        if PADS_COUNT[1] > C.NUM_PADS:
+            shown.layout().addWidget(label(_("Liczba slotów w receiverze: {n} (opcja pads w receiver.toml albo --pads) - "
+                                             "więcej wymaga zmiany tej wartości i restartu.").format(n=C.NUM_PADS), "dim", wrap=True))
         order = group(_("KOLEJNOŚĆ GRACZY"),
                       self.vpad_fixed,
                       label(_("Gry i Steam numerują pady wg kolejności podłączenia. Gdy pad 2 włączy się pierwszy, pad 1 "
                               "dostaje najpierw pad zastępczy, więc pad 2 zawsze zostaje graczem 2. Który fizyczny pad to "
                               "pad 1 / 2, pamięta nadajnik (slots.json, wg MAC). Zastępczy pad znika razem z padem 2."),
                             "dim", wrap=True))
-        return [backend, order]
+        return [shown, backend, order]
 
     def _load_vpad(self, v: VpadConfig) -> None:
         """Fill the Pads tab from a VpadConfig."""
@@ -269,6 +282,16 @@ class ConsoleSettings(QDialog):
         self.vpad_fixed.setChecked(v.fixed_slots)
         self.vpad_auto.setChecked(v.hm_auto)
         self._vpad_state()
+
+    def _load_pads_view(self, ui: UiConfig) -> None:
+        """Fill the "pads in the window" group from the UI settings (the count field only matters for the fixed mode)."""
+        self.pads_mode.set_data(ui.pads_mode)
+        self.pads_count.setValue(ui.pads_count)
+        self._pads_view_state()
+
+    def _pads_view_state(self) -> None:
+        """The number of pads is asked for only in the fixed mode."""
+        self.pads_count_row.setVisible(self.pads_mode.currentData() == "fixed")
 
     def _hm_check(self) -> None:
         """Check and possibly download in the background (up to several minutes - ~56 MB); the state is refreshed every 0.5 s."""
@@ -743,6 +766,7 @@ class ConsoleSettings(QDialog):
         owner = self.parent()
         self.win_mode.set_data("full" if getattr(owner, "fullscreen", lambda: False)() else "window")
         self.lang.set_data(rx_settings.cur.ui.lang)
+        self._load_pads_view(rx_settings.cur.ui)
         self.pick.setEnabled(rx_console.ctl is not None)
         self.refresh_async(cfg.audio_tv, cfg.audio_pc)
         self._status("")
@@ -832,7 +856,7 @@ class ConsoleSettings(QDialog):
             combo.set_data(m.actions.get(k, ""))
 
     def collect_settings(self) -> rx_settings.Settings:
-        """-> the Settings described by the window (mouse, master, language, lightbar, Wake-on-LAN, pads).
+        """-> the Settings described by the window (mouse, master, language, pad cards, lightbar, Wake-on-LAN, pads).
 
         The log settings stay as they are.
         """
@@ -845,7 +869,9 @@ class ConsoleSettings(QDialog):
                               only_master=tuple(k for k, cb in self.features.items() if cb.isChecked()),
                               actions={k: c.currentData() or "" for k, c in self.actions.items()},
                               claim_hold=self.claim.isChecked())
-        return rx_settings.Settings(mouse, master, rx_settings.UiConfig(lang=self.lang.currentData()),
+        ui = replace(rx_settings.cur.ui, lang=self.lang.currentData(), pads_mode=self.pads_mode.currentData(),
+                     pads_count=self.pads_count.value())
+        return rx_settings.Settings(mouse, master, ui,
                                     LightbarConfig(low_pct=self.low_pct.value(), pads=dict(self._lights)),
                                     self._collect_wol(), rx_settings.cur.log, self._collect_vpad())
 

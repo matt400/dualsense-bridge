@@ -1039,4 +1039,23 @@ EN: Final[dict[str, str]] = {
     "Podgląd - funkcja jest wyłączona": "Preview - the feature is off",
     "Środek ustawiony.": "Center set.",
     "Kalibracja nie wyszła - trzymaj pada nieruchomo przez chwilę.": "Calibration failed - hold the pad still for a moment.",
+    "PADY": "PADS",
+    "Zwiń kolumnę padów": "Collapse the pad column",
+    "Rozwiń kolumnę padów": "Expand the pad column",
+    "CELOWANIE - PODGLĄD": "AIMING - PREVIEW",
+    "Obrót: poziomo {x:+.0f}°/s  pionowo {y:+.0f}°/s": "Rotation: horizontal {x:+.0f}°/s  vertical {y:+.0f}°/s",
+    "Prawa gałka (wyjście): X {x:+.0f}%  Y {y:+.0f}%": "Right stick (output): X {x:+.0f}%  Y {y:+.0f}%",
+    "Kursor: {x:+.0f} / {y:+.0f} px/s": "Cursor: {x:+.0f} / {y:+.0f} px/s",
+    "Podgląd - gyro jest wyłączone": "Preview - the gyro is off",
+    "PADY W OKNIE": "PADS IN THE WINDOW",
+    "Liczba padów": "Number of pads",
+    "Dynamiczna: tylko podłączone pady": "Dynamic: only connected pads",
+    "Stała: zawsze te same sloty": "Fixed: always the same slots",
+    "Liczba padów, które są zawsze widoczne": "Number of pads that are always shown",
+    "Dynamiczna: kolumna po lewej pokazuje tylko podłączone pady. Stała: zawsze widać pierwsze pady z listy (także "
+    "rozłączone); podłączony pad spoza tej liczby też się pojawia. Działa od razu po zapisaniu.":
+        "Dynamic: the left column shows only connected pads. Fixed: the first pads of the list are always shown (also "
+        "disconnected ones); a connected pad beyond that number appears too. Takes effect right after saving.",
+    "Liczba slotów w receiverze: {n} (opcja pads w receiver.toml albo --pads) - więcej wymaga zmiany tej wartości i restartu.":
+        "Slots in the receiver: {n} (the pads option in receiver.toml or --pads) - more needs that value changed and a restart.",
 }

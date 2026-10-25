@@ -1,4 +1,5 @@
 import sys, os, time, json
+from dataclasses import replace
 sys.path.insert(0, os.path.dirname(__file__))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")            # bez ekranu i bez Xvfb
 from rxenv import *                                              # noqa
@@ -39,6 +40,8 @@ S.alive[0] = True; S.batt_info[0] = (64, 0); S.batt_info[1] = (12, 0)
 S.info[0] = (1.2, 540, 500, time.monotonic()); S.link_loss = 0.0; S.pps[0] = 250.0
 S.last_pkt = time.monotonic(); S.peer = ("192.168.1.50", 5005)
 store.save(base + "@doom.exe", {}); S.set_game("doom.exe")
+import rx_settings
+rx_settings.apply(replace(rx_settings.cur, ui=replace(rx_settings.cur.ui, pads_mode="fixed", pads_count=2)))   # karta niepodłączonego pada też widoczna
 win.slow_tick(); pump(20)
 c0, c1 = win.cards
 assert c0.lat.text() == "ping 1.2 ms" and not c0.lat_bar.isVisible(), "bez pomiaru opóźnienia: ping"

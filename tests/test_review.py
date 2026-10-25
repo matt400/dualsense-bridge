@@ -50,7 +50,7 @@ check(ok_ and S.remap_maps[0]["buttons"] == {}, "zły profil (np. ręcznie edyto
 cfg = os.path.join(TMP, "key.json")
 json.dump({"key": 1234}, open(cfg, "w"))
 k = rx_config.init(["--config", cfg]).KEY
-rx_config.init(["--remap-file", C.REMAP_PATH])
+rx_config.init(["--pads", "2", "--remap-file", C.REMAP_PATH])
 check(k == b"1234", f"key = 1234 (liczba) -> b'1234' jak w nadajniku, a nie AttributeError: {k!r}")
 
 # ---------- PS trzymane przy włączaniu pada ----------
