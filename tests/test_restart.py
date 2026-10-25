@@ -17,7 +17,7 @@ sys.modules["vgamepad"] = vg
 errors = []
 threading.excepthook = lambda a: errors.append(f"{a.thread.name}: {a.exc_type.__name__}: {a.exc_value}")
 tmp = tempfile.mkdtemp()
-sys.argv = ["receiver_controller.py", "--no-gui", "--remap-file", os.path.join(tmp, "r.json")]
+sys.argv = ["receiver_controller.py", "--no-gui", "--pads", "2", "--remap-file", os.path.join(tmp, "r.json")]
 import rx_config
 _init = rx_config.init
 def init(argv=None):
