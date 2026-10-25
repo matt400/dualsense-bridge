@@ -39,7 +39,7 @@ Tryb konsoli ma własny plik `receiver/console.json` (obok skryptu). Brak pliku 
 | Klucz | Domyślnie | Co robi |
 |---|---|---|
 | `toggle_button` | `r2` | przycisk pada: `r2`, `l2`, `ps`, `share`, `options`, `cross`, `circle`, `triangle`, `square`, `l1`, `r1`, `l3`, `r3`, `dpad_*` |
-| `double_click_ms` | 400 | maksymalny odstęp między dwoma naciśnięciami (100-2000) |
+| `double_click_ms` | 400 | maksymalny odstęp między dwoma naciśnięciami (200-2000) |
 | `audio_tv` | "" | nazwa urządzenia audio TV (jak na liście w Ustawieniach; pusty = dźwięk bez zmian) |
 | `audio_pc` | "" | nazwa urządzenia audio komputera |
 | `timeout_s` | 60 | brak pakietów z pada przez tyle sekund = automatyczne OFF (5-3600) |

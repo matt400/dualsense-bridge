@@ -39,7 +39,7 @@ defaults (the file is created and fixed, a corrupted one is kept as `console.jso
 | Key | Default | What it does |
 |---|---|---|
 | `toggle_button` | `r2` | pad button: `r2`, `l2`, `ps`, `share`, `options`, `cross`, `circle`, `triangle`, `square`, `l1`, `r1`, `l3`, `r3`, `dpad_*` |
-| `double_click_ms` | 400 | maximum interval between the two presses (100-2000) |
+| `double_click_ms` | 400 | maximum interval between the two presses (200-2000) |
 | `audio_tv` | "" | TV audio device name (as listed in Settings; empty = sound unchanged) |
 | `audio_pc` | "" | PC audio device name |
 | `timeout_s` | 60 | no packets from the pad for this many seconds = automatic OFF (5-3600) |
