@@ -132,6 +132,29 @@ check(raw.command(3, BL.OPCODE_RSSI, 42) == b"\xf7" and raw.socks[3].sent == [BL
 raw.socks[3] = DummySock([OSError("device gone")])
 check(raw.command(3, BL.OPCODE_RSSI, 42) is None and 3 not in raw.socks, "błąd gniazda: brak wartości, gniazdo zapomniane (powstanie od nowa)")
 
+# ---------- filtr zdarzeń: kernel może odrzucić rozmiar struktury ----------
+class Picky:
+    def __init__(self, ok_len):
+        self.ok_len, self.tried = ok_len, []
+
+    def setsockopt(self, level, opt, data):
+        self.tried.append(len(data))
+        if len(data) != self.ok_len:
+            raise OSError(22, "Invalid argument")
+
+
+p = Picky(14)
+BL.set_filter(p)
+check(p.tried == [16, 14], f"filtr: po odmowie 16 B próbuje 14 B ({p.tried})")
+p = Picky(24)
+BL.set_filter(p)
+check(p.tried == [16, 14, 24], "filtr: próbuje po kolei trzy rozmiary")
+try:
+    BL.set_filter(Picky(99))
+    check(False, "filtr: odmowa wszystkich rozmiarów zgłasza błąd")
+except OSError:
+    check(True, "filtr: odmowa wszystkich rozmiarów zgłasza błąd")
+
 # ---------- Bluetooth.send_links: pakiet btlink, ograniczenie częstości ----------
 async def t_send():
     emitted = []
