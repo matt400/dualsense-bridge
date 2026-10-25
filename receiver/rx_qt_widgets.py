@@ -52,13 +52,25 @@ def icon_button(name: str, tip_text: str, size: int = 20) -> QPushButton:
     return b
 
 
+class _SpinBox(QSpinBox):
+    """A number field that reacts to the wheel only when focused, so scrolling a panel does not change values."""
+
+    def wheelEvent(self, e: QWheelEvent) -> None:
+        """Pass the wheel on only to a focused field; otherwise let it scroll the panel."""
+        if self.hasFocus():
+            super().wheelEvent(e)
+        else:
+            e.ignore()
+
+
 def spinbox(lo: int, hi: int, step: int = 1, suffix: str = "") -> QSpinBox:
-    """A number field.
+    """A number field (the wheel changes it only after a click into it).
 
     The style sheet's padding does not move the QSpinBox text field (the text sticks to the left edge, unlike QLineEdit
     / QComboBox) - the left gap is made through the inner field's text margins.
     """
-    box = QSpinBox()
+    box = _SpinBox()
+    box.setFocusPolicy(Qt.FocusPolicy.StrongFocus)     # a wheel over the field must not take focus and change the value
     box.setRange(lo, hi)
     box.setSingleStep(step)
     box.setSuffix(suffix)

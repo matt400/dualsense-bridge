@@ -61,6 +61,9 @@ DEFAULT_APPS: Final = ("explorer.exe", "steam.exe", "steamwebhelper.exe", "pytho
                 "playnite.fullscreenapp.exe", "playnite.desktopapp.exe", "epicgameslauncher.exe", "galaxyclient.exe",
                 "eadesktop.exe", "upc.exe")
 CONFIG_VERSION: Final = 3
+# below this two presses are not humanly possible (a value this low left over from an accidental wheel scroll over the
+# Settings field made the double click never register); an older, lower value in console.json is reset to the default
+MIN_DOUBLE_CLICK_MS: Final = 200
 # the "Test" button: this many seconds in the ON mode, then OFF by itself (extend, the monitor does not stay black)
 TEST_S: Final = 10.0
 APP_NAME: Final = "DualSense bridge"
@@ -139,7 +142,7 @@ class ConsoleConfig:
 
 _VALIDATORS: Final = {
     "toggle_button": _choice(INPUTS),
-    "double_click_ms": _num(100, 2000),
+    "double_click_ms": _num(MIN_DOUBLE_CLICK_MS, 2000),
     "audio_tv": _text,
     "audio_pc": _text,
     "timeout_s": _num(5, 3600),

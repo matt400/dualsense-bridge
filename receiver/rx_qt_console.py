@@ -144,7 +144,7 @@ class ConsoleSettings(QDialog):
         pick.addWidget(self.pick_icon)
         pick.addWidget(self.pick_name, 1)
         pick.addWidget(self.pick)
-        self.dbl = spinbox(100, 2000, 50, " ms")
+        self.dbl = spinbox(rx_console.MIN_DOUBLE_CLICK_MS, 2000, 50, " ms")
         self.timeout = spinbox(5, 3600, 5, " s")
         self.auto_on = QCheckBox(_("Włącz po połączeniu pada master (bez mastera: pierwszego pada)"))
         self.auto_on.setIcon(icon("crown"))

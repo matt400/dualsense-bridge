@@ -87,6 +87,10 @@ json.dump({"toggle_button": "cross", "double_click_ms": 99999, "timeout_s": 120}
 cfg = rx_console.load(PATH)
 check(cfg.toggle_button == "cross" and cfg.timeout_s == 120 and cfg.double_click_ms == 400, "błędna wartość zastąpiona, dobre zostają")
 check(json.load(open(PATH))["double_click_ms"] == 400 and "startup_mode" in json.load(open(PATH)), "plik poprawiony i uzupełniony o brakujące klucze")
+json.dump({"toggle_button": "r2", "double_click_ms": 100}, open(PATH, "w"))
+cfg = rx_console.load(PATH)
+check(cfg.double_click_ms == 400 and json.load(open(PATH))["double_click_ms"] == 400,
+      "odstęp 100 ms (zbyt mały na dwa naciśnięcia, np. po przewinięciu kółkiem nad polem) wraca do 400")
 open(PATH, "w").write("{ to nie jest json")
 cfg = rx_console.load(PATH)
 check(cfg == ConsoleConfig() and os.path.exists(PATH + ".bad") and json.load(open(PATH)), "uszkodzony plik -> domyślne, stary jako .bad")
