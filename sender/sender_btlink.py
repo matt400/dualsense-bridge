@@ -14,9 +14,11 @@ How a reading is made:
 Python's `socket` has no Bluetooth support on some builds (musl distributions), so the socket is created with plain numbers and
 bound through libc with a hand-packed sockaddr_hci - the same way for every build.
 
-For Bluetooth Classic the RSSI is not dBm: the controller reports it relative to the Golden Receive Power Range (0 = inside the
-range, negative = that many dB below it, positive = above). A controller may support neither command (the status is "unknown
-command"): the value is then missing, and the window shows a dash.
+What the numbers mean depends on the controller. The specification defines the Classic RSSI as dB relative to the Golden Receive
+Power Range (0 = inside the range), but most controllers (the Qualcomm one in phones, for example) simply return the power in dBm,
+and many return 0 for the link quality because they do not compute it. The receiver therefore reads the RSSI as dBm and treats
+a link quality of 0 as "no data". A controller may support neither command (the status is "unknown command"): the value is then
+missing, and the window shows a dash.
 """
 from __future__ import annotations
 
@@ -61,7 +63,7 @@ HCI_NAME = re.compile(r"hci(\d+)$")
 
 @dataclass(frozen=True, slots=True)
 class Link:
-    """One pad's reading: RSSI [dB, relative to the golden range] and link quality (0-255); None = the controller did not answer."""
+    """One pad's reading: RSSI [dBm on most controllers] and link quality (0-255, 0 = not provided); None = no answer."""
     rssi: int | None
     quality: int | None
     hci: int

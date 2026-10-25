@@ -1084,13 +1084,14 @@ EN: Final[dict[str, str]] = {
     "Ile raportów na sekundę nadajnik dostaje od pada przez Bluetooth. Spadki oznaczają, że radio gubi albo opóźnia pakiety.":
         "How many reports per second the sender gets from the pad over Bluetooth. Drops mean the radio loses or delays packets.",
     "Sygnał Bluetooth (RSSI)": "Bluetooth signal (RSSI)",
-    "Odczyt kontrolera Bluetooth nadajnika, względem zakresu optymalnego (nie dBm): 0 = w zakresie, wartości ujemne = tyle dB "
-    "poniżej. Brak danych: starszy nadajnik albo kontroler nie podaje odczytu.":
-        "A reading from the sender's Bluetooth controller, relative to the optimal range (not dBm): 0 = inside the range, "
-        "negative = that many dB below it. No data: an older sender, or the controller gives no reading.",
+    "Moc sygnału pada odczytana przez kontroler Bluetooth nadajnika, w dBm: im bliżej zera, tym lepiej "
+    "(powyżej -65 dobrze, poniżej -80 słabo). Brak danych: starszy nadajnik albo kontroler nie podaje odczytu.":
+        "The pad's signal power as read by the sender's Bluetooth controller, in dBm: the closer to zero the better "
+        "(above -65 is good, below -80 is poor). No data: an older sender, or the controller gives no reading.",
     "Jakość łącza Bluetooth": "Bluetooth link quality",
-    "Jakość łącza według kontrolera Bluetooth nadajnika (0-100 %). Nie każdy kontroler ją podaje.":
-        "Link quality as reported by the sender's Bluetooth controller (0-100 %). Not every controller provides it.",
+    "Jakość łącza według kontrolera Bluetooth nadajnika (0-100 %). Wiele kontrolerów jej nie liczy - wtedy widać kreskę.":
+        "Link quality as reported by the sender's Bluetooth controller (0-100 %). "
+        "Many controllers do not compute it - then a dash is shown.",
     "min {lo} · śr {avg} · max {hi}": "min {lo} · avg {avg} · max {hi}",
     "utracone {lost} · spóźnione {late} · zdublowane {dup}": "lost {lost} · late {late} · duplicated {dup}",
     "połączony od {t}": "connected for {t}",

@@ -86,11 +86,12 @@ to the receiver from which scfg arrived; the receiver sends btcmd only after bts
                                round, number, how many, flags BTC_*, N of hciN, device name (UTF-8); a round goes along with the
                                device list, only from a sender with a controller choice (the mode in btstate); an older receiver
                                rejects the unknown length
-  btlink  (type 12) "6sbBBB"    sender -> PC (idx 255): the radio link of one connected pad (the Diagnostics tab) - MAC, RSSI [dB],
+  btlink  (type 12) "6sbBBB"    sender -> PC (idx 255): the radio link of one connected pad (the Diagnostics tab) - MAC, RSSI [dBm],
                                link quality 0-255, flags BTL_* (which of the two values were really read), N of hciN. One packet per
                                connected pad, with every btstate while the window is interested (BT_LIST). RSSI is the controller's
-                               Read RSSI: for Bluetooth Classic it is relative to the Golden Receive Power Range (0 = inside, negative =
-                               below), not dBm. An older receiver rejects the unknown length
+                               Read RSSI, as the controller reports it (most give dBm; the specification says dB relative to the Golden
+                               Receive Power Range). Link quality 0 = the controller does not fill it in. An older receiver rejects the
+                               unknown length
 
 Format v3 (only with an HMAC key) - protection against replaying a recorded packet (replay):
   a header with version 3 instead of 2, the body as above, then the freshness token "!I" and 8 B of HMAC-SHA256 (computed over the whole
@@ -294,7 +295,7 @@ BODY: Final[dict[int, struct.Struct]] = {
     T_BTSTATE: struct.Struct("!BBBBBHBB6s"),    # BTS_*, BTF_*, scan [s], connected, in the list, round, op, BTR_*, MAC
     T_BTDEV: struct.Struct("!HBB6sbB32s"),      # round, number, how many, MAC, RSSI, BTD_*, name
     T_BTCTRL: struct.Struct("!HBBBB40s"),       # round, number, how many, BTC_*, N of hciN, device name
-    T_BTLINK: struct.Struct("!6sbBBB"),         # MAC, RSSI [dB], link quality 0-255, BTL_*, N of hciN
+    T_BTLINK: struct.Struct("!6sbBBB"),         # MAC, RSSI [dBm], link quality 0-255, BTL_*, N of hciN
 }
 STATE_FIELDS: Final = 17                        # the state fields in state / state2 (without the latency measurement)
 BODY_LEN: Final = {ptype: body.size for ptype, body in BODY.items()}

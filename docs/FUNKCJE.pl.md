@@ -76,8 +76,8 @@
     wykres z ostatniej minuty oraz min / śr / max; zielony / bursztynowy / czerwony oznacza stan. Czas połączenia widać
     też małym tekstem na karcie pada. RSSI i jakość łącza przychodzą w nowym pakiecie `btlink` (nadajnik pyta kontroler
     poleceniami HCI Read RSSI / Read Link Quality, wymaga roota); starszy nadajnik albo kontroler bez tych poleceń
-    pokazuje kreskę. W Bluetooth Classic RSSI jest względne do zakresu optymalnego kontrolera (0 = w zakresie, wartość
-    ujemna = tyle dB poniżej), a nie w dBm;
+    pokazuje kreskę. RSSI jest w dBm, tak jak podaje kontroler (powyżej -65 zielone, poniżej -80 czerwone); wiele
+    kontrolerów nie liczy jakości łącza (odpowiadają 0) i wtedy zamiast 0 % widać kreskę;
     **Restart** jest też w menu zasobnika;
   - **pełny ekran = tryb TV:** większy interfejs (czytelny z kanapy) i sterowanie oknem padem, gdy okno jest
     aktywne: D-pad - poruszanie się, ✕ - wybór, ○ - wstecz / wyjście z pełnego ekranu, L1 / R1 - poprzedni / następny

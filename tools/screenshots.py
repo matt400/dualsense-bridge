@@ -152,12 +152,12 @@ for k in range(rx_diag.HISTORY):
     for i, p in enumerate(rx_diag.pads):
         p.hz.add(250 - 3 * i + 2 * math.sin(a + i))
         p.pps.add(240 - 4 * i + 3 * math.sin(a + i))
-        p.rssi.add(-1 - 5 * i - 1.5 * abs(math.sin(a / 2)))
+        p.rssi.add(-46 - 14 * i - 3 * abs(math.sin(a / 2)))
         p.quality.add(96 - 14 * i - 4 * abs(math.sin(a / 3)))
 rx_diag.net.lost, rx_diag.net.late, rx_diag.net.dup = 3, 1, 0
 for i, p in enumerate(rx_diag.pads):
     p.connects = 1 + i
-    p.link = rx_diag.Link(-2 - 5 * i, 240 - 40 * i, 0, time.monotonic() + 3600)
+    p.link = rx_diag.Link(-48 - 14 * i, 240 - 40 * i, 0, time.monotonic() + 3600)
 S.connected_at[0], S.connected_at[1] = time.monotonic() - 2535, time.monotonic() - 312
 tick()
 rx_diag.net.jitter_ms, rx_diag.net.loss_pct, rx_diag.net._pps = 0.5, 0.0, 480.0     # what the next samples will show
