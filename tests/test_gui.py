@@ -88,10 +88,10 @@ S.set_game(None)
 click_part("right_stick"); assert win.part == "right_stick" and win.part_page.stack.currentIndex() == 2
 click_part("r2"); assert win.part_page.stack.currentIndex() == 1 and win.part_page.title.text() == "R2 (trigger)" and win.part_page.trig.isVisible()
 # efekt spustu: tryb (profil pada: bez "jak w profilu pada"), suwaki trybu, profil, plakietka, ostrzeżenia
-pp = win.part_page
+pp, rp = win.part_page, win.rumble_page
 modes = [pp.fx_mode.itemData(k) for k in range(pp.fx_mode.count())]
 assert modes == ["off", "res", "click", "vib"] and pp.fx_mode.currentData() == "off", modes
-assert not any(r.isVisible() for r in pp.fx.values()) and not pp.rv_gain.isVisible()
+assert not any(r.isVisible() for r in pp.fx.values()) and not rp.gain.isVisibleTo(rp)
 pp.fx_mode.changed.emit("res"); pump(50)
 assert pp.fx["start"].isVisible() and pp.fx["force"].isVisible() and not pp.fx["pos"].isVisible()
 pp.fx["force"].slider.setValue(5); pp.fx["start"].slider.setValue(3); pump(300)
@@ -107,21 +107,24 @@ assert pp.fx["pos"].isVisible() and not pp.fx["start"].isVisible() and pp.fx["fo
 assert store.get(base)["triggers"] == {"r2": {"mode": "click", "pos": 5, "force": 6}}, "siła zapamiętana przy zmianie trybu"
 win.slow_tick(); assert pp.fx_warn.isVisible() and "newer sender" in pp.fx_warn.text(), "klik wymaga nadajnika v8"
 S.sender_info[0] = (8, 15, 0); win.slow_tick(); assert not pp.fx_warn.isVisible()
-pp.rv_on.changed.emit("on"); pump(300)
-assert pp.rv_gain.isVisible() and store.get(base)["triggers"]["rumble"] == {"on": True, "gain": 100, "freq": 40}
+rp.mode.changed.emit("on"); pump(300)
+assert rp.gain.isVisibleTo(rp) and store.get(base)["triggers"]["rumble"] == {"on": True, "gain": 100, "freq": 40}
 assert any(b[3] == "fx" and b[2] == "click 6 + game rumble" for b in win.pad.badges)
 assert any(b[3] == "fx" and b[2] == "game rumble" for b in win.pad.badges), "L2 bez efektu - sama wibracja z gry"
-pp.rv_gain.slider.setValue(5); pump(300)
+rp.gain.slider.setValue(5); pump(300)
 assert store.get(base)["triggers"]["rumble"]["gain"] == 60
+assert not rp.warn.isVisibleTo(rp)
+S.sender_info[0] = (7, 7, 0); win.slow_tick(); assert rp.warn.isVisibleTo(rp) and "newer sender" in rp.warn.text()
 S.sender_info[0] = None
-pp.fx_mode.changed.emit("off"); pp.rv_on.changed.emit("off"); pump(300)
+pp.fx_mode.changed.emit("off"); rp.mode.changed.emit("off"); pump(300)
+assert not rp.gain.isVisibleTo(rp) and not rp.warn.isVisibleTo(rp)
 assert "triggers" not in store.get(base) or store.get(base)["triggers"] == {}
 assert not pp.trig_adv.is_open(), "reakcja spustu zwinięta, dopóki nic w niej nie zmieniono"
 ok("efekt spustu: tryby i ich suwaki, wibracja z gry, profil, plakietki, ostrzeżenia o nadajniku")
 click_part("cross"); assert not win.part_page.trig.isVisible()
 win.part_page.dst.changed.emit("circle"); pump(300)
 assert store.get(base)["buttons"] == {"cross": "circle"} and S.remap_maps[0]["buttons"] == {"cross": "circle"}
-assert "Applied live" in win.status.text() and win.tabs.tabText(2) == "Changes (1)"
+assert "Applied live" in win.status.text() and win.tabs.tabText(3) == "Changes (1)"
 click_part("r2")
 win.part_page.trig_adv.set_open(True)
 win.part_page.tdz.slider.setValue(30); pump(300)
@@ -137,7 +140,7 @@ assert any(b[2] == "→ ∅" and b[3] for b in win.pad.badges) and any(b[2] == "
 ok("klik w pad: wybór części, przycisk, spust, gałka (strefa, krzywa, zamiana, L3), plakietki")
 
 # ---------- gyro ----------
-win.tabs.setCurrentIndex(1)
+win.tabs.setCurrentIndex(2)
 gp = win.gyro_page   # the aiming settings sit in a category that starts collapsed
 assert not gp.aim_cat.is_open()
 gp.aim_cat.set_open(True)
@@ -155,13 +158,13 @@ assert "Gyro idle — hold L2" in win.gyro_page.live.text(), win.gyro_page.live.
 ok("gyro: tryb, aktywacja, czułość, wiersz stanu na żywo")
 
 # ---------- lista zmian, cofanie, zapis ----------
-win.tabs.setCurrentIndex(2)
-assert win.tabs.tabText(2) == "Changes (6)", win.tabs.tabText(2)
+win.tabs.setCurrentIndex(3)
+assert win.tabs.tabText(3) == "Changes (6)", win.tabs.tabText(3)
 texts = [lb.text() for lb in win.changes_page.box.findChildren(QLabel)]
 assert any("Gyro: right stick, hold L2" in t for t in texts) and any("Left stick response" in t for t in texts), texts
 first = win.changes_page.box.findChildren(QFrame, "row")[0]
 first.findChild(QToolButton).click(); pump(300)          # × przy pierwszej pozycji (Cross → Circle)
-assert "cross" not in store.get(base)["buttons"] and win.tabs.tabText(2) == "Changes (5)"
+assert "cross" not in store.get(base)["buttons"] and win.tabs.tabText(3) == "Changes (5)"
 win.save_btn.click(); pump(100)
 saved = json.load(open(C.REMAP_PATH))["profiles"][base]
 assert saved["gyro"]["hold"] == "l2" and saved["buttons"] == {"l3": None} and "Saved" in win.status.text() and win.status.property("level") == "ok"
@@ -182,7 +185,7 @@ assert bar.combo.currentText().startswith("eldenring.exe") and bar.remove.isVisi
 win.part_page.l3.changed.emit("l3"); win.save_btn.click(); pump(50)
 assert store.in_file(key) and key in json.load(open(C.REMAP_PATH))["profiles"]
 bar.combo.changed.emit(base); pump(20)
-assert win.ed.key == base and not bar.remove.isVisible() and win.tabs.tabText(2) == "Changes (5)"
+assert win.ed.key == base and not bar.remove.isVisible() and win.tabs.tabText(3) == "Changes (5)"
 bar.combo.changed.emit(key); pump(20); assert S.active[0] == key
 bar.remove.click(); assert bar.remove.text() == "Sure?" and store.has(key)
 bar.remove.click(); pump(20)
@@ -211,7 +214,7 @@ rst = win.changes_page.reset
 assert rst.isVisibleTo(win.changes_page) and win.revert_btn.isEnabled()
 rst.click(); assert win.ed.prof["buttons"] == {"cross": "circle"}, "pierwsze kliknięcie tylko uzbraja"
 rst.click(); pump(20)
-assert win.ed.prof == rx_editor.empty() and win.tabs.tabText(2) == "Changes" and not rst.isVisibleTo(win.changes_page)
+assert win.ed.prof == rx_editor.empty() and win.tabs.tabText(3) == "Changes" and not rst.isVisibleTo(win.changes_page)
 ok("Usuń wszystkie: na liście zmian, po drugim kliknięciu, znika przy pustym profilu")
 win.hide(); assert not win.live_timer.isActive() and win.slow_timer.isActive(), "ukryte okno nie odrysowuje pada, ale odświeża zasobnik"
 win.show(); pump(50); assert win.live_timer.isActive()

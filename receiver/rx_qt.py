@@ -51,7 +51,7 @@ from rx_qt_log import LogPanel
 from rx_qt_gstick import TiltPreview
 from rx_qt_gyro import PREVIEW_GAP, GyroPreview
 from rx_qt_pad import PadView
-from rx_qt_panels import ChangesPage, GyroPage, PartPage, ProfileBar
+from rx_qt_panels import ChangesPage, GyroPage, PartPage, ProfileBar, RumblePage
 from rx_qt_screens import ScreenPlacement
 from rx_qt_style import DIM, LEVEL, SEGMENT, TV_SCALE, apply_theme, px, set_prop
 from rx_qt_test import TestPanel
@@ -705,14 +705,15 @@ class MainWindow(ScreenPlacement):
         self.profile_bar.create.connect(self.on_create)
         self.profile_bar.delete.connect(self.on_delete)
         lay.addWidget(self.profile_bar)
-        self.part_page, self.gyro_page = PartPage(self.ed), GyroPage(self.ed)
+        self.part_page, self.rumble_page, self.gyro_page = PartPage(self.ed), RumblePage(self.ed), GyroPage(self.ed)
         self.changes_page = ChangesPage(self.ed)
         self.tabs = QTabWidget()
         self.tabs.tabBar().setExpanding(True)
         self.tabs.tabBar().setDrawBase(False)
-        for page, name in ((self.part_page, _("Wybrane")), (self.gyro_page, _("Gyro")), (self.changes_page, _("Zmiany"))):
+        for page, name in ((self.part_page, _("Wybrane")), (self.rumble_page, _("Wibracje")), (self.gyro_page, _("Gyro")),
+                           (self.changes_page, _("Zmiany"))):
             self.tabs.addTab(page, name)
-        for page in (self.part_page, self.gyro_page):
+        for page in (self.part_page, self.rumble_page, self.gyro_page):
             page.edited.connect(self.on_edit)
         self.changes_page.undone.connect(self.on_undone)
         self.changes_page.reset.confirmed.connect(self.reset)       # "Delete all" - on the list of changes, not in the footer
@@ -1191,6 +1192,7 @@ class MainWindow(ScreenPlacement):
         """Reload every panel from the current profile."""
         self.update_profile_bar(force=True)
         self.part_page.refresh()
+        self.rumble_page.refresh()
         self.gyro_page.refresh()
         self.pad.set_profile(self.ed.prof)
         self.update_changes()
@@ -1210,7 +1212,7 @@ class MainWindow(ScreenPlacement):
     def update_changes(self) -> None:
         """Refresh the list of changes and the tab title with their count."""
         n = self.changes_page.refresh()
-        self.tabs.setTabText(2, _("Zmiany ({n})").format(n=n) if n else _("Zmiany"))
+        self.tabs.setTabText(self.tabs.indexOf(self.changes_page), _("Zmiany ({n})").format(n=n) if n else _("Zmiany"))
 
     def note(self, text: str, level: str) -> None:
         """A message covering the profile status for a few seconds (saved, an error, a profile created)."""
@@ -1329,6 +1331,7 @@ class MainWindow(ScreenPlacement):
             self.update_profile_bar()
             self.update_status()
             self.part_page.update_caps()       # the sender arrived / updated - the trigger resistance warning
+            self.rumble_page.update_caps()
         tip = (f"DualSense bridge\n{_('Nadajnik')}: " + ("online" if online else "offline") + "\n"
                + ("\n".join(tips) if tips else _("Brak podłączonych padów")))
         if self.tray and (tip != self.tip or low_any != self.low_any):
