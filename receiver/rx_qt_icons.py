@@ -23,7 +23,8 @@ EXTRA_TIPS = {"crown": "Pad master", "mouse": "Touchpad jako mysz", "touchpad": 
               "press": "Przycisk → gra", "reset": "Wyzeruj", "log": "Dziennik zdarzeń", "copy": "Kopiuj",
               "trash": "Wyczyść", "phone": "Nadajnik", "lightbar": "Lightbar", "wake": "Wake-on-LAN",
               "target": "Dryf gałek", "gyro": "Kalibracja żyroskopu", "shield": "Blokada wyjścia do gry",
-              "pulse": "Ruch pada", "bluetooth": "Bluetooth nadajnika", "keys": "Skróty pada"}
+              "pulse": "Ruch pada", "bluetooth": "Bluetooth nadajnika", "keys": "Skróty pada",
+              "collapse": "Zwiń kolumnę padów", "expand": "Rozwiń kolumnę padów"}
 SIZES = (16, 20, 24, 32, 48)
 GRID_MID = 12                         # the centre of the 24x24 icon grid
 
@@ -430,6 +431,26 @@ def _keys(p: QPainter) -> None:
         p.drawEllipse(QPointF(x, y), 1.1, 1.1)
 
 
+def _fold(p: QPainter, toward_left: bool) -> None:
+    """A bar (the window's edge) and a chevron: the pad column folds towards it (points left) or unfolds from it (points right)."""
+    p.setPen(_pen(FG, 1.8))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawLine(QPointF(5, 5), QPointF(5, 19))
+    tip_x, arm_x = (10, 16) if toward_left else (16, 10)
+    chevron = QPainterPath(QPointF(arm_x, 6.5))
+    chevron.lineTo(tip_x, 12)
+    chevron.lineTo(arm_x, 17.5)
+    p.drawPath(chevron)
+
+
+def _collapse(p: QPainter) -> None:
+    _fold(p, True)
+
+
+def _expand(p: QPainter) -> None:
+    _fold(p, False)
+
+
 def _draw(p: QPainter, name: str) -> None:
     """Paint the icon `name` on the 24x24 grid by dispatching to its painter."""
     if name in FACE:
@@ -444,7 +465,8 @@ def _draw(p: QPainter, name: str) -> None:
          "fullscreen": _fullscreen, "rumble": _rumble, "gear": _gear, "update": _update, "backup": _backup,
          "stopwatch": _stopwatch, "plus": _plus, "press": _press, "reset": _reset, "log": _log, "copy": _copy,
          "trash": _trash, "phone": _phone, "lightbar": _lightbar, "wake": _wake, "target": _target, "gyro": _gyro,
-         "shield": _shield, "pulse": _pulse, "bluetooth": _bluetooth, "keys": _keys, "usb": _usb}[name](p)
+         "shield": _shield, "pulse": _pulse, "bluetooth": _bluetooth, "keys": _keys, "usb": _usb,
+         "collapse": _collapse, "expand": _expand}[name](p)
 
 
 def pixmap(name: str, size: int = 24, dim: bool = False) -> QPixmap:
@@ -475,4 +497,4 @@ def has_icon(name: str) -> bool:
     return name in FACE or name in BADGES or name.startswith("dpad_") or name in (
         "ps", "share", "options", "crown", "mouse", "touchpad", "tv", "power", "restart", "window", "fullscreen", "rumble", "gear",
         "update", "backup", "stopwatch", "plus", "press", "reset", "log", "copy", "trash", "phone", "lightbar", "wake",
-        "target", "gyro", "shield", "pulse", "bluetooth", "keys", "usb")
+        "target", "gyro", "shield", "pulse", "bluetooth", "keys", "usb", "collapse", "expand")

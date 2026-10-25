@@ -19,7 +19,8 @@ DEFAULTS: dict[str, Any] = {
     "dsu_bind": "127.0.0.1", # DSU server address: this computer only; "0.0.0.0" = the emulator runs on another device in the network
     "dsu_max_clients": 4,    # the most DSU subscribers at once (each gets a stream of up to dsu_hz packets/s)
     "hm_min_age_days": 7,    # a new HIDMaestro version is installed only this many days after it is published; 0 = at once
-    "pads": 2,               # number of slots (max 4); virtual DS4s are created only for connected pads
+    "pads": 4,               # number of slots (max 4); virtual pads are created only for connected pads (which cards the
+                             # window shows: Settings -> Pads - only connected ones, or a fixed number)
     "mouse_pads": [0],       # which controllers start in mouse mode (when there is a master pad: the master has the mouse)
     "pad_hz": 1000,          # max rate of DS4 reports (merging bursts of packets, like the sender's pad_min_dt = 1 ms);
                              # the report is sent at once from the network thread, too early -> the slot thread sends it later; 0 = no limit

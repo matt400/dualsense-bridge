@@ -21,7 +21,7 @@ from typing import Any
 
 from PySide6.QtCore import QAbstractNativeEventFilter, QEvent, QSettings, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QCloseEvent, QHideEvent, QIcon, QKeySequence, QMouseEvent, QPixmap, QShortcut, QShowEvent
-from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QMenu, QSplitter, QStackedWidget,
+from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QMenu, QPushButton, QSplitter, QStackedWidget,
                                QSystemTrayIcon, QTabWidget, QToolButton, QVBoxLayout, QWidget)
 
 import rx_console
@@ -34,6 +34,7 @@ import rx_master
 import rx_profiles as P
 import rx_state as S
 import rx_net
+import rx_settings
 import rx_update
 import rx_status as ST
 import rx_testmode
@@ -48,6 +49,7 @@ from rx_qt_console import ConsoleSettings
 from rx_qt_icons import icon, pixmap
 from rx_qt_log import LogPanel
 from rx_qt_gstick import TiltPreview
+from rx_qt_gyro import PREVIEW_GAP, GyroPreview
 from rx_qt_pad import PadView
 from rx_qt_panels import ChangesPage, GyroPage, PartPage, ProfileBar
 from rx_qt_screens import ScreenPlacement
@@ -65,6 +67,7 @@ NOTE_S = 6.0           # for this many seconds a message (e.g. "Saved") covers t
 VIEWS = (("out", "Wynik"), ("in", "Fizycznie"), ("test", "Test"))
 EXIT_HOLD_S = 1.0      # the Test view in TV mode: how long ○ of the pad under test must be held to leave the test
 DEFAULT_SIZE = QSize(1160, 720)
+LEFT_W, LEFT_COLLAPSED_W = 248, 56       # the pad column: expanded (cards) and collapsed (a strip with the pad numbers) [px]
 BATT_UNKNOWN = 100     # a battery level above this (as a percentage) means the pad did not report one
 
 
@@ -586,20 +589,76 @@ class MainWindow(ScreenPlacement):
                                   av.subject or _("Kliknij Aktualizuj w oknie"), QSystemTrayIcon.MessageIcon.Information, 8000)
 
     def _left(self) -> QWidget:
-        """The left column: one card per pad slot."""
+        """The left column: a header with the fold button, one card per pad slot (only the connected ones, or a fixed number).
+
+        Folded, it is a narrow strip: the fold button and a button with the number of each shown pad.
+        """
         w = QWidget()
-        w.setFixedWidth(px(248))
         self.left_col = w
+        self.pads_collapsed = self.settings.value("pads_collapsed", "false") in (True, "true")   # the column folded to a strip
+        self._pads_sig: tuple[Any, ...] | None = None    # what the column shows now (update_pad_column skips an unchanged state)
         lay = QVBoxLayout(w)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(px(12))
+        head = QHBoxLayout()
+        head.setContentsMargins(px(4), 0, 0, 0)
+        self.pads_title = label(_("PADY"), "h2")
+        self.pads_toggle = icon_button("collapse", "")
+        self.pads_toggle.clicked.connect(self.toggle_pads)
+        head.addWidget(self.pads_title)
+        head.addStretch(1)
+        head.addWidget(self.pads_toggle)
+        lay.addLayout(head)
         self.cards = [PadCard(i) for i in range(C.NUM_PADS)]
         for c in self.cards:
             c.clicked.connect(self.select_pad)
             c.master_changed.connect(self.slow_tick)
             lay.addWidget(c)
+        self.minis: dict[int, QPushButton] = {}       # the folded column: a button per pad (the number), a click = edit this pad
+        for i in range(C.NUM_PADS):
+            b = button(str(i + 1), small=True)
+            b.setToolTip(_("Pad {n}").format(n=i + 1))
+            b.clicked.connect(lambda _checked=False, slot=i: self.select_pad(slot))
+            self.minis[i] = b
+            lay.addWidget(b)
+        self.pads_empty = label(_("Brak podłączonych padów"), "dim", wrap=True)
+        lay.addWidget(self.pads_empty)
         lay.addStretch(1)
+        self._style_pads_toggle()
         return w
+
+    def _style_pads_toggle(self) -> None:
+        """The column width, the title and the fold button's icon / tooltip for the current state (folded or not)."""
+        on = self.pads_collapsed
+        self.left_col.setFixedWidth(px(LEFT_COLLAPSED_W if on else LEFT_W))
+        self.pads_title.setVisible(not on)
+        self.pads_toggle.setIcon(icon("expand" if on else "collapse"))
+        self.pads_toggle.setToolTip(_("Rozwiń kolumnę padów") if on else _("Zwiń kolumnę padów"))
+
+    def toggle_pads(self) -> None:
+        """Fold / unfold the pad column (more room for the pad drawing and the editor); the choice is remembered."""
+        self.pads_collapsed = not self.pads_collapsed
+        self._style_pads_toggle()
+        self.update_pad_column()
+        self.save_settings()
+
+    def update_pad_column(self) -> None:
+        """Show the cards (or the folded strip's buttons) of the pads that belong in the column.
+
+        Which pads is a setting (Settings -> Pads): only the connected ones, or a fixed number of slots (a connected pad
+        beyond them is always shown). The 400 ms pass calls this; widgets are touched only when the shown set changed.
+        """
+        connected = [bool(S.alive[c.slot]) or S.want[c.slot].is_set() for c in self.cards]
+        shown = rx_settings.cur.ui.slots(connected)
+        sig = (tuple(shown), self.pads_collapsed)
+        if sig == self._pads_sig:
+            return
+        self._pads_sig = sig
+        for c in self.cards:
+            c.setVisible(c.slot in shown and not self.pads_collapsed)
+        for slot, b in self.minis.items():
+            b.setVisible(slot in shown and self.pads_collapsed)
+        self.pads_empty.setVisible(not shown and not self.pads_collapsed)
 
     def _center(self) -> QVBoxLayout:
         """The centre: the pad drawing, the hint and the Result / Physical / Test switch."""
@@ -609,6 +668,7 @@ class MainWindow(ScreenPlacement):
         self.pad.part_clicked.connect(self.on_part)
         lay.addWidget(self.pad, 1)
         self.tilt_preview = TiltPreview(self.pad)     # over the pad's top-right corner while a tilt category is expanded
+        self.gyro_preview = GyroPreview(self.pad)     # the same corner while the gyro aim section is expanded (the tilt one goes under)
         row = QHBoxLayout()
         self.pad_hint = label(_("Kliknij część pada, aby ją zremapować."), "dim", wrap=True)
         row.addWidget(self.pad_hint, 1)
@@ -700,7 +760,7 @@ class MainWindow(ScreenPlacement):
         if k == scale:
             return
         apply_theme(QApplication.instance(), k)
-        self.left_col.setFixedWidth(px(248))
+        self._style_pads_toggle()
         self.right_col.setFixedWidth(px(340))
         for b in self._iconic:
             b.setIconSize(QSize(px(20), px(20)))
@@ -797,10 +857,11 @@ class MainWindow(ScreenPlacement):
                                 _("Dziennik zdarzeń") + " - " + _("Połączenia padów, master, tryb konsoli, błędy, aktualizacje"))
 
     def save_settings(self) -> None:
-        """Store the window geometry, splitter, log state, selected pad, view and the Test lock option in receiver_ui.ini."""
+        """Store the window geometry, splitter, log and pad column state, selected pad, view and the Test lock in receiver_ui.ini."""
         self.settings.setValue("geometry", self.saveGeometry())
         self.settings.setValue("split", self.split.saveState())
         self.settings.setValue("log_open", self.log_btn.isChecked())
+        self.settings.setValue("pads_collapsed", self.pads_collapsed)
         self.settings.setValue("slot", self.ed.slot)
         self.settings.setValue("view", self.edit_view)
         self.settings.setValue("test_block", self.test_panel.block.isChecked())
@@ -983,6 +1044,8 @@ class MainWindow(ScreenPlacement):
             self.profile_bar.close_new()
         for c in self.cards:
             c.set_selected(c.slot == slot)
+        for i, b in self.minis.items():
+            set_prop(b, "primary", i == slot)
         self.test_panel.set_slot(slot)
         self.sync_block()
         self.refresh_all()
@@ -1186,6 +1249,10 @@ class MainWindow(ScreenPlacement):
         if on_gyro:
             self.gyro_page.tilt.tick()
         tilt = self.gyro_page.tilt
+        aim = on_gyro and self.gyro_page.aim_cat.is_open()
+        self.gyro_preview.tick(aim, self.ed.gyro(), S.states[self.ed.slot]["gyro"],
+                               self.ed.key == live["active"] and live["gyro_on"], live["rs_out"])
+        self.tilt_preview.set_offset(self.gyro_preview.height() + PREVIEW_GAP if aim else 0)    # both open: the tilt one under the aim one
         self.tilt_preview.tick(on_gyro and tilt.any_open(), self.ed.slot, tilt.cfg)
 
     @staticmethod
@@ -1227,6 +1294,7 @@ class MainWindow(ScreenPlacement):
         if self._place_pending and not rx_games.in_game():
             self._screens_settled()
         self._pads_connected()
+        self.update_pad_column()
         online = S.sender_online(now)
         build = S.sender_build[:2] if S.sender_build else None
         batt = S.sender_batt if online else None

@@ -42,8 +42,8 @@ Every module has a docstring with its role; find the file here before opening an
   `rx_gamebar`, `rx_autostart` (Task Scheduler).
 - Support: `rx_i18n` (PL texts in code + EN dict), `rx_status`, `rx_events` (log model), `rx_latency`, `rx_security`, `rx_backup`, `rx_update` (git pull),
   `rx_bt` (sender Bluetooth model), `rx_icon`.
-- Window (PySide6): `rx_qt` (main window), `rx_qt_pad` (pad drawing), `rx_qt_panels` (right column), `rx_qt_console` (settings window), `rx_qt_test`, `rx_qt_access` (accessibility panel of the Test view),
-  `rx_qt_bt`, `rx_qt_tv` (pad control in TV mode), `rx_qt_drawer`, `rx_qt_keys`, `rx_qt_log`, `rx_qt_gstick`, `rx_qt_screens` (screen / fullscreen placement),
+- Window (PySide6): `rx_qt` (main window, the foldable pad column), `rx_qt_pad` (pad drawing), `rx_qt_panels` (right column), `rx_qt_console` (settings window, tabs in a left column), `rx_qt_test`, `rx_qt_access` (accessibility panel of the Test view),
+  `rx_qt_bt`, `rx_qt_tv` (pad control in TV mode), `rx_qt_drawer`, `rx_qt_keys`, `rx_qt_log`, `rx_qt_gstick`, `rx_qt_gyro` (gyro aim preview), `rx_qt_screens` (screen / fullscreen placement),
   `rx_qt_style`, `rx_qt_icons`, `rx_qt_widgets`.
 
 **Large files** – grep or read by range, never whole: `rx_i18n` (~1000, translation dicts), `proto` (~960, two identical copies), `rx_qt`, `rx_qt_console`,

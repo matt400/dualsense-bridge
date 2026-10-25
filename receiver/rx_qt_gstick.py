@@ -14,16 +14,16 @@ from collections.abc import Callable
 from dataclasses import replace
 from typing import Any
 
-from PySide6.QtCore import QEvent, QObject, QPointF, Qt, QTimer, Signal
+from PySide6.QtCore import QPointF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QHideEvent, QPainter, QPaintEvent, QPen
-from PySide6.QtWidgets import QCheckBox, QFrame, QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget
 
 import rx_buttons as B
 import rx_gstick as G
 from rx_gstick_io import runner
 from rx_i18n import _
 from rx_qt_style import ACCENT, BAD, CARD, LINE, OK
-from rx_qt_widgets import Collapsible, Combo, SliderRow, button, field, input_items, label
+from rx_qt_widgets import Collapsible, Combo, CornerFrame, SliderRow, button, field, input_items, label
 
 MSG_S = 4.0
 SAVE_DELAY_MS = 300      # settings are written this long after the last edit (a slider drag = one write)
@@ -241,7 +241,7 @@ class TiltSection(QWidget):
             self.cal_note.setText("")
 
 
-class TiltPreview(QFrame):
+class TiltPreview(CornerFrame):
     """The live preview.
 
     Floating over the top-right corner of the pad drawing while a tilt category is expanded: the 2D view, raw / filtered
@@ -251,8 +251,7 @@ class TiltPreview(QFrame):
 
     def __init__(self, pad: QWidget) -> None:
         """Create the (hidden) preview floating over the pad drawing `pad`."""
-        super().__init__(pad)
-        self.pad = pad
+        super().__init__(pad, PREVIEW_GAP)
         self.setObjectName("group")
         self._slot: int | None = None                  # the slot whose engine we asked to follow the pad, None = none
         self._texts: tuple[str, str] | None = None     # the texts last laid out (the size is recomputed only when they change)
@@ -271,19 +270,7 @@ class TiltPreview(QFrame):
         lay.addWidget(self.view)
         lay.addLayout(texts, 1)
         self.setFixedWidth(PREVIEW_W)
-        pad.installEventFilter(self)       # keep the corner when the drawing is resized
         self.hide()
-
-    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
-        """Keep the preview in the corner when the pad drawing is resized."""
-        if obj is self.pad and event.type() == QEvent.Type.Resize:
-            self.place()
-        return False
-
-    def place(self) -> None:
-        """Fit to its content and move to the top-right corner of the pad drawing."""
-        self.adjustSize()
-        self.move(self.pad.width() - self.width() - PREVIEW_GAP, PREVIEW_GAP)
 
     def tick(self, show: bool, slot: int, cfg: G.Config) -> None:
         """30 Hz from the window timer: show / hide, follow the pad, refresh the view and the texts."""

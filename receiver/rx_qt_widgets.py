@@ -1,17 +1,18 @@
 """Receiver: small window widgets.
 
 A slider with a value, a button with confirmation, an animated progress ring, a battery bar, a switch, a collapsible
-"Advanced" section, a latency segment bar, the sender pill that shows the sender device's battery.
+"Advanced" section, tabs in a column on the left, a frame floating over the pad drawing (the live previews), a latency
+segment bar, the sender pill that shows the sender device's battery.
 """
 import math
 import time
 from collections.abc import Callable, Iterable
 from typing import Any
 
-from PySide6.QtCore import QObject, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QObject, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFontMetrics, QIcon, QPainter, QPainterPath, QPaintEvent, QPen, QPixmap, QWheelEvent
 from PySide6.QtWidgets import (QButtonGroup, QComboBox, QFrame, QHBoxLayout, QLabel, QLayout, QPushButton, QSlider, QSpinBox,
-                               QVBoxLayout, QWidget)
+                               QStackedWidget, QVBoxLayout, QWidget)
 
 from rx_qt_style import ACCENT_HI, CHARGE, LINE, OK, TRACK, px, set_prop
 
@@ -391,6 +392,116 @@ class Collapsible(QWidget):
         self.body.setVisible(on)
         self.head.setText(("▾  " if on else "▸  ") + self._title)
         self.toggled.emit(on)
+
+
+class SideTabs(QWidget):
+    """Tabs in a column on the left (horizontal text, one under another) with the pages stacked on the right.
+
+    A QTabWidget on the West side turns the text sideways; this has the few QTabWidget methods the settings window uses
+    (addTab, count, currentIndex, setCurrentIndex, indexOf, tabText, tabIcon, currentChanged), so it is a drop-in.
+    The tabs are buttons, so a keyboard / pad (TV mode) moves between them like between any buttons.
+    """
+
+    currentChanged = Signal(int)      # noqa: N815 - the QTabWidget signal name, so the settings window code stays as it was
+    NAV_W = 196
+
+    def __init__(self) -> None:
+        """An empty column of tabs next to an empty stack of pages."""
+        super().__init__()
+        self._buttons: list[QPushButton] = []
+        self._group = QButtonGroup(self)
+        self._stack = QStackedWidget()
+        self._nav = QVBoxLayout()
+        self._nav.setContentsMargins(0, 0, 0, 0)
+        self._nav.setSpacing(4)
+        self._nav.addStretch(1)
+        nav = QWidget()
+        nav.setFixedWidth(px(self.NAV_W))
+        nav.setLayout(self._nav)
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(px(14))
+        lay.addWidget(nav)
+        lay.addWidget(self._stack, 1)
+
+    def addTab(self, page: QWidget, icon: QIcon, text: str) -> int:
+        """Append a tab (the first one becomes the current one) -> its index."""
+        b = QPushButton(text)
+        b.setIcon(icon)
+        b.setIconSize(QSize(px(20), px(20)))
+        b.setCheckable(True)
+        b.setProperty("nav", "true")
+        b.setCursor(Qt.CursorShape.PointingHandCursor)
+        b.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+        index = len(self._buttons)
+        b.clicked.connect(lambda _c=False, i=index: self.setCurrentIndex(i))
+        self._group.addButton(b)
+        self._buttons.append(b)
+        self._nav.insertWidget(index, b)           # above the stretch that keeps the tabs at the top
+        self._stack.addWidget(page)
+        if index == 0:
+            b.setChecked(True)
+        return index
+
+    def count(self) -> int:
+        """The number of tabs."""
+        return len(self._buttons)
+
+    def currentIndex(self) -> int:
+        """The index of the shown page."""
+        return self._stack.currentIndex()
+
+    def setCurrentIndex(self, i: int) -> None:
+        """Show page `i`, check its tab and emit `currentChanged` when it differs from the shown one."""
+        if not 0 <= i < len(self._buttons):
+            return
+        self._buttons[i].setChecked(True)
+        if i != self._stack.currentIndex():
+            self._stack.setCurrentIndex(i)
+            self.currentChanged.emit(i)
+
+    def indexOf(self, page: QWidget) -> int:
+        """The index of the tab holding `page`, -1 when there is none."""
+        return self._stack.indexOf(page)
+
+    def tabText(self, i: int) -> str:
+        """The caption of tab `i`."""
+        return self._buttons[i].text()
+
+    def tabIcon(self, i: int) -> QIcon:
+        """The icon of tab `i`."""
+        return self._buttons[i].icon()
+
+
+class CornerFrame(QFrame):
+    """A frame floating over the top-right corner of `pad` (the pad drawing); it follows the drawing's resizes.
+
+    The live previews of the Gyro tab (tilt, gyro aim) are built on it. `y_offset` moves the frame down, so that a second
+    preview can sit under the first one instead of covering it.
+    """
+
+    def __init__(self, pad: QWidget, gap: int = 12) -> None:
+        """Create the (not yet placed) frame as a child of `pad`; `gap` = the distance to the corner [px]."""
+        super().__init__(pad)
+        self.pad, self.gap, self.y_offset = pad, gap, 0
+        pad.installEventFilter(self)       # keep the corner when the drawing is resized
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:
+        """Keep the frame in the corner when the pad drawing is resized."""
+        if obj is self.pad and event.type() == QEvent.Type.Resize:
+            self.place()
+        return False
+
+    def place(self) -> None:
+        """Fit to its content and move to the top-right corner of the pad drawing (below `y_offset`)."""
+        self.adjustSize()
+        self.move(self.pad.width() - self.width() - self.gap, self.gap + self.y_offset)
+
+    def set_offset(self, y: int) -> None:
+        """Move the frame `y` px down from the corner (no-op when it is there already)."""
+        if y != self.y_offset:
+            self.y_offset = y
+            self.place()
 
 
 class SegmentBar(QWidget):

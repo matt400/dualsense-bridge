@@ -10,7 +10,7 @@ vg = types.ModuleType("vgamepad"); vg.DS4_REPORT_EX = ctypes.c_char * 63; vg.VDS
 sys.modules["vgamepad"] = vg
 TMP = tempfile.mkdtemp()
 import rx_config
-rx_config.init(["--remap-file", os.path.join(TMP, "remap.json")])
+rx_config.init(["--pads", "2", "--remap-file", os.path.join(TMP, "remap.json")])      # testy działają na dwóch slotach
 from rx_config import C
 C.REMAP_PATH = os.path.join(TMP, "remap.json")
 import rx_winapi as W

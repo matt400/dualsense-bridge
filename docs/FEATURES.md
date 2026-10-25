@@ -19,7 +19,10 @@
   - on the left, pad cards: battery, **real pad → game latency** (average, "usually ≤" = 95 out of 100 samples, and
     max over 5 s, with a segment bar: Bluetooth / sender / network / PC), below it **button → game** (the same for
     presses only - last 100, with reset), active profile, rumble test, pad power-off, master crown; ping, packet loss
-    and Hz in the tooltip; a disconnected pad shows just its name;
+    and Hz in the tooltip; a disconnected pad shows just its name. Which cards show is a setting (Settings → Pads):
+    **dynamic** - only connected pads, or **fixed** - the first N slots always (a connected pad beyond them shows too).
+    The arrow in the column header folds it to a narrow strip with the pad numbers (more room for the drawing and the
+    editor); the choice is remembered;
   - **event log** at the bottom of the window (list icon in the header): pad connections and disconnections, sender
     online / offline, master change, console mode, errors, updates, low battery; level filter (everything / warnings
     and errors / errors only), line limit, copy, clear (two clicks). The sender icon turns on **sender events**
@@ -34,7 +37,10 @@
   - on the right, the profile (default / per game), the **Selected**, **Gyro**, **Changes** tabs and the **Save**
     button (Ctrl+S);
   - remapping buttons and sticks, gyro aiming (right stick / mouse); deadzones, curves and anti-deadzone in the
-    collapsible "Advanced" section (it opens by itself when something in it was changed);
+    collapsible "Advanced" section (it opens by itself when something in it was changed). While the **Gyro aiming**
+    section is expanded, a live preview floats over the top-right corner of the pad drawing (like the tilt one; with
+    both open they sit one under the other): the rotation of the pad, the anti-deadzone ring and - in the stick mode -
+    the right stick the game gets, in the mouse mode the cursor speed;
   - **Pad tilt as a stick** (the **Gyro** tab: collapsed categories - basics, range and filter, automation, feedback; while one is expanded a live preview floats over the top-right corner of the pad drawing, and the stick in the drawing moves with the tilt): tilting the pad drives an analog stick (or the d-pad), per pad (saved by MAC in `gyrostick.json` next
     to `remap.json`, applied immediately - not part of the profile). Front down = stick up, left / right = stick left /
     right, full 360° range. Settings: deadzone, max outer zone, smoothing (EMA), vertical / horizontal ratio, response
@@ -172,7 +178,7 @@
   be used for actions. When the master isn't connected: anyone can (default) or nobody.
   The swap changes only which pad feeds which virtual pad - nothing is re-plugged, so the game keeps its player assignment.
   Rumble, lightbar and trigger effects follow the player. It ends by itself when a pad connects or leaves.
-- **Settings** (tray icon → Settings, or the button in the window), seven tabs:
+- **Settings** (tray icon → Settings, or the button in the window), tabs in a column on the left:
   - **Console mode:** you pick the pad button by pressing it on the pad, times are number fields, audio devices are
     lists of active Windows outputs, "Test" turns the mode on for 10 s with the values from the window. Changing console
     mode saves `console.json` and restarts the receiver (unsaved remap profile changes are lost);
@@ -181,6 +187,9 @@
     without a restart (`settings.json`);
   - **Lightbar:** colour per pad / default, mode, blinking, low battery threshold (immediately);
   - **Wake-on-LAN:** enable, the button paired with PS, hold time, MAC and broadcast (empty = automatic);
+  - **Pads:** which pad cards the window shows - dynamic (only connected) or a fixed number of slots (1-4, takes effect
+    immediately; the slots themselves are set by `pads` in `receiver.toml`, 4 by default) - plus the virtual pad
+    backend, HIDMaestro and the fixed player order;
   - **Window:** the screen the window appears on (always centred; when the screen is missing - on an available one),
     window or full screen (also F11 and the header button), language: Polski / English (takes effect after a restart).
     After switching screens (console mode, TV resolution / scaling) the window returns to the centre and fits the

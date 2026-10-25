@@ -2,8 +2,8 @@
 
   mouse     cursor sensitivity and stabilisation of the physical touchpad click (rx_mouse)
   master    which pad is the master, what only it may do, and the system actions "PS + button" (rx_master)
-  ui        window language
-  lightbar  lightbar colour when the game has set nothing (per pad, by MAC), low-battery blinking and its threshold
+  ui        window language, which pad cards the left column shows (only connected / a fixed number)
+  lightbar lightbar colour when the game has set nothing (per pad, by MAC), low-battery blinking and its threshold
             (the same threshold drives the warning on the pad card) - rx_feedback, rx_lightbar
   wol       Wake-on-LAN from the pad (PS + button while the receiver is silent) - sent to the sender (the scfg packet)
   log       the event log in the window: level, line limit, events from the sender
@@ -19,7 +19,7 @@ import json
 import os
 import string
 import threading
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import asdict, dataclass, field, fields, replace
 from typing import Any, ClassVar, Final, TypeAlias
 
@@ -158,16 +158,30 @@ MasterConfig.V = {"pad": _text, "when_absent": _choice(ABSENT), "only_master": _
                   "claim_hold": _bool}
 
 
+PADS_MODES: Final = ("dynamic", "fixed")
+PADS_COUNT: Final = (1, 4)
+
+
 @dataclass(frozen=True, slots=True)
 class UiConfig:
     """Window preferences."""
 
     lang: str = "pl"                # window language: pl | en (applied after a restart)
+    # which pad cards the left column shows: dynamic = only connected pads, fixed = the first pads_count slots always
+    # (a connected pad beyond them is shown too - it never disappears from the window)
+    pads_mode: str = "dynamic"
+    pads_count: int = 2
 
     V: ClassVar[Validators] = None
 
+    def slots(self, connected: Sequence[bool]) -> list[int]:
+        """The slots whose cards are shown, given which pads are connected now (index = slot, in slot order)."""
+        if self.pads_mode == "dynamic":
+            return [i for i, on in enumerate(connected) if on]
+        return [i for i, on in enumerate(connected) if on or i < self.pads_count]
 
-UiConfig.V = {"lang": _choice(("pl", "en"))}
+
+UiConfig.V = {"lang": _choice(("pl", "en")), "pads_mode": _choice(PADS_MODES), "pads_count": _num(*PADS_COUNT)}
 
 
 # ---------------- lightbar ----------------

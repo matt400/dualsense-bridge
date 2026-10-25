@@ -97,10 +97,10 @@ real_here = rx_config.HERE
 rx_config.HERE = cfg_dir
 try:
     check("receiver.toml obok receivera wczytany bez --config", rx_config.init([]).NUM_PADS == 3)
-    check('--config "" pomija receiver.toml', rx_config.init(["--config", ""]).NUM_PADS == 2)
+    check('--config "" pomija receiver.toml', rx_config.init(["--config", ""]).NUM_PADS == 4)
     rx_config.HERE = TMP
-    check("bez receiver.toml - wartości domyślne", rx_config.default_config() is None and rx_config.init([]).NUM_PADS == 2)
+    check("bez receiver.toml - wartości domyślne", rx_config.default_config() is None and rx_config.init([]).NUM_PADS == 4)
 finally:
     rx_config.HERE = real_here
-rx_config.init(["--remap-file", C.REMAP_PATH])           # przywróć konfigurację testów
+rx_config.init(["--pads", "2", "--remap-file", C.REMAP_PATH])           # przywróć konfigurację testów
 print("ALL PASS" if all(results.values()) else f"FAILED: {[k for k, v in results.items() if not v]}")

@@ -96,6 +96,11 @@ QFrame#segment {{ background: {TRACK}; border: 1px solid {LINE}; border-radius: 
 QPushButton[seg="true"] {{ background: transparent; border: none; border-radius: {p(7)}; padding: {p(5)} {p(12)}; color: {DIM}; }}
 QPushButton[seg="true"]:hover:!checked {{ color: {FG}; background: #262b38; }}
 QPushButton[seg="true"]:checked {{ background: {ACCENT}; color: #ffffff; font-weight: 600; }}
+QPushButton[nav="true"] {{ background: transparent; border: 1px solid transparent; border-radius: {p(8)}; padding: {p(9)} {p(12)};
+                          color: {DIM}; text-align: left; }}
+QPushButton[nav="true"]:hover:!checked {{ color: {FG}; background: {TRACK}; }}
+QPushButton[nav="true"]:checked {{ background: {TRACK}; color: {FG}; border-color: {LINE}; font-weight: 600; }}
+QPushButton[nav="true"]:focus {{ border-color: {ACCENT_HI}; }}
 QToolButton {{ background: transparent; border: none; color: {DIM}; font-size: {p(16)}; padding: 0 {p(4)}; }}
 QToolButton:hover {{ color: {BAD}; }}
 QToolButton#crown {{ padding: 0 {p(2)}; border-radius: {p(6)}; }}

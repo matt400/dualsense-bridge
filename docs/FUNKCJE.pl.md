@@ -18,7 +18,10 @@
   - po lewej karty padów: bateria, **prawdziwe opóźnienie pad → gra** (średnia, „zwykle ≤” = 95 na 100 pomiarów i max z 5 s, z paskiem odcinków:
     Bluetooth / nadajnik / sieć / PC), pod nim **przycisk → gra** (to samo tylko dla naciśnięć - ostatnie 100, z resetem),
     aktywny profil, test wibracji, wyłączenie pada, korona mastera; ping, utrata pakietów i Hz w podpowiedzi;
-    niepodłączony pad to sama nazwa;
+    niepodłączony pad to sama nazwa. Które karty widać, ustawiasz w Ustawienia → Pady: **dynamicznie** - tylko podłączone
+    pady, albo **stała liczba** - zawsze pierwsze N slotów (podłączony pad spoza nich też się pojawia). Strzałka w
+    nagłówku kolumny zwija ją do wąskiego paska z numerami padów (więcej miejsca na rysunek i edytor); wybór jest
+    zapamiętywany;
   - **dziennik zdarzeń** na dole okna (ikona listy w nagłówku): połączenia i rozłączenia padów, nadajnik online /
     offline, zmiana mastera, tryb konsoli, błędy, aktualizacje, niska bateria; filtr poziomu (wszystko / ostrzeżenia i
     błędy / tylko błędy), limit linii, kopiowanie, czyszczenie (dwa kliknięcia). Ikona nadajnika włącza **zdarzenia z
@@ -32,7 +35,10 @@
   - na środku rysunek pada na żywo: kliknij przycisk, spust albo gałkę, żeby ją zremapować lub dostroić;
   - po prawej profil (domyślny / per gra), zakładki **Selected**, **Gyro**, **Changes** i przycisk **Save** (Ctrl+S);
   - remapowanie przycisków i gałek, celowanie żyroskopem (prawa gałka / mysz); strefy martwe, krzywe i
-    anti-deadzone w zwijanej sekcji „Zaawansowane” (otwiera się sama, gdy coś w niej zmieniono);
+    anti-deadzone w zwijanej sekcji „Zaawansowane” (otwiera się sama, gdy coś w niej zmieniono). Gdy sekcja
+    **Celowanie żyroskopem** jest rozwinięta, w prawym górnym rogu rysunku pada pojawia się podgląd na żywo (jak przy
+    przechyle; gdy otwarte są oba, leżą jeden pod drugim): obrót pada, pierścień anty-strefy martwej i - w trybie
+    gałki - prawa gałka, którą dostaje gra, w trybie myszy prędkość kursora;
   - **przechył pada jako gałka** (zakładka **Gyro**: zwinięte kategorie - podstawowe, zakres i filtr, automatyka, sygnał zwrotny; gdy któraś jest rozwinięta, w prawym górnym rogu rysunku pada pojawia się podgląd na żywo, a gałka na rysunku rusza się razem z przechyłem): przechył pada steruje gałką analogową (albo D-padem), osobno dla każdego pada (zapis po MAC w
     `gyrostick.json` obok `remap.json`, działa od razu - nie jest częścią profilu). Przód w dół = gałka w górę, lewo /
     prawo = gałka w lewo / prawo, pełny zakres 360°. Ustawienia: martwa strefa, maksymalne wychylenie, wygładzanie (EMA),
@@ -164,7 +170,7 @@
   ani R3. Gdy master nie jest podłączony: każdy może (domyślnie) albo nikt.
   Zamiana zmienia tylko to, który pad steruje którym wirtualnym - nic nie jest przepinane, więc gra zachowuje przypisanie
   graczy. Rumble, lightbar i efekty spustów idą za graczem. Kończy się sama, gdy pad się połączy lub rozłączy.
-- **Ustawienia** (ikona w zasobniku → Ustawienia, albo przycisk w oknie), siedem zakładek:
+- **Ustawienia** (ikona w zasobniku → Ustawienia, albo przycisk w oknie), zakładki w kolumnie po lewej:
   - **Tryb konsoli:** przycisk pada wybierasz naciśnięciem go na padzie, czasy to pola liczbowe, urządzenia audio to
     listy aktywnych wyjść Windows, „Przetestuj” włącza tryb na 10 s z wartościami z okna. Zmiana trybu konsoli zapisuje
     `console.json` i restartuje receiver (niezapisane zmiany profilu remapowania przepadają);
@@ -173,6 +179,9 @@
     (`settings.json`);
   - **Lightbar:** kolor per pad / domyślny, tryb, miganie, próg niskiej baterii (od razu);
   - **Wake-on-LAN:** włączenie, przycisk do pary z PS, czas przytrzymania, MAC i broadcast (puste = automatycznie);
+  - **Pady:** które karty padów pokazuje okno - dynamicznie (tylko podłączone) albo stała liczba slotów (1-4, działa
+    od razu; same sloty ustawia `pads` w `receiver.toml`, domyślnie 4) - oraz backend wirtualnych padów, HIDMaestro i
+    stała kolejność graczy;
   - **Okno:** ekran, na którym pojawia się okno (zawsze na środku; gdy ekranu nie ma - na dostępnym), okno albo
     pełny ekran (też F11 i przycisk w nagłówku), język: polski / English (zmiana po restarcie). Po przełączeniu ekranów
     (tryb konsoli, rozdzielczość / skalowanie TV) okno wraca na środek i mieści się na ekranie (zmniejszone na TV,

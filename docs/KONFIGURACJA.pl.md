@@ -53,7 +53,9 @@ Mysz touchpada, pad master, lightbar, Wake-on-LAN, ustawienia dziennika i wirtua
 (okno → Ustawienia, działa od razu). Wirtualne pady (`vpad`): `backend` = `auto` | `hidmaestro` | `vigem`,
 `fixed_slots` = stała kolejność graczy (pad zastępczy w pustym niższym slocie), `hm_auto` = pobieranie i aktualizacja
 HIDMaestro z GitHuba (raz na dobę, do `receiver/hidmaestro/vX.Y.Z/`; nowa wersja działa po restarcie, gdy starsza jest
-już w użyciu), `hm_dll` = własna `HIDMaestro.Core.dll` albo jej folder (wtedy bez pobierania). Nadajnik zapisuje ustawienia Wake-on-LAN z okna w `sender/wol.json`.
+już w użyciu), `hm_dll` = własna `HIDMaestro.Core.dll` albo jej folder (wtedy bez pobierania). Preferencje okna (`ui`): `lang` = `pl` | `en`, `pads_mode` = `dynamic` (kolumna po lewej pokazuje
+tylko podłączone pady) | `fixed`, `pads_count` = ile padów zawsze pokazuje `fixed` (1-4). Liczbę slotów ustawia `pads` w
+`receiver.toml` (domyślnie 4, max 4). Nadajnik zapisuje ustawienia Wake-on-LAN z okna w `sender/wol.json`.
 Nadajnik zapisuje stały przydział pad → slot w `sender/slots.json` (`slots_file = ""` wyłącza).
 Kalibracja żyroskopu z okna (widok Test) jest w `sender/gyro_cal.json` (`gyro_cal_file = ""` - bez zapisu),
 korekcja dryfu gałek i tryb dostępności w `receiver/padcal.json` (obok `remap.json`, w kopiach ustawień przy aktualizacji).

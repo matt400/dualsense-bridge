@@ -53,7 +53,9 @@ Touchpad mouse, master pad, lightbar, Wake-on-LAN, event log settings and virtua
 (window → Settings, takes effect immediately). Virtual pads (`vpad`): `backend` = `auto` | `hidmaestro` | `vigem`,
 `fixed_slots` = fixed player order (placeholder pad in an empty lower slot), `hm_auto` = download and update
 HIDMaestro from GitHub (once a day, to `receiver/hidmaestro/vX.Y.Z/`; a new version takes effect after a restart when
-an older one is already in use), `hm_dll` = a custom `HIDMaestro.Core.dll` or its folder (then no download). The
+an older one is already in use), `hm_dll` = a custom `HIDMaestro.Core.dll` or its folder (then no download). Window preferences (`ui`): `lang` = `pl` | `en`, `pads_mode` = `dynamic` (the left column shows
+only connected pads) | `fixed`, `pads_count` = how many pads `fixed` always shows (1-4). The number of slots is `pads` in
+`receiver.toml` (4 by default, max 4). The
 sender stores the Wake-on-LAN settings from the window in `sender/wol.json`.
 The sender stores the fixed pad → slot assignment in `sender/slots.json` (`slots_file = ""` disables it).
 Gyro calibration from the window (Test view) is in `sender/gyro_cal.json` (`gyro_cal_file = ""` - not saved),
