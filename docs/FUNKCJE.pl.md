@@ -158,9 +158,12 @@
   | PS + Options | pauza gry (Esc) |
   | PS + △ (przytrzymaj ~1 s) | zamknij grę (nie zamyka pulpitu ani Steama) |
   | do ustawienia | uśpij komputer, wyłącz komputer (10 s na `shutdown /a`) |
+  | PS + □ | zamień graczy P1 ↔ P2, gdy połączone są dokładnie dwa pady; ponowne naciśnięcie przywraca |
 
   Przycisk z kombinacji (i samo PS) nie trafia do gry. Do akcji nie można użyć przycisków skrótów PS (Share, D-pad)
   ani R3. Gdy master nie jest podłączony: każdy może (domyślnie) albo nikt.
+  Zamiana zmienia tylko to, który pad steruje którym wirtualnym - nic nie jest przepinane, więc gra zachowuje przypisanie
+  graczy. Rumble, lightbar i efekty spustów idą za graczem. Kończy się sama, gdy pad się połączy lub rozłączy.
 - **Ustawienia** (ikona w zasobniku → Ustawienia, albo przycisk w oknie), siedem zakładek:
   - **Tryb konsoli:** przycisk pada wybierasz naciśnięciem go na padzie, czasy to pola liczbowe, urządzenia audio to
     listy aktywnych wyjść Windows, „Przetestuj” włącza tryb na 10 s z wartościami z okna. Zmiana trybu konsoli zapisuje

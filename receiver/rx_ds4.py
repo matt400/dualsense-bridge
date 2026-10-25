@@ -28,6 +28,7 @@ else:
 
 import rx_events as ev
 import rx_feedback as F
+import rx_swap
 import rx_hm
 import rx_latency
 import rx_settings
@@ -86,10 +87,15 @@ class Out:
         self.lock = threading.Lock()
 
     def send(self, idx: int) -> None:
-        """Send the freshest slot state to the virtual pad (call under self.lock); ends the change latency measurement."""
+        """Send the freshest state to the virtual pad of slot idx (call under self.lock); ends the change latency measurement.
+
+        The state is the one of the physical pad that feeds this virtual pad: its own, or the partner's while the players
+        are swapped (rx_swap).
+        """
+        src = rx_swap.route(idx)
         with S.lock:
-            s = S.states[idx]
-            self.build(S.output(idx), self.counter, S.mouse_mode[idx], self.ba)     # Test view: neutral
+            s = S.states[src]
+            self.build(S.output(src), self.counter, S.mouse_mode[src], self.ba)     # Test view: neutral
             lat, s["lat"] = s["lat"], None
             blat, s["blat"] = s["blat"], None
         self.counter += 1
@@ -102,9 +108,9 @@ class Out:
         if lat is not None or blat is not None:
             done = time.perf_counter_ns()
             if lat is not None:
-                rx_latency.add(idx, lat, done)
+                rx_latency.add(src, lat, done)
             if blat is not None:
-                rx_latency.add_button(idx, blat, done)
+                rx_latency.add_button(src, blat, done)
 
 
 outs: list[Out | None] = []   # Out per slot or None (the virtual pad is not plugged)
@@ -145,18 +151,19 @@ def push(idx: int) -> None:
     slot thread. Too early per pad_hz, the DS4 not plugged or busy with another report -> the slot thread sends the
     freshest state (changes within the pad_hz window merge into one report, nothing is lost).
     """
-    o = outs[idx] if idx < len(outs) else None
+    v = rx_swap.route(idx)                   # the virtual pad fed by this physical pad (the partner's while the players are swapped)
+    o = outs[v] if v < len(outs) else None
     if o is None or not o.lock.acquire(blocking=False):
-        S.wake[idx].set()
+        S.wake[v].set()
         return
     try:
         if time.perf_counter() - o.last < interval:
-            S.wake[idx].set()
+            S.wake[v].set()
             return
-        S.wake[idx].clear()                  # the report below already contains this change
-        o.send(idx)
+        S.wake[v].clear()                    # the report below already contains this change
+        o.send(v)
     except Exception:  # noqa: BLE001 - any report error goes to the slot thread, which logs it
-        S.wake[idx].set()                    # a ViGEm error will be handled (and logged) by the slot thread
+        S.wake[v].set()                      # a ViGEm error will be handled (and logged) by the slot thread
     finally:
         o.lock.release()
 
@@ -416,7 +423,7 @@ def slot_thread(idx: int) -> None:
         if idx and not wait_turn(idx, order):
             print(f"Controller {idx}: earlier slot not ready - plugging in anyway (player order may differ)")
         try:
-            F.reset(idx)
+            F.reset(rx_swap.route(idx))          # the game feedback of this virtual pad lives with the physical pad it is fed by
             pad, kind = create_pad(idx)
             o = _publish(idx, pad, kind)
             last_err = None
@@ -437,4 +444,4 @@ def slot_thread(idx: int) -> None:
                 print(f"Controller {idx}: virtual pad unplugged")
             # rumble and colour from the game belonged to the unplugged pad: without this, a pad that connects in this slot vibrated with
             # the game's old rumble (refreshed every 0.5 s) before a new one is created - and on a backend error forever
-            F.reset(idx)
+            F.reset(rx_swap.route(idx))
