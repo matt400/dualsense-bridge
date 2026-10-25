@@ -79,6 +79,7 @@ assert pads == ["", A, B], pads
 dlg.master_pad.set_data(B); dlg.master_pad.activated.emit(dlg.master_pad.currentIndex())   # wybór użytkownika
 dlg.features["ps_game"].setChecked(True); dlg.features["console"].setChecked(False)
 dlg.absent.set_data("nobody"); dlg.claim.setChecked(False)
+dlg.actions["swap"].set_data("")                          # domyślnie też kwadrat - ten sam przycisk dla dwóch akcji okno odrzuca
 dlg.actions["sleep"].set_data("square")
 icons = [dlg.actions["sleep"].itemIcon(i).isNull() for i in range(1, dlg.actions["sleep"].count())]
 assert not any(icons), "lista przycisków akcji to ikony"

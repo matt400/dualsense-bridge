@@ -51,8 +51,8 @@ json.dump({"mouse": {"sens": 9, "click_freeze_ms": 200}, "master": {"pad": " AA:
 s = rx_settings.load(path)
 check(s.mouse.sens == 0.5 and s.mouse.click_freeze_ms == 200, f"zła czułość -> domyślna, reszta wczytana: {s.mouse}")
 check(s.master.pad == A and s.master.when_absent == "all" and s.master.only_master == ("console", "ps_game"), f"master: {s.master}")
-check(s.master.actions == {"pause": "", "close_game": "", "sleep": "cross", "shutdown": ""} and s.master.claim_hold is True,
-      f"akcje: Share (skrót PS) niedozwolony, przycisk nie dwa razy: {s.master.actions}")
+check(s.master.actions == {"pause": "", "close_game": "", "sleep": "cross", "shutdown": "", "swap": "square"} and s.master.claim_hold is True,
+      f"akcje: Share (skrót PS) niedozwolony, przycisk nie dwa razy, nowa akcja dostaje domyślny przycisk: {s.master.actions}")
 rx_settings.save(s, path)
 check(rx_settings.load(path) == s and not os.path.exists(path + ".tmp"), "zapis i odczyt bez zmian")
 open(path, "w").write("{zepsuty")

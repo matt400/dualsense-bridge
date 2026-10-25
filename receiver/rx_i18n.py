@@ -359,6 +359,13 @@ EN: Final[dict[str, str]] = {
     "Zamknij grę": "Close game",
     "Uśpij komputer": "Sleep the PC",
     "Wyłącz komputer": "Shut down the PC",
+    "Zamień graczy P1 ↔ P2 (przy dwóch padach)": "Swap players P1 ↔ P2 (with two pads)",
+    "Gracze wrócili na swoje miejsca (P1 i P2 jak na początku)": "Players are back in their own places (P1 and P2 as at the start)",
+    "Zamiana graczy działa tylko przy dwóch połączonych padach": "Swapping players only works with exactly two connected pads",
+    "Zamieniono graczy: {a} steruje teraz jako P{pb}, {b} jako P{pa}": "Players swapped: {a} now plays as P{pb}, {b} as P{pa}",
+    "Zamiana graczy wyłączona ({why})": "Player swap turned off ({why})",
+    "pad się rozłączył": "a pad disconnected",
+    "połączył się pad": "a pad connected",
     "każdy pad może wszystko": "every pad can do everything",
     "zastrzeżone funkcje są wyłączone": "restricted features are off",
     "Pad {n} nie przysłał jeszcze identyfikatora (MAC) - spróbuj za chwilę":
