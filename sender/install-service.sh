@@ -25,7 +25,7 @@ UNIT="$ROOT/etc/systemd/system/$NAME.service"
 ENVF="$ROOT/etc/$NAME.env"
 REPO=$(cd "$DIR/.." && pwd)
 
-live() { [ -z "$ROOT" ]; }           # prawdziwa instalacja (nie test)
+live() { [ -z "$ROOT" ]; }           # a real install (not a test run)
 
 if live; then
 	if [ "$(id -u)" -ne 0 ]; then
@@ -56,8 +56,8 @@ if [ $# -eq 0 ]; then
 	if [ -f "$DIR/sender.toml" ]; then
 		set -- --config "$DIR/sender.toml"
 	else
-		echo "Brak $DIR/sender.toml - skopiuj sender.example.toml jako sender.toml (ustaw host) albo podaj argumenty," >&2
-		echo "np.: doas $0 192.168.1.4" >&2
+		echo "Missing $DIR/sender.toml - copy sender.example.toml to sender.toml (set host) or pass arguments," >&2
+		echo "e.g.: doas $0 192.168.1.4" >&2
 		exit 1
 	fi
 fi
@@ -103,7 +103,7 @@ mkdir -p "$ROOT/etc/systemd/system"
 if [ $HAS_KEY -eq 1 ]; then
 	(umask 077; printf 'PADKEY=%s\n' "$(eq "$KEY")" > "$ENVF")
 	chmod 600 "$ENVF"
-	echo "Klucz HMAC w $ENVF (0600) - nie w ExecStart (widocznym w ps)"
+	echo "HMAC key stored in $ENVF (0600), not in ExecStart (which is visible in ps)"
 else
 	rm -f "$ENVF"
 fi

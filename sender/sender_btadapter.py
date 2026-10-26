@@ -32,7 +32,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
 
-from proto import BTA_AUTO, BTA_MANUAL, BTA_PICK, write_json
+from proto import BTA_AUTO, BTA_MANUAL, BTA_PICK
+from sender_state import write_json_later
 
 SYSFS: Final = Path("/sys/class/bluetooth")
 MODES: Final = {"auto": BTA_AUTO, "pick": BTA_PICK, "manual": BTA_MANUAL}
@@ -298,9 +299,12 @@ def load_mode(path: str, default: tuple[int, str]) -> tuple[int, str]:
 
 
 def save_mode(path: str, mode: int, key: str = "") -> None:
-    """Persist the controller choice made in the window to bt.json (the device key only for `pick`); errors are logged only."""
+    """Persist the controller choice made in the window to bt.json (the device key only for `pick`); errors are logged only.
+
+    The write goes through the state-file worker thread, so the fsync does not stop the event loop.
+    """
     if path:
         try:
-            write_json(path, {"mode": MODE_NAMES[mode], **({"device": key} if mode == BTA_PICK else {})}, indent=2)
+            write_json_later(path, {"mode": MODE_NAMES[mode], **({"device": key} if mode == BTA_PICK else {})}, indent=2)
         except OSError as e:
             print(f"Bluetooth adapter: cannot write {path}: {e!r}")

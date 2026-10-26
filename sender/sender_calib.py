@@ -158,7 +158,7 @@ def startup_done(c: Ctrl, result: CalResult) -> None:
     """Result of the startup calibration (not saved - only a calibration from the window is saved)."""
     status, bias = result
     if status == CAL_OK and bias is not None:
-        c.gyro_bias = bias
+        c.gyro_bias, c.bias_known = bias, True
         print(f"Controller {c.idx}: gyro bias {[round(b) for b in bias]}")
     else:
         print(f"Controller {c.idx}: calibration skipped (pad was moving)")
@@ -172,7 +172,7 @@ def finish(c: Ctrl, result: CalResult) -> None:
     """
     status, bias = result
     if status == CAL_OK and bias is not None:
-        c.gyro_bias = bias
+        c.gyro_bias, c.bias_known = bias, True
         saved = save(c.key, bias)
         print(f"Controller {c.idx}: gyro calibrated {[round(b) for b in bias]}" + (" (saved)" if saved else ""))
     else:

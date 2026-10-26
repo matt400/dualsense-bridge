@@ -108,6 +108,9 @@ class DummySock:
             raise r
         return r
 
+    def settimeout(self, value):
+        self.timeout = value
+
     def close(self):
         pass
 

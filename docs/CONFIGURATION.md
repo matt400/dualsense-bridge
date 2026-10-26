@@ -9,7 +9,8 @@ service installer adds it). Another file: `--config other.toml`. `*.toml` files 
 
 When defaults change, the sender fixes lines with **old default values** in `sender.toml` by itself at startup
 (e.g. `pad_min_dt = 0.004` -> `0.001`); your own settings, comments and file layout stay, a backup goes to
-`sender.toml.bak`. Manually: `python3 sender/sender_migrate.py sender/sender.toml`.
+`sender.toml.bak`. Each key is migrated only once (the list is kept in `sender.toml.migrated`), so a value you set later is never
+rewritten. Manually: `python3 sender/sender_migrate.py sender/sender.toml`.
 
 Most often changed:
 

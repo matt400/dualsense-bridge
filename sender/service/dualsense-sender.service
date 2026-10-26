@@ -7,7 +7,7 @@ Wants=network-online.target
 
 [Service]
 WorkingDirectory=@DIR@
-# klucz HMAC (PADKEY) z --key instalatora - plik 0600 zamiast ExecStart widocznego w ps
+# HMAC key (PADKEY) from the installer's --key: a 0600 file instead of ExecStart, which is visible in ps
 EnvironmentFile=-/etc/dualsense-sender.env
 ExecStart=/usr/bin/python3 -u @DIR@/sender_controller.py @ARGS@
 Restart=always

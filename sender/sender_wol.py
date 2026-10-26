@@ -66,7 +66,7 @@ cfg = WolCfg()
 learned = ""                  # the PC's MAC from the ARP table (remembered in wol.json)
 _bcast_cache: tuple[str | None, str | None] = (None, None)   # (local IP, broadcast of its network)
 _bcast_pending: str | None = None   # the local IP whose broadcast is being read in a thread
-_last_sent = 0.0
+_last_sent = float("-inf")
 
 
 # ---------------- settings ----------------

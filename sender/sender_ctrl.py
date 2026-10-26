@@ -125,7 +125,7 @@ class Ctrl:
         self._led_fails = 0                       # lightbar writes that failed in a row
         self.reports = {"pad": 0, "motion": 0}   # device report counters (Hz in the info packet)
         self.last_input = time.monotonic()        # the last deliberate use of the pad (for idle power-off)
-        self.powering_off = 0.0
+        self.powering_off = float("-inf")
         self.closing = False          # run_ctrl is cleaning up - do not attach any new devices
         self.sealed = False           # set once "bye" is out: a late repeat (call_later) must not send for a slot the PC has released
         self.extra: set[asyncio.Task[Any]] = set()
@@ -145,6 +145,7 @@ class Ctrl:
         self.stick_dz = C.STICK_DZ    # stick deadzone; 0 while the drift measurement from the window runs (CMD_RAW_STICKS)
         self._raw_timer: asyncio.TimerHandle | None = None
         self.gyro_bias = [0.0, 0.0, 0.0]   # gyro bias subtracted before sending (calibration / autobias)
+        self.bias_known = False       # gyro_bias holds a saved / calibrated value: a restarted motion stream keeps it (autobias refines it)
         self.cal_request = 0          # calibration from the window: this many seconds (stream_motion starts it), 0 = none
         self.cal_cmd_t = -1.0         # when the last calibration command arrived (UDP repeats)
 

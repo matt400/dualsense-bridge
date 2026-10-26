@@ -46,7 +46,7 @@ async def main():
     # evdev FF psuje się, zapas przez HID też rzuca - wyjątek nie może wyjść z set() (wywalał callback pętli asyncio)
     path2 = os.path.join(TMP, "hidraw2")
     open(path2, "wb").close()
-    r = R.Rumble(1, Dev(ff=True), "evdev")
+    r = R.Rumble(1, Dev(ff=True), "auto")           # zapas przez HID tylko w trybie auto (w "evdev" wybór z konfiguracji zostaje)
     check(r.methods == ["evdev"], "start: tylko evdev FF")
     r._open_hidraw = lambda given=None: (setattr(r, "fd", os.open(path2, os.O_RDWR)) or True)
     def broken(small, large):
@@ -197,6 +197,7 @@ import tomllib
 cfgd = tomllib.loads(got)
 check(cfgd["pad_min_dt"] == 0.001 and cfgd["touch_coalesce_ms"] == 2 and cfgd["key"] == "a b", "plik dalej poprawnym TOML")
 open(toml, "w").write(src)
+os.remove(toml + ".migrated")                     # świeży plik: stan migracji jest per plik
 sender_config.init(["--config", toml])
 check(sender_config.C.PAD_MIN_DT == 0.001 and sender_config.C.TOUCH_COALESCE_S == 0.002 and sender_config.C.MOTION_MIN_DT == 0.002,
       "start nadajnika migruje sam (po aktualizacji przyciskiem nic nie trzeba robić)")
