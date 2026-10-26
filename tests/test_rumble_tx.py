@@ -146,6 +146,7 @@ async def main():
     c.rumble.close()
     c.rumble = R.Rumble(9, c.pad_dev, "off")
     c.apply_feedback(0, 0, 9, 8, 7)
+    await asyncio.sleep(0.1)                         # the sysfs write runs in a worker thread
     assert open(os.path.join(led, "multi_intensity")).read() == "9 8 7", "bez raportu HID - kolor przez sterownik jak dawniej"
     ok("lightbar razem z wibracją w raporcie HID (bez wyścigu ze sterownikiem), powtórka zmiany, sysfs bez hidraw")
 
@@ -156,6 +157,7 @@ async def main():
     assert r.mode == "evdev"
     R.find_hidraw, orig = (lambda dev, root="/sys": (path2, False)), R.find_hidraw
     r.set(5, 6)
+    await asyncio.sleep(0.1)                         # the HID report is opened in a worker thread
     R.find_hidraw = orig
     assert r.mode == "hidraw" and open(path2, "rb").read()[:1] == b"\x02", "błąd evdev FF -> raport HID (USB)"
     r.close()

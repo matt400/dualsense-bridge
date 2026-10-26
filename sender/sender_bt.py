@@ -403,7 +403,9 @@ class Bluetooth:
                 print(f"Bluetooth {d.mac}: cannot set trusted: {e}")
                 continue
             print(f"Bluetooth {d.mac}: paired pad was not trusted - trusted now")
-            self.devices[self.devices.index(d)] = Device(d.mac, d.name, d.rssi, d.flags | BTD_TRUSTED)
+            # looked up by address, not by the old object: a refresh that ran during the await above has replaced the list
+            # (a changed RSSI makes the old Device unequal to the new one - .index() raised ValueError and ended the caller)
+            self.devices = [Device(x.mac, x.name, x.rssi, x.flags | BTD_TRUSTED) if x.mac == d.mac else x for x in self.devices]
 
     # ---------- controller choice ----------
     def get_mode(self) -> int:

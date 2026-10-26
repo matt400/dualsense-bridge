@@ -780,6 +780,9 @@ class _TouchStream:
             c.last_input = now
         if self.sess is None:
             if not on:
+                # nothing is down after the resync (or the finger that was down at attach time went up): the flag has no
+                # contact to mark any more - left set it swallowed the next real tap
+                self.resynced = False
                 return
             self.sess = _Session(now)
             if self.resynced:

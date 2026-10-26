@@ -32,6 +32,7 @@ DEFAULT_LIGHTBAR: Final = (0, 0, 64)        # the colour a flash returns to when
 RGB_LEN: Final = 3
 INT16_MIN, INT16_MAX = -32768, 32767        # the mouse packet's dx / dy are signed 16-bit
 NS_PER_US: Final = 1000
+BUS_USB: Final = 0x03                       # evdev input_id.bustype of a pad on USB (Bluetooth is 0x05)
 # "Deliberate use" of the pad (for the idle power-off): a trigger pulled beyond this, or a stick moved more than this
 # many units from the centre. Smaller values are stick noise or a pad lying still.
 TRIGGER_PRESS_MIN: Final = 30
@@ -123,6 +124,8 @@ class Ctrl:
         self.led_color: tuple[int, int, int] | None = None
         self._led_max: str | None = None          # max_brightness of the LED, read once (it never changes)
         self._led_fails = 0                       # lightbar writes that failed in a row
+        self._led_want: tuple[int, int, int] | None = None   # the newest colour asked for while a write is running
+        self._led_busy = False                    # a sysfs write runs in a worker thread
         self.reports = {"pad": 0, "motion": 0}   # device report counters (Hz in the info packet)
         self.last_input = time.monotonic()        # the last deliberate use of the pad (for idle power-off)
         self.powering_off = float("-inf")
@@ -148,6 +151,13 @@ class Ctrl:
         self.bias_known = False       # gyro_bias holds a saved / calibrated value: a restarted motion stream keeps it (autobias refines it)
         self.cal_request = 0          # calibration from the window: this many seconds (stream_motion starts it), 0 = none
         self.cal_cmd_t = -1.0         # when the last calibration command arrived (UDP repeats)
+
+    def is_bluetooth(self) -> bool:
+        """False for a pad plugged in over USB: there is no Bluetooth link to drop, so powering it off by disconnecting is pointless.
+
+        A stand-in device without bus information (tests) counts as Bluetooth.
+        """
+        return getattr(getattr(self.pad_dev, "info", None), "bustype", None) != BUS_USB
 
     def devices(self) -> list[InputDevice]:
         """Return the evdev devices currently attached to this pad (pad, motion, touchpad - whichever exist)."""
@@ -350,32 +360,72 @@ class Ctrl:
         self.send_click()
 
     # ---- feedback from the PC ----
-    def _led_max_brightness(self) -> str:
+    def _led_max_brightness(self, led: str) -> str:
         """The LED's max_brightness (what to write to ``brightness`` to light it fully); read from sysfs once, then remembered."""
         if self._led_max is None:
             try:
-                with open(f"{self.led}/max_brightness") as f:
+                with open(f"{led}/max_brightness") as f:
                     self._led_max = f.read().strip()
             except OSError:
                 return DEFAULT_LED_MAX_BRIGHTNESS      # not remembered: the next colour change tries again
         return self._led_max
 
+    def _led_io(self, led: str, rgb: tuple[int, int, int]) -> OSError | None:
+        """Write the colour to the sysfs LED (multi_intensity and brightness); blocking, so it runs in a worker thread.
+
+        Each write makes the driver send an HID output report - over Bluetooth a synchronous round trip to the pad.
+
+        Returns:
+            The error of a failed write (not raised: the outcome is handled on the event loop), or None.
+        """
+        try:
+            with open(f"{led}/multi_intensity", "w") as f:
+                f.write("{} {} {}".format(*rgb))
+            with open(f"{led}/brightness", "w") as f:
+                f.write(self._led_max_brightness(led))
+        except OSError as e:
+            return e
+        return None
+
     def _write_led(self, rgb: tuple[int, int, int]) -> None:
-        """Write the colour to the sysfs LED (multi_intensity and brightness).
+        """Write the colour to the sysfs LED (multi_intensity and brightness) without stopping the event loop.
+
+        The write runs in a worker thread: on the loop a slow Bluetooth round trip stopped the read loops of every pad. One
+        write at a time; a colour that arrives while one is running replaces the one waiting (only the latest matters) and is
+        written right after it. Without a running loop (tests, tools) the write is done at once.
 
         One failed write is not the end of the lightbar (the pad may be busy, or reconnecting): the colour stays unchanged, so
         the next feedback from the PC tries again. After LED_FAIL_MAX failures in a row, or at once when the LED node is gone,
         the lightbar is unavailable until the pad reconnects.
         """
-        try:
-            with open(f"{self.led}/multi_intensity", "w") as f:
-                f.write("{} {} {}".format(*rgb))
-            with open(f"{self.led}/brightness", "w") as f:
-                f.write(self._led_max_brightness())
-        except OSError as e:
+        led = self.led
+        if not led:
+            return
+        loop = state.running_loop()
+        if loop is None:
+            self._led_done(rgb, self._led_io(led, rgb))
+            return
+        self._led_want = rgb
+        if self._led_busy:
+            return
+        self._led_busy = True
+        loop.run_in_executor(None, self._led_io, led, rgb).add_done_callback(lambda fut: self._led_finished(rgb, fut))
+
+    def _led_finished(self, rgb: tuple[int, int, int], fut: asyncio.Future[OSError | None]) -> None:
+        """Event-loop callback of a worker-thread write: record the outcome, then write the colour that arrived meanwhile."""
+        self._led_busy = False
+        err = fut.result()
+        self._led_done(rgb, err)
+        want = self._led_want
+        if err is None and self.led and want is not None and want != rgb:
+            self._write_led(want)
+
+    def _led_done(self, rgb: tuple[int, int, int], err: OSError | None) -> None:
+        """Bookkeeping of one lightbar write: the colour on success, the failure counter (and giving up) on an error."""
+        if err is not None:
             self._led_fails += 1
-            if self._led_fails >= LED_FAIL_MAX or e.errno in LED_FATAL_ERRNO:
-                print(f"Controller {self.idx}: lightbar unavailable: {e!r}")
+            if self._led_fails >= LED_FAIL_MAX or err.errno in LED_FATAL_ERRNO:
+                print(f"Controller {self.idx}: lightbar unavailable: {err!r}")
                 self.led = None
             return
         self._led_fails = 0
