@@ -9,6 +9,7 @@ changed; the rest (cards, tray) every 400 ms, with a hidden window too (the tray
 Profile changes reach the pad live 150 ms after the last slider move, saving to remap.json is separate (Save).
 """
 from rx_i18n import _
+import math
 import os
 import signal
 from collections.abc import Iterable, Sequence
@@ -63,9 +64,10 @@ from rx_qt_widgets import (BatteryBar, BatteryPill, ConfirmButton, ProgressRing,
                            icon_label, label)
 
 LIVE_MS, SLOW_MS, APPLY_MS = 33, 400, 150
-UPDATE_WAIT_S = 60.0       # how long at most we wait for the sender update result (git pull on the phone)
+UPDATE_WAIT_S = 20.0       # at most this long after the receiver is done we wait for the sender's result (a countdown is shown)
 UPDATE_RESTART_MS = 2500   # after a successful update: the message is visible this long, then the receiver restarts
-UPDATE_STUCK_S = 150.0     # git longer than this (hung despite the limits) -> the button returns, the result will work anyway
+UPDATE_STUCK_S = 150.0     # no progress for this long (git hung despite its limits) -> the button returns, the result still works
+UPDATE_PIP_GRACE_S = 30.0  # added to pip's own time limit before the libraries stage counts as stuck
 NOTE_S = 6.0           # for this many seconds a message (e.g. "Saved") covers the profile status
 VIEWS = (("out", "Wynik"), ("in", "Fizycznie"), ("test", "Test"))
 EXIT_HOLD_S = 1.0      # the Test view in TV mode: how long ○ of the pad under test must be held to leave the test
@@ -968,7 +970,8 @@ class MainWindow(ScreenPlacement):
         self._set_progress(0)
         self.note(_("Pobieranie aktualizacji…"), "")
         self._upd_sender = S.sender_online() and S.sender_build is not None   # a new sender answers with a result
-        self._upd_t0 = time.monotonic()
+        self._upd_seen = time.monotonic()
+        self._upd_wait_t0, self._upd_left = 0.0, None
         self._upd_result = None
         self._upd_run = run = getattr(self, "_upd_run", 0) + 1
         QTimer.singleShot(int(UPDATE_STUCK_S * 1000), lambda: self._update_stuck(run))
@@ -996,18 +999,28 @@ class MainWindow(ScreenPlacement):
         if not self.update_ring.running():
             return
         self._upd_pct = max(self._upd_pct, pct)
+        self._upd_seen = time.monotonic()
         self.update_btn.set_label(f"{_('Aktualizuję…')} {self._upd_pct}%")
         self.update_ring.set_value(self._upd_pct)
 
     def _update_stuck(self, run: int) -> None:
-        """The update thread did not finish (git hung) - the button must not hang on "Updating…" until the receiver restarts.
+        """The update thread made no progress for too long - the button must not hang on "Updating…" until the receiver restarts.
 
-        A late result still works (a restart after the code is fetched).
+        The time is counted from the last stage change, not from the click. The libraries stage (75%, pip) may legitimately run
+        for minutes, so it gets pip's own limit; declaring it stuck earlier blamed git and let a second update start over
+        a running pip. A late result still works (a restart after the code is fetched).
         """
         if run != self._upd_run or self._upd_result is not None:
             return
-        print(f"Update: no result from git after {UPDATE_STUCK_S:g}s")
-        text = _("Aktualizacja nie odpowiada (git) - spróbuj ponownie albo uruchom update.bat")
+        pip = self._upd_pct == rx_update.PCT_BACKED_UP
+        limit = rx_update.PIP_TIMEOUT_S + UPDATE_PIP_GRACE_S if pip else UPDATE_STUCK_S
+        idle = time.monotonic() - self._upd_seen
+        if idle < limit:                                   # a stage ended meanwhile: check again when the new one has had its time
+            QTimer.singleShot(int((limit - idle) * 1000) + 100, lambda: self._update_stuck(run))
+            return
+        print(f"Update: no progress for {idle:.0f}s at {self._upd_pct}%")
+        text = (_("Instalacja bibliotek (pip) trwa zbyt długo - uruchom update.bat") if pip else
+                _("Aktualizacja nie odpowiada (git) - spróbuj ponownie albo uruchom update.bat"))
         ev.error(text)
         self.update_ring.stop()
         self.update_btn.disarm()
@@ -1018,6 +1031,7 @@ class MainWindow(ScreenPlacement):
         """The receiver is ready - we wait (UPDATE_WAIT_S at most) for the sender's result, then a message and a restart."""
         print(f"Update: {r.text}")
         self._upd_result = r
+        self._upd_wait_t0 = time.monotonic()               # the sender's time starts now, not at the click (our pull took part of it)
         self._update_poll()
 
     def _update_poll(self) -> None:
@@ -1029,9 +1043,13 @@ class MainWindow(ScreenPlacement):
         if r is None:
             return
         waiting = (self._upd_sender and rx_update.sender_state(S.sender_build, self._upd_commit) == UPD_RUNNING
-                   and time.monotonic() - self._upd_t0 < UPDATE_WAIT_S)
+                   and time.monotonic() - self._upd_wait_t0 < UPDATE_WAIT_S)
         if waiting:
             self._set_progress(rx_update.PCT_INSTALLED + 2)       # the receiver is done, the sender is still pulling
+            left = math.ceil(UPDATE_WAIT_S - (time.monotonic() - self._upd_wait_t0))
+            if left != self._upd_left:                            # a countdown, redrawn once a second (not on every 250 ms poll)
+                self._upd_left = left
+                self.note(_("Czekam na nadajnik… {n} s").format(n=left), "")
             QTimer.singleShot(250, self._update_poll)
             return
         parts = [r.text]
