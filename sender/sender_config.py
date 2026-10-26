@@ -83,6 +83,7 @@ DEVICE_READ_ERRORS: Final = (OSError, AttributeError, TypeError, ValueError, Key
 US_PER_S: Final = 1_000_000             # evdev event times are seconds + microseconds
 RUMBLE_MODES: Final = ("auto", "evdev", "hidraw", "off")
 RT_PRIORITY_MAX: Final = 99             # the highest SCHED_FIFO priority
+PORT_MAX: Final = 65535                 # the highest UDP port
 SECONDS_PER_MINUTE: Final = 60
 MS_PER_S: Final = 1000.0
 
@@ -165,15 +166,32 @@ def resolve(host: str) -> str:
     return socket.gethostbyname(host)
 
 
+def _in_range(name: str, value: object, low: int, high: int | None = None) -> int:
+    """Return ``value`` as an int within ``low``..``high``.
+
+    Raises:
+        SystemExit: The value is not a whole number or is out of range - said at startup, with the setting's name, instead of
+            a bind / slot error somewhere later.
+    """
+    try:
+        number = int(str(value).strip())
+    except ValueError:
+        raise SystemExit(f"Invalid {name} = {value!r}: a whole number is expected") from None
+    if number < low or (high is not None and number > high):
+        allowed = f"{low}-{high}" if high is not None else f"at least {low}"
+        raise SystemExit(f"Invalid {name} = {number}: it must be {allowed}")
+    return number
+
+
 def _apply_network(cfg: dict[str, Any]) -> None:
-    """Receiver address, port, pad limit and the HMAC key; exits with a message if the host cannot be resolved."""
+    """Receiver address, port, pad limit and the HMAC key; exits with a message for an unresolvable host or a bad port / max_pads."""
     C.HOST = str(cfg["host"]).strip()
     try:
         C.PC_ADDR = resolve(C.HOST)
     except OSError as e:
         raise SystemExit(f"Cannot resolve host {C.HOST!r}: {e}") from None
-    C.PORT = int(cfg["port"])
-    C.MAX_PADS = int(cfg["max_pads"])
+    C.PORT = _in_range("port", cfg["port"], 1, PORT_MAX)
+    C.MAX_PADS = _in_range("max_pads", cfg["max_pads"], 1)
     C.KEY = str(cfg["key"]).encode() if cfg["key"] else b""
 
 
@@ -212,7 +230,8 @@ def _apply_touch(cfg: dict[str, Any]) -> None:
 
 def _apply_runtime(cfg: dict[str, Any]) -> None:
     """Rumble mode, idle power-off, real-time scheduling and statistics."""
-    C.RUMBLE = cfg["rumble"] if cfg["rumble"] in RUMBLE_MODES else "auto"
+    mode = str(cfg["rumble"]).strip().lower()           # "Auto" in the file is the same as "auto"
+    C.RUMBLE = mode if mode in RUMBLE_MODES else "auto"
     C.IDLE_OFF_S = max(0.0, float(cfg["idle_off_min"])) * SECONDS_PER_MINUTE
     C.RT_PRIORITY = max(0, min(RT_PRIORITY_MAX, int(cfg["rt_priority"])))
     C.LOW_LATENCY, C.CPU_LATENCY_US = bool(cfg["low_latency"]), max(0, int(cfg["cpu_latency_us"]))

@@ -56,6 +56,7 @@ FILTERS: Final = (
     struct.pack("<IIIH", *_FILTER_MASKS, 0),
     struct.pack("<QIIHxxxxxx", *_FILTER_MASKS, 0),
 )
+EVENT_MIN_LEN: Final = 7                  # the shortest event that can be classified (3-byte header + 4 bytes)
 REPLY_MIN_LEN: Final = 10                 # Command Complete with a status, a handle and one value: 4 + 3 + 3 bytes
 REPLY_WAIT_S: Final = 0.15                # how long one command may wait for its answer
 HCI_NAME = re.compile(r"hci(\d+)$")
@@ -87,19 +88,44 @@ def hci_command(opcode: int, handle: int) -> bytes:
     return struct.pack("<BHBH", HCI_COMMAND_PKT, opcode, 2, handle)
 
 
+def classify_reply(packet: bytes, opcode: int, handle: int) -> tuple[bool, bytes | None]:
+    """Decide what one event means for the command `opcode` sent for `handle`.
+
+    A controller that does not support Read RSSI / Read Link Quality answers at once, with a Command Complete that has a
+    non-zero status (often without the handle: "unknown command" is 4 + 3 bytes) or with a Command Status that has one.
+    Such an answer is final, so the caller can stop waiting instead of sitting out the whole deadline.
+
+    Returns:
+        (final, params). `final` is True when the packet is the answer to this command: params are the bytes after the status
+        and the echoed handle, or None when the controller refused. `final` False means "not ours, keep waiting": another event,
+        another command / handle, a malformed packet, or a Command Status with status 0 (accepted, the Complete follows).
+    """
+    if len(packet) < EVENT_MIN_LEN or packet[0] != HCI_EVENT_PKT:
+        return False, None
+    if packet[1] == EVT_CMD_STATUS:                 # 04 0F 04 status ncmd opcode(2)
+        refused = packet[3] != 0 and struct.unpack_from("<H", packet, 5)[0] == opcode
+        return refused, None
+    if packet[1] != EVT_CMD_COMPLETE:
+        return False, None
+    op, status = struct.unpack_from("<HB", packet, 4)
+    if op != opcode:
+        return False, None
+    if len(packet) >= REPLY_MIN_LEN - 1 and struct.unpack_from("<H", packet, 7)[0] != handle:
+        return False, None                          # the same command, but for another pad
+    if status != 0:
+        return True, None
+    return (True, packet[9:]) if len(packet) >= REPLY_MIN_LEN else (False, None)
+
+
 def parse_reply(packet: bytes, opcode: int, handle: int) -> bytes | None:
     """The return parameters (after the status byte) of the Command Complete for `opcode` and `handle`.
 
     Returns:
-        The bytes after the status and the echoed handle, or None for another event, another command / handle, a short packet
-        or a non-zero status. A Command Status (the controller refused before running it) also gives None.
+        The bytes after the status and the echoed handle, or None for another event, another command / handle, a short packet,
+        a non-zero status or a Command Status (the controller refused before running it). See `classify_reply` to tell a
+        refusal from an unrelated packet.
     """
-    if len(packet) < REPLY_MIN_LEN or packet[0] != HCI_EVENT_PKT or packet[1] != EVT_CMD_COMPLETE:
-        return None
-    op, status, echoed = struct.unpack_from("<HBH", packet, 4)
-    if op != opcode or status != 0 or echoed != handle:
-        return None
-    return packet[9:]
+    return classify_reply(packet, opcode, handle)[1]
 
 
 def find_handle(buf: bytes, mac: str) -> int | None:
@@ -192,7 +218,11 @@ class RawHci:
     def command(self, dev: int, opcode: int, handle: int) -> bytes | None:
         """Send the command and wait (REPLY_WAIT_S at most) for its Command Complete.
 
-        Whatever the reason for no answer (the deadline, the socket timeout, an error), the socket is closed: a late reply
+        A refusal (a Complete with an error status, or a Command Status with one) is an answer too: None is returned at once and
+        the socket stays open, because nothing is left in flight. Without that, a controller that lacks the command made every
+        reading wait the whole deadline (per pad, one after another) and reopen its socket.
+
+        When there is no answer at all (the deadline, the socket timeout, an error) the socket is closed: a late reply
         to this command would otherwise sit in its queue and be taken for the answer to the next one.
         """
         try:
@@ -201,8 +231,8 @@ class RawHci:
             deadline = time.monotonic() + REPLY_WAIT_S
             while (left := deadline - time.monotonic()) > 0:
                 s.settimeout(left)      # the whole wait is bounded by the deadline, not REPLY_WAIT_S per received packet
-                reply = parse_reply(s.recv(260), opcode, handle)
-                if reply is not None:
+                final, reply = classify_reply(s.recv(260), opcode, handle)
+                if final:
                     return reply
         except OSError:                 # no permission, the controller went away, the timeout of the socket
             pass

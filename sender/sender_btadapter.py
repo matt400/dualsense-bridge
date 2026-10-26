@@ -23,6 +23,7 @@ from __future__ import annotations
 import contextlib
 import fcntl
 import json
+import re
 import shutil
 import socket
 import struct
@@ -38,6 +39,7 @@ from sender_state import write_json_later
 SYSFS: Final = Path("/sys/class/bluetooth")
 MODES: Final = {"auto": BTA_AUTO, "pick": BTA_PICK, "manual": BTA_MANUAL}
 MODE_NAMES: Final = {v: k for k, v in MODES.items()}
+USB_BUS = re.compile(r"usb\d+")     # the name of a USB root hub directory in sysfs (usb1, usb3, ...)
 RULE_BUILTIN: Final = "builtin"     # rule key from sender.toml: built-in before USB
 AF_BLUETOOTH: Final = getattr(socket, "AF_BLUETOOTH", 31)   # 31 on Linux; the constant is missing in some Python builds
 BTPROTO_HCI: Final = 1
@@ -129,10 +131,19 @@ def _builtin_info(dev: Path) -> tuple[str, str]:
     return "Bluetooth", f"builtin:{dev.parent.parent.name}"
 
 
+def _is_usb(dev: Path) -> bool:
+    """Whether the controller hangs off a USB bus: a path component named usbN (the root hub) or a parent with USB descriptors.
+
+    Matching whole path components (not the substring "/usb") keeps a built-in controller on a path like
+    /devices/platform/soc/usbphy-bridge/... from being taken for a dongle.
+    """
+    return any(USB_BUS.fullmatch(part) for part in dev.parts) or any((p / "idVendor").is_file() for p in dev.parents)
+
+
 def _ctrl(link: Path) -> Ctrl:
     """Build a Ctrl from a /sys/class/bluetooth/hciN symlink: a path through a USB bus means USB, anything else is built-in."""
     dev = link.resolve()
-    if "/usb" in str(dev):
+    if _is_usb(dev):
         rank, label, key = _usb_info(dev)
     else:
         rank, (label, key) = BUILTIN, _builtin_info(dev)

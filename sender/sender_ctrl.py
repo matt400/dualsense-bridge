@@ -150,6 +150,8 @@ class Ctrl:
         self.gyro_bias = [0.0, 0.0, 0.0]   # gyro bias subtracted before sending (calibration / autobias)
         self.bias_known = False       # gyro_bias holds a saved / calibrated value: a restarted motion stream keeps it (autobias refines it)
         self.cal_request = 0          # calibration from the window: this many seconds (stream_motion starts it), 0 = none
+        self.starting = False         # the supervisor is still setting the pad up (rumble backend, grab): the heartbeat leaves it alone
+        self.cal_running = False      # a calibration from the window is collecting samples (cal_request is already 0 by then)
         self.cal_cmd_t = -1.0         # when the last calibration command arrived (UDP repeats)
 
     def is_bluetooth(self) -> bool:

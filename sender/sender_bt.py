@@ -443,9 +443,10 @@ class Bluetooth:
             self.pick = await asyncio.to_thread(btadapter.apply, ctrls, mode, self.key, self.sysfs)
         except OSError as e:
             self.pick = btadapter.choose(ctrls, mode, self.key)
-            if str(e) != self.adapter_err:
-                print(f"Bluetooth adapter: cannot switch ({e}) - run the sender as root")
-            self.adapter_err = str(e) or repr(e)
+            msg = str(e) or repr(e)                  # the same form is stored and compared, or the log repeats on every refresh
+            if msg != self.adapter_err:
+                print(f"Bluetooth adapter: cannot switch ({msg}) - run the sender as root")
+            self.adapter_err = msg
             return
         recovered = bool(self.adapter_err)           # an earlier failure: the chosen one has only now been unblocked
         if recovered:
@@ -818,6 +819,9 @@ class Bluetooth:
         t_sent = t_adapter = float("-inf")
         try:
             while True:
+                # cleared before the work, not before the wait: a poke that arrives while this iteration runs (a scan, a mode
+                # change) stays set and ends the wait below at once instead of being lost until the next timeout
+                self.wake.clear()
                 now = time.monotonic()
                 active = self.active(now)
                 if net.new_receiver(now) and (active or now - t_sent >= IDLE_S):
@@ -833,7 +837,6 @@ class Bluetooth:
                     # the PC
                     t_adapter = now
                     await self.check_adapters()
-                self.wake.clear()
                 with contextlib.suppress(TimeoutError):
                     await asyncio.wait_for(self.wake.wait(), TICK_S if active else IDLE_S / 5)
         finally:
