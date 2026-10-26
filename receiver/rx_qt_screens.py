@@ -1,5 +1,7 @@
 """Receiver window.
 
+In window mode it is maximized on the chosen screen (fills the work area on every screen); full screen is the TV mode.
+
 Where it sits and how big it is - the chosen screen, full screen (the TV mode), centring after the screens change
 (the console mode switches the monitor <-> TV and changes the resolution), and coming to the front.
 
@@ -163,7 +165,7 @@ class ScreenPlacement(QMainWindow):
             if self.fullscreen():
                 self.showFullScreen()
             else:
-                self.showNormal()
+                self.showMaximized()
 
     def bring_to_front(self) -> None:
         """Show the window on its screen (centred, in the right mode) and take the foreground.
@@ -171,12 +173,12 @@ class ScreenPlacement(QMainWindow):
         Which a background process needs extra help for.
         """
         if self.isFullScreen() and not self.fullscreen():
-            self.showNormal()
+            self.showMaximized()
         self.place_on_screen()
         if self.fullscreen():
             self.showFullScreen()
         else:
-            self.showNormal()
+            self.showMaximized()
         self.raise_()
         self.activateWindow()
         if os.name == "nt":
