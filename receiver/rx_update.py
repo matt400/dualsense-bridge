@@ -63,7 +63,7 @@ SENDER_TEXT: Final = {
                  "git clone https://github.com/matt400/dualsense-bridge i doas ./install-service.sh z nowego folderu",
     UPD_NO_GIT: "nadajnik: brak git na telefonie (doas apk add git)",
     UPD_FAILED: "nadajnik: git pull nie powiódł się (szczegóły w logu na telefonie)",   # an older sender without a reason
-    UPD_RUNNING: "nadajnik nie odpowiedział",
+    UPD_RUNNING: "nadajnik jeszcze pobiera aktualizację - jego wersję zobaczysz przy „Nadajnik online”",
 }
 _version: tuple[Any, ...] | None = None
 
@@ -278,6 +278,7 @@ def _last_lines(text: str, n: int = 3) -> str:
 
 def _install_requirements(root: str) -> str:
     """Run pip install -r requirements.txt with the receiver's Python; return a message (success, or what to run by hand)."""
+    print("Update: requirements.txt changed - pip install -r (can take a few minutes)")
     try:
         p = _run([sys.executable, "-m", "pip", "install", "-r", os.path.join(root, *REQUIREMENTS.split("/"))], root, PIP_TIMEOUT_S)
     except (OSError, subprocess.TimeoutExpired) as e:

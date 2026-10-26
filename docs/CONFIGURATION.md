@@ -67,7 +67,8 @@ The **Update** button in the window (or in the tray icon menu) updates **both si
 - receiver: `git pull` in the `dualsense-bridge` folder, plus `pip install` when `requirements.txt` changed;
 - sender: gets a command, runs `git pull` on the sender (as the folder owner, also from the root service)
   and restarts itself;
-- the window waits for the sender's result (up to 60 s), shows both results and restarts the receiver.
+- the window waits for the sender's result (up to 20 s, with a countdown), shows both results and restarts the receiver;
+  a sender that is still pulling after that does not hold the restart - its version shows next to "Sender online" when it is done.
 
 While it runs, the button shows a turning ring and the stage as a percent (download, settings backup, libraries, sender).
 

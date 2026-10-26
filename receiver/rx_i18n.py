@@ -451,6 +451,11 @@ EN: Final[dict[str, str]] = {
         "the phone service has no access to the private repository - run once on the phone: "
         "sender/setup-update-key.sh (read-only key, the script explains the steps)",
     "nadajnik nie odpowiedział": "the sender did not respond",
+    "nadajnik jeszcze pobiera aktualizację - jego wersję zobaczysz przy „Nadajnik online”":
+        "the sender is still updating - its version will show next to \"Sender online\"",
+    "Czekam na nadajnik… {n} s": "Waiting for the sender… {n} s",
+    "Instalacja bibliotek (pip) trwa zbyt długo - uruchom update.bat":
+        "Installing libraries (pip) is taking too long - run update.bat",
     "Folder nie jest repozytorium git (pobrany jako ZIP?) - sklonuj: git clone https://github.com/matt400/dualsense-bridge":
         "The folder is not a git repository (downloaded as ZIP?) - clone it: git clone https://github.com/matt400/dualsense-bridge",
     "Nie znaleziono git - zainstaluj Git for Windows (git-scm.com)": "git not found - install Git for Windows (git-scm.com)",

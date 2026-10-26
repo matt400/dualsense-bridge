@@ -66,7 +66,8 @@ Aktualizacja: przycisk **Aktualizuj** w oknie (albo w menu ikony w zasobniku) ak
 - receiver: `git pull` w folderze `dualsense-bridge`, przy zmianie `requirements.txt` także `pip install`;
 - nadajnik: dostaje polecenie, robi `git pull` na nadajniku (jako właściciel folderu, także z usługi root)
   i sam uruchamia się od nowa;
-- okno czeka na wynik nadajnika (do 60 s), pokazuje oba wyniki i restartuje receiver.
+- okno czeka na wynik nadajnika (do 20 s, z odliczaniem), pokazuje oba wyniki i restartuje receiver;
+  nadajnik, który po tym czasie jeszcze pobiera, nie wstrzymuje restartu - jego wersję widać przy „Nadajnik online”.
 
 W trakcie przycisk pokazuje kręcące się kółko i etapy w procentach (pobieranie, kopia ustawień, biblioteki, nadajnik).
 

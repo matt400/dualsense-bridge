@@ -313,6 +313,36 @@ S.last_pkt = time.monotonic(); build(b"1111111", UPD_DONE); pump(500)
 assert "nadajnik: zaktualizowany" in btn.toolTip() and S.restart is True, btn.toolTip()
 S.restart = False
 ok("wersja w nagłówku, wersja nadajnika (inna = żółty), Aktualizuj: polecenie do nadajnika, czekanie na jego wynik")
+
+# nadajnik nie kończy: odliczanie w oknie, potem restart bez niego (jego wersję widać potem przy "Nadajnik online")
+rx_qt.UPDATE_WAIT_S = 1.0
+S.last_pkt = time.monotonic(); build(b"1111111", 0)
+sent.clear(); S.restart = False; closed.clear(); btn.setEnabled(True)
+btn.click(); btn.click(); pump(300)
+assert S.restart is False and "Czekam na nadajnik" in win.status.text(), win.status.text()
+pump(1500)
+assert S.restart is True and "jeszcze pobiera" in btn.toolTip(), btn.toolTip()
+S.restart = False; rx_qt.UPDATE_WAIT_S = 20.0
+
+# "brak odpowiedzi": etap pip dostaje własny limit, etap git - nie
+def slow_update(stage):
+    def run(**_):
+        win.update_progress.emit(stage); time.sleep(0.7)
+        return rx_update.Result(True, False, "Masz najnowszą wersję")
+    return run
+rx_qt.UPDATE_STUCK_S = 0.2
+S.sender_build = None; S.last_pkt = 0.0      # bez nadajnika: wynik receivera od razu kończy aktualizację
+S.restart = False; btn.setEnabled(True)
+rx_update.update = slow_update(rx_update.PCT_BACKED_UP)
+btn.click(); btn.click(); pump(450)
+assert not btn.isEnabled() and "nie odpowiada" not in win.status.text(), "pip trwa - to nie zawieszony git"
+pump(700)
+rx_update.update = slow_update(rx_update.PCT_PULL)
+btn.click(); btn.click(); pump(450)
+assert btn.isEnabled() and "nie odpowiada (git)" in win.status.text(), win.status.text()
+pump(700)
+rx_qt.UPDATE_STUCK_S = 150.0
+ok("Aktualizuj: odliczanie czekania na nadajnik; zawieszenie liczone od ostatniego etapu, pip ma własny limit")
 offs = []
 rx_console.power_off = lambda why: offs.append(why) or True
 rx_qt.session_end()
