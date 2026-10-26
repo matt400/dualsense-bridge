@@ -325,6 +325,8 @@ async def heartbeat() -> None:
         now = time.monotonic()
         slow = tick % HEARTBEAT_SLOW_EVERY == 0
         for c in list(state.active.values()):
+            if c.starting:                    # still being set up (rumble backend, grab): not ready to send anything
+                continue
             if now - c.t_state >= C.HEARTBEAT_S * HEARTBEAT_QUIET_FACTOR:
                 c.send_state(True)
             if slow:
@@ -450,6 +452,7 @@ class _MotionStream:
         c = self.c
         self.cal = calib.GyroCal(now, c.cal_request, user=True)
         c.cal_request = 0
+        c.cal_running = True              # cal_request is gone now; _reset_lost_stream needs this to report a lost device
         calib.report(c, CAL_RUNNING)
         # the autobias window starts over: samples from before the calibration (pad still in the hand) in the first
         # window after it moved the freshly measured bias half-way to their mean - the camera "drifted" right after calibrating
@@ -461,6 +464,8 @@ class _MotionStream:
             return
         result = self.cal.feed(now, self.sample[GYRO_AT:])
         if result is not None:
+            if self.cal.user:
+                self.c.cal_running = False
             (calib.finish if self.cal.user else calib.startup_done)(self.c, result)
             self.cal = None
 

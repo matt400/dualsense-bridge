@@ -238,10 +238,12 @@ def _reset_lost_stream(c: Ctrl, kind: Kind) -> None:
     else:
         c.motion = [0] * GYRO_AXES
         c.bt_us = LAT_NONE                # without a motion device there are no pad timestamps
-        if c.cal_request:
-            # a calibration was asked for but no sample has started it yet: it must not fire on whatever motion stream
-            # comes back later (the pad may be moving by then), and the window is still waiting for an answer
+        if c.cal_request or c.cal_running:
+            # a calibration was asked for and either no sample has started it yet (cal_request) or it was started and has
+            # not finished (cal_running; starting it zeroes cal_request): it must not fire on whatever motion stream comes
+            # back later (the pad may be moving by then), and the window is still waiting for an answer
             c.cal_request = 0
+            c.cal_running = False
             if not c.closing:
                 calib.report(c, CAL_FEW, repeat=True)
     if c.closing:                         # when the pad is closing, send_neutral sends the same thing
@@ -330,14 +332,17 @@ async def _start_pad(c: Ctrl) -> list[asyncio.Task[None]]:
         does not disconnect the pad.
     """
     c.init_state()
+    _announce(c)
+    if C.GRAB_PAD:
+        # before the rumble backend: opening it takes a while (a HID round trip over Bluetooth) and until the grab the
+        # pad's events also reach the phone's own system (cursor, Steam)
+        grab(c.pad_dev, f"Pad {c.idx}")
     c.rumble = await _open_rumble(c)
     if c.triggers != TRIG2_OFF:           # trigger effects came from the PC before the pad was ready
         c.rumble.set_triggers(c.triggers)
-    _announce(c)
-    if C.GRAB_PAD:
-        grab(c.pad_dev, f"Pad {c.idx}")
     c.send_ident()                        # the receiver knows right away which pad this is (remap profile)
     events.info(E_PAD_ON, c.idx, c.key or "")
+    c.starting = False                    # ready: from now on the heartbeat may resend its state
     tasks = [asyncio.create_task(streams.stream_pad(c)), asyncio.create_task(streams.stream_battery(c))]
     for kind in LATE_KINDS:
         dev = getattr(c, KIND_ATTR[kind])
@@ -445,8 +450,12 @@ class DevWatch:
             if libc.inotify_add_watch(fd, path, self.IN_CREATE | self.IN_ATTRIB) < 0:
                 os.close(fd)
                 return False
-            asyncio.get_running_loop().add_reader(fd, self._readable)
-        except (OSError, AttributeError, NotImplementedError):
+            try:
+                asyncio.get_running_loop().add_reader(fd, self._readable)
+            except (OSError, RuntimeError, NotImplementedError):
+                os.close(fd)                  # add_reader failed (no running loop, no reader support): no descriptor leak
+                return False
+        except (OSError, AttributeError):
             return False
         self.fd = fd
         return True
@@ -549,6 +558,7 @@ def _start_new_pad(key: str, group: Group, now: float) -> None:
         _reject(key)
         return
     c = Ctrl(idx, key, group["pad"], group.get("motion"), group.get("touch"))
+    c.starting = True                     # cleared by _start_pad; the heartbeat skips the pad until then
     state.active[key] = c
     state.spawn(run_ctrl(c))
 
@@ -570,9 +580,26 @@ def _apply_scan(groups: dict[str, Group]) -> None:
             _start_new_pad(key, group, now)
 
 
+def _close_late_scan(fut: asyncio.Future[dict[str, Group]]) -> None:
+    """Done-callback for a scan nobody waits for any more (the supervisor was cancelled): close the devices it opened."""
+    if not fut.cancelled() and fut.exception() is None:
+        for group in fut.result().values():
+            close_group(group)
+
+
 async def _scan_once() -> None:
-    """Discover pads once (in a worker thread: opening the nodes blocks) and act on the result on the event loop."""
-    _apply_scan(await asyncio.to_thread(discover))
+    """Discover pads once (in a worker thread: opening the nodes blocks) and act on the result on the event loop.
+
+    The thread cannot be cancelled: when the supervisor is cancelled during a scan, the devices that scan opened would never
+    reach a Ctrl and stay open. The future is shielded so that they are closed when the scan finishes.
+    """
+    fut = asyncio.ensure_future(asyncio.to_thread(discover))
+    try:
+        groups = await asyncio.shield(fut)
+    except asyncio.CancelledError:
+        fut.add_done_callback(_close_late_scan)
+        raise
+    _apply_scan(groups)
 
 
 async def _supervise(watch: DevWatch) -> None:

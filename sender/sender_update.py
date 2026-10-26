@@ -6,6 +6,7 @@ restarts (os.execv: same PID, so systemd notices nothing; a manually started sen
 The build packet (commit, commit time, state) is sent every 5 s - the receiver window shows the sender's version.
 """
 import asyncio
+import contextlib
 import os
 import socket
 import time
@@ -19,6 +20,7 @@ from proto import T_BUILD, T_BUILD2, T_BUILD3, T_UPDMSG, UPD_DONE, UPD_NONE, UPD
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REQUIREMENTS = "sender/requirements.txt"
 T_UPDMSG_MAX = proto.BODY[T_UPDMSG].size
+INTERRUPTED = "update interrupted by an error"
 REPEAT_GUARD_S = 30.0          # the command arrives 3x (UDP) - further ones within this time are ignored
 TEXT = {proto.UPD_NO_CHANGE: "already up to date", UPD_DONE: "updated - restarting",
         proto.UPD_NOT_GIT: "folder is not a git clone (git clone https://github.com/matt400/dualsense-bridge)",
@@ -79,6 +81,18 @@ async def run() -> None:
     if status == UPD_RUNNING or now - _last < REPEAT_GUARD_S:
         return
     _last, status = now, UPD_RUNNING
+    try:
+        await _pull_and_report()
+    finally:
+        if status == UPD_RUNNING:            # an exception or a cancel in the middle: never leave "running" behind (the window shows it)
+            status, fail_msg = proto.UPD_FAILED, INTERRUPTED
+            with contextlib.suppress(Exception):
+                send_build()
+
+
+async def _pull_and_report() -> None:
+    """The body of run(): git pull in a worker thread, log the outcome, send the final state, restart after new code."""
+    global status, fail_msg
     print("Update requested from PC - git pull")
     send_build()
     st, msg, old, new, files = await asyncio.to_thread(proto.git_pull, ROOT)
