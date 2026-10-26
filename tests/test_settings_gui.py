@@ -173,8 +173,30 @@ g = win.frameGeometry()
 assert (abs(g.center().x() - area.center().x()) <= 1 if g.width() <= area.width() else g.left() == area.left()), \
     ("okno na środku ekranu (większe niż ekran: od lewej krawędzi)", g, area)
 win.set_screen_choice("")
-# ekran mniejszy niż okno (TV 1280x720 przy 200 %): okno zmniejszone i na środku, potem wraca do swojego rozmiaru
+# tryb okna: cały ekran roboczy (bez natywnej maksymalizacji) albo wybrana rozdzielczość
 from PySide6.QtCore import QSize
+area = win.screen().availableGeometry()
+assert win.window_mode() == "maximized"
+win.place_on_screen()
+g = win.frameGeometry()
+assert not win.isMaximized() and g.topLeft() == area.topLeft() and g.width() >= area.width() and g.height() >= area.height(), \
+    ("maximized = cały obszar roboczy (nie mniej niż minimum układu)", g, area)
+want = QSize(max(rx_qt_screens.MIN_WINDOW.width(), area.width() - 200), max(rx_qt_screens.MIN_WINDOW.height(), area.height() - 200))
+win.set_window_mode("size", want); pump(50)
+assert win.window_mode() == "size" and win.settings.value("window_size") == f"{want.width()}x{want.height()}"
+if want.width() <= area.width() - rx_qt_screens.FIT_MARGIN and want.height() <= area.height() - rx_qt_screens.FIT_MARGIN:
+    assert win.size() == want.expandedTo(win.minimumSize()), ("wybrana rozdzielczość", win.size(), want)
+assert rx_qt_screens.parse_size("1280x720") == QSize(1280, 720) and rx_qt_screens.parse_size("śmieci") is None
+assert rx_qt_screens.parse_size("100x100") is None, "za mała rozdzielczość odrzucona"
+dlg.hide(); dlg.present(); pump()
+assert dlg.win_mode.currentData() == "size" and dlg.win_res.isEnabled() and dlg.win_res.currentData() == f"{want.width()}x{want.height()}"
+dlg.win_mode.set_data("maximized"); dlg._window_state()
+assert not dlg.win_res.isEnabled(), "lista rozdzielczości tylko dla trybu z wybraną rozdzielczością"
+dlg.save_btn.click(); pump(100)
+assert win.window_mode() == "maximized" and win.frameGeometry().topLeft() == area.topLeft(), "Ustawienia -> Okno -> cały ekran roboczy"
+win.set_window_mode("size", want)
+ok("tryb okna: cały ekran roboczy / wybrana rozdzielczość, zapis w ustawieniach")
+# ekran mniejszy niż okno (TV 1280x720 przy 200 %): okno zmniejszone i na środku, potem wraca do swojego rozmiaru
 pref = win._pref
 def fits():
     g, m = win.frameGeometry(), win.minimumSizeHint().expandedTo(win.minimumSize())
@@ -223,7 +245,7 @@ else:
     assert not win.fullscreen() and not win.isFullScreen(), "F11 / przycisk: z powrotem okno"
 
 dlg.hide(); dlg.present(); pump()
-assert dlg.win_mode.currentData() == "window" and dlg.lang.currentData() == "pl"
+assert dlg.win_mode.currentData() == "size" and dlg.lang.currentData() == "pl"
 dlg.win_mode.set_data("full"); dlg.save_btn.click(); pump(100)
 assert win.fullscreen() and (is_ci or win.isFullScreen()), "Ustawienia -> Okno -> Pełny ekran"   # CI: jak wyżej
 win.set_fullscreen(False); pump(100)
