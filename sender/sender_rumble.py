@@ -487,6 +487,7 @@ class Rumble:
             hidraw: ``(path, is_bluetooth)`` of the pad's hidraw node, to skip the lookup (tests).
         """
         self.idx, self.dev = idx, pad_dev
+        self.setting = mode                   # the configured mode: the HID fallback in _send is for "auto" only
         self.methods: list[str] = []
         self.fd: int | None = None
         self.bt, self.seq, self.path = False, 0, None
@@ -762,7 +763,8 @@ class Rumble:
         """Send the rumble through every active way (or only ``only``), handling errors per way.
 
         A momentarily full report queue is not a failure. A real error is counted by _failed; if that switches the
-        driver way off and no HID path is open yet, the HID report is opened as a replacement and used straight away.
+        driver way off, no HID path is open yet and the mode is "auto", the HID report is opened as a replacement and used
+        straight away. With the mode "evdev" the configured choice is kept: the pad simply stops rumbling.
         """
         for way in list(self.methods):
             if only and way != only:
@@ -772,7 +774,8 @@ class Rumble:
             except (BlockingIOError, InterruptedError):
                 continue    # the report queue is momentarily full - not a failure; a repeat / refresh will deliver the state
             except OSError as e:
-                if self._failed(way, e) and way == WAY_EVDEV and WAY_HIDRAW not in self.methods and self._open_hidraw():
+                if (self._failed(way, e) and self.setting == MODE_AUTO and way == WAY_EVDEV
+                        and WAY_HIDRAW not in self.methods and self._open_hidraw()):
                     self.methods.append(WAY_HIDRAW)
                     self._send(small, large, only=WAY_HIDRAW)    # with the same error handling (the exception does not escape to the loop)
             else:

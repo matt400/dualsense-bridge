@@ -9,7 +9,8 @@ usługi). Inny plik: `--config inny.toml`. Pliki `*.toml` są w `.gitignore`, bo
 
 Po zmianie wartości domyślnych nadajnik przy starcie sam poprawia w `sender.toml` linie ze **starymi wartościami
 domyślnymi** (np. `pad_min_dt = 0.004` -> `0.001`); własne ustawienia, komentarze i układ pliku zostają, kopia w
-`sender.toml.bak`. Ręcznie: `python3 sender/sender_migrate.py sender/sender.toml`.
+`sender.toml.bak`. Każdy klucz jest migrowany tylko raz (lista w `sender.toml.migrated`), więc wartość ustawiona później
+nigdy nie jest nadpisywana. Ręcznie: `python3 sender/sender_migrate.py sender/sender.toml`.
 
 Najczęściej zmieniane:
 

@@ -1,5 +1,8 @@
 """Sender: migrate sender.toml after default values change - only OLD default values are changed, custom ones stay.
 
+A value equal to an old default cannot be told from an untouched one, so every key is migrated only ONCE per file: the keys
+already handled are listed in sender.toml.migrated, and a value the user sets later (even 0.004) is never rewritten again.
+
 Runs by itself at sender startup (sender_config.init, before the file is loaded), so after an update with the button
 in the PC window nothing has to be done by hand. Manually:
 
@@ -10,10 +13,12 @@ owner is not changed (the service runs as root).
 """
 from __future__ import annotations
 
+import contextlib
+import json
 import os
 import re
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from typing import Final
 
 from proto import PERMISSION_BITS, write_file
@@ -26,6 +31,7 @@ CHANGES: Final[dict[str, tuple[tuple[float, ...], float, str]]] = {
     "motion_min_dt": ((0.004,), 0.001, "motion limiter 4 ms -> 1 ms (faster gyro)"),
     "touch_coalesce_ms": ((5, 50), 2, "touch every 2 ms"),
 }
+STATE_SUFFIX: Final = ".migrated"      # next to the config: the keys that were already migrated (JSON list)
 FLOAT_EPSILON: Final = 1e-9       # config numbers are compared as floats: 0.004 must match 0.004000
 _LINE = re.compile(r"^(?P<lead>\s*)(?P<key>[A-Za-z_]+)(?P<eq>\s*=\s*)(?P<val>[-+0-9.eE]+)(?P<rest>\s*(#.*)?)$")
 
@@ -43,8 +49,8 @@ def _fmt(v: float) -> str:
     return str(int(v)) if float(v).is_integer() and not isinstance(v, float) else repr(v)
 
 
-def migrate_text(text: str) -> tuple[str, list[Change]]:
-    """Return the migrated text and the list of changes made, ``[(key, old, new, reason)]``.
+def migrate_text(text: str, skip: Collection[str] = ()) -> tuple[str, list[Change]]:
+    """Return the migrated text and the list of changes made, ``[(key, old, new, reason)]``; keys in ``skip`` are left alone.
 
     Walks the file line by line and matches "key = number # comment" lines with a regex that captures the leading
     whitespace, separators and trailing comment separately, so only the number is replaced and everything else
@@ -56,7 +62,7 @@ def migrate_text(text: str) -> tuple[str, list[Change]]:
     for line in text.splitlines(keepends=True):
         body = line.rstrip("\r\n")
         m = _LINE.match(body)
-        if m and m["key"] in CHANGES:
+        if m and m["key"] in CHANGES and m["key"] not in skip:
             old_defaults, new, why = CHANGES[m["key"]]
             v = _num(m["val"])
             if v is not None and any(abs(v - d) < FLOAT_EPSILON for d in old_defaults):
@@ -78,6 +84,28 @@ def _write_backup(path: str, text: str, mode: int) -> None:
         f.write(text)
 
 
+def _migrated_keys(path: str) -> set[str]:
+    """The keys already migrated in ``path`` (from its state file); empty for a file never migrated or an unreadable state."""
+    try:
+        with open(path + STATE_SUFFIX, encoding="utf-8") as f:
+            data = json.load(f)
+        return {k for k in data if isinstance(k, str)} if isinstance(data, list) else set()
+    except (OSError, ValueError):
+        return set()
+
+
+def _remember(path: str, keys: Collection[str], log: Callable[[str], None]) -> None:
+    """Save the migrated keys next to the config (owner kept like for the config itself); a failure is only logged."""
+    try:
+        write_file(path + STATE_SUFFIX, json.dumps(sorted(keys)) + "\n")
+        st = os.stat(path)
+        if hasattr(os, "chown"):
+            with contextlib.suppress(OSError):
+                os.chown(path + STATE_SUFFIX, st.st_uid, st.st_gid)
+    except OSError as e:
+        log(f"Config migration: cannot write {path + STATE_SUFFIX}: {e}")
+
+
 def migrate(path: str, log: Callable[[str], None] = print) -> list[Change]:
     """Migrate the file in place and return the list of changes (empty = nothing to do, no file, or a write error - logged).
 
@@ -93,8 +121,11 @@ def migrate(path: str, log: Callable[[str], None] = print) -> list[Change]:
     except OSError as e:
         log(f"Config migration: cannot read {path}: {e}")
         return []
-    new, done = migrate_text(text)
+    handled = _migrated_keys(path)
+    new, done = migrate_text(text, handled)
     if not done:
+        if not handled >= CHANGES.keys():
+            _remember(path, handled | CHANGES.keys(), log)     # nothing to change now: later values are the user's own
         return []
     try:
         st = os.stat(path)
@@ -109,6 +140,7 @@ def migrate(path: str, log: Callable[[str], None] = print) -> list[Change]:
     except OSError as e:
         log(f"Config migration: cannot write {path}: {e} - old defaults stay in use")
         return []
+    _remember(path, handled | CHANGES.keys(), log)
     for key, old, val, why in done:
         log(f"Config migration: {os.path.basename(path)}: {key} {old} -> {val} ({why}); backup {os.path.basename(path)}.bak")
     return done

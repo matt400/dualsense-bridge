@@ -27,7 +27,7 @@ TEXT = {proto.UPD_NO_CHANGE: "already up to date", UPD_DONE: "updated - restarti
 version = ("", 0, "")          # (commit, commit time, title) - set in init()
 status = UPD_NONE
 fail_msg = ""                  # reason of the last git pull failure - sent with every build packet while the state is a failure
-_last = 0.0
+_last = float("-inf")           # time of the last update; -inf = never (monotonic() can be below the guard time after boot)
 
 
 def init() -> None:

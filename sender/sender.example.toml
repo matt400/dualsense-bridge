@@ -1,5 +1,5 @@
 # Sender (a Raspberry Pi, a phone - any Linux device the pads connect to). Copy it as sender.toml, uncomment and change what you need.
-# Uruchomienie: doas python3 sender_controller.py --config sender.toml
+# Run:  doas python3 sender_controller.py --config sender.toml
 # The values below are the defaults.
 
 # host = "192.168.1.4"

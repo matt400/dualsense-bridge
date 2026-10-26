@@ -339,11 +339,14 @@ def _start_cal(c: Ctrl, now: float) -> calib.GyroCal | None:
     """Decide about the startup calibration: a pad with a saved calibration (from the receiver window) uses it at once.
 
     Returns:
-        A ``GyroCal`` collecting samples, or None when a saved bias was applied or the startup calibration is disabled.
+        A ``GyroCal`` collecting samples, or None when a bias is already in place (saved, or kept from before a stream
+        restart) or the startup calibration is disabled.
     """
+    if c.bias_known:
+        return None         # a restarted stream: gyro_bias is the saved value plus what autobias learned since - do not reset it
     stored = calib.stored(c.key)
     if stored is not None:
-        c.gyro_bias = list(stored["bias"])
+        c.gyro_bias, c.bias_known = list(stored["bias"]), True
         print(f"Controller {c.idx}: gyro bias {[round(b) for b in c.gyro_bias]} (saved calibration)")
         return None
     if C.CAL_S <= 0:

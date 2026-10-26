@@ -158,7 +158,10 @@ class RawHci:
     def handle(self, dev: int, mac: str) -> int | None:
         """HCIGETCONNLIST for controller `dev`; None for an error or when the pad is not in the list."""
         if self.query is None:
-            self.query = socket.socket(AF_BLUETOOTH, socket.SOCK_RAW, BTPROTO_HCI)
+            try:
+                self.query = socket.socket(AF_BLUETOOTH, socket.SOCK_RAW, BTPROTO_HCI)
+            except OSError:             # no permission, no Bluetooth in the kernel / the Python build: no reading, not a crash
+                return None
         buf = bytearray(struct.pack("<HH", dev, CONN_MAX) + bytes(CONN_ENTRY * CONN_MAX))
         try:
             fcntl.ioctl(self.query, HCIGETCONNLIST, buf, True)
@@ -187,17 +190,23 @@ class RawHci:
         return s
 
     def command(self, dev: int, opcode: int, handle: int) -> bytes | None:
-        """Send the command and wait (REPLY_WAIT_S at most) for its Command Complete."""
+        """Send the command and wait (REPLY_WAIT_S at most) for its Command Complete.
+
+        Whatever the reason for no answer (the deadline, the socket timeout, an error), the socket is closed: a late reply
+        to this command would otherwise sit in its queue and be taken for the answer to the next one.
+        """
         try:
             s = self._sock(dev)
             s.send(hci_command(opcode, handle))
             deadline = time.monotonic() + REPLY_WAIT_S
-            while time.monotonic() < deadline:
+            while (left := deadline - time.monotonic()) > 0:
+                s.settimeout(left)      # the whole wait is bounded by the deadline, not REPLY_WAIT_S per received packet
                 reply = parse_reply(s.recv(260), opcode, handle)
                 if reply is not None:
                     return reply
         except OSError:                 # no permission, the controller went away, the timeout of the socket
-            self.drop(dev)
+            pass
+        self.drop(dev)                  # created again on the next reading
         return None
 
     def drop(self, dev: int) -> None:

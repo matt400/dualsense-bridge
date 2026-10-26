@@ -15,7 +15,7 @@ KEY="$REPO/.git/dualsense-deploy-key"
 KNOWN="$REPO/.git/dualsense-known-hosts"
 
 if [ ! -d "$REPO/.git" ]; then
-	echo "$REPO nie jest klonem git - sklonuj repozytorium: git clone git@github.com:matt400/dualsense-bridge.git" >&2
+	echo "$REPO is not a git clone - clone the repository first: git clone git@github.com:matt400/dualsense-bridge.git" >&2
 	exit 1
 fi
 if [ "$(id -u)" -ne "$(stat -c %u "$REPO")" ]; then

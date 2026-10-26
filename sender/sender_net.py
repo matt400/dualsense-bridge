@@ -55,7 +55,7 @@ on_bt: Callable[..., None] | None = None            # callback(BT_* operation, a
 scfg_t = 0.0                          # when the scfg packet arrived - the receiver knows build2 and events
 batt_t = 0.0                          # when an scfg packet with SCFG_BATT arrived - the receiver knows build3
 recent_rtt: collections.deque[float] = collections.deque(maxlen=RTT_RECENT)   # latest measurements - for the info packet
-last_pong = 0.0
+last_pong = float("-inf")             # -inf = no pong yet: with a small uptime "now - 0.0" would look like a live receiver
 
 
 class PcClock:
@@ -129,7 +129,7 @@ def init() -> None:
     global codec
     # the lambda looks pc_clock up at call time: the clock object is replaced when the sender resynchronises (and in tests)
     codec = Codec(C.KEY, token=lambda: pc_clock.now_ms(), now_ms=clock.ms32,
-                  state_path=getattr(C, "AUTH_FILE", "") or None)
+                  state_path=getattr(C, "AUTH_FILE", "") or None, writer=state.write_json_later)    # no fsync on the event loop
     if not C.KEY:
         print("WARNING: no HMAC key - anyone on the local network can send commands to this sender "
               "(update, Bluetooth pairing, pad power-off). Set the same key on both sides (docs/SECURITY.md)")
@@ -363,7 +363,7 @@ async def pinger() -> None:
     """
     warned = False
     alive = False
-    t_learn = 0.0
+    t_learn = float("-inf")
     last_print = time.monotonic()
     tx_prev = 0
     while True:

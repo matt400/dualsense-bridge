@@ -226,6 +226,7 @@ __pycache__/
 *.toml
 !*.example.toml
 *.toml.bak
+*.toml.migrated
 *.toml.tmp
 !pyproject.toml
 *.log

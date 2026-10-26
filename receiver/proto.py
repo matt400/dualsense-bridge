@@ -480,6 +480,8 @@ class Codec:
         now_ms: Returns our clock (``EpochClock.ms32``) for checking incoming tokens.
         state_path: The file in which the key's fingerprint stays after the switch to v3 (without it the switch lasts
             only until the process ends).
+        writer: Saves the state file, called as ``writer(path, obj)``; ``write_json`` by default. It does a blocking fsync, so
+            the sender passes a writer that does it off the event loop.
         v3: Whether this side already speaks v3.
         mismatch_t: Time of the last packet from a side with a different key setting.
         legacy_t: Time of the last correctly signed v2 packet rejected after the switch to v3.
@@ -494,6 +496,7 @@ class Codec:
         token: Callable[[], int | None] | None = None,
         now_ms: Callable[[], int] | None = None,
         state_path: str | None = None,
+        writer: Callable[[str, object], None] | None = None,
     ) -> None:
         """Create a codec; see the class docstring for the meaning of the arguments."""
         self.key = key
@@ -501,6 +504,7 @@ class Codec:
         self._lock = threading.Lock()
         self.mismatch_t = float("-inf")
         self.token, self.now_ms, self.state_path = token, now_ms, state_path
+        self.writer: Callable[[str, object], None] = writer or write_json
         self.legacy_t = float("-inf")
         self.stale_t = float("-inf")
         self.stale = 0
@@ -529,7 +533,7 @@ class Codec:
         print("Packet authentication: peer speaks protocol v3 - replay protection on, v2 packets with the key rejected")
         if self.state_path:
             try:
-                write_json(self.state_path, {"v3": key_fingerprint(self.key)})
+                self.writer(self.state_path, {"v3": key_fingerprint(self.key)})
             except OSError as e:
                 print(f"WARNING: cannot save {self.state_path}: {e}")
 
