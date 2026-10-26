@@ -53,6 +53,7 @@ from rx_console import DEFAULT_APPS, STARTUP_MODES, ConsoleConfig
 from rx_display import DPI_VALUES
 from rx_i18n import LANGS
 from rx_qt_icons import icon
+from rx_qt_screens import parse_size
 from rx_qt_style import set_prop
 from rx_qt_widgets import (Combo, ConfirmButton, SideTabs, SliderRow, button, field, group, icon_button, icon_label, input_items,
                            label, left, pair, spinbox)
@@ -64,6 +65,7 @@ CAPTURE_TIMEOUT_MS = 15000
 LUMA_DARK_TEXT = 380      # R + G + B above this (of 765) is a light colour: the button text turns black
 NO_AUDIO = "— nie zmieniaj dźwięku —"
 TV_RESOLUTIONS = ((0, 0), (1920, 1080), (2560, 1440), (3840, 2160))
+WINDOW_RESOLUTIONS = ((1280, 720), (1366, 768), (1600, 900), (1920, 1080), (2560, 1440))   # presets for the window size
 STARTUP_LABELS = {"extend": "Rozszerz: oba ekrany aktywne", "internal": "Tylko monitor"}
 PREF_SIZE = QSize(1060, 780)  # the settings window size on a big screen (a smaller screen -> a smaller one, with scrolling)
 FRAME_GUESS = QSize(16, 40)   # the Windows frame and title bar, before the window is shown
@@ -208,17 +210,43 @@ class ConsoleSettings(QDialog):
     def _window_tab(self) -> list[QWidget | QLayout]:
         """The Window tab: the screen to open on, window / full screen, and the language."""
         self.screen_box = Combo()
-        self.win_mode = Combo([("window", _("Okno (F11 przełącza)"), "window"), ("full", _("Pełny ekran"), "fullscreen")])
+        self.win_mode = Combo([("maximized", _("Okno na cały ekran roboczy"), "window"),
+                               ("size", _("Okno o wybranej rozdzielczości"), "window"),
+                               ("full", _("Pełny ekran (F11)"), "fullscreen")])
+        self.win_mode.changed.connect(lambda _v: self._window_state())
+        self.win_res = Combo(_res_items(WINDOW_RESOLUTIONS))
         self.lang = Combo(list(LANGS.items()))
         window = group(_("OKNO"),
                        field(_("Ekran, na którym pojawia się okno DualSense bridge"), self.screen_box),
                        label(_("Okno otwiera się (z ikony w zasobniku, przy starcie) na środku wybranego ekranu. Gdy tego "
                                "ekranu nie ma (np. monitor wyłączony w trybie konsoli), okno zostaje na dostępnym ekranie."),
                              "dim", wrap=True),
-                       field(_("Wygląd okna"), self.win_mode))
+                       field(_("Wygląd okna"), self.win_mode),
+                       field(_("Rozdzielczość okna"), self.win_res))
         lang = group(_("JĘZYK"), field(_("Język"), self.lang),
                      label(_("Zmiana języka działa po restarcie receivera."), "dim", wrap=True))
         return [window, lang]
+
+    def _load_window(self, owner: Any) -> None:
+        """Fill the window mode and resolution from the main window (a size dragged by hand stays on the list)."""
+        size = owner.window_size() if hasattr(owner, "window_size") else QSize(*WINDOW_RESOLUTIONS[0])
+        res = (size.width(), size.height())
+        self.win_res.set_items(_res_items((*WINDOW_RESOLUTIONS, *(() if res in WINDOW_RESOLUTIONS else (res,)))))
+        self.win_res.set_data("{}x{}".format(*res))
+        if getattr(owner, "fullscreen", lambda: False)():
+            self.win_mode.set_data("full")
+        else:
+            self.win_mode.set_data(owner.window_mode() if hasattr(owner, "window_mode") else "maximized")
+        self._window_state()
+
+    def _chosen_size(self) -> QSize:
+        """The resolution picked in the list."""
+        size = parse_size(self.win_res.currentData())
+        return size or QSize(*WINDOW_RESOLUTIONS[0])
+
+    def _window_state(self) -> None:
+        """The resolution list matters only for the fixed-size window mode."""
+        self.win_res.setEnabled(self.win_mode.currentData() == "size")
 
     def _vpad_tab(self) -> list[QWidget | QLayout]:
         """The Pads tab: the backend, HIDMaestro download / path, the current state and the fixed player order."""
@@ -764,7 +792,7 @@ class ConsoleSettings(QDialog):
         self.tv_scale.set_data(cfg.tv_scale)
         self.apps.setPlainText("\n".join(cfg.allowed_apps))
         owner = self.parent()
-        self.win_mode.set_data("full" if getattr(owner, "fullscreen", lambda: False)() else "window")
+        self._load_window(owner)
         self.lang.set_data(rx_settings.cur.ui.lang)
         self._load_pads_view(rx_settings.cur.ui)
         self.pick.setEnabled(rx_console.ctl is not None)
@@ -957,9 +985,12 @@ class ConsoleSettings(QDialog):
         if hasattr(owner, "set_screen_choice"):
             # both setters re-place the window and raise it, so call them only for what actually changed
             screen = self.screen_box.currentData() or ""
-            full = self.win_mode.currentData() == "full"
+            mode = self.win_mode.currentData()
+            full = mode == "full"
             if screen != owner.screen_choice():
                 owner.set_screen_choice(screen)
+            if not full and (mode != owner.window_mode() or self._chosen_size() != owner.window_size()):
+                owner.set_window_mode(mode, self._chosen_size())
             if full != owner.fullscreen():
                 owner.set_fullscreen(full)
         self.applied.emit()

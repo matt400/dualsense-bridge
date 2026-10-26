@@ -55,7 +55,7 @@ from rx_qt_gstick import TiltPreview
 from rx_qt_gyro import PREVIEW_GAP, GyroPreview
 from rx_qt_pad import PadView
 from rx_qt_panels import ChangesPage, GyroPage, PartPage, ProfileBar, RumblePage
-from rx_qt_screens import ScreenPlacement
+from rx_qt_screens import ScreenPlacement, parse_size
 from rx_qt_sidebar import SideMenu
 from rx_qt_style import DIM, LEVEL, SEGMENT, TV_SCALE, apply_theme, px, set_prop
 from rx_qt_test import TestPanel
@@ -468,7 +468,8 @@ class MainWindow(ScreenPlacement):
         if not (geo and self.restoreGeometry(geo)):
             self.resize(DEFAULT_SIZE)
         normal = self.normalGeometry().size()
-        self._pref = normal if normal.isValid() and not normal.isEmpty() else DEFAULT_SIZE   # the size chosen by the user
+        saved = parse_size(settings.value("window_size", ""))    # the resolution chosen in Settings / last dragged to
+        self._pref = saved or (normal if normal.isValid() and not normal.isEmpty() else DEFAULT_SIZE)   # the size chosen by the user
         self.place_on_screen()
         self._watch_screens()
         split = settings.value("split")

@@ -1,6 +1,9 @@
 """Receiver window.
 
-In window mode it is maximized on the chosen screen (fills the work area on every screen); full screen is the TV mode.
+Window mode is either "maximized" (the window fills the work area of the chosen screen) or "size" (a fixed resolution
+picked in Settings, centred); full screen is the TV mode. "Maximized" is done by hand (geometry = work area) and not with
+the native maximize: Windows + Qt on two screens with different scaling sometimes keep the old client size after a native
+maximize, which left the content in a part of the window and the rest white.
 
 Where it sits and how big it is - the chosen screen, full screen (the TV mode), centring after the screens change
 (the console mode switches the monitor <-> TV and changes the resolution), and coming to the front.
@@ -21,7 +24,20 @@ from rx_i18n import _
 from rx_qt_style import TV_SCALE
 
 FIT_MARGIN = 24        # a window fitted to the screen: this many px of slack from the work area's edge
+REAPPLY_MS = 250       # after showing, the window is placed once more: the native frame / DPI of the screen are known only then
+MODE_MAXIMIZED = "maximized"
+MODE_SIZE = "size"
+MIN_WINDOW = QSize(800, 560)          # a chosen resolution is never smaller than this (the layout would not fit)
 SCREEN_SETTLE_MS = 800 # screen changes (console mode, TV resolution) arrive in bursts - the window is placed after quiet
+
+
+def parse_size(text: object) -> QSize | None:
+    """"1280x720" -> QSize; None when it is not a usable size (garbage in the ini file is ignored)."""
+    try:
+        w, h = (int(v) for v in str(text).lower().replace("×", "x").split("x"))
+    except ValueError:
+        return None
+    return QSize(w, h) if w >= MIN_WINDOW.width() and h >= MIN_WINDOW.height() else None
 
 
 def screens() -> list[tuple[str, QScreen]]:
@@ -52,6 +68,24 @@ class ScreenPlacement(QMainWindow):
         self.settings.setValue("screen", name)
         self.settings.sync()
         self.place_on_screen()
+
+    def window_mode(self) -> str:
+        """How the window looks outside full screen: MODE_MAXIMIZED (default) or MODE_SIZE (a fixed resolution)."""
+        return MODE_SIZE if str(self.settings.value("window_mode", MODE_MAXIMIZED)) == MODE_SIZE else MODE_MAXIMIZED
+
+    def window_size(self) -> QSize:
+        """The resolution used in MODE_SIZE (what the user chose / last dragged to)."""
+        return self._pref
+
+    def set_window_mode(self, mode: str, size: QSize | None = None) -> None:
+        """Remember the window mode (and the resolution for MODE_SIZE) and apply it now."""
+        self.settings.setValue("window_mode", MODE_SIZE if mode == MODE_SIZE else MODE_MAXIMIZED)
+        if size is not None and size.isValid():
+            self.settings.setValue("window_size", f"{size.width()}x{size.height()}")
+            self._pref = size
+        self.settings.sync()
+        if self.isVisible() and not self.fullscreen():
+            self.place_on_screen()
 
     def fullscreen(self) -> bool:
         """Whether full screen (TV mode) is the saved choice."""
@@ -84,42 +118,69 @@ class ScreenPlacement(QMainWindow):
         return (dict(screens()).get(name) if name else None) or self.screen() or QApplication.primaryScreen()
 
     def place_on_screen(self) -> QScreen:
-        """The window always in the centre of the screen (target_screen) and entirely on it.
+        """The window on the screen (target_screen): filling its work area, or a chosen size in the centre.
 
-        One bigger than the work area (a TV 1280x720 at 200 % scaling) is shrunk, and on a bigger screen it returns to the
-        size chosen by the user. It does not show the window (one hidden in the tray stays hidden). -> the screen.
+        MODE_MAXIMIZED fills the work area exactly (the native maximize is not used, see the module docstring); MODE_SIZE
+        keeps the chosen resolution (shrunk when the screen is smaller) in the centre. Full screen is left to the caller
+        (showFullScreen). It does not show the window (one hidden in the tray stays hidden). -> the screen.
         """
         target = self.target_screen()
         area = target.availableGeometry()
         self._fitting = True
         try:
             state = self.windowState()
-            if state & (Qt.WindowState.WindowMaximized | Qt.WindowState.WindowFullScreen):
+            if state & (Qt.WindowState.WindowMaximized | Qt.WindowState.WindowFullScreen) and not self.fullscreen():
                 self.setWindowState(state & ~(Qt.WindowState.WindowMaximized | Qt.WindowState.WindowFullScreen))
             frame = self.frameGeometry().size() - self.geometry().size()      # the frame and title bar (0 before showing)
-            room = area.size() - frame - QSize(FIT_MARGIN, FIT_MARGIN)
-            size = self._pref.boundedTo(room).expandedTo(self.minimumSize())
-            if size != self.size():
+            if self.window_mode() == MODE_MAXIMIZED:
+                size = (area.size() - frame).expandedTo(self.minimumSize())
                 self.resize(size)
-            g = self.frameGeometry()
-            g.moveCenter(area.center())
-            # still bigger than the screen despite shrinking (the layout's minimum size) - the top left corner with the buttons stays
-            # visible
-            self.move(max(g.left(), area.left()), max(g.top(), area.top()))
+                self.move(area.left(), area.top())
+            else:
+                room = area.size() - frame - QSize(FIT_MARGIN, FIT_MARGIN)
+                size = self.window_size().boundedTo(room).expandedTo(self.minimumSize())
+                if size != self.size():
+                    self.resize(size)
+                g = self.frameGeometry()
+                g.moveCenter(area.center())
+                # still bigger than the screen despite shrinking (the layout's minimum size) - the top left corner stays visible
+                self.move(max(g.left(), area.left()), max(g.top(), area.top()))
         finally:
             self._fitting = False
         return target
+
+    def _show_windowed(self) -> None:
+        """Show the window in window mode on its screen.
+
+        Placed before and after showing (the real frame and the screen's DPI are known only once the window is shown) and
+        once more shortly after, which fixes the content drawn in a part of the window on mixed-DPI screens.
+        """
+        self.place_on_screen()
+        if self.isFullScreen() or self.isMaximized():
+            self.showNormal()
+        else:
+            self.show()
+        self.place_on_screen()
+        QTimer.singleShot(REAPPLY_MS, self._reapply_windowed)
+
+    def _reapply_windowed(self) -> None:
+        """The delayed second placement of _show_windowed (skipped when the mode changed in the meantime)."""
+        if self.isVisible() and not self.fullscreen() and not rx_games.in_game():
+            self.place_on_screen()
 
     def resizeEvent(self, e: QResizeEvent) -> None:
         """A size changed by the user (not a fit to the screen) = the new window size for big screens."""
         super().resizeEvent(e)
         if self._fitting or not self.isVisible() or self.windowState() != Qt.WindowState.WindowNoState:
             return
+        if self.fullscreen() or self.window_mode() != MODE_SIZE:
+            return                             # a filled window / full screen is not a size the user chose
         if getattr(self, "_screen_timer", None) is not None and self._screen_timer.isActive():
             return                             # Windows shrinks the window when screens change - this is not the user's choice
         room = self.target_screen().availableGeometry().size() - QSize(FIT_MARGIN, FIT_MARGIN)
         if e.size().width() < room.width() and e.size().height() < room.height():
             self._pref = e.size()
+            self.settings.setValue("window_size", f"{e.size().width()}x{e.size().height()}")
 
     def _watch_screens(self) -> None:
         """The console mode switches the picture monitor <-> TV and changes the TV resolution and scaling.
@@ -165,20 +226,18 @@ class ScreenPlacement(QMainWindow):
             if self.fullscreen():
                 self.showFullScreen()
             else:
-                self.showMaximized()
+                self._show_windowed()
 
     def bring_to_front(self) -> None:
         """Show the window on its screen (centred, in the right mode) and take the foreground.
 
         Which a background process needs extra help for.
         """
-        if self.isFullScreen() and not self.fullscreen():
-            self.showMaximized()
-        self.place_on_screen()
         if self.fullscreen():
+            self.place_on_screen()
             self.showFullScreen()
         else:
-            self.showMaximized()
+            self._show_windowed()
         self.raise_()
         self.activateWindow()
         if os.name == "nt":

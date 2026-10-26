@@ -204,7 +204,7 @@
     immediately; the slots themselves are set by `pads` in `receiver.toml`, 4 by default) - plus the virtual pad
     backend, HIDMaestro and the fixed player order;
   - **Window:** the screen the window appears on (always centred; when the screen is missing - on an available one),
-    window or full screen (also F11 and the side menu button), language: Polski / English (takes effect after a restart).
+    window filling the screen, window with a chosen resolution, or full screen (also F11 and the side menu button), language: Polski / English (takes effect after a restart).
     After switching screens (console mode, TV resolution / scaling) the window returns to the centre and fits the
     screen (shrunk on the TV, back to its own size on the monitor). A pad connecting brings the window to the front -
     but not during a game (the same program list as in Console mode);

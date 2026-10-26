@@ -195,8 +195,8 @@
   - **Pady:** które karty padów pokazuje okno - dynamicznie (tylko podłączone) albo stała liczba slotów (1-4, działa
     od razu; same sloty ustawia `pads` w `receiver.toml`, domyślnie 4) - oraz backend wirtualnych padów, HIDMaestro i
     stała kolejność graczy;
-  - **Okno:** ekran, na którym pojawia się okno (zawsze na środku; gdy ekranu nie ma - na dostępnym), okno albo
-    pełny ekran (też F11 i przycisk w menu bocznym), język: polski / English (zmiana po restarcie). Po przełączeniu ekranów
+  - **Okno:** ekran, na którym pojawia się okno (zawsze na środku; gdy ekranu nie ma - na dostępnym), okno na cały ekran, okno o wybranej
+    rozdzielczości albo pełny ekran (też F11 i przycisk w menu bocznym), język: polski / English (zmiana po restarcie). Po przełączeniu ekranów
     (tryb konsoli, rozdzielczość / skalowanie TV) okno wraca na środek i mieści się na ekranie (zmniejszone na TV,
     na monitorze wraca do swojego rozmiaru). Połączenie pada wyciąga okno na wierzch - ale nie w trakcie gry (ta sama
     lista programów co w Trybie konsoli);
