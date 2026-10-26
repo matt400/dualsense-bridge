@@ -48,7 +48,7 @@ async def power_off(c: Ctrl, reason: str) -> None:
     if now - c.powering_off < RETRY_S:
         return
     c.powering_off = now
-    if not MAC_RE.fullmatch(c.key or ""):
+    if not c.is_bluetooth() or not MAC_RE.fullmatch(c.key or ""):
         print(f"Controller {c.idx}: power off skipped - not a Bluetooth pad ({c.key})")
         return
     print(f"Controller {c.idx}: powering off ({reason})")

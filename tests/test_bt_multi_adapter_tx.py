@@ -92,6 +92,7 @@ asyncio.run(t_scan())
 # ---------- wyłączenie pada przez D-Bus na kontrolerze, z którym jest połączony ----------
 class C:
     idx, key, powering_off = 0, PAD, 0.0
+    is_bluetooth = staticmethod(lambda: True)
 
 
 async def t_power():

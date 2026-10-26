@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import collections
 import contextlib
+import errno
 import socket
 import time
 from collections.abc import Callable
@@ -34,6 +35,8 @@ SOCK_RETRY_S: Final = 1.0
 RESOLVE_AFTER_S: Final = 10.0         # no pong for this long: a host NAME may point elsewhere now (the PC got a new DHCP lease)
 REPEAT_DELAYS: Final = (0.01, 0.03)   # emit_repeat repeats [s]
 PROBE_EVERY: Final = 4                # with a key, before switching to v3: an extra v3 ping every this many pings (1/s)
+# send errors that only mean "this packet did not go": a full device queue, a neighbour that does not answer (the PC is off)
+DROP_ERRNO: Final = frozenset({errno.ENOBUFS, errno.EHOSTUNREACH})
 RTT_HISTORY: Final = 64
 RTT_RECENT: Final = 8
 
@@ -180,7 +183,7 @@ def close_sock() -> None:
 def send_raw(data: bytes) -> None:
     """Send an already packed datagram.
 
-    A full buffer or a refused connection just drops the packet (UDP); any other OS error marks the socket as bad so
+    A full buffer, a refused connection or an unreachable host just drops the packet (UDP); any other OS error marks the socket as bad so
     that sock_keeper recreates it.
     """
     global sock_bad, tx_count
@@ -192,8 +195,9 @@ def send_raw(data: bytes) -> None:
         tx_count += 1
     except (BlockingIOError, ConnectionRefusedError):
         pass                          # UDP: a lost packet is part of the protocol
-    except OSError:
-        sock_bad = True
+    except OSError as e:
+        if e.errno not in DROP_ERRNO:
+            sock_bad = True
 
 
 def emit(ptype: int, idx: int, *vals: int | bytes) -> None:
