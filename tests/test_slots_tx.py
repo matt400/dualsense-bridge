@@ -21,7 +21,7 @@ state.active[A] = 1
 assert sup.pick_slot(B) == 0
 fresh(); state.active[A] = 1; state.slots[A] = 1
 assert sup.pick_slot(Cc) == 0, "nowy pad: wolny slot"
-assert json.load(open(C.SLOTS_FILE)) == {A: 1, Cc: 0}, "slot przejęty przez nowy pad - stary wpis usunięty"
+assert json.load(open(C.SLOTS_FILE)) == {B: 0, A: 1}, "slot pożyczony od innego pada nie jest zapisywany - właściciel go zachowuje"
 fresh(); state.active[Cc] = 0; state.slots[Cc] = 0; state.active[A] = 1; state.slots[A] = 1
 assert sup.pick_slot(B) is None, "brak wolnych slotów"
 fresh()

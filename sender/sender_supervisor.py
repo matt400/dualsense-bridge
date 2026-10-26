@@ -158,7 +158,8 @@ def pick_slot(key: str) -> int | None:
     In a game (Steam, XInput) it therefore stays the same player regardless of the order in which the pads are
     switched on. Preference order: the slot the pad already holds in this run, then its remembered slot, then a free
     slot that no other known pad has reserved, finally any free slot. Only pads with a MAC are written to the file
-    (a USB pad without uniq has a changing key).
+    (a USB pad without uniq has a changing key). A slot taken from another known pad (all free ones are reserved) is
+    used for this run only: the owner keeps it in the file.
 
     Args:
         key: The pad's key (MAC, or phys path).
@@ -176,10 +177,11 @@ def pick_slot(key: str) -> int | None:
     reserved = {v for k, v in saved.items() if k != key}
     preferred = saved.get(key)
     slot = preferred if preferred in free else next((n for n in free if n not in reserved), free[0])
+    borrowed = slot in reserved          # every free slot belongs to another known pad: use it, but do not take it over for good
     for other in [k for k, v in state.slots.items() if v == slot]:
         del state.slots[other]
     state.slots[key] = slot
-    if saved.get(key) != slot and _MAC.match(key):
+    if not borrowed and saved.get(key) != slot and _MAC.match(key):
         for other in [k for k, v in saved.items() if v == slot]:
             del saved[other]
         saved[key] = slot
@@ -340,6 +342,8 @@ async def _start_pad(c: Ctrl) -> list[asyncio.Task[None]]:
     c.rumble = await _open_rumble(c)
     if c.triggers != TRIG2_OFF:           # trigger effects came from the PC before the pad was ready
         c.rumble.set_triggers(c.triggers)
+    if c.fb is not None:                  # rumble / colour from the PC that arrived while the backend was opening
+        c.apply_feedback(*c.fb, remember=False)
     c.send_ident()                        # the receiver knows right away which pad this is (remap profile)
     events.info(E_PAD_ON, c.idx, c.key or "")
     c.starting = False                    # ready: from now on the heartbeat may resend its state
@@ -530,7 +534,14 @@ async def supervisor() -> None:
 
 
 def _attach_late_devices(c: Ctrl, group: Group) -> None:
-    """Give a running pad the motion / touchpad devices that appeared after it, and close the rest of the group."""
+    """Give a running pad the motion / touchpad devices that appeared after it, and close the rest of the group.
+
+    A pad that is still starting is left alone: _start_pad attaches whatever sits in c.motion_dev / c.touch_dev when it
+    is done, so a device attached here meanwhile would get a second stream. The next scan brings it back.
+    """
+    if c.starting:
+        close_group(group)
+        return
     for kind in LATE_KINDS:
         if kind in group and getattr(c, KIND_ATTR[kind]) is None and not c.closing:
             dev = group.pop(kind)
