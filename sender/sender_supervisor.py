@@ -33,6 +33,8 @@ _no_slot: set[str] = set()             # pads rejected for lack of a free slot (
 
 INPUT_DIR: Final = b"/dev/input"
 PAD_NAME_MARK: Final = "Wireless Controller"   # all three evdev devices of a DualSense contain this in their name
+SONY_VENDOR: Final = 0x054C
+DUALSENSE_PRODUCTS: Final = frozenset({0x0CE6, 0x0DF2})   # DualSense, DualSense Edge
 TOUCH_NAME_MARK: Final = "Touchpad"
 MOTION_NAME_MARK: Final = "Motion"
 UNKNOWN_KEY: Final = "unknown"
@@ -43,6 +45,9 @@ MIN_SCAN_WAIT_S: Final = 0.05           # shortest sleep between scans while a g
 SCAN_SLACK_S: Final = 0.02              # added to the settle deadline so the scan lands just after it
 INOTIFY_READ_SIZE: Final = 4096
 GYRO_AXES: Final = 6                    # motion = 3 gyro + 3 accelerometer values
+
+
+_DUALSENSE_IDS: Final = frozenset((SONY_VENDOR, pid) for pid in DUALSENSE_PRODUCTS)   # the name alone also matches Xbox / DS4 pads
 
 
 def _node_id(path: str) -> tuple[int, int] | None:
@@ -100,7 +105,7 @@ def discover() -> dict[str, Group]:
             dev = evdev.InputDevice(path)
         except OSError:
             continue
-        if PAD_NAME_MARK not in dev.name:
+        if PAD_NAME_MARK not in dev.name or (dev.info.vendor, dev.info.product) not in _DUALSENSE_IDS:
             dev.close()
             _not_pads[path] = nid
             continue

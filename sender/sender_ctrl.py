@@ -196,10 +196,11 @@ class Ctrl:
             value = self._axis_value(axis)
             if value is not None:
                 self.hat[i] = clamp(value, -1, 1)
-        self.mask = 0
+        mask = 0
         with contextlib.suppress(OSError):      # the device is going away: keep the buttons we have already read
             for key in self.pad_dev.active_keys():
-                self.mask |= KEY_BIT.get(key, 0)
+                mask |= KEY_BIT.get(key, 0)
+            self.mask = mask
 
     # ---- sending ----
     def send_ident(self) -> None:
