@@ -509,6 +509,8 @@ class Rumble:
         self.t_set = 0.0
         self._watch: asyncio.TimerHandle | None = None
         self._repeat: asyncio.TimerHandle | None = None
+        self._opening = False                     # the hidraw fallback is being opened in a worker thread
+        self._closed = False
         if mode in (MODE_AUTO, WAY_EVDEV) and has_ff(pad_dev):
             self.methods.append(WAY_EVDEV)
         if mode in (MODE_AUTO, WAY_HIDRAW) and self._open_hidraw(hidraw):
@@ -775,11 +777,40 @@ class Rumble:
                 continue    # the report queue is momentarily full - not a failure; a repeat / refresh will deliver the state
             except OSError as e:
                 if (self._failed(way, e) and self.setting == MODE_AUTO and way == WAY_EVDEV
-                        and WAY_HIDRAW not in self.methods and self._open_hidraw()):
-                    self.methods.append(WAY_HIDRAW)
-                    self._send(small, large, only=WAY_HIDRAW)    # with the same error handling (the exception does not escape to the loop)
+                        and WAY_HIDRAW not in self.methods):
+                    self._fallback_hidraw(small, large)
             else:
                 self.fails[way] = 0
+
+    def _fallback_hidraw(self, small: int, large: int) -> None:
+        """Open the HID report as a replacement for the dead driver way, and use it straight away.
+
+        Opening looks the node up and reads the firmware version (a feature report: over Bluetooth a round trip to the pad),
+        so with a running loop it happens in a worker thread - the loop keeps serving every pad meanwhile - and the current
+        rumble is sent when it is done. Without a loop (tests, the --test command) it is done at once.
+        """
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            if self._open_hidraw():
+                self.methods.append(WAY_HIDRAW)
+                self._send(small, large, only=WAY_HIDRAW)    # with the same error handling (the exception does not escape to the loop)
+            return
+        if self._opening or self._closed:
+            return
+        self._opening = True
+        loop.run_in_executor(None, self._open_hidraw).add_done_callback(self._hidraw_opened)
+
+    def _hidraw_opened(self, fut: asyncio.Future[bool]) -> None:
+        """Event-loop callback of _fallback_hidraw: use the opened HID report, unless the rumble was closed meanwhile."""
+        self._opening = False
+        ok = not fut.cancelled() and fut.exception() is None and fut.result()
+        if self._closed:
+            self._close_fd()                          # close() ran while the worker was opening the node
+            return
+        if ok and WAY_HIDRAW not in self.methods:
+            self.methods.append(WAY_HIDRAW)
+            self._send(*self.cur, only=WAY_HIDRAW)
 
     def _failed(self, way: str, error: OSError) -> bool:
         """Count a write error of ``way``; switch the way off after FAIL_MAX in a row or when the pad is gone.
@@ -851,6 +882,7 @@ class Rumble:
 
     def close(self) -> None:
         """Shut rumble down cleanly: cancel timers, stop the motors, release hard triggers, erase the FF effect, close the fd."""
+        self._closed = True
         for name in ("_watch", "_repeat", "_rv_timer", "_trig_watch"):
             timer = getattr(self, name)
             if timer is not None:

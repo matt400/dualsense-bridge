@@ -14,10 +14,11 @@ from typing import Any, Final, Literal
 import evdev
 from evdev import InputDevice
 
+import sender_calib as calib
 import sender_events as events
 import sender_state as state
 import sender_streams as streams
-from proto import E_ERROR, E_NO_SLOT, E_PAD_OFF, E_PAD_ON, LAT_NONE, T_BYE, TRIG2_OFF
+from proto import CAL_FEW, E_ERROR, E_NO_SLOT, E_PAD_OFF, E_PAD_ON, LAT_NONE, T_BYE, TRIG2_OFF
 from sender_config import C, IDLE_TP, SETTLE_S
 from sender_ctrl import Ctrl
 from sender_net import emit_repeat
@@ -237,6 +238,12 @@ def _reset_lost_stream(c: Ctrl, kind: Kind) -> None:
     else:
         c.motion = [0] * GYRO_AXES
         c.bt_us = LAT_NONE                # without a motion device there are no pad timestamps
+        if c.cal_request:
+            # a calibration was asked for but no sample has started it yet: it must not fire on whatever motion stream
+            # comes back later (the pad may be moving by then), and the window is still waiting for an answer
+            c.cal_request = 0
+            if not c.closing:
+                calib.report(c, CAL_FEW, repeat=True)
     if c.closing:                         # when the pad is closing, send_neutral sends the same thing
         return
     if kind == "touch":
@@ -381,6 +388,8 @@ async def _teardown(c: Ctrl, tasks: list[asyncio.Task[None]]) -> None:
     state.active.pop(c.key, None)
     print(f"Controller {c.idx}: disconnected (waiting for reconnect)")
     events.info(E_PAD_OFF, c.idx)
+    if tasks:            # a pad that never started would be restarted in a tight loop; it waits for the periodic scan
+        kick_scan()      # the pad may already be back: its nodes were skipped while this Ctrl still held the key
 
 
 async def run_ctrl(c: Ctrl) -> None:
@@ -396,6 +405,9 @@ async def run_ctrl(c: Ctrl) -> None:
     except OSError as e:
         print(f"Controller {c.idx}: device error: {e}")
         events.error(E_ERROR, c.idx, str(e))
+    except Exception as e:  # noqa: BLE001 - a task boundary: without this the error vanished as an unretrieved task exception
+        print(f"Controller {c.idx}: start error: {e!r}")
+        events.error(E_ERROR, c.idx, repr(e))
     finally:
         await _teardown(c, tasks)
 
@@ -482,13 +494,29 @@ def next_scan_s(now: float) -> float:
     return wait
 
 
+_watch: DevWatch | None = None     # the running supervisor's watcher, so that a finished teardown can ask for a scan
+
+
+def kick_scan() -> None:
+    """Make the supervisor scan /dev/input now (no-op while it is not running).
+
+    A pad that reconnects while its previous Ctrl is still tearing down is skipped by that scan (the key is taken) and its
+    freshly opened nodes are closed. The inotify event for them is already used up, so without this the pad would wait for
+    the next periodic scan (rescan_s).
+    """
+    if _watch is not None:
+        _watch.event.set()
+
+
 async def supervisor() -> None:
     """Entry point of the pad supervisor: start the /dev/input watcher, run the scan loop, close the watcher on exit."""
-    watch = DevWatch()
+    global _watch
+    watch = _watch = DevWatch()
     watch.start()
     try:
         await _supervise(watch)
     finally:
+        _watch = None
         watch.close()
 
 

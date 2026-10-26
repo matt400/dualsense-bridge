@@ -125,6 +125,7 @@ def _info_tick(prev: dict[Ctrl, tuple[int, int, float]], now: float) -> None:
         prev[c] = (pad, motion, now)
         dt = now - t0
         net.emit(T_INFO, c.idx, rtt, per_s(pad - p0, dt), per_s(motion - m0, dt))
-        if C.IDLE_OFF_S and now - c.last_input > C.IDLE_OFF_S:
+        c.note_input(now)                 # a stick or button held still sends no events, but it is use
+        if C.IDLE_OFF_S and c.is_bluetooth() and now - c.last_input > C.IDLE_OFF_S:
             c.last_input = now            # the next attempt only after another idle period
             state.spawn(power_off(c, f"idle for {C.IDLE_OFF_S / SECONDS_PER_MIN:g} min"))

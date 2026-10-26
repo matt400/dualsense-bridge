@@ -54,6 +54,7 @@ async def main():
     r._send_hidraw = broken
     try:
         r.set(50, 60)
+        await asyncio.sleep(0.1)                    # the fallback is opened in a worker thread
         raised = None
     except OSError as e:
         raised = e
