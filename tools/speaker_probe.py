@@ -5,15 +5,18 @@ It imports nothing from the repo, so it survives refactors. Needs the stdlib, li
 pad lookup and the `jitter` command, and root for /dev/hidraw*:
 
     python3 speaker_probe.py bench                  # encoder CPU on this machine, no pad needed (run it with the sender running)
+    python3 speaker_probe.py bench --paced          # the same in the real rhythm (one frame per 10.667 ms), split into its parts
     doas systemctl stop dualsense-sender            # the sender must not write to the pad meanwhile
     doas python3 speaker_probe.py info              # pad, hidraw, output report sizes from the HID descriptor, libopus
     doas python3 speaker_probe.py layout            # 0x31 setups, 0x36 layouts, Opus sizes; you answer "did you hear it"
     doas python3 speaker_probe.py tone 500 5        # a speaker tone with the chosen layout, prints the first report
-    doas python3 speaker_probe.py timing            # 10.667 vs 10.0 ms pacing, a dropped frame every 16, an underrun
+    doas python3 speaker_probe.py timing            # 10.667 vs 10.0 ms pacing, an underrun (silence frame vs skipped report)
+    doas python3 speaker_probe.py clock             # report period sweep + a frame dropped every 16, with a 440 Hz tone
     doas python3 speaker_probe.py combo             # haptics + speaker in one 0x36, haptics only, speaker only, 0x32 <-> 0x36
-    doas python3 speaker_probe.py modes             # does a 0x31 refresh during the speaker cut it?
+    doas python3 speaker_probe.py modes             # does a 0x31 refresh during the speaker cut it? (--only NAME,.. --repeat N)
     doas python3 speaker_probe.py jitter            # input interval jitter with and without the stream (A-B-A, 60 s each)
     doas python3 speaker_probe.py stop              # pop at the start / end, silence tail, how long the audio path stays alive
+    doas python3 speaker_probe.py edge              # what removes the pop at the end of a stream (tails, fade, volume 0, audio off)
 
 Every command that measures something merges its result into speaker_probe_results.json (paste that file back). `layout` stores the
 setup / layout / Opus size that worked best under "layout" -> "best", and the later commands use it (override: --setup --layout --size).
@@ -70,6 +73,7 @@ RESYNC_PERIODS = 3                       # a stream that falls this many periods
 MAX_FAILS = 5                            # consecutive write errors before a stream gives up
 SPK_HZ, SPK_AMP = 500.0, 0.5             # the speaker test tone
 HAPT_HZ, HAPT_AMP = 80.0, 0.8            # the haptics test tone
+CLOCK_HZ = 440.0                         # `clock` tone: 4.4 cycles per 10 ms, so a dropped frame is a phase jump (500 Hz = 5.0: invisible)
 DEFAULT_SIZE = 80                        # Opus bytes per 10 ms frame (64 kbps CBR)
 SIZES = (40, 80, 120, 160, 200)          # Opus frame sizes tried by `layout` (32 / 64 / 96 / 128 / 160 kbps CBR)
 STATE_LEN = 47                           # the common part of a 0x31 report
@@ -320,11 +324,11 @@ def build_report(rid: int, layout: Layout, seq: int, counter: int, tick: Tick, l
 class Sine:
     """A phase-continuous sine with a 30 ms fade in / out; ``secs=None`` = endless, zeros after the end."""
 
-    def __init__(self, hz: float, amp: float, rate: int, secs: float | None) -> None:
-        """Set up the oscillator."""
+    def __init__(self, hz: float, amp: float, rate: int, secs: float | None, ramp_s: float = 0.03) -> None:
+        """Set up the oscillator (``ramp_s``: the fade in / out)."""
         self.hz, self.amp, self.rate, self.n = hz, amp, rate, 0
         self.total = None if secs is None else round(secs * rate)
-        self.ramp = 0.03 * rate
+        self.ramp = ramp_s * rate
 
     def take(self, count: int) -> list[float]:
         """The next ``count`` samples, -1..1."""
@@ -363,6 +367,8 @@ class Plan:
     gap_mode: str = ""                               # ... silence frames ("silence") or no report at all ("skip")
     script: tuple[tuple[float, str], ...] = ()       # (until second, report kind "32" | "36"); empty = always 0x36
     tail_s: float = 0.0                              # digital silence after the tone (0x36 reports)
+    fade_s: float = 0.03                             # fade in / out of the speaker tone
+    preencode: bool = False                          # endless tone: encode one second up front and loop it (a quiet probe thread)
 
 
 class Source:
@@ -372,8 +378,12 @@ class Source:
         """Prepare the oscillators; ``enc_ms`` collects the encoder time of every frame."""
         self.plan, self.period, self.enc = plan, period, enc
         self.enc_ms: list[float] = []
-        self.spk_osc = Sine(plan.spk_hz, SPK_AMP, OPUS_RATE, plan.secs)
+        self.spk_osc = Sine(plan.spk_hz, SPK_AMP, OPUS_RATE, plan.secs, plan.fade_s)
         self.hapt_osc = Sine(plan.hapt_hz, HAPT_AMP, HAPT_RATE, plan.secs)
+        self._cache: list[bytes] = []
+        if plan.preencode and enc is not None and plan.secs is None and plan.spk == "tone":
+            self.spk_osc.take(round(plan.fade_s * OPUS_RATE))        # past the fade in: the loop must not dip every second
+            self._cache = [enc.encode(to_pcm(self.spk_osc.take(OPUS_FRAME))) for _ in range(round(1 / OPUS_PERIOD))]
 
     def __iter__(self) -> Iterator[Tick | None]:
         """One item per period until the plan (and its tail) ends."""
@@ -390,6 +400,8 @@ class Source:
     def _speaker(self, i: int, silent: bool) -> bytes | None:
         if self.plan.spk == "off" or self.enc is None:
             return None
+        if self._cache:
+            return self._cache[i % len(self._cache)]
         p = self.plan
         if p.drop_every and i % p.drop_every == p.drop_every - 1:
             self.spk_osc.take(OPUS_FRAME)                       # one source frame is dropped: the tone stays real-time
@@ -831,6 +843,41 @@ def _bench_frames() -> list[array.array]:  # type: ignore[type-arg]
     return frames
 
 
+def _bench_paced(args: argparse.Namespace) -> None:
+    """Encoder cost in the real rhythm: one frame per report period, so the core idles between frames like in the sender.
+
+    The three parts of a frame are timed apart (the sine and the PCM conversion are probe code, only ``opus_encode`` is what the
+    sender would pay), to see why the streams of the first round showed ~2 ms per frame against 0.09 ms back to back.
+    """
+    secs = 0.5 if args.dry_run else args.secs
+    rows = []
+    for complexity in (0, 5, 10):
+        enc = make_encoder(DEFAULT_SIZE, bool(args.dry_run), complexity)
+        osc = Sine(SPK_HZ, SPK_AMP, OPUS_RATE, None)
+        parts: dict[str, list[float]] = {"sine": [], "to_pcm": [], "opus_encode": []}
+        deadline = time.monotonic()
+        for _ in range(max(1, round(secs / REPORT_PERIOD))):
+            t0 = time.perf_counter()
+            samples = osc.take(OPUS_FRAME)
+            t1 = time.perf_counter()
+            pcm = to_pcm(samples)
+            t2 = time.perf_counter()
+            enc.encode(pcm)
+            t3 = time.perf_counter()
+            for name, ms in zip(parts, ((t1 - t0) * 1000, (t2 - t1) * 1000, (t3 - t2) * 1000), strict=True):
+                parts[name].append(ms)
+            deadline += REPORT_PERIOD
+            time.sleep(max(0.0, deadline - time.monotonic()))
+        enc.close()
+        row: dict[str, object] = {"complexity": complexity, "bytes_per_frame": DEFAULT_SIZE}
+        row.update({name: describe(values) for name, values in parts.items()})
+        rows.append(row)
+        print(f"  paced, complexity {complexity:2d}: " + "; ".join(
+            f"{name} mean {describe(values)['mean']} p99 {describe(values)['p99']} max {describe(values)['max']} ms"
+            for name, values in parts.items()))
+    save_result(Path(args.out), "bench_paced", {"secs": secs, "period_ms": round(REPORT_PERIOD * 1000, 3), "rows": rows})
+
+
 def cmd_bench(args: argparse.Namespace) -> None:
     """Encoder CPU per 10 ms frame for the bitrates / complexities that matter, and what that means as a share of one core."""
     frames = _bench_frames()
@@ -854,6 +901,8 @@ def cmd_bench(args: argparse.Namespace) -> None:
     meta = {"date": time.strftime("%Y-%m-%d %H:%M:%S"), "machine": platform.machine(), "kernel": platform.release(),
             "libopus": opus_version(), "cpus": os.cpu_count()}
     save_result(Path(args.out), "bench", {"meta": meta, "rows": rows})
+    if args.paced:
+        _bench_paced(args)
 
 
 def cmd_info(s: Session) -> None:
@@ -925,8 +974,6 @@ def cmd_layout(s: Session) -> None:
 TIMINGS: list[tuple[str, str, float, Plan]] = [
     ("p10.667", "one frame per 10.667 ms report (the haptics clock)", REPORT_PERIOD, Plan(secs=5.0)),
     ("p10.0", "one frame per 10.0 ms report (the Opus clock)", OPUS_PERIOD, Plan(secs=5.0)),
-    ("p10.667-drop16", "10.667 ms reports, a source frame dropped every 16 reports (keeps the tone real-time)", REPORT_PERIOD,
-     Plan(secs=5.0, drop_every=16)),
     ("gap-silence", "10.667 ms, a 60 ms underrun at 2 s filled with silence frames", REPORT_PERIOD,
      Plan(secs=5.0, gap_at=2.0, gap_len=0.06, gap_mode="silence")),
     ("gap-skip", "10.667 ms, a 60 ms underrun at 2 s: no reports at all", REPORT_PERIOD,
@@ -945,6 +992,35 @@ def cmd_timing(s: Session) -> None:
         s.pad.send_normal()
         wait(3.0)
     save_result(s.out, "timing", results)
+
+
+# (name, report period, drop one source frame every N reports); a 440 Hz tone, 6 s each
+CLOCKS: list[tuple[str, float, int]] = [
+    ("p10.667", REPORT_PERIOD, 0), ("p10.4", 0.0104, 0), ("p10.2", 0.0102, 0), ("p11.0", 0.011, 0), ("p11.5", 0.0115, 0),
+    ("p10.667-drop16", REPORT_PERIOD, 16),
+]
+
+
+def cmd_clock(s: Session) -> None:
+    """How the pad's speaker follows the report clock: a period sweep (glitches and pitch) and a frame dropped every 16 reports.
+
+    The first round's drop test used 500 Hz, which is exactly 5 cycles per 10 ms, so a dropped frame changed nothing. 440 Hz is
+    4.4 cycles: a dropped frame is a phase jump (a click if the pad plays the frames back to back). The pitch against the first
+    run tells whether the pad stretches the audio to the report rate (lower pitch with a longer period) or plays frames as they come.
+    """
+    results = []
+    for k, (name, period, drop) in enumerate(CLOCKS):
+        print(f"\n== {name}: report every {period * 1000:.1f} ms" + (f", a source frame dropped every {drop} reports" if drop else ""))
+        st = s.play(Plan(secs=6.0, spk_hz=CLOCK_HZ, drop_every=drop), period=period)
+        row: dict[str, object] = {"variant": name, "period_ms": round(period * 1000, 3), "drop_every": drop,
+                                  "glitch": ask(Q_GLITCH, "ntpd")}
+        if k:
+            row["pitch_vs_first"] = ask("pitch compared to the first run: l(ower) / s(ame) / h(igher)", "lsh")
+        row.update(report_stats(name, st))
+        results.append(row)
+        s.pad.send_normal()
+        wait(3.0)
+    save_result(s.out, "clock", results)
 
 
 COMBOS: list[tuple[str, str, Plan, tuple[tuple[str, str, str], ...]]] = [
@@ -1017,17 +1093,24 @@ def _observe(s: Session, name: str, phase: str, repeat: bool, kw: dict[str, Any]
 
 def cmd_modes(s: Session) -> None:
     """Does a 0x31 report during the speaker stream cut it? The answer decides the flags of the refreshes in P3b."""
+    only = set(s.args.only.split(",")) if s.args.only else set()
+    unknown = only - {name for name, _ in STEPS}
+    if unknown:
+        raise SystemExit(f"unknown step(s) {sorted(unknown)}; known: {', '.join(name for name, _ in STEPS)}")
     results = []
-    for name, kw in STEPS:
-        print(f"\n== {name}")
-        s.pad.send_normal()
-        wait(1.0)
-        bg = s.background(Plan(secs=None))
-        wait(2.0)
-        results.append(_observe(s, name, "once", False, kw))
-        results.append(_observe(s, name, "repeat", True, kw))
-        bg.finish()
-    save_result(s.out, "modes", results)
+    for run in range(1, s.args.repeat + 1):
+        for name, kw in STEPS:
+            if only and name not in only:
+                continue
+            print(f"\n== {name} (run {run}/{s.args.repeat})")
+            s.pad.send_normal()
+            wait(1.0)
+            bg = s.background(Plan(secs=None, preencode=True))
+            wait(2.0)
+            for phase, repeat in (("once", False), ("repeat", True)):
+                results.append({**_observe(s, name, phase, repeat, kw), "run": run})
+            bg.finish()
+    save_result(s.out, "modes_repeat" if only or s.args.repeat > 1 else "modes", results)
 
 
 # ---------------------------------------------------------------- commands: jitter
@@ -1075,13 +1158,14 @@ def cmd_jitter(s: Session) -> None:
         devs["motion"] = evdev.InputDevice(motion)
     else:
         print("note: no motion sensors node found, measuring the gamepad node only (it emits only when something changes)")
+    pre = not s.args.live_encode             # a pre-encoded loop keeps the probe thread quiet (no Python stalls next to the evdev reader)
     phases: list[tuple[str, str, Plan | None]] = [("no_stream", "A: no stream", None),
-                                                  ("speaker", "B: speaker stream (0x36)", Plan(secs=None))]
+                                                  ("speaker", "B: speaker stream (0x36)", Plan(secs=None, preencode=pre))]
     if s.args.combo:
-        phases.append(("speaker_haptics", "C: speaker + haptics in 0x36", Plan(secs=None, hapt="tone")))
+        phases.append(("speaker_haptics", "C: speaker + haptics in 0x36", Plan(secs=None, hapt="tone", preencode=pre)))
     phases.append(("no_stream_again", "A again: no stream", None))
     print("leave the pad on the table and do not touch it.")
-    results: dict[str, object] = {"period_ms": s.args.period_ms}
+    results: dict[str, object] = {"period_ms": s.args.period_ms, "pre_encoded": pre}
     for key, label, plan in phases:
         print(f"phase {label}, {s.args.secs:.0f} s ...")
         bg = s.background(plan) if plan is not None else None
@@ -1151,6 +1235,36 @@ def cmd_stop(s: Session) -> None:
     save_result(s.out, "stop", {"edges": _edges(s), "alive": _alive(s)})
 
 
+# ---------------------------------------------------------------- commands: edge
+# (name, what it does, plan, a 0x31 sent right after the last report)
+EDGES: list[tuple[str, str, Plan, str]] = [
+    ("abrupt", "3 s tone, nothing after (the control: it popped at the end in round 1)", Plan(secs=3.0), ""),
+    ("fade200", "a 200 ms fade out before the last frame", Plan(secs=3.0, fade_s=0.2), ""),
+    ("tail1s", "1 s of Opus silence frames after the tone", Plan(secs=3.0, tail_s=1.0), ""),
+    ("tail3s", "3 s of Opus silence frames after the tone", Plan(secs=3.0, tail_s=3.0), ""),
+    ("vol0", "tone + 100 ms silence, then a 0x31 with the speaker volume 0", Plan(secs=3.0, tail_s=0.1), "vol0"),
+    ("audio-off", "tone + 100 ms silence, then a 0x31 with audio_control 0", Plan(secs=3.0, tail_s=0.1), "audio-off"),
+]
+POSTS: dict[str, dict[str, Any]] = {"vol0": {"flag0": 0x20, "extra": ((SPK_VOL_AT, 0),)},
+                                    "audio-off": {"flag0": 0x80, "extra": ((AUDIO_CTL_AT, 0x00),)}}
+
+
+def cmd_edge(s: Session) -> None:
+    """What removes the pop at the end of a stream. Every variant uses the `notes` setup so volume and audio control are restored."""
+    notes = BY_SETUP["notes"]
+    rows = []
+    for name, note, plan, post in EDGES:
+        print(f"\n== {name}: {note}")
+        s.play(plan, setup=notes)
+        if post:
+            s.pad.send31(f"post-{post}", **POSTS[post])
+        rows.append({"variant": name, **_edge_questions(name)})
+        s.pad.send_setup(notes, s.args.volume)
+        s.pad.send_normal()
+        wait(3.0)
+    save_result(s.out, "edge", rows)
+
+
 # ---------------------------------------------------------------- main
 def parse_args(argv: list[str]) -> argparse.Namespace:
     """Command line."""
@@ -1168,7 +1282,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     common.add_argument("--dry-run", action="store_true", help="no pad: write to /dev/null, answer questions automatically")
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0], formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("bench", parents=[common], help="Opus encoder CPU (no pad needed)")
+    bench = sub.add_parser("bench", parents=[common], help="Opus encoder CPU (no pad needed)")
+    bench.add_argument("--paced", action="store_true", help="also measure in the real rhythm, one frame per 10.667 ms")
+    bench.add_argument("--secs", type=float, default=8.0, help="length of each paced run")
     sub.add_parser("info", parents=[common], help="pad, hidraw, report sizes, libopus")
     tone = sub.add_parser("tone", parents=[common], help="stream a speaker tone")
     tone.add_argument("hz", nargs="?", type=float, default=SPK_HZ)
@@ -1176,18 +1292,24 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     tone.add_argument("--hapt", action="store_true", help="add an 80 Hz haptics tone")
     sub.add_parser("layout", parents=[common], help="setups, layouts, Opus sizes")
     sub.add_parser("timing", parents=[common], help="10.667 vs 10.0 ms pacing, underruns")
+    sub.add_parser("clock", parents=[common], help="report period sweep, dropped frames (440 Hz)")
     sub.add_parser("combo", parents=[common], help="haptics + speaker in one report")
-    sub.add_parser("modes", parents=[common], help="0x31 reports during the speaker stream")
+    modes = sub.add_parser("modes", parents=[common], help="0x31 reports during the speaker stream")
+    modes.add_argument("--only", help="comma separated step names (results go to 'modes_repeat')")
+    modes.add_argument("--repeat", type=int, default=1, help="run each step this many times (results go to 'modes_repeat')")
     jitter = sub.add_parser("jitter", parents=[common], help="input jitter with / without the stream")
     jitter.add_argument("--secs", type=float, default=60.0)
     jitter.add_argument("--combo", action="store_true", help="add a phase with speaker + haptics")
+    jitter.add_argument("--live-encode", action="store_true", help="encode every frame live (as in round 1), not a pre-encoded loop")
     stop = sub.add_parser("stop", parents=[common], help="pop at start / end, audio path timeout")
     stop.add_argument("--gaps", default="1,3,10,30", help="silence gaps to try, seconds")
+    sub.add_parser("edge", parents=[common], help="what removes the pop at the end of a stream")
     return parser.parse_args(argv)
 
 
 COMMANDS: dict[str, Callable[[Session], None]] = {"info": cmd_info, "tone": cmd_tone, "layout": cmd_layout, "timing": cmd_timing,
-                                                  "combo": cmd_combo, "modes": cmd_modes, "jitter": cmd_jitter, "stop": cmd_stop}
+                                                  "clock": cmd_clock, "combo": cmd_combo, "modes": cmd_modes, "jitter": cmd_jitter,
+                                                  "stop": cmd_stop, "edge": cmd_edge}
 
 
 def main(argv: list[str] | None = None) -> None:
