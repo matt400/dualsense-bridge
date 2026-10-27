@@ -324,7 +324,7 @@ async def _open_rumble(c: Ctrl) -> Rumble:
     loops of every other pad. The thread is shielded: if the pad disappears (the task is cancelled) while it is still
     opening, the finished backend is closed when it arrives instead of leaking its hidraw descriptor.
     """
-    fut = asyncio.ensure_future(asyncio.to_thread(Rumble, c.idx, c.pad_dev, C.RUMBLE, None, C.HAPTICS_MOTORS))
+    fut = asyncio.ensure_future(asyncio.to_thread(Rumble, c.idx, c.pad_dev, C.RUMBLE, haptics_motors=C.HAPTICS_MOTORS))
     try:
         return await asyncio.shield(fut)
     except asyncio.CancelledError:

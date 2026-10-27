@@ -31,7 +31,7 @@ async def ticker(counter):
 # ---------- 1. rumble backend ----------
 class SlowRumble:
     made, closed, thread = [], [], None
-    def __init__(self, idx, dev, mode):
+    def __init__(self, idx, dev, mode, **kw):
         SlowRumble.thread = threading.get_ident()
         time.sleep(SLOW_S)                       # the firmware request over Bluetooth
         SlowRumble.made.append(self)
