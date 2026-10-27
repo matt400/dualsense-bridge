@@ -68,7 +68,7 @@ ok("dziennik: ikona w nagłówku, poziom, zdarzenia nadajnika, limit linii, kopi
 win.open_settings(); pump(100)
 dlg = win.settings_dlg
 dlg.tabs.setCurrentIndex(3); pump()
-assert dlg.tabs.tabText(3) == "Lightbar" and dlg.tabs.tabText(4) == "Wake-on-LAN" and not dlg.tabs.tabIcon(4).isNull()
+assert dlg.tabs.tabText(3) == "Lightbar" and dlg.tabs.tabText(4) == "Haptyka" and dlg.tabs.tabText(5) == "Wake-on-LAN" and not dlg.tabs.tabIcon(4).isNull()
 assert [dlg.light_pad.itemData(i) for i in range(dlg.light_pad.count())] == ["*", A]
 assert not dlg.light_own.isVisible(), "domyślne ustawienie zawsze własne"
 dlg.light_mode.set_data("battery"); dlg.light_mode.changed.emit("battery")
@@ -95,15 +95,41 @@ dlg.save_btn.click(); pump()
 assert A not in R.cur.lightbar.pads, "odznaczenie - pad wraca do domyślnego"
 ok("Ustawienia -> Lightbar: domyślne + per pad (MAC), tryb, kolor, miganie, próg; zapis bez restartu")
 
+# ---------- Ustawienia: Haptyka ----------
+import rx_haptics
+from proto import CAP_HAPTICS
+dlg.close(); win.open_settings(); pump()
+dlg.tabs.setCurrentIndex(4); pump()
+assert [dlg.hap_pad.itemData(i) for i in range(dlg.hap_pad.count())] == ["*", A]
+assert not dlg.hap_on.isChecked() and dlg.hap_gain.value() == 100 and not dlg.hap_own.isVisible(), "domyślnie wyłączona"
+dlg.hap_on.setChecked(True); dlg.hap_gain.setValue(60)
+dlg.hap_pad.set_data(A); dlg.hap_pad.activated.emit(dlg.hap_pad.currentIndex()); pump()
+assert dlg.hap_own.isVisible() and not dlg.hap_own.isChecked() and not dlg.hap_on.isEnabled(), "pad bez własnego ustawienia: pola nieaktywne"
+dlg.hap_own.setChecked(True); dlg.hap_on.setChecked(False); dlg.hap_gain.setValue(120)
+S.alive[0], S.pad_id[0], S.sender_info[0] = True, A, (12, 3, 0)
+dlg._haptics_enable()
+assert dlg.hap_test.isEnabled() and "starszej" in dlg.hap_note.text(), "stary nadajnik: notka"
+S.sender_info[0] = (13, 3 | CAP_HAPTICS, 0)
+dlg._haptics_enable()
+assert not dlg.hap_note.text()
+dlg.grab().save(os.path.join(SHOTS, "gui_haptics.png"))
+dlg.save_btn.click(); pump()
+h = R.cur.haptics
+assert h.get("*") == R.PadHaptics(True, 60) and h.get(A) == R.PadHaptics(False, 120), h
+dlg._test_haptics(); pump()
+assert rx_haptics.link(0)._inject, "przycisk testu zakolejkował ton"
+rx_haptics.link(0).detach()
+ok("Ustawienia -> Haptyka: domyślne + per pad, siła, notka o starym nadajniku, test, zapis bez restartu")
+
 # ---------- Ustawienia: Wake-on-LAN ----------
 S.sender_wol = ("11:22:33:44:55:66", "192.168.1.255")
 dlg.close(); win.open_settings(); pump()
-dlg.tabs.setCurrentIndex(4); pump()
+dlg.tabs.setCurrentIndex(5); pump()
 assert "11:22:33:44:55:66" in dlg.wol_mac.placeholderText() and "11:22:33:44:55:66" in dlg.wol_seen.text()
 assert dlg.wol_on.isChecked() and dlg.wol_btn.currentData() == "options" and dlg.wol_hold.value() == 1000
 dlg.wol_mac.setText("zly-mac"); dlg.tabs.setCurrentIndex(0)
 dlg.save_btn.click(); pump()
-assert dlg.tabs.currentIndex() == 4 and dlg.status.property("level") == "bad" and R.cur.wol.mac == ""
+assert dlg.tabs.currentIndex() == 5 and dlg.status.property("level") == "bad" and R.cur.wol.mac == ""
 dlg.wol_mac.setText("AA-BB-CC-DD-EE-FF"); dlg.wol_bcast.setText("192.168.1.255")
 dlg.wol_btn.set_data("triangle"); dlg.wol_hold.setValue(1500)
 dlg.grab().save(os.path.join(SHOTS, "gui_wol.png"))

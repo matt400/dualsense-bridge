@@ -2,6 +2,11 @@
 
 pycaw / comtypes are imported lazily, only when used - without them the receiver still works, just without audio
 switching. Every function initialises COM in the calling thread itself, so they can be used from any thread.
+
+A virtual DualSense created with HIDMaestro's composite profile (game haptics, rx_haptics) brings a Windows audio endpoint
+of its own ("Speakers (Wireless Controller)"). It is not an output anyone should pick: list_outputs() leaves such endpoints
+out (so the console mode and the settings window never see them, and a partial name match cannot become ambiguous), and
+default_output_ids() / set_default_id() let rx_haptics put the previous default back when Windows switches to it.
 """
 from __future__ import annotations
 
@@ -12,6 +17,7 @@ from typing import Final
 
 POLL_S: Final = 0.5           # how often to look for a device that has not appeared yet
 ROLES: Final = ("eConsole", "eMultimedia", "eCommunications")   # same as "Set as default" in the Windows sound settings
+CONTROLLER_ENDPOINT: Final = "wireless controller"     # the USB product name of a DualSense: "Speakers (Wireless Controller)"
 
 
 @contextlib.contextmanager
@@ -30,13 +36,23 @@ def _com() -> Iterator[None]:
             comtypes.CoUninitialize()
 
 
-def list_outputs() -> list[tuple[str, str]]:
-    """Return the active output devices as [(id, name)], in system order."""
+def is_controller_endpoint(name: str) -> bool:
+    """Tell whether an output's name is the audio endpoint of a (virtual) DualSense, e.g. "Speakers (Wireless Controller)"."""
+    return CONTROLLER_ENDPOINT in name.casefold()
+
+
+def list_outputs(controllers: bool = False) -> list[tuple[str, str]]:
+    """Return the active output devices as [(id, name)], in system order.
+
+    Args:
+        controllers: Also list the audio endpoints of gamepads (left out by default - nobody should pick them as the sound
+            output of the PC, and rx_haptics asks for them only to recognise a default that Windows switched by itself).
+    """
     from pycaw.constants import DEVICE_STATE, EDataFlow
     from pycaw.utils import AudioUtilities
     with _com():
         devices = AudioUtilities.GetAllDevices(EDataFlow.eRender.value, DEVICE_STATE.ACTIVE.value)
-        out = [(d.id, d.FriendlyName) for d in devices if d.FriendlyName]
+        out = [(d.id, d.FriendlyName) for d in devices if d.FriendlyName and (controllers or not is_controller_endpoint(d.FriendlyName))]
         # release the COM objects BEFORE CoUninitialize: otherwise the list would live until the function returns, i.e. past
         # the exit from _com(), and a Release on an uninitialised COM (console-mode thread, a thread with no other COM
         # users) could crash the whole receiver
@@ -60,12 +76,35 @@ def set_default(name: str, wait_s: float = 6.0) -> None:
     Polls the device list for up to wait_s until the device appears - a TV's HDMI audio only becomes active after its
     screen is switched on. Device not found -> LookupError.
     """
-    from pycaw.constants import ERole
-    from pycaw.utils import AudioUtilities
     deadline = time.monotonic() + wait_s
     while (dev_id := find(name, list_outputs())) is None:
         if time.monotonic() >= deadline:
             raise LookupError(f"audio output {name!r} not found")
         time.sleep(POLL_S)
+    set_default_id(dev_id)
+
+
+def default_output_ids() -> dict[str, str]:
+    """Return the default output device id of each role in ROLES ({role: id}); a role with no default is left out."""
+    from pycaw.constants import EDataFlow, ERole
+    from pycaw.utils import AudioUtilities
+    out: dict[str, str] = {}
     with _com():
-        AudioUtilities.SetDefaultDevice(dev_id, [ERole[r] for r in ROLES])
+        enumerator = AudioUtilities.GetDeviceEnumerator()
+        for role in ROLES:
+            try:
+                dev = enumerator.GetDefaultAudioEndpoint(EDataFlow.eRender.value, ERole[role].value)
+                out[role] = str(dev.GetId())
+            except Exception:  # noqa: BLE001, S112 - comtypes.COMError (no default output for this role): the role is simply absent
+                continue
+            del dev
+        del enumerator      # COM objects go before CoUninitialize (see list_outputs)
+    return out
+
+
+def set_default_id(dev_id: str, roles: Iterable[str] = ROLES) -> None:
+    """Set the default audio output by device id for the given roles (all of them by default)."""
+    from pycaw.constants import ERole
+    from pycaw.utils import AudioUtilities
+    with _com():
+        AudioUtilities.SetDefaultDevice(dev_id, [ERole[r] for r in roles])

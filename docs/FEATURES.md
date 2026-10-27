@@ -199,6 +199,7 @@
   - **Master:** the master pad, what only it is allowed, action buttons. Mouse and master take effect immediately,
     without a restart (`settings.json`);
   - **Lightbar:** colour per pad / default, mode, blinking, low battery threshold (immediately);
+  - **Haptics:** game HD haptics per pad - enable, strength, test (strength immediately, enable on the pad's reconnect);
   - **Wake-on-LAN:** enable, the button paired with PS, hold time, MAC and broadcast (empty = automatic);
   - **Pads:** which pad cards the window shows - dynamic (only connected) or a fixed number of slots (1-4, takes effect
     immediately; the slots themselves are set by `pads` in `receiver.toml`, 4 by default) - plus the virtual pad
@@ -226,6 +227,18 @@
   - shortcut confirmations (master's gold flash, profile, mouse) are always on top;
   - the **low battery threshold** is shared with the warning on the pad card and the notification (`low_batt` from
     toml is only the initial value).
+- **Game haptics (HD haptics)** (Settings → Haptics), opt-in, separately for each pad (MAC) or as the default; needs the
+  HIDMaestro backend and sender v13+:
+  - a game that drives the DualSense voice coils renders the waveform as audio on channels 3-4 of a USB audio device. With
+    this option the virtual pad is created from HIDMaestro's `dualsense-composite` profile (it has that device); the
+    receiver filters the waveform to 3 kHz / 8-bit and sends it to the sender, which plays it on the Bluetooth pad.
+    Chunks go out at the audio clock; in silence nothing is sent (the stream ends with an end mark after ~150 ms);
+  - **Strength** 0-200 % (applies at once), **Test haptics** sends a short 160 Hz tone to the chosen pad;
+  - the first use installs a kernel driver (usbip-win2, bundled with HIDMaestro) and Windows adds a "Wireless Controller"
+    sound device. The default audio output is kept: if Windows switches to it, the previous one is restored (console
+    mode never lists it). Turning it on or off applies when the pad reconnects; if the composite pad cannot be created
+    the pad works as before and the event log says why (no new attempt for 10 minutes or until the setting changes);
+  - the sender must announce haptics (v13+, update it from the window); "Haptics" is also a master-only feature.
 - **Wake-on-LAN from the pad** (Settings → Wake-on-LAN): when the PC doesn't respond (off / asleep), **PS + Options
   held ~1 s** (button and time configurable) - the sender sends a magic packet. With the PC running the same combo goes
   to the receiver as usual (e.g. master pause), so nothing collides; long PS alone isn't suitable (that's how the pad

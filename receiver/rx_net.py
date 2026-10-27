@@ -25,9 +25,9 @@ import rx_state as S
 import rx_swap
 import rx_testmode as testmode
 from proto import (BATT_CHARGING, BATT_UNKNOWN, BODY, CAL_MOVED, CAL_OK, CLICK_PRESSED, CLICK_TWO_FINGERS, LAT_NONE, NO_PAD, PAD_KEYS,
-                   RTT_NONE, SCFG_BATT, SCFG_EVENTS, SCFG_WOL, STATE_CHARGING, STATE_FIELDS, WIRE, Codec, EpochClock,
+                   RTT_NONE, SCFG_BATT, SCFG_EVENTS, SCFG_WOL, STATE_CHARGING, STATE_FIELDS, UINT32_MASK, WIRE, Codec, EpochClock,
                    T_BTCTRL, T_BTDEV, T_BTLINK, T_BTSTATE, T_BUILD, T_BUILD2, T_BUILD3, T_BYE, T_CALRES, T_CLICK, T_CMD, T_EVENT, T_FB,
-                   T_IDENT, T_INFO,
+                   T_HAPT, T_IDENT, T_INFO,
                    T_MOUSE, T_PING, T_PONG, T_PONG2, T_SCFG, T_STATE, T_STATE2, T_TOUCH, T_TRIG, T_TRIG2, T_TRIG3, T_UPDMSG,
                    T_VERSION, TRIG2_OFF, clamp, cstr, mac_bytes, mac_text)
 from rx_buttons import BUTTON_CODES, MASK_ALL, PS_BIT, TRIG_ON
@@ -301,6 +301,18 @@ def send_triggers(i: int, vals: Sequence[Any], repeat: int = 1) -> None:
     """
     t = T_TRIG3 if len(vals) > len(TRIG2_OFF) else T_TRIG2 if len(vals) == len(TRIG2_OFF) else T_TRIG
     send_repeat(codec.pack(t, i, *vals), repeat)
+
+
+def send_haptics(i: int, first_frame: int, flags: int, chunk: bytes) -> None:
+    """Send one chunk of game HD haptics to the sender (not repeated: audio tolerates a loss, a repeat only adds latency).
+
+    Args:
+        i: The pad's slot.
+        first_frame: Number of the chunk's first 3 kHz frame (u32, counted by the caller, wraps).
+        flags: HAPT_START / HAPT_END bits.
+        chunk: HAPT_FRAMES stereo frames of signed 8-bit samples, the left grip first.
+    """
+    send_peer(codec.pack(T_HAPT, i, first_frame & UINT32_MASK, flags, chunk))
 
 
 def scfg_values(s: rx_settings.Settings | None = None) -> tuple[Any, ...]:

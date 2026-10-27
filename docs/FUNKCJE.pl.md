@@ -191,6 +191,7 @@
   - **Master:** pad master, co wolno tylko jemu, przyciski akcji. Mysz i master działają od razu, bez restartu
     (`settings.json`);
   - **Lightbar:** kolor per pad / domyślny, tryb, miganie, próg niskiej baterii (od razu);
+  - **Haptyka:** haptyka gry per pad - włączenie, siła, test (siła od razu, włączenie po ponownym połączeniu pada);
   - **Wake-on-LAN:** włączenie, przycisk do pary z PS, czas przytrzymania, MAC i broadcast (puste = automatycznie);
   - **Pady:** które karty padów pokazuje okno - dynamicznie (tylko podłączone) albo stała liczba slotów (1-4, działa
     od razu; same sloty ustawia `pads` w `receiver.toml`, domyślnie 4) - oraz backend wirtualnych padów, HIDMaestro i
@@ -217,6 +218,18 @@
   - potwierdzenia skrótów (złoty błysk mastera, profil, mysz) zawsze na wierzchu;
   - **próg niskiej baterii** jest wspólny z ostrzeżeniem na karcie pada i powiadomieniem (`low_batt` z toml to tylko
     wartość startowa).
+- **Haptyka gry (HD haptics)** (Ustawienia → Haptyka), opcja do włączenia, osobno dla każdego pada (MAC) albo domyślnie;
+  wymaga backendu HIDMaestro i nadajnika v13+:
+  - gra sterująca cewkami DualSense oddaje przebieg jako dźwięk na kanałach 3-4 urządzenia audio USB. Po włączeniu wirtualny
+    pad powstaje z profilu `dualsense-composite` HIDMaestro (ma takie urządzenie); receiver filtruje przebieg do 3 kHz / 8 bit
+    i wysyła go do nadajnika, który gra go na padzie przez Bluetooth. Paczki idą w tempie zegara audio; w ciszy nic nie
+    jest wysyłane (strumień kończy znacznik końca po ok. 150 ms);
+  - **Siła** 0-200 % (od razu), **Test haptyki** wysyła krótki ton 160 Hz do wybranego pada;
+  - pierwsze użycie instaluje sterownik jądra (usbip-win2, dołączony do HIDMaestro), a Windows dodaje urządzenie dźwiękowe
+    „Wireless Controller”. Domyślne wyjście dźwięku zostaje: gdy Windows przełączy się na nie, wraca poprzednie (tryb
+    konsoli go nie pokazuje). Włączenie i wyłączenie działa po ponownym połączeniu pada; gdy pada composite nie da się
+    utworzyć, pad działa jak dotąd, a dziennik zdarzeń podaje powód (bez nowej próby przez 10 minut albo do zmiany ustawienia);
+  - nadajnik musi ogłaszać haptykę (v13+, zaktualizuj go z okna); „Haptyka” jest też funkcją tylko dla mastera.
 - **Wake-on-LAN z pada** (Ustawienia → Wake-on-LAN): gdy komputer nie odpowiada (wyłączony / uśpiony), **PS + Options
   przytrzymane ~1 s** (przycisk i czas do wyboru) - nadajnik wysyła magic packet. Przy działającym komputerze ta sama
   kombinacja idzie do receivera jak zwykle (np. pauza mastera), więc nic nie koliduje; samo długie PS się nie nadaje

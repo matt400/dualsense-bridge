@@ -29,6 +29,7 @@ else:
 import rx_events as ev
 import rx_feedback as F
 import rx_swap
+import rx_haptics
 import rx_hm
 import rx_latency
 import rx_settings
@@ -316,7 +317,8 @@ def create_pad(idx: int) -> tuple[Any, str]:
             large, small = motors or (None, None)
             F.game(idx, large, small, rgb=rgb, trig=trig)
         try:
-            return hm.create(idx, on_fb), "hm"
+            pad = rx_haptics.create_composite(hm, idx, on_fb) if rx_haptics.composite_wanted(idx) else None
+            return (pad if pad is not None else hm.create(idx, on_fb)), "hm"
         except Exception as e:  # noqa: BLE001 - any HIDMaestro / .NET failure falls back to ViGEm
             _note_hm(_("tworzenie pada: {err}").format(err=rx_hm.describe_error(e)), warn=True)
     return vigem_pad(idx), "vigem"
@@ -442,6 +444,7 @@ def slot_thread(idx: int) -> None:
                 pad = None
                 gc.collect()
                 print(f"Controller {idx}: virtual pad unplugged")
+            rx_haptics.detach(idx)
             # rumble and colour from the game belonged to the unplugged pad: without this, a pad that connects in this slot vibrated with
             # the game's old rumble (refreshed every 0.5 s) before a new one is created - and on a backend error forever
             F.reset(rx_swap.route(idx))

@@ -30,6 +30,36 @@ def _(text: str) -> str:
 
 
 EN: Final[dict[str, str]] = {
+    "Gry z haptyką DualSense (dźwięk z kanałów 3-4) wysyłają ją do pada przez nadajnik. Wymaga wirtualnego pada USB (profil "
+    "composite) i nadajnika w wersji z haptyką. Jest wyłączona domyślnie: pierwsze włączenie instaluje sterownik jądra "
+    "(usbip-win2), a Windows dodaje urządzenie dźwiękowe „Wireless Controller” (domyślne wyjście dźwięku zostaje bez zmian).":
+        "Games with DualSense haptics (audio on channels 3-4) send it to the pad through the sender. It needs a virtual USB pad "
+        "(the composite profile) and a sender version with haptics. It is off by default: the first use installs a kernel driver "
+        "(usbip-win2) and Windows adds a \"Wireless Controller\" sound device (the default audio output stays as it is).",
+    "HAPTYKA GRY": "GAME HAPTICS",
+    "Haptyka": "Haptics",
+    "Haptyka gry (HD haptics)": "Game haptics (HD haptics)",
+    "Haptyka gry (HD haptics) na tym padzie": "Game haptics (HD haptics) on this pad",
+    "Nadajnik tego pada jest w starszej wersji i nie przekaże haptyki (kliknij Aktualizuj).":
+        "This pad's sender is an older version and will not pass haptics on (click Update).",
+    "Nadajnik w starszej wersji (bez haptyki) - kliknij Aktualizuj.": "Older sender (no haptics) - click Update.",
+    "Pad nie jest podłączony.": "The pad is not connected.",
+    "Próba": "Test",
+    "Test haptyki": "Test haptics",
+    "Ton próbny wysłany do pada.": "Test tone sent to the pad.",
+    "Zmiana włączenia działa po ponownym połączeniu pada; siła - od razu.":
+        "Turning it on or off applies when the pad reconnects; the strength applies at once.",
+    "{pad}: Windows przełączył domyślne wyjście dźwięku na pada - przywrócono poprzednie":
+        "{pad}: Windows switched the default audio output to the pad - the previous one was restored",
+    "{pad}: gra daje haptykę - nadajnik w starszej wersji jej nie przekaże (kliknij Aktualizuj)":
+        "{pad}: the game sends haptics - an older sender will not pass them on (click Update)",
+    "{pad}: gra daje haptykę - pominięta (haptyka gry tylko dla pada master)":
+        "{pad}: the game sends haptics - skipped (game haptics are for the master pad only)",
+    "{pad}: haptyka gry - nie udało się utworzyć pada USB (composite): {err} - pad działa bez haptyki":
+        "{pad}: game haptics - the USB (composite) pad could not be created: {err} - the pad works without haptics",
+    "{pad}: haptyka gry jest włączona, ale nadajnik w starszej wersji jej nie obsługuje (kliknij Aktualizuj)":
+        "{pad}: game haptics are on, but an older sender does not support them (click Update)",
+    "{pad}: pad z haptyką gry (HD haptics przez nadajnik)": "{pad}: pad with game haptics (HD haptics through the sender)",
     "Odrzucono pakiety nadajnika: inny klucz HMAC (key) w nadajniku i w receiverze - ustaw ten sam albo usuń go z obu":
         "Sender packets rejected: the HMAC key differs between the sender and the receiver - set the same key on both "
         "or remove it from both",

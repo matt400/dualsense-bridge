@@ -39,6 +39,7 @@ import rx_audio
 import rx_backup
 import rx_console
 import rx_ds4
+import rx_haptics
 import rx_hm
 import rx_hm_update
 import rx_lightbar
@@ -57,9 +58,9 @@ from rx_qt_screens import parse_size
 from rx_qt_style import set_prop
 from rx_qt_widgets import (Combo, ConfirmButton, SideTabs, SliderRow, button, field, group, icon_button, icon_label, input_items,
                            label, left, pair, spinbox)
-from rx_settings import (ABSENT, COMBO_BUTTONS, DEFAULT_PAD, LIGHT_MODES, LOW_PCT, MASTER_ACTIONS, MASTER_FEATURES, MOUSE_LIMITS,
-                         PADS_COUNT, VPAD_BACKENDS, WOL_BUTTONS, WOL_HOLD_MS, LightbarConfig, MasterConfig, MouseConfig, PadLight,
-                         UiConfig, VpadConfig, WolConfig)
+from rx_settings import (ABSENT, COMBO_BUTTONS, DEFAULT_PAD, HAPTICS_GAIN, LIGHT_MODES, LOW_PCT, MASTER_ACTIONS, MASTER_FEATURES,
+                         MOUSE_LIMITS, PADS_COUNT, VPAD_BACKENDS, WOL_BUTTONS, WOL_HOLD_MS, HapticsConfig, LightbarConfig,
+                         MasterConfig, MouseConfig, PadHaptics, PadLight, UiConfig, VpadConfig, WolConfig)
 
 CAPTURE_TIMEOUT_MS = 15000
 LUMA_DARK_TEXT = 380      # R + G + B above this (of 765) is a light colour: the button text turns black
@@ -105,6 +106,7 @@ class ConsoleSettings(QDialog):
         self.tabs.addTab(_page(self._mouse_tab()), icon("mouse"), _("Mysz"))
         self.tabs.addTab(_page(self._master_tab()), icon("crown"), _("Master"))
         self.tabs.addTab(_page(self._light_tab()), icon("lightbar"), _("Lightbar"))
+        self.tabs.addTab(_page(self._haptics_tab()), icon("rumble"), _("Haptyka"))
         self.wol_page = _page(self._wol_tab())
         self.tabs.addTab(self.wol_page, icon("wake"), _("Wake-on-LAN"))
         self.tabs.addTab(_page(self._vpad_tab()), icon("ps"), _("Pady"))
@@ -561,6 +563,95 @@ class ConsoleSettings(QDialog):
                                 "(krótka wibracja = trzymaj dalej). Wyłączenie PC daje 10 s na \"shutdown /a\"."), "dim", wrap=True))
         return [who, rights, actions]
 
+    def _haptics_tab(self) -> list[QWidget | QLayout]:
+        """The Haptics tab: game HD haptics per pad (opt-in), the strength and the "Test haptics" button."""
+        self._haptics, self._haptics_key, self._haptics_loading = {}, DEFAULT_PAD, False
+        self.hap_pad = Combo()
+        self.hap_pad.changed.connect(self._pick_haptics_pad)
+        self.hap_own = QCheckBox(_("Własne ustawienie dla tego pada (inaczej domyślne)"))
+        self.hap_own.toggled.connect(self._haptics_edited)
+        self.hap_on = QCheckBox(_("Haptyka gry (HD haptics) na tym padzie"))
+        self.hap_on.toggled.connect(self._haptics_edited)
+        self.hap_gain = spinbox(*HAPTICS_GAIN, 5, " %")
+        self.hap_gain.valueChanged.connect(self._haptics_edited)
+        self.hap_test = button(_("Test haptyki"))
+        self.hap_test.clicked.connect(self._test_haptics)
+        self.hap_note = label("", "dim", wrap=True)
+        box = group(_("HAPTYKA GRY"),
+                    label(_("Gry z haptyką DualSense (dźwięk z kanałów 3-4) wysyłają ją do pada przez nadajnik. Wymaga "
+                            "wirtualnego pada USB (profil composite) i nadajnika w wersji z haptyką. Jest wyłączona domyślnie: "
+                            "pierwsze włączenie instaluje sterownik jądra (usbip-win2), a Windows dodaje urządzenie dźwiękowe "
+                            "„Wireless Controller” (domyślne wyjście dźwięku zostaje bez zmian)."), "dim", wrap=True),
+                    field(_("Pad"), self.hap_pad), self.hap_own, self.hap_on,
+                    pair(field(_("Siła"), self.hap_gain), field(_("Próba"), self.hap_test)),
+                    self.hap_note,
+                    label(_("Zmiana włączenia działa po ponownym połączeniu pada; siła - od razu."), "dim", wrap=True))
+        return [box]
+
+    # ---------- haptics ----------
+    def _load_haptics(self, cfg: HapticsConfig) -> None:
+        """Fill the Haptics tab: the pad list (default, connected, remembered) and the first entry's values."""
+        self._haptics = dict(cfg.pads)
+        items: list[tuple] = [(DEFAULT_PAD, _("Domyślne - pady bez własnego ustawienia"), "rumble")]
+        known = {DEFAULT_PAD}
+        for i in range(C.NUM_PADS):
+            key = S.profile_key(i)
+            if key not in known and S.pad_id[i] and (S.alive[i] or S.want[i].is_set()):
+                known.add(key)
+                items.append((key, _("Pad {n}  ·  {key}").format(n=i + 1, key=key)))
+        items += [(k, _("{key}  (niepodłączony)").format(key=k)) for k in self._haptics if k not in known]
+        self.hap_pad.set_items(items)
+        self.hap_pad.set_data(DEFAULT_PAD)
+        self._pick_haptics_pad(DEFAULT_PAD)
+
+    def _pick_haptics_pad(self, key: str) -> None:
+        """Show the haptics settings of the chosen pad key (falling back to the default entry); loading is not an edit."""
+        self._haptics_key = key
+        cfg = self._haptics.get(key) or self._haptics.get(DEFAULT_PAD) or PadHaptics()
+        self._haptics_loading = True
+        self.hap_own.setVisible(key != DEFAULT_PAD)
+        self.hap_own.setChecked(key == DEFAULT_PAD or key in self._haptics)
+        self.hap_on.setChecked(cfg.enabled)
+        self.hap_gain.setValue(cfg.gain)
+        self._haptics_loading = False
+        self._haptics_enable()
+
+    def _haptics_pad_slot(self) -> int | None:
+        """The slot of the pad chosen in the combo (None for the default entry or a pad that is not connected)."""
+        for i in range(C.NUM_PADS):
+            if S.pad_id[i] and S.alive[i] and S.profile_key(i) == self._haptics_key:
+                return i
+        return None
+
+    def _haptics_enable(self) -> None:
+        """Enable the fields only for an own setting; the test button only for a connected pad; say when its sender is too old."""
+        own = self.hap_own.isChecked()
+        self.hap_on.setEnabled(own)
+        self.hap_gain.setEnabled(own)
+        slot = self._haptics_pad_slot()
+        self.hap_test.setEnabled(slot is not None)
+        old = slot is not None and not rx_haptics.sender_haptics(slot)
+        self.hap_note.setText(_("Nadajnik tego pada jest w starszej wersji i nie przekaże haptyki (kliknij Aktualizuj).") if old else "")
+
+    def _haptics_edited(self, *_args: Any) -> None:
+        """Record the edited fields for the current pad key, or drop the entry when it uses the default."""
+        if self._haptics_loading:
+            return
+        key = self._haptics_key
+        if key != DEFAULT_PAD and not self.hap_own.isChecked():
+            self._haptics.pop(key, None)
+        else:
+            self._haptics[key] = PadHaptics(enabled=self.hap_on.isChecked(), gain=self.hap_gain.value())
+        self._haptics_enable()
+
+    def _test_haptics(self) -> None:
+        """Send a short tone through the haptics path to the chosen pad (with the strength shown, not the saved one)."""
+        slot = self._haptics_pad_slot()
+        if slot is None:
+            return
+        why = rx_haptics.test(slot, self.hap_gain.value() / 100)
+        self._status(why or _("Ton próbny wysłany do pada."), "warn" if why else "ok")
+
     def _light_tab(self) -> list[QWidget | QLayout]:
         """The Lightbar tab: the low battery threshold and the per-pad colour / mode / blinking / game override."""
         self._lights, self._color, self._light_key, self._loading = {}, "", DEFAULT_PAD, False
@@ -777,6 +868,7 @@ class ConsoleSettings(QDialog):
         self._load_mouse(rx_settings.cur.mouse)
         self._load_master(rx_settings.cur.master)
         self._load_light(rx_settings.cur.lightbar)
+        self._load_haptics(rx_settings.cur.haptics)
         self._load_wol(rx_settings.cur.wol)
         self._load_vpad(rx_settings.cur.vpad)
         cfg = rx_console.ctl.cfg if rx_console.ctl else ConsoleConfig()
@@ -901,7 +993,8 @@ class ConsoleSettings(QDialog):
                      pads_count=self.pads_count.value())
         return rx_settings.Settings(mouse, master, ui,
                                     LightbarConfig(low_pct=self.low_pct.value(), pads=dict(self._lights)),
-                                    self._collect_wol(), rx_settings.cur.log, self._collect_vpad())
+                                    self._collect_wol(), rx_settings.cur.log, self._collect_vpad(),
+                                    HapticsConfig(pads=dict(self._haptics)))
 
     def collect(self) -> ConsoleConfig:
         """-> the ConsoleConfig described by the Console mode tab."""
