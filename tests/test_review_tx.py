@@ -32,7 +32,7 @@ async def main():
     open(path, "wb").close()
     r = R.Rumble(0, Dev(), "hidraw", hidraw=(path, True))
     real = r._send_hidraw
-    def busy(small, large):
+    def busy(small, large, audio=False):
         raise BlockingIOError(errno.EAGAIN, "Resource temporarily unavailable")
     r._send_hidraw = busy
     r.set(100, 200)
@@ -49,7 +49,7 @@ async def main():
     r = R.Rumble(1, Dev(ff=True), "auto")           # zapas przez HID tylko w trybie auto (w "evdev" wybór z konfiguracji zostaje)
     check(r.methods == ["evdev"], "start: tylko evdev FF")
     r._open_hidraw = lambda given=None: (setattr(r, "fd", os.open(path2, os.O_RDWR)) or True)
-    def broken(small, large):
+    def broken(small, large, audio=False):
         raise OSError(errno.EIO, "Input/output error")
     r._send_hidraw = broken
     try:

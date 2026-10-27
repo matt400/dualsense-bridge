@@ -197,7 +197,7 @@ async def scenarios():
     assert common(reports(path)[-1])[0] & 0x03 == 0x03
     assert r.haptics_begin() and r.haptics and r.audio
     out = reports(path)
-    assert out[-1] == R.haptics_setup_report((out[-1][1] >> 4)) and common(out[-1])[0] == 0 and common(out[-1])[1] == 0x62
+    assert out[-1] == R.haptics_setup_report(out[-1][1] >> 4) and common(out[-1])[0] == 0 and common(out[-1])[1] == 0x62
     await asyncio.sleep(R.HAPTICS_RESEND_S + 0.03)
     out = reports(path)
     assert [common(x)[1] for x in out].count(0x62) == 2 and common(out[-1])[1] == 0x62 and crc_ok(out[-1]), "the setup report goes out twice"
