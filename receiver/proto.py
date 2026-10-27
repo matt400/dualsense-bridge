@@ -718,8 +718,9 @@ class SeqFilter:
 
         The keys are whatever the caller passed to :meth:`fresh`, hence the untyped argument of ``match``.
         """
-        for key in [k for k in self._seen if match(k)]:
-            del self._seen[key]
+        for key in list(self._seen):        # a snapshot: ``fresh`` may add a key from another thread meanwhile
+            if match(key):
+                self._seen.pop(key, None)
 
 
 def load_config(path: str | None, defaults: Collection[str] | None = None) -> dict[str, Any]:
@@ -749,13 +750,14 @@ def write_file(path: str, content: str | bytes) -> None:
     An interrupted write, a power loss, or a PC sleep / shutdown right after the write (master actions) will not leave an
     empty or truncated file. Without the fsync, ``os.replace`` could swap in a file whose data had not reached the disk yet.
     A failed write removes the temporary file. The new file keeps the permission bits of the one it replaces (POSIX): a
-    config file that holds the HMAC key and was made 0600 must not come back from a rewrite as 0644.
+    config file that holds the HMAC key and was made 0600 must not come back from a rewrite as 0644. The temporary name
+    carries the process and thread id, so two writers of the same file never share one temporary file.
 
     Args:
         path: The destination file.
         content: The text (written as UTF-8) or bytes to store.
     """
-    temp_path = path + ".tmp"
+    temp_path = f"{path}.{os.getpid()}.{threading.get_ident()}.tmp"
     try:
         mode: int | None = os.stat(path).st_mode & PERMISSION_BITS
     except OSError:

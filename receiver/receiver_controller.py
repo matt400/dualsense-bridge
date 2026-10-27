@@ -310,6 +310,7 @@ def _shutdown(slot_threads: list[threading.Thread], fb_thread: threading.Thread)
 
     S.stop.set()
     console_on = rx_console.is_on()
+    guard: threading.Timer | None = None
     if S.restart:            # a hung cleanup (pad driver, screen switching) must not block the restart
         guard = threading.Timer(RESTART_GUARD_S, _restart_now, (console_on, True))
         guard.daemon = True
@@ -329,6 +330,8 @@ def _shutdown(slot_threads: list[threading.Thread], fb_thread: threading.Thread)
     rx_dsu.close()
     rx_winapi.release_single_instance()
     rx_winapi.end_timer()
+    if guard is not None:       # the cleanup finished in time: the guard has nothing left to do
+        guard.cancel()
     if S.restart:               # ports, ViGEm and the instance lock are already released - the new process starts as from autostart
         _restart_now(console_on)
     if C.log_handle is not None:
