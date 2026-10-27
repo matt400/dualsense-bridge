@@ -44,6 +44,7 @@ import wave
 import zlib
 from collections.abc import Callable, Iterator
 from pathlib import Path
+from typing import Any
 
 RATE = 3000                              # haptics sample rate over Bluetooth, Hz
 FRAMES = 32                              # stereo frames per 0x32 report
@@ -700,42 +701,75 @@ def cmd_modes(s: Session) -> None:
     save_result(s.out, "modes", results)
 
 
-def measure_input(dev: object, secs: float) -> dict[str, object]:
-    """Read the pad's evdev node for ``secs`` and describe the intervals between SYN_REPORT events (kernel timestamps)."""
-    from evdev import ecodes
-    stamps: list[int] = []
-    end = time.monotonic() + secs
-    while time.monotonic() < end:
-        if not select.select([dev.fd], [], [], 0.2)[0]:  # type: ignore[attr-defined]
-            continue
-        stamps += [e.sec * 1_000_000_000 + e.usec * 1000 for e in dev.read()  # type: ignore[attr-defined]
-                   if e.type == ecodes.EV_SYN and e.code == ecodes.SYN_REPORT]
+def find_motion(info: PadInfo) -> str | None:
+    """The evdev node of the pad's motion sensors (same HID_UNIQ): the gyro noise makes it emit on every input report."""
+    import evdev
+    found = None
+    for path in evdev.list_devices():
+        dev = evdev.InputDevice(path)
+        if "Motion Sensors" in dev.name and (dev.uniq or "").lower() == info.uniq.lower():
+            found = path
+        dev.close()
+    return found
+
+
+def _describe_stamps(stamps: list[int], secs: float) -> dict[str, object]:
+    """Describe the intervals between event timestamps (ns): rate, percentiles and how many gaps were long."""
     gaps = [(b - a) / 1e6 for a, b in itertools.pairwise(stamps)]
     return {"events": len(stamps), "rate_hz": round(len(stamps) / secs, 1), **describe(gaps),
             "gaps_over_20ms": sum(g > GAP_WARN_MS[0] for g in gaps), "gaps_over_50ms": sum(g > GAP_WARN_MS[1] for g in gaps)}
 
 
+def measure_input(devs: dict[str, Any], secs: float) -> dict[str, dict[str, object]]:
+    """Read several evdev nodes at once for ``secs``; per node, describe the SYN_REPORT intervals (kernel timestamps)."""
+    from evdev import ecodes
+    stamps: dict[str, list[int]] = {name: [] for name in devs}
+    by_fd = {dev.fd: name for name, dev in devs.items()}
+    end = time.monotonic() + secs
+    while time.monotonic() < end:
+        for fd in select.select(list(by_fd), [], [], 0.2)[0]:
+            name = by_fd[fd]
+            stamps[name] += [e.sec * 1_000_000_000 + e.usec * 1000 for e in devs[name].read()
+                             if e.type == ecodes.EV_SYN and e.code == ecodes.SYN_REPORT]
+    return {name: _describe_stamps(st, secs) for name, st in stamps.items()}
+
+
+def _show_input(label: str, result: dict[str, dict[str, object]]) -> None:
+    """Print the per-node numbers of one jitter phase."""
+    for node, numbers in result.items():
+        print(f"  {label} [{node}]: {numbers}")
+
+
 def cmd_jitter(s: Session) -> None:
-    """Input interval jitter without and with a haptics stream; this number decides how aggressive P1 may be."""
+    """Input interval jitter without / with / without a haptics stream (A-B-A, to see run-to-run noise); decides how hard P1 may push."""
     import evdev
     if s.info.event is None:
         raise SystemExit("jitter needs the pad's evdev node (not available with --hidraw / --dry-run)")
-    dev = evdev.InputDevice(s.info.event)
+    devs: dict[str, Any] = {"pad": evdev.InputDevice(s.info.event)}
+    motion = find_motion(s.info)
+    if motion:
+        devs["motion"] = evdev.InputDevice(motion)
+    else:
+        print("note: no motion sensors node found, measuring the gamepad node only (it emits only when something changes)")
     secs = s.args.secs
     print("leave the pad on the table and do not touch it.")
     results: dict[str, object] = {}
-    print(f"phase A: {secs:.0f} s without a stream ...")
-    results["no_stream"] = measure_input(dev, secs)
-    print(f"  {results['no_stream']}")
-    wait(3.0)
-    prepare(s.pad, s.variant)
-    print(f"phase B: {secs:.0f} s with the 0x32 stream ({s.args.pace} pacing) ...")
-    bg = Background(s.pad, s.variant, tone_source(TONE_HZ, None), s.args.pace)
-    results["with_stream"] = measure_input(dev, secs)
-    results["stream"] = report_stats("stream", bg.finish())
-    print(f"  {results['with_stream']}")
-    dev.close()
-    save_result(s.out, "jitter", results)
+    for key, label, streaming in (("no_stream", "A: no stream", False), ("with_stream", "B: with the 0x32 stream", True),
+                                  ("no_stream_again", "A again: no stream", False)):
+        print(f"phase {label}, {secs:.0f} s ...")
+        bg = None
+        if streaming:
+            prepare(s.pad, s.variant)
+            bg = Background(s.pad, s.variant, tone_source(TONE_HZ, None), s.args.pace)
+        results[key] = measure_input(devs, secs)
+        if bg is not None:
+            results["stream"] = report_stats("stream", bg.finish())
+            s.pad.send_normal()
+        _show_input(key, results[key])  # type: ignore[arg-type]
+        wait(3.0)
+    for dev in devs.values():
+        dev.close()
+    save_result(s.out, "jitter_v2", results)
 
 
 def _burst_answer(s: Session, label: str) -> str:
