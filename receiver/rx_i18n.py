@@ -38,6 +38,7 @@ EN: Final[dict[str, str]] = {
         "(usbip-win2) and Windows adds a \"Wireless Controller\" sound device (the default audio output stays as it is).",
     "HAPTYKA GRY": "GAME HAPTICS",
     "Haptyka": "Haptics",
+    "Haptyka gry jest tylko dla pada master (Ustawienia → Master).": "Game haptics are for the master pad only (Settings → Master).",
     "Haptyka gry (HD haptics)": "Game haptics (HD haptics)",
     "Haptyka gry (HD haptics) na tym padzie": "Game haptics (HD haptics) on this pad",
     "Nadajnik tego pada jest w starszej wersji i nie przekaże haptyki (kliknij Aktualizuj).":

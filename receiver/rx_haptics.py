@@ -300,6 +300,7 @@ class Link:
             gain = self._gain()
             data = self._read() if self._dec is not None else None
             if gain is None:                        # off, master only, no capable sender: the audio is dropped, any stream ends
+                self._inject.clear()                # a test tone must not wait for the pad to be allowed later and play then
                 self._end()
             else:
                 if data:
@@ -338,7 +339,7 @@ class Link:
         frame = self._dec.frame_bytes
         w, r = self._w, self._r
         if w - r > RING_SAFE:
-            r = w - RING_BYTES // 2
+            r = w - RING_BYTES // 2 // frame * frame    # whole frames: a cut inside one would swap the channels for good
             self.overruns += 1
             self._dec.reset()
             self._pend[0].clear()
@@ -584,6 +585,9 @@ def test(i: int, gain: float | None = None) -> str | None:
         return _("Pad nie jest podłączony.")
     if not sender_haptics(i):
         return _("Nadajnik w starszej wersji (bez haptyki) - kliknij Aktualizuj.")
+    import rx_master
+    if not rx_master.allowed(i, "haptics"):     # the link would drop the tone: say so instead of "sent"
+        return _("Haptyka gry jest tylko dla pada master (Ustawienia → Master).")
     if gain is None:
         gain = rx_settings.cur.haptics.get(S.profile_key(i)).gain / 100
     link(rx_swap.route(i)).test(gain)           # the virtual slot whose packets go to physical pad i

@@ -235,5 +235,51 @@ check(H.restore_defaults(before) == [] and state["eConsole"] == "tv", "zmiana na
 check(rx_audio.is_controller_endpoint("Speakers (Wireless Controller)") and not rx_audio.is_controller_endpoint("TV"), "rozpoznanie endpointu pada")
 check(all("Wireless" not in n for _i, n in rx_audio.list_outputs()), "list_outputs ukrywa endpointy padów")
 
+# ---------- przycisk testu: pad bez uprawnień nie dostaje tonu ani "wysłano" ----------
+m = replace(rx_settings.cur.master, pad=A, only_master=("haptics",), when_absent="none")
+rx_settings.apply(replace(rx_settings.cur, master=m))
+S.sender_info[0] = S.sender_info[1] = (13, 3 | CAP_HAPTICS, 0)
+H.links[:] = []
+why = H.test(1)
+check(why is not None and "master" in why and not H.link(1)._inject, f"test haptyki: pad nie-master dostaje powód, nic nie czeka w kolejce ({why!r})")
+check(H.test(0) is None and H.link(0)._inject, "test haptyki: master dostaje ton")
+H.link(0)._inject.clear()
+# ton zakolejkowany, zanim zabroniono (zmiana ustawień w trakcie): kolejka jest czyszczona, ton nie gra "później"
+sent_pk.clear()
+lk3 = H.Link(1, send=lambda t, n, f, c: sent_pk.append((n, f)), clock=lambda: now[0])
+lk3._inject.extend([bytes([5]) * HAPT_CHUNK] * 8)
+for _ in range(100):
+    now[0] += 0.005
+    lk3.step(now[0])
+check(not sent_pk and not lk3._inject, "pad bez uprawnień: zakolejkowany ton jest odrzucany, nie czeka na późniejsze uprawnienia")
+rx_settings.apply(replace(rx_settings.cur, master=replace(m, pad="")))
+for _ in range(100):
+    now[0] += 0.005
+    lk3.step(now[0])
+check(not sent_pk, "po przyznaniu uprawnień stary ton nie gra")
+
+# ---------- przepełnienie pierścienia: powrót na granicę ramki (6 kanałów = 12 B) ----------
+rx_settings.apply(replace(rx_settings.cur, haptics=rx_settings.HapticsConfig(pads={"*": rx_settings.PadHaptics(True, 100)})))
+sent_pk.clear()
+lk4 = H.Link(0, send=lambda t, n, f, c: sent_pk.append((n, f, c)), clock=lambda: now[0])
+roles6 = ["speakerLeft", "speakerRight", "hapticLeft", "hapticRight", "x", "y"]
+check(lk4.configure(6, 48000, 16, roles6) is None, "format 6 kanałów przyjęty")
+frame6 = 12
+a6 = array("h", [0]) * (6 * 4000)
+for k in range(4000):
+    a6[k * 6 + 2], a6[k * 6 + 3] = 12000, -12000       # kanały haptyki: stałe +/-; reszta cisza
+blob = a6.tobytes() * 12                                # > RING_SAFE: pisarz wyprzedził czytnika
+for off in range(0, len(blob) - 60000, 60000):
+    lk4.write(memoryview(blob)[off:off + 60000], 60000)
+assert (lk4._w - lk4._r) > H.RING_SAFE and lk4._w % frame6 == 0
+lk4.step(now[0])
+check(lk4.overruns == 1 and lk4._r % frame6 == 0, "przepełnienie: czytnik wraca na granicę ramki")
+for _ in range(60):
+    now[0] += 0.0107
+    lk4.step(now[0])
+rows = [c for _n, _f, c in sent_pk if c != H.ZERO_CHUNK]
+check(bool(rows) and all(0 < v < 128 for v in rows[-1][0::2]) and all(v >= 128 for v in rows[-1][1::2]),
+      "po przepełnieniu lewy kanał to nadal +, prawy -: kanały haptyki się nie zamieniły")
+
 print("FAILS:" if fails else "HAPTICS OK", fails or "")
 sys.exit(1 if fails else 0)
