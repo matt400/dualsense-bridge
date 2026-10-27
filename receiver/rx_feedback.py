@@ -364,6 +364,14 @@ def trigger_target(i: int) -> tuple[Any, ...]:
     return vals if sender_fx(i) else legacy_values(vals)
 
 
+def _has_effect(vals: Sequence[Any]) -> bool:
+    """Tell whether a trigger value sequence (ints, and raw ``bytes`` effects in trig3) holds anything but zeros.
+
+    A plain ``any(vals)`` would count every non-empty ``bytes`` as set, even an all-zero raw effect.
+    """
+    return any(any(v) if isinstance(v, bytes) else v for v in vals)
+
+
 def triggers_tick(i: int, now: float, send_trig: SendTriggers) -> None:
     """Trigger effects of the slot's profile.
 
@@ -377,7 +385,7 @@ def triggers_tick(i: int, now: float, send_trig: SendTriggers) -> None:
     if last is None or last[0] != vals:
         trig_sent[i] = (vals, now)
         send_trig(i, vals, TRIG_REPEAT)
-    elif any(vals) and now - last[1] >= TRIG_REFRESH_S:
+    elif _has_effect(vals) and now - last[1] >= TRIG_REFRESH_S:
         trig_sent[i] = (vals, now)
         send_trig(i, vals, 1)
 
@@ -390,7 +398,7 @@ def release_triggers(send_trig: SendTriggers) -> None:
     (sender_rumble) that releases the triggers when the PC refreshes stop (PC sleep / crash).
     """
     for i, last in enumerate(trig_sent):
-        if last is not None and any(last[0]):
+        if last is not None and _has_effect(last[0]):
             # trig3 (game effects) also releases trig2 - a v11 sender then forgets the game effects
             send_trig(i, TRIG2_OFF if len(last[0]) >= len(TRIG2_OFF) else (0, 0, 0, 0), TRIG_REPEAT)
             trig_sent[i] = None
