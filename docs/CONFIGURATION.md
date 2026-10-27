@@ -24,6 +24,9 @@ Most often changed:
 | `rt_priority` | sender | 10 | SCHED_FIFO with this priority, `0` = normal scheduler (requires root; also works on musl - postmarketOS, Alpine) |
 | `rumble` | sender | auto | rumble: `auto` (driver and HID report at once), `evdev`, `hidraw`, `off` |
 | `haptics_buffer_ms` | sender | 20 | HD haptics: jitter buffer in ms (10-200); bigger = safer on a bad link, more delay |
+| `speaker_buffer_ms` | sender | 30 | the pad's speaker (Bluetooth pad, needs libopus on the sender: `apt install libopus0` / `apk add opus`): jitter buffer in ms (20-200); bigger = fewer dropouts, more delay |
+| `speaker_volume` | sender | 100 | the pad's speaker volume (0-255) |
+| `speaker_opus_bytes` | sender | 80 | the speaker's Opus bytes per 10 ms frame (30-200; 80 = 64 kbit/s); bigger = better sound, more Bluetooth traffic |
 | `haptics_motors` | sender | haptics | when a game rumbles during haptics: `haptics` (motors ignored, logged once) or `rumble` (motors pause the haptics) |
 | `key` | both | "" | shared HMAC key: signed packets and replay protection ([SECURITY.md](SECURITY.md)) |
 | `dsu_bind` | receiver | 127.0.0.1 | DSU server address; `0.0.0.0` = emulator on another device |

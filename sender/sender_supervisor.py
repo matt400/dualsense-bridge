@@ -207,6 +207,12 @@ def dispatch_haptics(idx: int, frame: int, flags: int, data: memoryview) -> None
         c.on_haptics(frame, flags, data)
 
 
+def dispatch_speaker(idx: int, frame: int, flags: int, data: memoryview) -> None:
+    """Route 10 ms of the game's sound from the PC to the speaker of the pad in slot idx (ignored if no pad is there)."""
+    if (c := state.ctrl_by_idx(idx)) is not None:
+        c.on_speaker(frame, flags, data)
+
+
 def grab(dev: InputDevice, label: str) -> None:
     """Take exclusive access to an evdev device, so the phone's own system stops reacting to the pad's input."""
     try:

@@ -15,6 +15,7 @@ from evdev import ecodes as ec
 
 import sender_migrate
 from proto import PERMISSION_BITS, clamp, load_config
+from sender_opus import OPUS_BYTES_MAX, OPUS_BYTES_MIN
 
 GROUP_OTHER_BITS: Final = 0o077         # chmod bits of "group" and "other"
 
@@ -54,6 +55,9 @@ DEFAULTS: dict[str, Any] = {
     "gestures": True,              # 2 fingers = scroll, a 2-finger tap = right mouse button
     "rumble": "auto",              # rumble: auto (evdev driver and HID report over hidraw together) | evdev | hidraw | off
     "haptics_buffer_ms": 20,       # HD haptics from the game (Bluetooth pad): jitter buffer before the pad [ms]; more = fewer dropouts
+    "speaker_buffer_ms": 30,       # the pad's speaker (Bluetooth pad, needs libopus): jitter buffer [ms]; more = fewer dropouts
+    "speaker_volume": 100,         # the pad's speaker volume, 0-255
+    "speaker_opus_bytes": 80,      # Opus bytes per 10 ms frame (80 = 64 kbit/s); more = better sound, more Bluetooth traffic
     "haptics_motors": "haptics",   # a game's motor rumble while haptics play: haptics (haptics win, the motors wait) | rumble (rumble wins)
     "idle_off_min": 15,            # switch the pad off (Bluetooth disconnect) after this many minutes of no use; 0 = never
     "rt_priority": 10,             # SCHED_FIFO with this priority (1-99); 0 = normal scheduler; needs doas
@@ -85,6 +89,8 @@ DEVICE_READ_ERRORS: Final = (OSError, AttributeError, TypeError, ValueError, Key
 US_PER_S: Final = 1_000_000             # evdev event times are seconds + microseconds
 RUMBLE_MODES: Final = ("auto", "evdev", "hidraw", "off")
 HAPTICS_MOTORS_MODES: Final = ("haptics", "rumble")
+BYTE_MAX: Final = 255
+SPEAKER_BUFFER_MIN_MS, SPEAKER_BUFFER_MAX_MS = 20, 200    # at least two 10 ms frames; more than 200 ms is a noticeable lip-sync delay
 HAPTICS_BUFFER_MIN_MS, HAPTICS_BUFFER_MAX_MS = 10, 200     # one chunk is 10.7 ms; a longer buffer than 200 ms is no longer "feel"
 RT_PRIORITY_MAX: Final = 99             # the highest SCHED_FIFO priority
 PORT_MAX: Final = 65535                 # the highest UDP port
@@ -239,6 +245,9 @@ def _apply_runtime(cfg: dict[str, Any]) -> None:
     motors = str(cfg["haptics_motors"]).strip().lower()
     C.HAPTICS_MOTORS = motors if motors in HAPTICS_MOTORS_MODES else "haptics"
     C.HAPTICS_BUFFER_MS = float(clamp(float(cfg["haptics_buffer_ms"]), HAPTICS_BUFFER_MIN_MS, HAPTICS_BUFFER_MAX_MS))
+    C.SPEAKER_BUFFER_MS = float(clamp(float(cfg["speaker_buffer_ms"]), SPEAKER_BUFFER_MIN_MS, SPEAKER_BUFFER_MAX_MS))
+    C.SPEAKER_VOLUME = max(0, min(BYTE_MAX, int(cfg["speaker_volume"])))
+    C.SPEAKER_OPUS_BYTES = max(OPUS_BYTES_MIN, min(OPUS_BYTES_MAX, int(cfg["speaker_opus_bytes"])))
     C.IDLE_OFF_S = max(0.0, float(cfg["idle_off_min"])) * SECONDS_PER_MINUTE
     C.RT_PRIORITY = max(0, min(RT_PRIORITY_MAX, int(cfg["rt_priority"])))
     C.LOW_LATENCY, C.CPU_LATENCY_US = bool(cfg["low_latency"]), max(0, int(cfg["cpu_latency_us"]))
