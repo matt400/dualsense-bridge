@@ -111,6 +111,31 @@ async def t_led():
 asyncio.run(t_led())
 
 
+# ---------- 4b. lightbar: going back to the old colour while a write runs is not skipped ----------
+async def t_led_back():
+    led = os.path.join(TMP, "led_back"); os.mkdir(led)
+    for n, t in (("max_brightness", "255"), ("multi_intensity", ""), ("brightness", "")):
+        open(os.path.join(led, n), "w").write(t)
+    c = sender_ctrl.Ctrl(0, "aa:bb:cc:dd:ee:03", None, None, None)
+    c.led = led
+    c._led_done((0, 0, 255), None)                       # the pad is blue
+    gate, started, written = threading.Event(), threading.Event(), []
+    real = c._led_io
+    def slow(l, rgb):
+        written.append(rgb)
+        started.set(); gate.wait(2)
+        return real(l, rgb)
+    c._led_io = slow
+    c.apply_feedback(0, 0, 255, 0, 0)                    # red is being written
+    await asyncio.sleep(0.05)
+    c.apply_feedback(0, 0, 0, 0, 255)                    # the PC wants blue again, before red has finished
+    gate.set()
+    await asyncio.sleep(0.2)
+    check(written == [(255, 0, 0), (0, 0, 255)] and c.led_color == (0, 0, 255),
+          f"lightbar: back to the old colour during a write is written ({written}, {c.led_color})")
+asyncio.run(t_led_back())
+
+
 # ---------- 5. rumble: the hidraw fallback is opened in a worker thread ----------
 class FFBad:
     path = "/dev/input/event0"

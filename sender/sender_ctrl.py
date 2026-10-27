@@ -458,7 +458,10 @@ class Ctrl:
             return
         if self.rumble is not None:
             self.rumble.set(small, large)
-        if self.led and (r, g, b) != self.led_color:
+        # While a write runs, led_color is the previous colour; compare with the one on its way, or a return to the old
+        # colour would be skipped and the pad would end up on the in-flight one.
+        current = self._led_want if self._led_busy else self.led_color
+        if self.led and (r, g, b) != current:
             self._write_led((r, g, b))
 
     def led_rgb(self) -> Sequence[int] | None:
