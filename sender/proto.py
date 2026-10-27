@@ -65,6 +65,11 @@ unknown length, so a variant only goes to a side that is known to understand it)
                          game effect is valid). On every trigger the profile wins (a mode other than TFX_OFF), otherwise the game's effect;
                          when the game sets effects, the receiver switches game rumble on the triggers off in trig2. Only to a sender
                          with CAP_TRIG_RAW (v11+); an older one gets trig2 / trig (the profile only)
+  hapt   (type 10) "IB64s" PC -> sender (idx = pad slot): a chunk of the game's HD haptics for a Bluetooth pad (v13+) - the number of
+                         the chunk's first frame (3 kHz frames, wraps at 2**32: loss / reorder / drift detection), HAPT_* flags,
+                         HAPT_FRAMES = 32 stereo frames (10.667 ms) of signed 8-bit samples, the left grip first. Not repeated (audio
+                         tolerates a loss, a repeat only adds latency). Only to a sender with CAP_HAPTICS; an older one rejects the
+                         unknown length
 The phone's Bluetooth driven from the window (v10+; a phone with no screen). The sender announces the support itself - with a btstate
 packet (idx 255)
 to the receiver from which scfg arrived; the receiver sends btcmd only after btstate (an older sender would reject the length):
@@ -171,21 +176,28 @@ T_BUILD3 = 0x30D                                                    # build2 + t
 T_BTDEV, T_BTSTATE, T_BTCMD = 0x109, 0x10C, 0x20A                                                 # Bluetooth (v10+)
 T_BTCTRL = 0x209                                                    # the sender's Bluetooth controllers (the choice from the window)
 T_BTLINK = 0x30C                                                    # the radio link of a connected pad: RSSI, link quality
+T_HAPT = 0x30A                                                      # a chunk of HD haptics for the pad (PC -> sender, v13+)
 WIRE: Final[dict[int, int]] = {
     T_STATE2: T_STATE, T_PONG2: T_PONG, T_SCFG: T_CMD, T_CALRES: T_INFO, T_BUILD2: T_BUILD, T_TRIG2: T_TRIG,
     T_BTDEV: T_IDENT, T_BTSTATE: T_VERSION, T_BTCMD: T_CMD, T_BTCTRL: T_IDENT, T_TRIG3: T_TRIG,
-    T_BUILD3: T_BUILD, T_BTLINK: T_VERSION,
+    T_BUILD3: T_BUILD, T_BTLINK: T_VERSION, T_HAPT: T_CMD,
 }
 FRESH_EXEMPT = frozenset({T_PING})
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Capabilities and limits announced in the version packet, trigger effects.
 # ---------------------------------------------------------------------------------------------------------------------
-SENDER_VERSION: Final = 12
+SENDER_VERSION: Final = 13
 RUMBLE_EVDEV, RUMBLE_HIDRAW, CAP_TRIGGERS = 1, 2, 4     # bits of the version packet (CAP_TRIGGERS: trigger resistance works)
 CAP_TRIG_FX: Final = 8                                  # a bit of the version packet: the sender knows trig2 (click, vibration)
 CAP_CALIB: Final = 16                                   # a bit of the version packet: CMD_GYRO_CAL and CMD_RAW_STICKS (v9+)
 CAP_TRIG_RAW: Final = 32                                # a bit of the version packet: the sender knows trig3 (effects from the game)
+CAP_HAPTICS: Final = 64                                 # a bit of the version packet: the sender plays hapt chunks (v13+)
+HAPT_RATE: Final = 3000                                 # HD haptics: the pad's audio-haptics sample rate [Hz] ...
+HAPT_FRAMES: Final = 32                                 # ... one chunk = 32 stereo frames = 10.667 ms ...
+HAPT_CHUNK: Final = 2 * HAPT_FRAMES                     # ... = 64 B of signed 8-bit samples, the left grip first
+HAPT_DATA_AT: Final = 5                                 # offset of the samples in the hapt body (after the u32 counter and the flags)
+HAPT_START, HAPT_END = 1, 2                             # hapt flags: the first chunk of a stream / the last one
 LAT_NONE: Final = 0xFFFF                                # the delay field in state2: no measurement (a repeat, no data)
 TRIG_START_MAX, TRIG_FORCE_MAX = 9, 8                   # trigger resistance: the start zone 0-9 (every 10 %), strength 1-8
 TFX_OFF, TFX_RES, TFX_CLICK, TFX_VIB = range(4)         # trigger effect mode (trig2 packet)
@@ -296,6 +308,7 @@ BODY: Final[dict[int, struct.Struct]] = {
     T_BTDEV: struct.Struct("!HBB6sbB32s"),      # round, number, how many, MAC, RSSI, BTD_*, name
     T_BTCTRL: struct.Struct("!HBBBB40s"),       # round, number, how many, BTC_*, N of hciN, device name
     T_BTLINK: struct.Struct("!6sbBBB"),         # MAC, RSSI [dBm], link quality 0-255, BTL_*, N of hciN
+    T_HAPT: struct.Struct(f"!IB{HAPT_CHUNK}s"),  # the first frame's number (3 kHz), HAPT_* flags, HAPT_FRAMES stereo frames (s8)
 }
 STATE_FIELDS: Final = 17                        # the state fields in state / state2 (without the latency measurement)
 BODY_LEN: Final = {ptype: body.size for ptype, body in BODY.items()}

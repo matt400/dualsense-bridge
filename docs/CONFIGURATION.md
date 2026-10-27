@@ -23,6 +23,8 @@ Most often changed:
 | `cpu_latency_us` | sender | 50 | `low_latency`: max. CPU wake-up time in µs |
 | `rt_priority` | sender | 10 | SCHED_FIFO with this priority, `0` = normal scheduler (requires root; also works on musl - postmarketOS, Alpine) |
 | `rumble` | sender | auto | rumble: `auto` (driver and HID report at once), `evdev`, `hidraw`, `off` |
+| `haptics_buffer_ms` | sender | 20 | HD haptics: jitter buffer in ms (10-200); bigger = safer on a bad link, more delay |
+| `haptics_motors` | sender | haptics | when a game rumbles during haptics: `haptics` (motors ignored, logged once) or `rumble` (motors pause the haptics) |
 | `key` | both | "" | shared HMAC key: signed packets and replay protection ([SECURITY.md](SECURITY.md)) |
 | `dsu_bind` | receiver | 127.0.0.1 | DSU server address; `0.0.0.0` = emulator on another device |
 | `hm_min_age_days` | receiver | 7 | a new HIDMaestro release waits this many days after publishing; `0` = immediately |

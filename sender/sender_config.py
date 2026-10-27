@@ -14,7 +14,7 @@ from typing import Any, Final
 from evdev import ecodes as ec
 
 import sender_migrate
-from proto import PERMISSION_BITS, load_config
+from proto import PERMISSION_BITS, clamp, load_config
 
 GROUP_OTHER_BITS: Final = 0o077         # chmod bits of "group" and "other"
 
@@ -53,6 +53,8 @@ DEFAULTS: dict[str, Any] = {
     "touch_start_move": 5,         # mouse: the cursor only starts moving after this much travel (no jitter on a tap)
     "gestures": True,              # 2 fingers = scroll, a 2-finger tap = right mouse button
     "rumble": "auto",              # rumble: auto (evdev driver and HID report over hidraw together) | evdev | hidraw | off
+    "haptics_buffer_ms": 20,       # HD haptics from the game (Bluetooth pad): jitter buffer before the pad [ms]; more = fewer dropouts
+    "haptics_motors": "haptics",   # a game's motor rumble while haptics play: haptics (haptics win, the motors wait) | rumble (rumble wins)
     "idle_off_min": 15,            # switch the pad off (Bluetooth disconnect) after this many minutes of no use; 0 = never
     "rt_priority": 10,             # SCHED_FIFO with this priority (1-99); 0 = normal scheduler; needs doas
     "low_latency": True,           # CPU without deep sleep + the fastest cores (sender_rt); needs doas
@@ -82,6 +84,8 @@ DEVICE_READ_ERRORS: Final = (OSError, AttributeError, TypeError, ValueError, Key
 
 US_PER_S: Final = 1_000_000             # evdev event times are seconds + microseconds
 RUMBLE_MODES: Final = ("auto", "evdev", "hidraw", "off")
+HAPTICS_MOTORS_MODES: Final = ("haptics", "rumble")
+HAPTICS_BUFFER_MIN_MS, HAPTICS_BUFFER_MAX_MS = 10, 200     # one chunk is 10.7 ms; a longer buffer than 200 ms is no longer "feel"
 RT_PRIORITY_MAX: Final = 99             # the highest SCHED_FIFO priority
 PORT_MAX: Final = 65535                 # the highest UDP port
 SECONDS_PER_MINUTE: Final = 60
@@ -229,9 +233,12 @@ def _apply_touch(cfg: dict[str, Any]) -> None:
 
 
 def _apply_runtime(cfg: dict[str, Any]) -> None:
-    """Rumble mode, idle power-off, real-time scheduling and statistics."""
+    """Rumble mode, haptics, idle power-off, real-time scheduling and statistics."""
     mode = str(cfg["rumble"]).strip().lower()           # "Auto" in the file is the same as "auto"
     C.RUMBLE = mode if mode in RUMBLE_MODES else "auto"
+    motors = str(cfg["haptics_motors"]).strip().lower()
+    C.HAPTICS_MOTORS = motors if motors in HAPTICS_MOTORS_MODES else "haptics"
+    C.HAPTICS_BUFFER_MS = float(clamp(float(cfg["haptics_buffer_ms"]), HAPTICS_BUFFER_MIN_MS, HAPTICS_BUFFER_MAX_MS))
     C.IDLE_OFF_S = max(0.0, float(cfg["idle_off_min"])) * SECONDS_PER_MINUTE
     C.RT_PRIORITY = max(0, min(RT_PRIORITY_MAX, int(cfg["rt_priority"])))
     C.LOW_LATENCY, C.CPU_LATENCY_US = bool(cfg["low_latency"]), max(0, int(cfg["cpu_latency_us"]))

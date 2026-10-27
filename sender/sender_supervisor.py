@@ -201,6 +201,12 @@ def dispatch_triggers(idx: int, vals: Sequence[Any]) -> None:
         c.set_triggers(vals)
 
 
+def dispatch_haptics(idx: int, frame: int, flags: int, data: memoryview) -> None:
+    """Route a chunk of the game's HD haptics from the PC to the pad in slot idx (ignored if no pad is there)."""
+    if (c := state.ctrl_by_idx(idx)) is not None:
+        c.on_haptics(frame, flags, data)
+
+
 def grab(dev: InputDevice, label: str) -> None:
     """Take exclusive access to an evdev device, so the phone's own system stops reacting to the pad's input."""
     try:
@@ -318,7 +324,7 @@ async def _open_rumble(c: Ctrl) -> Rumble:
     loops of every other pad. The thread is shielded: if the pad disappears (the task is cancelled) while it is still
     opening, the finished backend is closed when it arrives instead of leaking its hidraw descriptor.
     """
-    fut = asyncio.ensure_future(asyncio.to_thread(Rumble, c.idx, c.pad_dev, C.RUMBLE))
+    fut = asyncio.ensure_future(asyncio.to_thread(Rumble, c.idx, c.pad_dev, C.RUMBLE, haptics_motors=C.HAPTICS_MOTORS))
     try:
         return await asyncio.shield(fut)
     except asyncio.CancelledError:
