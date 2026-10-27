@@ -37,6 +37,8 @@
 # touch_start_move = 5   # mouse: the cursor only starts moving after this much travel (no jitter on a tap)
 # gestures = true   # 2 fingers = scrolling, a 2-finger tap = the right mouse button
 # rumble = "auto"   # rumble: auto (the evdev driver and a HID report over hidraw at once) | evdev | hidraw | off
+# haptics_buffer_ms = 20   # HD haptics from the game (Bluetooth pad): jitter buffer before the pad [ms], 10-200; more = fewer dropouts, more delay
+# haptics_motors = "haptics"   # a game's motor rumble while haptics play: haptics (haptics win, the motors wait) | rumble (rumble wins, haptics pause)
 # idle_off_min = 15   # switch the pad off (disconnect Bluetooth) after this many idle minutes; 0 = never
 # rt_priority = 10   # SCHED_FIFO with this priority (1-99); 0 = the normal scheduler; needs doas
 # low_latency = true   # no deep CPU sleep + the fastest cores (sender_rt); needs doas

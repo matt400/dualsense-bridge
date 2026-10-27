@@ -15,11 +15,12 @@ from evdev import InputDevice, InputEvent
 
 import sender_net as net
 import sender_state as state
-from proto import (CAP_CALIB, IDENT_LEN, KEY_BIT, LAT_NONE, MOUSE_TAP_ID_MAX, MOUSE_TAP_ID_SHIFT, RAW_STICKS_MAX_S,
+from proto import (CAP_CALIB, CAP_HAPTICS, IDENT_LEN, KEY_BIT, LAT_NONE, MOUSE_TAP_ID_MAX, MOUSE_TAP_ID_SHIFT, RAW_STICKS_MAX_S,
                    SENDER_VERSION, T_CLICK, T_IDENT, T_MOUSE, T_STATE, T_STATE2, T_TOUCH, T_VERSION, TRIG2_OFF, UINT32_MASK,
                    WHY_OFF, clamp, trig2_from_legacy)
 from sender_config import (AXIS_MAX, BURST_DELAYS, C, DEVICE_READ_ERRORS, HAT_AXES, IDLE_TP, L2_AXIS, NEUTRAL_PAD, PAD_ABS,
                            R2_AXIS, STICK_AXES, STICK_CENTER, US_PER_S)
+from sender_haptics import HapticsStream
 
 if TYPE_CHECKING:
     from sender_rumble import Rumble
@@ -101,6 +102,7 @@ class Ctrl:
         motion_dev: The evdev device of the motion sensor (None until attached).
         touch_dev: The evdev device of the touchpad (None until attached).
         rumble: The rumble backend (set in run_ctrl), or None.
+        haptics: The HD haptics stream of this pad (created by the first chunk from the PC), or None.
         extra: The tasks of the motion / touchpad streams (attached and detached independently of the pad).
     """
 
@@ -120,6 +122,7 @@ class Ctrl:
         self.last_key: tuple[int, ...] | None = None
         self.pending = False
         self.rumble: Rumble | None = None
+        self.haptics: HapticsStream | None = None
         self.led: str | None = None
         self.led_color: tuple[int, int, int] | None = None
         self._led_max: str | None = None          # max_brightness of the LED, read once (it never changes)
@@ -513,6 +516,23 @@ class Ctrl:
         if self.rumble is not None:
             self.rumble.set_triggers(self.triggers)
 
+    def on_haptics(self, frame: int, flags: int, data: memoryview) -> None:
+        """Take a chunk of the game's HD haptics from the PC; the first one starts the pad's stream.
+
+        Only a Bluetooth pad with a HID report can play it (the CAP_HAPTICS bit the receiver saw in the version packet).
+
+        Args:
+            frame: The number of the chunk's first frame (3 kHz frames).
+            flags: HAPT_START / HAPT_END.
+            data: The samples (signed 8-bit stereo); copied by the stream.
+        """
+        r = self.rumble
+        if r is None or not r.bits & CAP_HAPTICS or self.closing:
+            return
+        if self.haptics is None or self.haptics.rumble is not r:
+            self.haptics = HapticsStream(self.idx, r, C.HAPTICS_BUFFER_MS)
+        self.haptics.feed(frame, flags, data)
+
     def set_raw_sticks(self, secs: int) -> None:
         """Run the drift measurement from the window: sticks without the sender's deadzone for ``secs`` seconds.
 
@@ -545,7 +565,10 @@ class Ctrl:
                 setattr(self, name, None)
 
     def stop_feedback(self) -> None:
-        """Close the rumble backend (which also stops the motors) and drop it."""
+        """Close the rumble backend (which also stops the motors) and drop it; a running haptics stream ends first."""
+        if self.haptics is not None:
+            self.haptics.close()
+            self.haptics = None
         if self.rumble is not None:
             self.rumble.close()
             self.rumble = None

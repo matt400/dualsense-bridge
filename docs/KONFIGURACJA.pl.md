@@ -23,6 +23,8 @@ Najczęściej zmieniane:
 | `cpu_latency_us` | sender | 50 | `low_latency`: maks. czas wybudzenia procesora w µs |
 | `rt_priority` | sender | 10 | SCHED_FIFO z tym priorytetem, `0` = zwykły planista (wymaga roota; działa też na musl - postmarketOS, Alpine) |
 | `rumble` | sender | auto | wibracja: `auto` (sterownik i raport HID naraz), `evdev`, `hidraw`, `off` |
+| `haptics_buffer_ms` | sender | 20 | haptyka HD: bufor jittera w ms (10-200); większy = pewniej przy słabym łączu, większe opóźnienie |
+| `haptics_motors` | sender | haptics | gdy gra wibruje podczas haptyki: `haptics` (silniki ignorowane, log raz) lub `rumble` (silniki wstrzymują haptykę) |
 | `key` | oba | "" | wspólny klucz HMAC: podpisane pakiety i ochrona przed replay ([BEZPIECZENSTWO.pl.md](BEZPIECZENSTWO.pl.md)) |
 | `dsu_bind` | receiver | 127.0.0.1 | adres serwera DSU; `0.0.0.0` = emulator na innym urządzeniu |
 | `hm_min_age_days` | receiver | 7 | nowe wydanie HIDMaestro czeka tyle dni po publikacji; `0` = od razu |

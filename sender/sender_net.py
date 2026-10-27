@@ -6,6 +6,7 @@ import collections
 import contextlib
 import errno
 import socket
+import struct
 import time
 from collections.abc import Callable
 from typing import Any, Final
@@ -13,12 +14,14 @@ from typing import Any, Final
 import sender_config
 import sender_events as events
 import sender_state as state
-from proto import (BODY, E_NET_DOWN, E_NO_RECEIVER, NS_PER_MS, RTT_NONE, SCFG_BATT, UINT32_MASK, Codec, EpochClock, SeqFilter,
-                   T_BTCMD, T_CMD, T_FB, T_PING, T_PONG, T_PONG2, T_SCFG, T_TRIG, T_TRIG2, T_TRIG3)
+from proto import (BODY, E_NET_DOWN, E_NO_RECEIVER, HAPT_CHUNK, HAPT_DATA_AT, NS_PER_MS, RTT_NONE, SCFG_BATT, UINT32_MASK, Codec,
+                   EpochClock, SeqFilter, T_BTCMD, T_CMD, T_FB, T_HAPT, T_PING, T_PONG, T_PONG2, T_SCFG, T_TRIG, T_TRIG2, T_TRIG3)
 from sender_config import C
 
 # the packet header is 4 bytes (see proto.HDR); the body of every received packet is unpacked right after it
 HEADER_LEN: Final = 4
+HAPT_HEAD: Final = struct.Struct("!IB")     # the hapt body before the samples: the first frame's number, flags
+HAPT_AT: Final = HEADER_LEN + HAPT_DATA_AT   # where the samples of a hapt packet start
 RECV_SIZE: Final = 256                # larger than any packet the receiver sends to the sender
 NS_PER_US: Final = 1000
 TOS_DSCP_EF: Final = 0xB8             # DSCP "expedited forwarding" in the IP TOS byte
@@ -53,6 +56,7 @@ fb_filter = SeqFilter(1.0)            # with a time window: a receiver restart (
 on_feedback: Callable[[int, tuple[int, int, int, int, int]], None] | None = None   # (idx, (small, large, r, g, b)); set in main
 on_command: Callable[..., None] | None = None       # callback(idx, cmd, arg) set in main
 on_triggers: Callable[[int, tuple[Any, ...]], None] | None = None   # callback(idx, trig2 values (12) or trig (4)) set in main
+on_haptics: Callable[[int, int, int, memoryview], None] | None = None   # callback(idx, first frame, HAPT_* flags, samples) set in main
 on_scfg: Callable[..., None] | None = None          # callback(flags, mac, broadcast, button, hold ms) set in main
 on_bt: Callable[..., None] | None = None            # callback(BT_* operation, argument, MAC 6 B) set in main (sender_bt)
 scfg_t = 0.0                          # when the scfg packet arrived - the receiver knows build2 and events
@@ -255,7 +259,7 @@ def _on_scfg(sq: int, data: bytes) -> None:
 
 
 def _on_control(t: int, idx: int, sq: int, data: bytes) -> None:
-    """Handle feedback, commands, trigger settings and Bluetooth requests.
+    """Handle feedback, commands, trigger settings, haptics chunks and Bluetooth requests.
 
     Each stream passes through its own SeqFilter key, so UDP duplicates (the receiver repeats important packets) and
     old reordered packets are dropped without blocking the other streams.
@@ -272,6 +276,9 @@ def _on_control(t: int, idx: int, sq: int, data: bytes) -> None:
             on_triggers(idx, BODY[t].unpack_from(data, HEADER_LEN))
     elif t == T_BTCMD and fb_filter.fresh(("bt",), sq, now) and on_bt is not None:   # phone Bluetooth from the window (v10+)
         on_bt(*BODY[T_BTCMD].unpack_from(data, HEADER_LEN))
+    elif t == T_HAPT and fb_filter.fresh(("hapt", idx), sq, now) and on_haptics is not None:   # HD haptics (v13+): no copy of the samples
+        frame, flags = HAPT_HEAD.unpack_from(data, HEADER_LEN)
+        on_haptics(idx, frame, flags, memoryview(data)[HAPT_AT:HAPT_AT + HAPT_CHUNK])
 
 
 def _dispatch(t: int, idx: int, sq: int, data: bytes) -> None:
