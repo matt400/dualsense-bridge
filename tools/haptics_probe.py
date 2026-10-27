@@ -19,7 +19,7 @@ Report 0x32 as used here (142 B, from community notes, UNVERIFIED - this script 
     0     0x32
     1     sequence number in the high nibble
     2-4   0x91 0x07 0xFE         control sub-packet (pid 0x11 | "sized" bit, length 7, flags)
-    5-9   queue depth, 16
+    5-9   queue depth: 16 in all five bytes (16,0,0,0,0 gave no vibration on a real pad)
     10    report counter
     11-12 0x92 0x40              haptics sub-packet (pid 0x12 | "sized" bit, length 64)
     13-76 32 stereo frames of 8-bit samples at 3 kHz (10.667 ms)
@@ -132,17 +132,17 @@ class Variant:
     note: str
     signed: bool = True                  # samples are signed 8-bit (False: unsigned, silence = 0x80)
     seq: str = "shared"                  # "shared": counter shared with 0x31 reports, "zero": nibble always 0
-    depth: bytes = bytes([16, 0, 0, 0, 0])
+    depth: bytes = bytes([16] * 5)       # confirmed on a real pad: 16,0,0,0,0 is silent, five times 16 works
     sized: bool = True                   # sub-packet header has the "sized" bit (0x91 / 0x92 instead of 0x11 / 0x12)
     lr: str = "both"                     # "both" | "left" | "right": which channel carries the signal
     setup: bool = True                   # send the 0x31 setup report first
 
 
 VARIANTS = [
-    Variant("baseline", "layout from the community notes: signed samples, shared sequence, depth 16,0,0,0,0"),
+    Variant("baseline", "signed samples, shared sequence, queue depth 16 x5 (the layout that worked on the real pad)"),
     Variant("unsigned", "unsigned 8-bit samples (silence = 0x80)", signed=False),
     Variant("seq-zero", "sequence nibble of 0x32 always 0", seq="zero"),
-    Variant("depth-x5", "queue depth bytes 5-9 all 16", depth=bytes([16] * 5)),
+    Variant("depth-16-0", "queue depth 16,0,0,0,0 (silent on the real pad, kept as a control)", depth=bytes([16, 0, 0, 0, 0])),
     Variant("no-sized-bit", "sub-packet headers 0x11 / 0x12 without the sized bit", sized=False),
     Variant("left-only", "signal on the first sample of each frame only", lr="left"),
     Variant("right-only", "signal on the second sample of each frame only", lr="right"),
