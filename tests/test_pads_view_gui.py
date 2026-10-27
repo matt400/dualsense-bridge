@@ -88,13 +88,13 @@ ok("zwijanie: pasek z numerami padów, klik wybiera pad, stan zapamiętany")
 win.show(); pump(100)
 win.open_settings(); dlg = win.settings_dlg; pump()
 tabs = dlg.tabs
-assert tabs.count() == 9 and tabs.tabText(5) == "Pady"
+assert tabs.count() == 10 and tabs.tabText(6) == "Pady"
 btns = tabs._buttons
 assert len({b.x() for b in btns}) == 1 and all(a.y() < b.y() for a, b in zip(btns, btns[1:])), "zakładki jedna pod drugą po lewej"
 assert btns[0].x() < tabs._stack.x(), "zakładki po lewej stronie treści"
 assert all(not b.text().startswith(" ") and b.text() for b in btns)
-tabs.setCurrentIndex(5); pump()
-assert tabs.currentIndex() == 5 and btns[5].isChecked() and not btns[0].isChecked()
+tabs.setCurrentIndex(6); pump()
+assert tabs.currentIndex() == 6 and btns[6].isChecked() and not btns[0].isChecked()
 assert dlg.size().width() > 860 or dlg.minimumWidth() >= 720, "okno ustawień szersze niż wcześniej"
 ui(pads_mode="dynamic", pads_count=2); dlg.reload(); pump()
 assert dlg.pads_mode.currentData() == "dynamic" and not dlg.pads_count_row.isVisibleTo(dlg)

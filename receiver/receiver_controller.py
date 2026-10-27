@@ -7,7 +7,7 @@ Files: proto.py (shared), rx_config.py, rx_state.py, rx_buttons.py (remap + rema
        rx_shape.py (deadzones, curves, gyro), rx_hotkeys.py (PS shortcuts), rx_games.py (profile per game),
        rx_gyro.py (gyro as a mouse), rx_gstick.py + rx_gstick_io.py (pad tilt as a stick),
        rx_feedback.py (rumble, lightbar, confirmations),
-       rx_winapi.py, rx_mouse.py, rx_report.py, rx_net.py, rx_dsu.py, rx_ds4.py,
+       rx_winapi.py, rx_mouse.py, rx_report.py, rx_net.py, rx_dsu.py, rx_ds4.py, rx_haptics.py (game HD haptics),
        rx_console.py + rx_audio.py (console mode: monitor / TV, console.json),
        rx_settings.py (settings.json: mouse, master pad), rx_master.py (master pad: permissions, PS + button),
        window: rx_qt.py (window, tray), rx_qt_sidebar.py (the side menu), rx_qt_diag.py + rx_diag.py (the Diagnostics tab and its data),
@@ -199,6 +199,7 @@ def _init_modules() -> None:
     import rx_ds4
     import rx_dsu
     import rx_gstick_io
+    import rx_haptics
     import rx_hotkeys
     import rx_i18n
     import rx_master
@@ -218,6 +219,7 @@ def _init_modules() -> None:
     rx_master.init(C.NUM_PADS)
     rx_testmode.init(C.NUM_PADS)
     rx_ds4.init()
+    rx_haptics.init()
     rx_gstick_io.runner.init()
     rx_net.init()
     rx_dsu.start()
@@ -304,6 +306,7 @@ def _shutdown(slot_threads: list[threading.Thread], fb_thread: threading.Thread)
     import rx_console
     import rx_dsu
     import rx_feedback
+    import rx_haptics
     import rx_net
     import rx_state as S
     import rx_winapi
@@ -318,6 +321,7 @@ def _shutdown(slot_threads: list[threading.Thread], fb_thread: threading.Thread)
     rx_feedback.fb_event.set()          # the feedback thread ends soon - afterwards the trigger effects would not come back
     fb_thread.join(1.0)
     rx_feedback.release_triggers(rx_net.send_triggers)   # the pad must not stay with a hard trigger after exit
+    rx_haptics.stop_all()               # ends a running haptics stream (HAPT_END) before the socket closes
     for i in range(C.NUM_PADS):
         S.want[i].clear()
         rx_net.clear_slot(i)

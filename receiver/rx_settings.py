@@ -8,6 +8,7 @@
   wol       Wake-on-LAN from the pad (PS + button while the receiver is silent) - sent to the sender (the scfg packet)
   log       the event log in the window: level, line limit, events from the sender
   vpad      virtual pads: the backend (HIDMaestro DualSense / ViGEmBus DS4), fixed player order (rx_ds4, rx_hm)
+  haptics   game HD haptics per pad (by MAC): on / off and the strength - rx_haptics
 
 A missing file / a bad value -> the default (a message in the log, the file is repaired on save). A change from the window
 takes effect at once: apply() replaces the `cur` object (a single assignment - the network threads always read a consistent whole).
@@ -102,6 +103,7 @@ MASTER_FEATURES: Final = {
     "mouse": ("Touchpad jako mysz (PS + klik)", "mouse"),
     "sens": ("Czułość myszy (PS + ↑ / ↓)", "dpad_up"),
     "triggers": ("Efekty spustów (opór, klik, wibracja)", "r2"),
+    "haptics": ("Haptyka gry (HD haptics)", "rumble"),
 }
 # master actions: key -> (label, needs a HOLD_S hold - protection against accidents)
 MASTER_ACTIONS: Final = {
@@ -331,6 +333,49 @@ class VpadConfig:
 VpadConfig.V = {"backend": _choice(VPAD_BACKENDS), "fixed_slots": _bool, "hm_dll": _path, "hm_auto": _bool}
 
 
+# ---------------- game haptics ----------------
+HAPTICS_GAIN: Final = (0, 200)      # strength [%]: the game's haptics waveform times this (a soft clip catches the peaks)
+
+
+@dataclass(frozen=True, slots=True)
+class PadHaptics:
+    """Game HD haptics of one pad (rx_haptics)."""
+
+    enabled: bool = False         # opt-in: the virtual pad becomes a USB composite (a kernel driver comes with it) on its next connect
+    gain: int = 100               # strength [%]
+
+
+def _haptic_pads(v: Any) -> dict[str, PadHaptics]:
+    """Turn {"*" | MAC: {"enabled", "gain"}} into {key: PadHaptics}; bad entries are skipped."""
+    if not isinstance(v, dict):
+        raise ValueError("expected {pad: {enabled, gain}}")
+    out: dict[str, PadHaptics] = {}
+    for k, raw in v.items():
+        try:
+            if not isinstance(raw, dict):
+                raise ValueError("expected an object")
+            out[_text(k)] = PadHaptics(enabled=_bool(raw.get("enabled", False)), gain=_num(*HAPTICS_GAIN)(raw.get("gain", 100)))
+        except (ValueError, TypeError) as e:
+            print(f"Settings: haptics for {k!r} ignored ({e})")
+    return out
+
+
+@dataclass(frozen=True, slots=True)
+class HapticsConfig:
+    """Per-pad game haptics (keys as in the lightbar: "*" is the default, a MAC is one pad)."""
+
+    pads: dict[str, PadHaptics] = field(default_factory=dict)
+
+    V: ClassVar[Validators] = None
+
+    def get(self, key: str) -> PadHaptics:
+        """Return the setting for a pad key: its own entry, else the "*" default, else the built-in default (off)."""
+        return self.pads.get(key) or self.pads.get(DEFAULT_PAD) or PadHaptics()
+
+
+HapticsConfig.V = {"pads": _haptic_pads}
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     """All settings sections; replaced as a whole by apply()."""
@@ -342,6 +387,7 @@ class Settings:
     wol: WolConfig = field(default_factory=WolConfig)
     log: LogConfig = field(default_factory=LogConfig)
     vpad: VpadConfig = field(default_factory=VpadConfig)
+    haptics: HapticsConfig = field(default_factory=HapticsConfig)
 
 
 def _section(cls: Any, raw: dict[str, Any] | None, base: Any, name: str) -> Any:
@@ -400,7 +446,7 @@ def save(s: Settings, path: str) -> None:
     """Write the settings atomically (a temporary file + replace)."""
     data = {"version": 1, "mouse": asdict(s.mouse), "master": {**asdict(s.master), "only_master": list(s.master.only_master)},
             "ui": asdict(s.ui), "lightbar": asdict(s.lightbar), "wol": asdict(s.wol), "log": asdict(s.log),
-            "vpad": asdict(s.vpad)}
+            "vpad": asdict(s.vpad), "haptics": asdict(s.haptics)}
     write_json(path, data, indent=2, ensure_ascii=False)
 
 

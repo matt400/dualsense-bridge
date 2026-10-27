@@ -13,11 +13,19 @@ rights (Windows: SeLoadDriverPrivilege) - without them the backend does not load
   find_dll(path)  the path from the settings, or the newest downloaded version (rx_hm_update: hidmaestro/vX.Y.Z/), then
                   hidmaestro/HIDMaestro.Core.dll next to the receiver (unpacked by hand)
   Backend.create(slot, on_fb) -> Pad: build() writes a DualSense report into pad.buf, submit() sends it without copying
+  Backend.create(slot, on_fb, composite=True): the "dualsense-composite" profile (the real four-interface USB DualSense) for game
+                  haptics: Pad.attach_audio(sink) hands the PCM of the pad's USB audio OUT stream (ch 3/4 = the haptic voice coils)
+                  to sink(view, n) on HIDMaestro's audio pump thread, copied with one IL delegate call (rx_haptics does the rest)
 
 Hot path: SubmitRawReport(ReadOnlySpan<byte>) cannot be called from pythonnet directly (Span is a ref struct), so
 loading emits a small IL method: (controller, pointer, length) -> SubmitRawReport(new ReadOnlySpan(ptr, len)).
 The report sits in a fixed Python buffer - one delegate call per report (~4 us), no allocation or copying on the
 Python side. The interop was checked with pythonnet 3.2 and .NET 10 on a mock of the HIDMaestro API (same signatures).
+
+The audio callback gets a ReadOnlyMemory<byte> (a plain struct, not a ref struct, so pythonnet can pass it) - but only the
+IL helper can read it without a per-element .NET call: (memory, pointer, capacity) -> copies min(length, capacity) bytes into
+the fixed scratch buffer and returns the count. The helper was run against a real CoreCLR (see tests/test_hm_il.py, which
+skips itself without pythonnet and a .NET runtime).
 """
 import ctypes
 import os
@@ -33,6 +41,8 @@ from rx_state import NEUTRAL_OUT
 
 DLL = "HIDMaestro.Core.dll"
 PROFILE = "dualsense"          # the USB DualSense profile (054C:0CE6) from HIDMaestro
+PROFILE_COMPOSITE = "dualsense-composite"   # the same pad with its USB audio (speaker + haptics out, microphone); needs usbip-win2
+AUDIO_SCRATCH: Final = 1 << 16  # the fixed buffer one audio callback is copied into (a window is a few ms: 384 B per ms at 48 kHz x 4 ch)
 REPORT_LEN = 63                # input report 0x01 without the ID byte
 ORDER_WAIT = 10.0              # creating a PnP device takes from ~0.1 s to several s (higher slots wait for lower ones)
 OUT_REPORT = 0x02              # the DualSense output report: motors, trigger effects, lightbar
@@ -299,6 +309,64 @@ def submit_delegate(clr: Any, ctrl_type: Any) -> Callable[[Any, Any, int], None]
         raise HMError(f"cannot bind SubmitRawReport: {e!r}") from e
 
 
+def memcopy_delegate(clr: Any) -> Callable[[Any, Any, int], int]:
+    """A delegate (ReadOnlyMemory<byte>, IntPtr, int) -> int built as an IL method.
+
+    Copies min(memory length, capacity) bytes from the memory to the pointer and returns that count. The audio callback of
+    HIDMaestro hands over a ReadOnlyMemory<byte>; its Span (a ref struct) cannot be used from pythonnet, so the copy is one
+    delegate call instead of a .NET read per sample. Needs no allocation on the Python side.
+    """
+    try:
+        from System import Array, Byte, Int32, IntPtr, Math, Type, Void
+        from System.Reflection.Emit import DynamicMethod, OpCodes
+        core = clr.GetClrType(Byte).Assembly
+        t_byte, t_int, t_ptr = clr.GetClrType(Byte), clr.GetClrType(Int32), clr.GetClrType(IntPtr)
+        mem_t = core.GetType("System.ReadOnlyMemory`1").MakeGenericType(t_byte)
+        ro_t = core.GetType("System.ReadOnlySpan`1").MakeGenericType(t_byte)
+        span_t = core.GetType("System.Span`1").MakeGenericType(t_byte)
+        get_span = mem_t.GetProperty("Span").GetGetMethod()
+        get_len = ro_t.GetProperty("Length").GetGetMethod()
+        slice_ = ro_t.GetMethod("Slice", Array[Type]([t_int, t_int]))
+        copy_to = ro_t.GetMethod("CopyTo", Array[Type]([span_t]))
+        span_ctor = span_t.GetConstructor(Array[Type]([clr.GetClrType(Void).MakePointerType(), t_int]))
+        vmin = clr.GetClrType(Math).GetMethod("Min", Array[Type]([t_int, t_int]))
+        func_t = core.GetType("System.Func`4").MakeGenericType(Array[Type]([mem_t, t_ptr, t_int, t_int]))
+        if None in (get_span, get_len, slice_, copy_to, span_ctor, vmin):
+            raise HMError("ReadOnlyMemory / Span members not found in this .NET runtime")
+        dm = DynamicMethod("dsbridge_memcopy", t_int, Array[Type]([mem_t, t_ptr, t_int]), mem_t.Module, True)
+        il = dm.GetILGenerator()
+        mem, src, n, part = il.DeclareLocal(mem_t), il.DeclareLocal(ro_t), il.DeclareLocal(t_int), il.DeclareLocal(ro_t)
+        # the structs are used through their addresses (ldloca): an instance call on a struct needs a managed pointer
+        il.Emit(OpCodes.Ldarg_0)
+        il.Emit(OpCodes.Stloc, mem)
+        il.Emit(OpCodes.Ldloca, mem)
+        il.Emit(OpCodes.Call, get_span)                 # src = mem.Span
+        il.Emit(OpCodes.Stloc, src)
+        il.Emit(OpCodes.Ldloca, src)
+        il.Emit(OpCodes.Call, get_len)
+        il.Emit(OpCodes.Ldarg_2)
+        il.Emit(OpCodes.Call, vmin)                     # n = Math.Min(src.Length, capacity)
+        il.Emit(OpCodes.Stloc, n)
+        il.Emit(OpCodes.Ldloca, src)
+        il.Emit(OpCodes.Ldc_I4_0)
+        il.Emit(OpCodes.Ldloc, n)
+        il.Emit(OpCodes.Call, slice_)                   # part = src.Slice(0, n): CopyTo throws when the target is shorter
+        il.Emit(OpCodes.Stloc, part)
+        il.Emit(OpCodes.Ldloca, part)
+        il.Emit(OpCodes.Ldarg_1)
+        il.Emit(OpCodes.Ldloc, n)
+        il.Emit(OpCodes.Newobj, span_ctor)              # new Span<byte>(pointer, n), as in submit_delegate
+        il.Emit(OpCodes.Call, copy_to)
+        il.Emit(OpCodes.Ldloc, n)
+        il.Emit(OpCodes.Ret)
+        fn = dm.CreateDelegate(func_t)
+        return getattr(fn, "Invoke", fn)
+    except HMError:
+        raise
+    except Exception as e:      # any reflection / IL error becomes a readable backend error
+        raise HMError(f"cannot bind the audio copy: {e!r}") from e
+
+
 def _type_error(path: str) -> str | None:
     """The DLL loaded but has no types: the first missing component from LoaderExceptions (a dependency, the runtime version)."""
     try:
@@ -346,20 +414,47 @@ class Backend:
             why = "; ".join(profile_issues(self.ctx))
             raise HMError(f"HIDMaestro has no '{PROFILE}' profile" + (f" (refused: {why})" if why else ""))
         self.submit_fn = submit_delegate(clr, HMController)
+        self.clr = clr
+        self._composite: Any = None            # the "dualsense-composite" profile, looked up on first use
+        self._copy_fn: Callable[[Any, Any, int], int] | None = None
         self.path = path
         print(f"HIDMaestro loaded: {path}")
 
-    def create(self, slot: int, on_fb: Callable[..., None]) -> "Pad":
+    def composite_profile(self) -> Any:
+        """The composite DualSense profile (USB audio: speaker and haptics out); HMError when this HIDMaestro has none."""
+        if self._composite is None:
+            profile = self.ctx.GetProfile(PROFILE_COMPOSITE)
+            if profile is None:
+                why = "; ".join(profile_issues(self.ctx))
+                raise HMError(f"HIDMaestro has no '{PROFILE_COMPOSITE}' profile (update HIDMaestro)"
+                              + (f" (refused: {why})" if why else ""))
+            self._composite = profile
+        return self._composite
+
+    def mem_copy(self) -> Callable[[Any, Any, int], int]:
+        """The IL delegate that copies an audio window (ReadOnlyMemory<byte>) into a native buffer - built once."""
+        if self._copy_fn is None:
+            self._copy_fn = memcopy_delegate(self.clr)
+        return self._copy_fn
+
+    def create(self, slot: int, on_fb: Callable[..., None], composite: bool = False) -> "Pad":
         """A virtual DualSense on a fixed index and with a fixed slot identity.
 
         The same device paths after every recreation (Steam / games remember the pad's settings). An old SDK without the
         identity key - the index alone.
+
+        Args:
+            slot: The slot (the HIDMaestro index).
+            on_fb: Callback for what the game sends to the pad (motors, lightbar, triggers).
+            composite: Use the four-interface USB profile (game haptics). The first one installs the usbip-win2 host
+                controller (a kernel driver) and adds a Windows audio endpoint; any failure is raised to the caller.
         """
         key = f"dualsense-bridge:{slot}"
+        profile = self.composite_profile() if composite else self.profile
         try:
-            ctrl = self.ctx.CreateControllerAt(slot, self.profile, key)
+            ctrl = self.ctx.CreateControllerAt(slot, profile, key)
         except TypeError:
-            ctrl = self.ctx.CreateControllerAt(slot, self.profile)
+            ctrl = self.ctx.CreateControllerAt(slot, profile)
         # 2.0: when another program holds the index, the controller gets a different one
         ti = getattr(ctrl, "TransportIndex", None)
         if ti is not None and int(ti) != slot:
@@ -420,6 +515,9 @@ class Pad:
         Subscribe to the output reports and send one neutral report to test the path.
         """
         self.ctrl, self.on_fb = ctrl, on_fb
+        self._backend = backend
+        self._audio_handler: Callable[[Any, Any], None] | None = None
+        self.composite = getattr(ctrl, "UsbAudio", None) is not None
         # an all-zero buffer is not neutral: sticks 0/0 and the D-pad nibble 0 (= up). A game that polls the new pad
         # before the first real report would see that as input, so the first submit() sends centred sticks, no buttons.
         self.buf = build_ds5_report(NEUTRAL_OUT, 0, False)
@@ -456,8 +554,57 @@ class Pad:
         except Exception:  # noqa: BLE001, S110 - the .NET event thread: an unparsable report must not raise into HIDMaestro
             pass
 
+    def attach_audio(self, sink: Callable[[memoryview, int], None]) -> tuple[int, int, int, tuple[str, ...]]:
+        """Deliver the pad's USB audio OUT stream to sink(view, n): n bytes of interleaved 16-bit PCM at the start of view.
+
+        Composite pads only. The callback runs on HIDMaestro's audio pump thread, which paces the stream: it copies the
+        window with one IL delegate call into a fixed scratch buffer and calls sink - nothing else (no allocation). The view
+        is only valid during the call.
+
+        Returns:
+            The format of the stream: (channels, sample rate [Hz], bits per sample, channel roles).
+
+        Raises:
+            HMError: This pad has no USB audio, or the copy helper cannot be built.
+        """
+        audio = getattr(self.ctrl, "UsbAudio", None)
+        if audio is None:
+            raise HMError("this virtual pad has no USB audio (not a composite profile)")
+        self.detach_audio()
+        out = audio.Output
+        fmt = (int(out.Channels), int(out.SampleRateHz), int(out.BitsPerSample), tuple(str(r) for r in out.ChannelRoles))
+        copy = self._backend.mem_copy()
+        scratch = bytearray(AUDIO_SCRATCH)
+        cview = (ctypes.c_char * AUDIO_SCRATCH).from_buffer(scratch)
+        ptr = self._backend.IntPtr(ctypes.addressof(cview))
+        view = memoryview(scratch)
+
+        def on_frames(_out: Any, mem: Any) -> None:
+            try:
+                n = copy(mem, ptr, AUDIO_SCRATCH)
+                if n > 0:
+                    sink(view, n)
+            except Exception:  # noqa: BLE001, S110 - the HIDMaestro audio thread: a failing sink must not stall the stream
+                pass
+
+        self._audio_keep = (scratch, cview, ptr, view)       # the buffer must outlive the callbacks (the IL copy writes to its address)
+        self._audio_handler = on_frames                      # a reference: the .NET delegate must not vanish through the GC
+        out.FramesReceived += on_frames
+        return fmt
+
+    def detach_audio(self) -> None:
+        """Stop the audio callback (no-op when none is attached)."""
+        handler, self._audio_handler = self._audio_handler, None
+        if handler is None:
+            return
+        try:
+            self.ctrl.UsbAudio.Output.FramesReceived -= handler
+        except Exception:  # noqa: BLE001, S110 - best effort: the controller may already be disposed
+            pass
+
     def close(self) -> None:
-        """Unsubscribe from the output reports and dispose of the controller."""
+        """Unsubscribe from the output reports and the audio, and dispose of the controller."""
+        self.detach_audio()
         try:
             self.ctrl.OutputReceived -= self._handler
         except Exception:  # noqa: BLE001, S110 - best effort: the controller may already be disposed

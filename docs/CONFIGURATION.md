@@ -52,7 +52,7 @@ defaults (the file is created and fixed, a corrupted one is kept as `console.jso
 | `tv_width`, `tv_height` | 2560, 1440 | TV resolution after turning the mode on (highest refresh rate for it; 0 = unchanged) |
 | `tv_scale` | 200 | TV scaling in %: 100, 125, 150, 175, 200, 225, 250, 300... (0 = unchanged) |
 
-Touchpad mouse, master pad, lightbar, Wake-on-LAN, event log settings and virtual pads are in `receiver/settings.json`
+Touchpad mouse, master pad, lightbar, game haptics, Wake-on-LAN, event log settings and virtual pads are in `receiver/settings.json`
 (window → Settings, takes effect immediately). Virtual pads (`vpad`): `backend` = `auto` | `hidmaestro` | `vigem`,
 `fixed_slots` = fixed player order (placeholder pad in an empty lower slot), `hm_auto` = download and update
 HIDMaestro from GitHub (once a day, to `receiver/hidmaestro/vX.Y.Z/`; a new version takes effect after a restart when
