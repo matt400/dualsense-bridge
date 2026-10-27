@@ -24,6 +24,9 @@ Najczęściej zmieniane:
 | `rt_priority` | sender | 10 | SCHED_FIFO z tym priorytetem, `0` = zwykły planista (wymaga roota; działa też na musl - postmarketOS, Alpine) |
 | `rumble` | sender | auto | wibracja: `auto` (sterownik i raport HID naraz), `evdev`, `hidraw`, `off` |
 | `haptics_buffer_ms` | sender | 20 | haptyka HD: bufor jittera w ms (10-200); większy = pewniej przy słabym łączu, większe opóźnienie |
+| `speaker_buffer_ms` | sender | 30 | głośnik pada (pad Bluetooth, wymaga libopus na senderze: `apt install libopus0` / `apk add opus`): bufor jittera w ms (20-200); większy = mniej przerw, większe opóźnienie |
+| `speaker_volume` | sender | 100 | głośność głośnika pada (0-255) |
+| `speaker_opus_bytes` | sender | 80 | bajtów Opus na ramkę 10 ms dla głośnika (30-200; 80 = 64 kbit/s); więcej = lepszy dźwięk, więcej ruchu Bluetooth |
 | `haptics_motors` | sender | haptics | gdy gra wibruje podczas haptyki: `haptics` (silniki ignorowane, log raz) lub `rumble` (silniki wstrzymują haptykę) |
 | `key` | oba | "" | wspólny klucz HMAC: podpisane pakiety i ochrona przed replay ([BEZPIECZENSTWO.pl.md](BEZPIECZENSTWO.pl.md)) |
 | `dsu_bind` | receiver | 127.0.0.1 | adres serwera DSU; `0.0.0.0` = emulator na innym urządzeniu |

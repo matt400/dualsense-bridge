@@ -15,12 +15,13 @@ from evdev import InputDevice, InputEvent
 
 import sender_net as net
 import sender_state as state
-from proto import (CAP_CALIB, CAP_HAPTICS, IDENT_LEN, KEY_BIT, LAT_NONE, MOUSE_TAP_ID_MAX, MOUSE_TAP_ID_SHIFT, RAW_STICKS_MAX_S,
-                   SENDER_VERSION, T_CLICK, T_IDENT, T_MOUSE, T_STATE, T_STATE2, T_TOUCH, T_VERSION, TRIG2_OFF, UINT32_MASK,
-                   WHY_OFF, clamp, trig2_from_legacy)
+from proto import (CAP_CALIB, CAP_HAPTICS, CAP_SPEAKER, IDENT_LEN, KEY_BIT, LAT_NONE, MOUSE_TAP_ID_MAX, MOUSE_TAP_ID_SHIFT,
+                   RAW_STICKS_MAX_S, SENDER_VERSION, T_CLICK, T_IDENT, T_MOUSE, T_STATE, T_STATE2, T_TOUCH, T_VERSION, TRIG2_OFF,
+                   UINT32_MASK, WHY_OFF, clamp, trig2_from_legacy)
 from sender_config import (AXIS_MAX, BURST_DELAYS, C, DEVICE_READ_ERRORS, HAT_AXES, IDLE_TP, L2_AXIS, NEUTRAL_PAD, PAD_ABS,
                            R2_AXIS, STICK_AXES, STICK_CENTER, US_PER_S)
 from sender_haptics import HapticsStream
+from sender_speaker import Report3x, SpeakerStream
 
 if TYPE_CHECKING:
     from sender_rumble import Rumble
@@ -103,6 +104,7 @@ class Ctrl:
         touch_dev: The evdev device of the touchpad (None until attached).
         rumble: The rumble backend (set in run_ctrl), or None.
         haptics: The HD haptics stream of this pad (created by the first chunk from the PC), or None.
+        speaker: The speaker stream of this pad (created by the first frame from the PC), or None.
         extra: The tasks of the motion / touchpad streams (attached and detached independently of the pad).
     """
 
@@ -123,6 +125,9 @@ class Ctrl:
         self.pending = False
         self.rumble: Rumble | None = None
         self.haptics: HapticsStream | None = None
+        self.speaker: SpeakerStream | None = None
+        self._speaker_failed: Rumble | None = None    # the rumble backend whose encoder could not be created (logged once, not retried)
+        self.audio_report: Report3x | None = None     # the report both streams write (0x32 / 0x36), shared so one tick plays both
         self.led: str | None = None
         self.led_color: tuple[int, int, int] | None = None
         self._led_max: str | None = None          # max_brightness of the LED, read once (it never changes)
@@ -530,8 +535,44 @@ class Ctrl:
         if r is None or not r.bits & CAP_HAPTICS or self.closing:
             return
         if self.haptics is None or self.haptics.rumble is not r:
-            self.haptics = HapticsStream(self.idx, r, C.HAPTICS_BUFFER_MS)
+            self.haptics = HapticsStream(self.idx, r, C.HAPTICS_BUFFER_MS, self._report())
         self.haptics.feed(frame, flags, data)
+
+    def _report(self) -> Report3x:
+        """The pad's audio report, created on first use (both streams of the pad write into the same one)."""
+        if self.audio_report is None:
+            self.audio_report = Report3x()
+        return self.audio_report
+
+    def _haptics_drives(self) -> bool:
+        """Whether the haptics stream is writing reports (its tick is then the pad's clock for the speaker as well)."""
+        return self.haptics is not None and self.haptics.writing
+
+    def on_speaker(self, frame: int, flags: int, data: memoryview) -> None:
+        """Take 10 ms of the game's sound from the PC; the first one starts the pad's speaker stream.
+
+        Only a Bluetooth pad with a HID report can play it, and only when libopus is installed here (the CAP_SPEAKER bit the
+        receiver saw in the version packet).
+
+        Args:
+            frame: The number of the frame (10 ms frames).
+            flags: SPK_START / SPK_END.
+            data: The samples (48 kHz mono, signed 16-bit little endian); copied by the stream.
+        """
+        r = self.rumble
+        if r is None or not r.bits & CAP_SPEAKER or self.closing or self._speaker_failed is r:
+            return
+        if self.speaker is None or self.speaker.rumble is not r:
+            if self.speaker is not None:
+                self.speaker.close()
+            try:
+                self.speaker = SpeakerStream(self.idx, r, self._report(), self._haptics_drives, C.SPEAKER_BUFFER_MS,
+                                             C.SPEAKER_VOLUME, C.SPEAKER_OPUS_BYTES)
+            except OSError as e:
+                print(f"Controller {self.idx}: speaker unavailable ({e})")
+                self.speaker, self._speaker_failed = None, r
+                return
+        self.speaker.feed(frame, flags, data)
 
     def set_raw_sticks(self, secs: int) -> None:
         """Run the drift measurement from the window: sticks without the sender's deadzone for ``secs`` seconds.
@@ -565,7 +606,10 @@ class Ctrl:
                 setattr(self, name, None)
 
     def stop_feedback(self) -> None:
-        """Close the rumble backend (which also stops the motors) and drop it; a running haptics stream ends first."""
+        """Close the rumble backend (which also stops the motors) and drop it; running audio streams end first."""
+        if self.speaker is not None:
+            self.speaker.close()
+            self.speaker = None
         if self.haptics is not None:
             self.haptics.close()
             self.haptics = None

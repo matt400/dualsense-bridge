@@ -149,6 +149,7 @@ if __name__ == "__main__":
     net.on_command = control.on_command
     net.on_triggers = sup.dispatch_triggers
     net.on_haptics = sup.dispatch_haptics      # HD haptics for a Bluetooth pad (sender_haptics)
+    net.on_speaker = sup.dispatch_speaker      # the game's sound on the pad's speaker (sender_speaker)
     net.on_scfg = wol.apply_scfg
     net.on_bt = sender_bt.bt.on_command        # phone Bluetooth driven from the receiver window (scan, pair, connect)
     wol.load()                         # Wake-on-LAN and events: settings from the receiver window saved at the last scfg

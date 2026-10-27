@@ -217,6 +217,7 @@ class HapticsStream:
         idx: The pad slot (for log lines).
         rumble: The pad's rumble backend (owner of the HID descriptor).
         active: A stream is running (the pad is in audio mode and the tick timer runs).
+        writing: The tick has written reports in this stream (the speaker stream follows this clock, see sender_speaker).
         stats: The counters of the current (or last) stream.
         target: The wanted depth of the buffer [frames].
     """
@@ -240,7 +241,7 @@ class HapticsStream:
         self.low = self.target - self.frames // 2               # shallower: repeat one frame per tick (drift)
         self.limit = self.target + OVERRUN_CHUNKS * self.frames  # deeper: drop the oldest audio at once (a burst)
         self.ring = FrameRing()
-        self.active = self.ending = self.priming = False
+        self.active = self.ending = self.priming = self.writing = False
         self.stats = Counters()
         self._expected = 0                                      # the frame the next chunk must start at
         self._rx = 0.0                                          # when the last chunk arrived
@@ -305,6 +306,7 @@ class HapticsStream:
             print(f"Controller {self.idx}: haptics chunk ignored - this pad cannot play haptics (USB or no HID report)")
             return False
         self.active, self.ending, self.priming, self._prime_ticks = True, False, False, 0
+        self.writing = False
         self.ring.clear()
         self.stats = Counters()
         self._expected = frame
@@ -338,6 +340,7 @@ class HapticsStream:
         self._play_or_silence()
         if not self.rumble.write_haptics(self.report):
             self.stats.unwritten += 1
+        self.writing = True
         self._due += self.period
         self._timer = asyncio.get_running_loop().call_at(self._due, self._tick)
 
@@ -383,7 +386,7 @@ class HapticsStream:
         if self._timer is not None:
             self._timer.cancel()
             self._timer = None
-        self.active = self.ending = False
+        self.active = self.ending = self.writing = False
         self.rumble.haptics_end()
         self.ring.clear()
         print(f"Controller {self.idx}: haptics end ({why}): {self.stats.text()}")
