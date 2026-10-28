@@ -52,11 +52,11 @@ Co działa z pada PS5 (DualSense), a czego jeszcze brakuje.
 | Lightbar | ✅ | kolor własny per pad lub z gry |
 | Wibracje (2 silniki) | ✅ | przez sterownik i HID jednocześnie |
 | Adaptacyjne triggery | ✅ | opór, klik, wibracja; z profilu lub z gry (HIDMaestro) |
+| Haptyka HD (prawdziwa, nie 2 silniki) | ✅ | do włączenia, z dźwięku gry (pad composite HIDMaestro), per pad; wymaga nadajnika v13+ |
 | Parowanie i wyłączanie pada | ✅ | z okna na PC, bez podchodzenia do sendera |
 | Przycisk mute i jego dioda | ❌ | |
 | Mikrofon | ❌ | |
 | Głośnik i gniazdo słuchawkowe | ❌ | |
-| Haptyka HD (prawdziwa, nie 2 silniki) | ❌ | |
 | Diody gracza (pod lightbarem) | ❌ | |
 | DualSense Edge (tylne przyciski, Fn) | ❌ | |
 

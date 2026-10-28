@@ -52,11 +52,11 @@ What works from the PS5 pad (DualSense) and what is still missing.
 | Lightbar | ✅ | own colour per pad or the game's colour |
 | Rumble (2 motors) | ✅ | through the driver and HID at the same time |
 | Adaptive triggers | ✅ | resistance, click, vibration; from the profile or from the game (HIDMaestro) |
+| HD haptics (real ones, not 2 motors) | ✅ | opt-in, from the game's audio (HIDMaestro composite pad), per pad; needs sender v13+ |
 | Pairing and switching the pad off | ✅ | from the PC window, no need to walk to the sender |
 | Mute button and its LED | ❌ | |
 | Microphone | ❌ | |
 | Speaker and headphone jack | ❌ | |
-| HD haptics (real ones, not 2 motors) | ❌ | |
 | Player LEDs (under the lightbar) | ❌ | |
 | DualSense Edge (back buttons, Fn) | ❌ | |
 
