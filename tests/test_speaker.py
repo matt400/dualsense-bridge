@@ -276,7 +276,7 @@ for _ in range(100):
     now[0] += 0.005
     sp7.step(now[0])
 check(not sent_pk, "po przyznaniu uprawnień stary ton nie gra")
-# ton przechodzi tą samą drogą: START, ramki z sinusem 440 Hz, cisza, END
+# jingiel przechodzi tą samą drogą: START, ramki z melodią, cisza, END
 sent_pk.clear()
 sp8 = K.SpeakerLink(0, send=lambda t, n, f, c: sent_pk.append((n, f, c)), clock=lambda: now[0])
 sp8.test(1.0)
@@ -285,11 +285,21 @@ for _ in range(400):
     now[0] += 0.005
     sp8.step(now[0])
 tone_frames = [c for _n, _f, c in sent_pk if c != K.ZERO_FRAME]
-check(sent_pk[0][1] == SPK_START and sent_pk[-1][1] & SPK_END and len(tone_frames) == round(K.TEST_S / K.FRAME_S),
-      f"ton próbny: START, {len(tone_frames)} ramek dźwięku, END")
+check(sent_pk[0][1] == SPK_START and sent_pk[-1][1] & SPK_END and len(tone_frames) == K.TEST_FRAMES,
+      f"jingiel testowy: START, {len(tone_frames)} ramek dźwięku, END")
 wave = [v for c in tone_frames for v in struct.unpack("<480h", c)]
-cross = sum(1 for a, b in zip(wave, wave[1:], strict=False) if a < 0 <= b)
-check(abs(cross / K.TEST_S - K.TEST_HZ) < 8 and max(wave) <= 32767 * K.TEST_LEVEL + 2, f"ton próbny 440 Hz ({cross / K.TEST_S:.0f} Hz) bez przesterowania")
+check(len(wave) == K.TEST_FRAMES * SPK_FRAME and max(abs(v) for v in wave) <= 32767 * K.TEST_LEVEL + 2, "jingiel testowy: bez przesterowania")
+at = 0
+for hz, secs in K.JINGLE:                                        # środkowa połowa każdej nuty ma jej wysokość (przejścia przez zero)
+    n = round(secs * K.SPK_RATE)
+    mid = wave[at + n // 4: at + 3 * n // 4]
+    cross = sum(1 for a, b in zip(mid, mid[1:], strict=False) if a < 0 <= b)
+    got = cross / (len(mid) / K.SPK_RATE)
+    check(abs(got - hz) < hz * 0.04, f"jingiel testowy: nuta {hz:.0f} Hz ({got:.0f} Hz)")
+    at += n
+check(wave[0] == 0 and all(abs(a - b) < 6000 for a, b in zip(wave, wave[1:], strict=False)), "jingiel testowy: bez kliknięć na krawędziach nut")
+tune = K.jingle()
+check(tune is K.jingle() and len(tune) == K.TEST_FRAMES * SPK_FRAME, "jingiel liczony raz, pełne ramki")
 
 # ---------- ustawienia ----------
 path = os.path.join(tempfile.mkdtemp(), "settings.json")

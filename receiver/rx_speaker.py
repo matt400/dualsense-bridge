@@ -21,6 +21,7 @@ follow that physical pad, like the game feedback and the haptics do.
 """
 from __future__ import annotations
 
+import functools
 import math
 import sys
 import threading
@@ -50,9 +51,18 @@ WAKE_BYTES: Final = 1536                    # an idle link is woken once this mu
 KNEE: Final = 24576                         # the soft clip is linear up to 75 % of the int16 full scale ...
 S16_MAX: Final = 32767
 SPAN: Final = S16_MAX - KNEE                # ... then bends towards 32767 (tanh)
-TEST_HZ: Final = 440.0                      # "Test speaker": a 440 Hz tone
-TEST_S: Final = 0.6
+# "Test speaker": a short jingle, (note Hz, seconds) - a rising C major arpeggio that lands on a long high C. The notes sit at
+# 520-1050 Hz, where the pad's tiny speaker is loudest.
+JINGLE: Final[tuple[tuple[float, float], ...]] = (
+    (523.25, 0.14), (659.25, 0.14), (783.99, 0.14), (1046.50, 0.28), (783.99, 0.14), (1046.50, 0.50),
+)
+TEST_SAMPLES: Final = sum(round(secs * SPK_RATE) for _hz, secs in JINGLE)
+TEST_FRAMES: Final = -(-TEST_SAMPLES // SPK_FRAME)      # whole 10 ms frames (the last one is padded with zeros)
+TEST_S: Final = TEST_SAMPLES / SPK_RATE
 TEST_LEVEL: Final = 0.5                     # of the full scale, before the pad's volume
+OVERTONE: Final = 0.3                       # the 2nd harmonic: a plain sine sounds thin on a small speaker
+DECAY: Final = 4.0                          # a note fades by e**-4 over its length (a soft bell, not an organ)
+EDGE: Final = round(0.005 * SPK_RATE)       # 5 ms linear attack and release: no clicks at the note edges
 BIG_ENDIAN: Final = sys.byteorder == "big"
 
 ZERO_FRAME: Final = bytes(SPK_BYTES)
@@ -78,6 +88,21 @@ def pcm_bytes(samples: array[int]) -> bytes:
         samples = array("h", samples)
         samples.byteswap()
     return samples.tobytes()
+
+
+@functools.cache
+def jingle() -> tuple[int, ...]:
+    """The test jingle as mono int16 at SPK_RATE, zero-padded to whole frames (computed once, only when the test button is used)."""
+    out: list[int] = []
+    amp = TEST_LEVEL * S16_MAX / (1 + OVERTONE)         # the peak of fundamental + overtone stays at TEST_LEVEL
+    for hz, secs in JINGLE:
+        n = round(secs * SPK_RATE)
+        w = 2 * math.pi * hz / SPK_RATE
+        for k in range(n):                               # every note starts at phase 0, so it starts at zero amplitude
+            env = min(1.0, k / EDGE, (n - k) / EDGE) * math.exp(-DECAY * k / n)
+            out.append(round(amp * env * (math.sin(w * k) + OVERTONE * math.sin(2 * w * k))))
+    out.extend([0] * (TEST_FRAMES * SPK_FRAME - len(out)))
+    return tuple(out)
 
 
 # ---------------- the per-slot link ----------------
@@ -281,12 +306,10 @@ class SpeakerLink:
 
     # ----- from other threads -----
     def test(self, gain: float) -> None:
-        """A short tone through the same path ("Test speaker"): frames plus the silence that ends the stream."""
-        n = round(TEST_S / FRAME_S)
-        total = n * SPK_FRAME
-        tone = [round(TEST_LEVEL * S16_MAX * math.sin(2 * math.pi * TEST_HZ * k / SPK_RATE)) for k in range(total)]
-        mono = pcm_bytes(mix(tone, tone, gain))
-        frames = [mono[k * SPK_BYTES:(k + 1) * SPK_BYTES] for k in range(n)]
+        """The jingle through the same path ("Test speaker"): its frames plus the silence that ends the stream."""
+        tune = jingle()
+        mono = pcm_bytes(mix(tune, tune, gain))
+        frames = [mono[k * SPK_BYTES:(k + 1) * SPK_BYTES] for k in range(TEST_FRAMES)]
         frames += [ZERO_FRAME] * (math.ceil(SILENCE_END_S / FRAME_S) + 1)
         self._inject.extend(frames)
         self.ensure_thread()

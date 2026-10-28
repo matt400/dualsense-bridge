@@ -681,12 +681,12 @@ class ConsoleSettings(QDialog):
         self._status(why or _("Ton próbny wysłany do pada."), "warn" if why else "ok")
 
     def _test_speaker(self) -> None:
-        """Send a short tone through the speaker path to the chosen pad (with the volume shown, not the saved one)."""
+        """Send the test jingle through the speaker path to the chosen pad (with the volume shown, not the saved one)."""
         slot = self._haptics_pad_slot()
         if slot is None:
             return
         why = rx_speaker.test(slot, self.spk_gain.value() / 100)
-        self._status(why or _("Ton próbny wysłany do pada."), "warn" if why else "ok")
+        self._status(why or _("Jingiel wysłany do pada."), "warn" if why else "ok")
 
     def _light_tab(self) -> list[QWidget | QLayout]:
         """The Lightbar tab: the low battery threshold and the per-pad colour / mode / blinking / game override."""

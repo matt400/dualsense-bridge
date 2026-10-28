@@ -244,7 +244,7 @@
   - the game's sound from the "Wireless Controller" output (channels 1-2) is mixed to mono and sent in 10 ms frames; the
     sender encodes it with Opus and plays it on the pad's speaker through Bluetooth, sharing the clock with haptics.
     In silence nothing is sent (the stream ends with an end mark after ~150 ms, then the pad's volume goes to 0);
-  - **Volume** 0-200 % (applies at once), **Test speaker** plays a short 440 Hz tone on the chosen pad and says why when it
+  - **Volume** 0-200 % (applies at once), **Test speaker** plays a short jingle (a few notes, about 1.3 s) on the chosen pad and says why when it
     cannot (old sender, not the master pad, setting off);
   - it uses the same composite pad and audio device as haptics, so the notes above apply (driver, default output,
     applies on reconnect). Without libopus the sender does not announce the speaker and haptics work as before;
