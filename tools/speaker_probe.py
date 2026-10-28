@@ -19,6 +19,7 @@ pad lookup and the `jitter` command, and root for /dev/hidraw*:
     doas python3 speaker_probe.py edge              # what removes the pop at the end of a stream (tails, fade, volume 0, audio off)
     doas python3 speaker_probe.py gap               # clean 1 kHz tone in 6 variants, you RECORD each (analysed offline: 94 Hz buzz)
     doas python3 speaker_probe.py gap --only var2.5,var5   # only the variable-length packets (4-5 x 2.5 ms, 2-3 x 5 ms per report)
+    doas python3 speaker_probe.py gap --hz 1234 --continuous --only nodrop,p10.5,p10.4,p10.3,lowdelay,silk10,hybrid10   # ONE recording
     doas python3 speaker_probe.py gap --wav speech.wav   # the same variants with your own speech (48 kHz mono WAV)
 
 Every command that measures something merges its result into speaker_probe_results.json (paste that file back). `layout` stores the
@@ -71,6 +72,16 @@ OPUS_FRAME = 480                         # samples per 10 ms Opus frame
 BYTES_PER_SAMPLE = 2                     # signed 16-bit PCM
 OPUS_MAX_PACKET = 1275                   # the largest Opus packet
 OPUS_APPLICATION_AUDIO, REQ_BITRATE, REQ_VBR, REQ_COMPLEXITY = 2049, 4002, 4006, 4010
+OPUS_APPLICATION_VOIP, OPUS_APPLICATION_LOWDELAY = 2048, 2051    # VOIP prefers SILK, RESTRICTED_LOWDELAY is CELT only (no look-ahead)
+REQ_MAX_BANDWIDTH, REQ_SIGNAL, REQ_FORCE_MODE = 4004, 4024, 11002       # FORCE_MODE: libopus' internal switch (1000 SILK, 1001 hybrid)
+BANDWIDTH_WIDE, SIGNAL_VOICE, MODE_SILK, MODE_HYBRID = 1103, 3001, 1000, 1001
+# Opus modes tried by `gap` (name -> Encoder keywords). Default = what the sender uses: AUDIO application, CELT fullband.
+CODECS: dict[str, dict[str, int]] = {
+    "": {},
+    "lowdelay": {"application": OPUS_APPLICATION_LOWDELAY},
+    "silk": {"application": OPUS_APPLICATION_VOIP, "force_mode": MODE_SILK, "max_bandwidth": BANDWIDTH_WIDE, "signal": SIGNAL_VOICE},
+    "hybrid": {"application": OPUS_APPLICATION_VOIP, "force_mode": MODE_HYBRID, "signal": SIGNAL_VOICE},
+}
 R36_LEN, R32_LEN = 398, 142              # report id + data bytes (checked against the HID descriptor in `info`)
 R32_ID, R36_ID = 0x32, 0x36
 CRC_SEED = b"\xa2"
@@ -149,16 +160,23 @@ def opus_version() -> str:
 class Encoder:
     """A mono 48 kHz Opus encoder for 10 ms frames, CBR, so every frame has the same size (``size`` bytes including the TOC byte)."""
 
-    def __init__(self, size: int, complexity: int | None = None, ms: float = 10) -> None:
-        """Create the encoder; the bitrate is chosen so that a CBR frame of ``ms`` milliseconds is ``size`` bytes."""
+    def __init__(self, size: int, complexity: int | None = None, ms: float = 10, application: int = OPUS_APPLICATION_AUDIO,
+                 force_mode: int = 0, max_bandwidth: int = 0, signal: int = 0) -> None:
+        """Create the encoder; the bitrate is chosen so that a CBR frame of ``ms`` milliseconds is ``size`` bytes.
+
+        ``application`` / ``force_mode`` / ``max_bandwidth`` / ``signal`` pick another Opus mode (see CODECS); 0 = libopus decides.
+        """
         self._lib = _opus_lib()
         self.size, self.mismatch = size, 0
         err = ctypes.c_int(0)
-        self._state = ctypes.c_void_p(self._lib.opus_encoder_create(OPUS_RATE, 1, OPUS_APPLICATION_AUDIO, ctypes.byref(err)))
+        self._state = ctypes.c_void_p(self._lib.opus_encoder_create(OPUS_RATE, 1, application, ctypes.byref(err)))
         if err.value != 0 or not self._state:
             raise SystemExit(f"opus_encoder_create failed ({err.value})")
         self._ctl(REQ_BITRATE, round(size * 8 * 1000 / ms))
         self._ctl(REQ_VBR, 0)
+        for request, value in ((REQ_MAX_BANDWIDTH, max_bandwidth), (REQ_SIGNAL, signal), (REQ_FORCE_MODE, force_mode)):
+            if value:
+                self._ctl(request, value)
         if complexity is not None:
             self._ctl(REQ_COMPLEXITY, complexity)
         self._out = ctypes.create_string_buffer(OPUS_MAX_PACKET)
@@ -186,7 +204,7 @@ class Encoder:
 class FakeEncoder:
     """Dry-run stand-in when libopus is missing: ``size`` bytes of deterministic filler, NOT valid Opus."""
 
-    def __init__(self, size: int, complexity: int | None = None, ms: float = 10) -> None:
+    def __init__(self, size: int, complexity: int | None = None, ms: float = 10, **_mode: int) -> None:
         """Remember the frame size."""
         self.size, self.mismatch = size, 0
 
@@ -232,14 +250,14 @@ class Repacker:
             self._state = ctypes.c_void_p(0)
 
 
-def make_encoder(size: int, dry: bool, complexity: int | None = None, ms: float = 10) -> Encoder | FakeEncoder:
-    """A real encoder; in a dry run without libopus a fake one."""
+def make_encoder(size: int, dry: bool, complexity: int | None = None, ms: float = 10, **mode: int) -> Encoder | FakeEncoder:
+    """A real encoder; in a dry run without libopus a fake one. ``mode``: Encoder keywords (CODECS)."""
     try:
-        return Encoder(size, complexity, ms)
+        return Encoder(size, complexity, ms, **mode)
     except SystemExit:
         if not dry:
             raise
-        return FakeEncoder(size, complexity, ms)
+        return FakeEncoder(size, complexity, ms, **mode)
 
 
 # ---------------------------------------------------------------- report building
@@ -451,6 +469,7 @@ class Plan:
     spk_every: int = 1                               # a speaker sub-packet only in every Nth report (the others carry none)
     wav: str = ""                                    # play this 48 kHz WAV instead of the sine
     mean_ms: float = 0.0                             # > 0: reports carry whole numbers of ``spk_ms`` frames, this long on average
+    codec: str = ""                                  # an Opus mode from CODECS ("" = the sender's)
 
 
 class Source:
@@ -853,7 +872,8 @@ class Session:
     def source(self, plan: Plan, size: int | None = None, period: float | None = None) -> Source:
         """A source for a plan with a fresh encoder (CBR state starts clean)."""
         ms = plan.spk_ms                                        # the same bitrate whatever the frame length
-        enc = make_encoder(round((size or self.size) * ms / 10), bool(self.args.dry_run), ms=ms) if plan.spk != "off" else None
+        enc = (make_encoder(round((size or self.size) * ms / 10), bool(self.args.dry_run), ms=ms, **CODECS[plan.codec])
+               if plan.spk != "off" else None)
         return Source(plan, period or self.period, enc)
 
     def play(self, plan: Plan, *, setup: Setup | None = None, layout: Layout | None = None, size: int | None = None,
@@ -1133,6 +1153,12 @@ GAPS: list[tuple[str, str, float, dict[str, Any]]] = [
     ("p10.0", "10 ms frames every 10.0 ms (the pad overflows; for comparison)", 0.010, {}),
     ("opus20-alt", "20 ms frames in every second report (a gap every 21.3 ms instead of every 10.7 ms)", REPORT_PERIOD,
      {"spk_ms": 20, "spk_every": 2}),
+    ("p10.5", "10 ms frames every 10.5 ms (the pad is fed 1.6% too fast: does it stop fading the frame edges?)", 0.0105, {}),
+    ("p10.4", "10 ms frames every 10.4 ms (2.6% too fast)", 0.0104, {}),
+    ("p10.3", "10 ms frames every 10.3 ms (3.5% too fast)", 0.0103, {}),
+    ("lowdelay", "10.667 ms period, Opus RESTRICTED_LOWDELAY (CELT without look-ahead)", REPORT_PERIOD, {"codec": "lowdelay"}),
+    ("silk10", "10.667 ms period, Opus SILK-only 10 ms (wideband, no MDCT overlap)", REPORT_PERIOD, {"codec": "silk"}),
+    ("hybrid10", "10.667 ms period, Opus hybrid 10 ms", REPORT_PERIOD, {"codec": "hybrid"}),
     ("var2.5", "every report carries 4 or 5 frames of 2.5 ms (10 / 12.5 ms, 10.667 ms on average): no gap if the pad takes it",
      REPORT_PERIOD, {"spk_ms": 2.5, "mean_ms": REPORT_PERIOD * 1000}),
     ("var5", "every report carries 2 or 3 frames of 5 ms (10 / 15 ms, 10.667 ms on average)",
@@ -1154,7 +1180,7 @@ def cmd_gap(s: Session) -> None:
         if only and name not in only:
             continue
         print(f"\n== {name}: {note}")
-        if not AUTO:
+        if not (AUTO or s.args.continuous):
             input("  start the recording, then press Enter (the tone starts after 1 s): ")
         wait(1.0)
         plan = Plan(secs=s.args.secs, spk_hz=s.args.hz, wav=s.args.wav or "", **extra)
@@ -1162,7 +1188,9 @@ def cmd_gap(s: Session) -> None:
         results.append({"variant": name, **report_stats(name, st)})
         s.pad.send_normal()
         wait(2.0)
-        if not AUTO:
+        if s.args.continuous:
+            wait(3.0)                                           # silence between the variants: the analysis cuts the file there
+        elif not AUTO:
             input(f"  stop the recording and save it as gap_{name}.mp3 (Enter for the next variant): ")
     save_result(s.out, "gap", results)
 
@@ -1452,7 +1480,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     gap.add_argument("--hz", type=float, default=1000.0, help="tone frequency (default 1000: where the pad's speaker is loudest)")
     gap.add_argument("--secs", type=float, default=6.0, help="length of each variant")
     gap.add_argument("--wav", help="play this 48 kHz WAV (speech) instead of the tone")
-    gap.add_argument("--only", help="comma separated variant names (today, nodrop, p10.0, opus20-alt, var2.5, var5)")
+    gap.add_argument("--continuous", action="store_true", help="no questions: all variants one after another (3 s of silence between), "
+                     "record ONE file; the order is the order of --only (or the list)")
+    gap.add_argument("--only", help="comma separated variant names (today, nodrop, p10.0, p10.5, p10.4, p10.3, lowdelay, silk10, hybrid10, "
+                     "opus20-alt, var2.5, var5); they run in the list's order, not the order given")
     return parser.parse_args(argv)
 
 
