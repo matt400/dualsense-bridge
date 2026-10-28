@@ -37,7 +37,6 @@ EN: Final[dict[str, str]] = {
         "(the composite profile) and a sender version with haptics. It is off by default: the first use installs a kernel driver "
         "(usbip-win2) and Windows adds a \"Wireless Controller\" sound device (the default audio output stays as it is).",
     "HAPTYKA GRY": "GAME HAPTICS",
-    "Haptyka": "Haptics",
     "Haptyka gry jest tylko dla pada master (Ustawienia → Master).": "Game haptics are for the master pad only (Settings → Master).",
     "Haptyka gry (HD haptics)": "Game haptics (HD haptics)",
     "Haptyka gry (HD haptics) na tym padzie": "Game haptics (HD haptics) on this pad",
@@ -61,6 +60,31 @@ EN: Final[dict[str, str]] = {
     "{pad}: haptyka gry jest włączona, ale nadajnik w starszej wersji jej nie obsługuje (kliknij Aktualizuj)":
         "{pad}: game haptics are on, but an older sender does not support them (click Update)",
     "{pad}: pad z haptyką gry (HD haptics przez nadajnik)": "{pad}: pad with game haptics (HD haptics through the sender)",
+    "Haptyka i głośnik": "Haptics and speaker",
+    "GŁOŚNIK PADA": "PAD SPEAKER",
+    "Głośnik pada (dźwięk gry)": "Pad speaker (game sound)",
+    "Głośnik pada (dźwięk gry) na tym padzie": "Pad speaker (game sound) on this pad",
+    "Głośność": "Volume",
+    "Test głośnika": "Test speaker",
+    "Dźwięk gry z wyjścia „Wireless Controller” (kanały 1-2) gra na głośniku pada przez nadajnik (Bluetooth, kodek Opus). "
+    "Potrzebuje tego samego wirtualnego pada USB co haptyka, nadajnika w wersji z głośnikiem i biblioteki libopus na nadajniku. "
+    "Jest wyłączony domyślnie. Ustawienia pada wyżej (własne lub domyślne) dotyczą też głośnika.":
+        "The game's sound from the \"Wireless Controller\" output (channels 1-2) plays on the pad's speaker through the sender "
+        "(Bluetooth, Opus codec). It needs the same virtual USB pad as haptics, a sender version with the speaker and the libopus "
+        "library on the sender. It is off by default. The pad settings above (own or default) apply to the speaker as well.",
+    "Zmiana włączenia działa po ponownym połączeniu pada; głośność - od razu.":
+        "Turning it on or off applies when the pad reconnects; the volume applies at once.",
+    "Nadajnik tego pada jest w starszej wersji i nie przekaże dźwięku na głośnik (kliknij Aktualizuj).":
+        "This pad's sender is an older version and will not pass sound to the speaker on (click Update).",
+    "Nadajnik w starszej wersji (bez głośnika) - kliknij Aktualizuj.": "Older sender (no speaker) - click Update.",
+    "Głośnik pada jest tylko dla pada master (Ustawienia → Master).": "The pad speaker is for the master pad only (Settings → Master).",
+    "{pad}: gra daje dźwięk - nadajnik w starszej wersji nie przekaże go na głośnik (kliknij Aktualizuj)":
+        "{pad}: the game sends sound - an older sender will not pass it to the speaker (click Update)",
+    "{pad}: gra daje dźwięk - pominięty (głośnik pada tylko dla pada master)":
+        "{pad}: the game sends sound - skipped (the pad speaker is for the master pad only)",
+    "{pad}: głośnik pada jest włączony, ale nadajnik w starszej wersji go nie obsługuje (kliknij Aktualizuj)":
+        "{pad}: the pad speaker is on, but an older sender does not support it (click Update)",
+    "{pad}: pad z głośnikiem (dźwięk gry przez nadajnik)": "{pad}: pad with a speaker (game sound through the sender)",
     "Odrzucono pakiety nadajnika: inny klucz HMAC (key) w nadajniku i w receiverze - ustaw ten sam albo usuń go z obu":
         "Sender packets rejected: the HMAC key differs between the sender and the receiver - set the same key on both "
         "or remove it from both",

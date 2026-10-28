@@ -400,7 +400,7 @@ async def fake_clock_scenarios():
         quiet(feed, s, 0, SPK_START)
         for n in range(1, 30):
             feed(s, n)
-        assert s.ring.depth <= s.high and s.stats.dropped >= 20, (s.ring.depth, s.stats.dropped)
+        assert s.ring.depth <= s.limit and s.stats.dropped >= 20, (s.ring.depth, s.stats.dropped)
         tick(s, 0.03)
         assert played(pad)[-1] > 20, "the newest audio plays, not a late echo"
         ok("a burst after a stall: the oldest frames are dropped at once")

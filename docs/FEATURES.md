@@ -199,7 +199,7 @@
   - **Master:** the master pad, what only it is allowed, action buttons. Mouse and master take effect immediately,
     without a restart (`settings.json`);
   - **Lightbar:** colour per pad / default, mode, blinking, low battery threshold (immediately);
-  - **Haptics:** game HD haptics per pad - enable, strength, test (strength immediately, enable on the pad's reconnect);
+  - **Haptics and speaker:** game HD haptics and the pad's speaker per pad - enable, strength / volume, test (strength immediately, enable on the pad's reconnect);
   - **Wake-on-LAN:** enable, the button paired with PS, hold time, MAC and broadcast (empty = automatic);
   - **Pads:** which pad cards the window shows - dynamic (only connected) or a fixed number of slots (1-4, takes effect
     immediately; the slots themselves are set by `pads` in `receiver.toml`, 4 by default) - plus the virtual pad
@@ -239,6 +239,16 @@
     mode never lists it). Turning it on or off applies when the pad reconnects; if the composite pad cannot be created
     the pad works as before and the event log says why (no new attempt for 10 minutes or until the setting changes);
   - the sender must announce haptics (v13+, update it from the window); "Haptics" is also a master-only feature.
+- **Pad speaker (experimental)** (Settings → Haptics and speaker), opt-in, separately for each pad (MAC) or as the default; needs
+  the HIDMaestro backend, sender v14+ and libopus on the sender (`libopus0` / `opus`):
+  - the game's sound from the "Wireless Controller" output (channels 1-2) is mixed to mono and sent in 10 ms frames; the
+    sender encodes it with Opus and plays it on the pad's speaker through Bluetooth, sharing the clock with haptics.
+    In silence nothing is sent (the stream ends with an end mark after ~150 ms, then the pad's volume goes to 0);
+  - **Volume** 0-200 % (applies at once), **Test speaker** plays a short 440 Hz tone on the chosen pad and says why when it
+    cannot (old sender, not the master pad, setting off);
+  - it uses the same composite pad and audio device as haptics, so the notes above apply (driver, default output,
+    applies on reconnect). Without libopus the sender does not announce the speaker and haptics work as before;
+  - "Speaker" is a master-only feature. Headphone jack and microphone are not supported.
 - **Wake-on-LAN from the pad** (Settings → Wake-on-LAN): when the PC doesn't respond (off / asleep), **PS + Options
   held ~1 s** (button and time configurable) - the sender sends a magic packet. With the PC running the same combo goes
   to the receiver as usual (e.g. master pause), so nothing collides; long PS alone isn't suitable (that's how the pad

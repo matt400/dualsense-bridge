@@ -28,7 +28,7 @@ from proto import (BATT_CHARGING, BATT_UNKNOWN, BODY, CAL_MOVED, CAL_OK, CLICK_P
                    RTT_NONE, SCFG_BATT, SCFG_EVENTS, SCFG_WOL, STATE_CHARGING, STATE_FIELDS, UINT32_MASK, WIRE, Codec, EpochClock,
                    T_BTCTRL, T_BTDEV, T_BTLINK, T_BTSTATE, T_BUILD, T_BUILD2, T_BUILD3, T_BYE, T_CALRES, T_CLICK, T_CMD, T_EVENT, T_FB,
                    T_HAPT, T_IDENT, T_INFO,
-                   T_MOUSE, T_PING, T_PONG, T_PONG2, T_SCFG, T_STATE, T_STATE2, T_TOUCH, T_TRIG, T_TRIG2, T_TRIG3, T_UPDMSG,
+                   T_MOUSE, T_PING, T_PONG, T_PONG2, T_SCFG, T_SPK, T_STATE, T_STATE2, T_TOUCH, T_TRIG, T_TRIG2, T_TRIG3, T_UPDMSG,
                    T_VERSION, TRIG2_OFF, clamp, cstr, mac_bytes, mac_text)
 from rx_buttons import BUTTON_CODES, MASK_ALL, PS_BIT, TRIG_ON
 from rx_config import C
@@ -313,6 +313,18 @@ def send_haptics(i: int, first_frame: int, flags: int, chunk: bytes) -> None:
         chunk: HAPT_FRAMES stereo frames of signed 8-bit samples, the left grip first.
     """
     send_peer(codec.pack(T_HAPT, i, first_frame & UINT32_MASK, flags, chunk))
+
+
+def send_speaker(i: int, frame: int, flags: int, pcm: bytes) -> None:
+    """Send 10 ms of the game's sound for the pad's speaker to the sender (not repeated, like haptics).
+
+    Args:
+        i: The pad's slot.
+        frame: Number of the 10 ms frame (u32, counted by the caller, wraps).
+        flags: SPK_START / SPK_END bits.
+        pcm: SPK_BYTES = 480 mono samples, 48 kHz, signed 16-bit little endian.
+    """
+    send_peer(codec.pack(T_SPK, i, frame & UINT32_MASK, flags, pcm))
 
 
 def scfg_values(s: rx_settings.Settings | None = None) -> tuple[Any, ...]:
