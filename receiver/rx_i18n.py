@@ -47,6 +47,7 @@ EN: Final[dict[str, str]] = {
     "Próba": "Test",
     "Test haptyki": "Test haptics",
     "Ton próbny wysłany do pada.": "Test tone sent to the pad.",
+    "Jingiel wysłany do pada.": "Jingle sent to the pad.",
     "Zmiana włączenia działa po ponownym połączeniu pada; siła - od razu.":
         "Turning it on or off applies when the pad reconnects; the strength applies at once.",
     "{pad}: Windows przełączył domyślne wyjście dźwięku na pada - przywrócono poprzednie":
