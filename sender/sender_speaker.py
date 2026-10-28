@@ -36,7 +36,7 @@ from typing import Final
 
 from proto import HAPT_CHUNK, HAPT_FRAMES, HAPT_RATE, SPK_BYTES, SPK_END, SPK_FRAME, SPK_START, UINT32_MASK
 from sender_haptics import COUNTER_AT, CRC_AT, DATA_AT, HEADER, REPORT_LEN, SEQ_AT, U32_HALF
-from sender_opus import OpusEncoder
+from sender_opus import DEFAULT_MODE, OpusEncoder
 from sender_rumble import BT_SEQ_MASK, BT_SEQ_SHIFT, BYTE_MASK, CRC_LEN, CRC_SEED, Rumble
 
 # ---- report 0x36 (measured on the real pad, P3a) ----
@@ -246,7 +246,7 @@ class SpeakerStream:
     """
 
     def __init__(self, idx: int, rumble: Rumble, report: Report3x, drives: Callable[[], bool], buffer_ms: float,
-                 volume: int, opus_bytes: int) -> None:
+                 volume: int, opus_bytes: int, opus_mode: str = DEFAULT_MODE) -> None:
         """Create an idle stream.
 
         Args:
@@ -257,13 +257,14 @@ class SpeakerStream:
             buffer_ms: The jitter buffer [ms]; at least two frames.
             volume: The speaker volume byte, 0..255.
             opus_bytes: Bytes per 10 ms Opus packet (64 kbit/s = 80).
+            opus_mode: "hybrid" (default) or "celt" (see sender_opus).
 
         Raises:
             OSError: libopus is missing or the encoder cannot be created.
         """
         self.idx, self.rumble, self.report, self.drives = idx, rumble, report, drives
         self.volume = volume
-        self.encoder = OpusEncoder(opus_bytes)
+        self.encoder = OpusEncoder(opus_bytes, opus_mode)
         self.encoder.bind(report.buf, OPUS_AT)
         self.target = max(2, round(buffer_ms / (FRAME_S * 1000)))
         self.high, self.limit = self.target + HIGH_OVER, self.target + LIMIT_OVER
@@ -339,7 +340,8 @@ class SpeakerStream:
         self.report.attach(self.fill, self.encoder.size)
         self._due = now + self.target * FRAME_S                 # the playout delay: the first tick finds `target` frames
         self._timer = asyncio.get_running_loop().call_at(self._due, self._tick)
-        print(f"Controller {self.idx}: speaker start (buffer {self.target * 10} ms, Opus {self.encoder.size} B per frame)")
+        enc = self.encoder
+        print(f"Controller {self.idx}: speaker start (buffer {self.target * 10} ms, Opus {enc.mode}, {enc.size} B per frame)")
         return True
 
     # ---------- the pad's clock ----------
