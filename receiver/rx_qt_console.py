@@ -40,6 +40,7 @@ import rx_backup
 import rx_console
 import rx_ds4
 import rx_haptics
+import rx_speaker
 import rx_hm
 import rx_hm_update
 import rx_lightbar
@@ -59,8 +60,8 @@ from rx_qt_style import set_prop
 from rx_qt_widgets import (Combo, ConfirmButton, SideTabs, SliderRow, button, field, group, icon_button, icon_label, input_items,
                            label, left, pair, spinbox)
 from rx_settings import (ABSENT, COMBO_BUTTONS, DEFAULT_PAD, HAPTICS_GAIN, LIGHT_MODES, LOW_PCT, MASTER_ACTIONS, MASTER_FEATURES,
-                         MOUSE_LIMITS, PADS_COUNT, VPAD_BACKENDS, WOL_BUTTONS, WOL_HOLD_MS, HapticsConfig, LightbarConfig,
-                         MasterConfig, MouseConfig, PadHaptics, PadLight, UiConfig, VpadConfig, WolConfig)
+                         MOUSE_LIMITS, PADS_COUNT, SPEAKER_GAIN, VPAD_BACKENDS, WOL_BUTTONS, WOL_HOLD_MS, HapticsConfig, LightbarConfig,
+                         MasterConfig, MouseConfig, PadHaptics, PadLight, PadSpeaker, SpeakerConfig, UiConfig, VpadConfig, WolConfig)
 
 CAPTURE_TIMEOUT_MS = 15000
 LUMA_DARK_TEXT = 380      # R + G + B above this (of 765) is a light colour: the button text turns black
@@ -106,7 +107,7 @@ class ConsoleSettings(QDialog):
         self.tabs.addTab(_page(self._mouse_tab()), icon("mouse"), _("Mysz"))
         self.tabs.addTab(_page(self._master_tab()), icon("crown"), _("Master"))
         self.tabs.addTab(_page(self._light_tab()), icon("lightbar"), _("Lightbar"))
-        self.tabs.addTab(_page(self._haptics_tab()), icon("rumble"), _("Haptyka"))
+        self.tabs.addTab(_page(self._haptics_tab()), icon("rumble"), _("Haptyka i głośnik"))
         self.wol_page = _page(self._wol_tab())
         self.tabs.addTab(self.wol_page, icon("wake"), _("Wake-on-LAN"))
         self.tabs.addTab(_page(self._vpad_tab()), icon("ps"), _("Pady"))
@@ -564,8 +565,9 @@ class ConsoleSettings(QDialog):
         return [who, rights, actions]
 
     def _haptics_tab(self) -> list[QWidget | QLayout]:
-        """The Haptics tab: game HD haptics per pad (opt-in), the strength and the "Test haptics" button."""
+        """The Haptics tab: game HD haptics and the pad's speaker per pad (opt-in), the strength / volume and the test buttons."""
         self._haptics, self._haptics_key, self._haptics_loading = {}, DEFAULT_PAD, False
+        self._speaker: dict[str, PadSpeaker] = {}
         self.hap_pad = Combo()
         self.hap_pad.changed.connect(self._pick_haptics_pad)
         self.hap_own = QCheckBox(_("Własne ustawienie dla tego pada (inaczej domyślne)"))
@@ -577,6 +579,13 @@ class ConsoleSettings(QDialog):
         self.hap_test = button(_("Test haptyki"))
         self.hap_test.clicked.connect(self._test_haptics)
         self.hap_note = label("", "dim", wrap=True)
+        self.spk_on = QCheckBox(_("Głośnik pada (dźwięk gry) na tym padzie"))
+        self.spk_on.toggled.connect(self._haptics_edited)
+        self.spk_gain = spinbox(*SPEAKER_GAIN, 5, " %")
+        self.spk_gain.valueChanged.connect(self._haptics_edited)
+        self.spk_test = button(_("Test głośnika"))
+        self.spk_test.clicked.connect(self._test_speaker)
+        self.spk_note = label("", "dim", wrap=True)
         box = group(_("HAPTYKA GRY"),
                     label(_("Gry z haptyką DualSense (dźwięk z kanałów 3-4) wysyłają ją do pada przez nadajnik. Wymaga "
                             "wirtualnego pada USB (profil composite) i nadajnika w wersji z haptyką. Jest wyłączona domyślnie: "
@@ -586,12 +595,22 @@ class ConsoleSettings(QDialog):
                     pair(field(_("Siła"), self.hap_gain), field(_("Próba"), self.hap_test)),
                     self.hap_note,
                     label(_("Zmiana włączenia działa po ponownym połączeniu pada; siła - od razu."), "dim", wrap=True))
-        return [box]
+        speaker = group(_("GŁOŚNIK PADA"),
+                        label(_("Dźwięk gry z wyjścia „Wireless Controller” (kanały 1-2) gra na głośniku pada przez nadajnik "
+                                "(Bluetooth, kodek Opus). Potrzebuje tego samego wirtualnego pada USB co haptyka, nadajnika w wersji "
+                                "z głośnikiem i biblioteki libopus na nadajniku. Jest wyłączony domyślnie. Ustawienia pada wyżej "
+                                "(własne lub domyślne) dotyczą też głośnika."), "dim", wrap=True),
+                        self.spk_on,
+                        pair(field(_("Głośność"), self.spk_gain), field(_("Próba"), self.spk_test)),
+                        self.spk_note,
+                        label(_("Zmiana włączenia działa po ponownym połączeniu pada; głośność - od razu."), "dim", wrap=True))
+        return [box, speaker]
 
     # ---------- haptics ----------
-    def _load_haptics(self, cfg: HapticsConfig) -> None:
+    def _load_haptics(self, cfg: HapticsConfig, speaker: SpeakerConfig) -> None:
         """Fill the Haptics tab: the pad list (default, connected, remembered) and the first entry's values."""
         self._haptics = dict(cfg.pads)
+        self._speaker = dict(speaker.pads)
         items: list[tuple] = [(DEFAULT_PAD, _("Domyślne - pady bez własnego ustawienia"), "rumble")]
         known = {DEFAULT_PAD}
         for i in range(C.NUM_PADS):
@@ -599,7 +618,7 @@ class ConsoleSettings(QDialog):
             if key not in known and S.pad_id[i] and (S.alive[i] or S.want[i].is_set()):
                 known.add(key)
                 items.append((key, _("Pad {n}  ·  {key}").format(n=i + 1, key=key)))
-        items += [(k, _("{key}  (niepodłączony)").format(key=k)) for k in self._haptics if k not in known]
+        items += [(k, _("{key}  (niepodłączony)").format(key=k)) for k in {**self._haptics, **self._speaker} if k not in known]
         self.hap_pad.set_items(items)
         self.hap_pad.set_data(DEFAULT_PAD)
         self._pick_haptics_pad(DEFAULT_PAD)
@@ -608,11 +627,14 @@ class ConsoleSettings(QDialog):
         """Show the haptics settings of the chosen pad key (falling back to the default entry); loading is not an edit."""
         self._haptics_key = key
         cfg = self._haptics.get(key) or self._haptics.get(DEFAULT_PAD) or PadHaptics()
+        spk = self._speaker.get(key) or self._speaker.get(DEFAULT_PAD) or PadSpeaker()
         self._haptics_loading = True
         self.hap_own.setVisible(key != DEFAULT_PAD)
-        self.hap_own.setChecked(key == DEFAULT_PAD or key in self._haptics)
+        self.hap_own.setChecked(key == DEFAULT_PAD or key in self._haptics or key in self._speaker)
         self.hap_on.setChecked(cfg.enabled)
         self.hap_gain.setValue(cfg.gain)
+        self.spk_on.setChecked(spk.enabled)
+        self.spk_gain.setValue(spk.gain)
         self._haptics_loading = False
         self._haptics_enable()
 
@@ -626,12 +648,16 @@ class ConsoleSettings(QDialog):
     def _haptics_enable(self) -> None:
         """Enable the fields only for an own setting; the test button only for a connected pad; say when its sender is too old."""
         own = self.hap_own.isChecked()
-        self.hap_on.setEnabled(own)
-        self.hap_gain.setEnabled(own)
+        for w in (self.hap_on, self.hap_gain, self.spk_on, self.spk_gain):
+            w.setEnabled(own)
         slot = self._haptics_pad_slot()
         self.hap_test.setEnabled(slot is not None)
+        self.spk_test.setEnabled(slot is not None)
         old = slot is not None and not rx_haptics.sender_haptics(slot)
         self.hap_note.setText(_("Nadajnik tego pada jest w starszej wersji i nie przekaże haptyki (kliknij Aktualizuj).") if old else "")
+        old = slot is not None and not rx_speaker.sender_speaker(slot)
+        self.spk_note.setText(_("Nadajnik tego pada jest w starszej wersji i nie przekaże dźwięku na głośnik (kliknij Aktualizuj).")
+                              if old else "")
 
     def _haptics_edited(self, *_args: Any) -> None:
         """Record the edited fields for the current pad key, or drop the entry when it uses the default."""
@@ -640,8 +666,10 @@ class ConsoleSettings(QDialog):
         key = self._haptics_key
         if key != DEFAULT_PAD and not self.hap_own.isChecked():
             self._haptics.pop(key, None)
+            self._speaker.pop(key, None)
         else:
             self._haptics[key] = PadHaptics(enabled=self.hap_on.isChecked(), gain=self.hap_gain.value())
+            self._speaker[key] = PadSpeaker(enabled=self.spk_on.isChecked(), gain=self.spk_gain.value())
         self._haptics_enable()
 
     def _test_haptics(self) -> None:
@@ -650,6 +678,14 @@ class ConsoleSettings(QDialog):
         if slot is None:
             return
         why = rx_haptics.test(slot, self.hap_gain.value() / 100)
+        self._status(why or _("Ton próbny wysłany do pada."), "warn" if why else "ok")
+
+    def _test_speaker(self) -> None:
+        """Send a short tone through the speaker path to the chosen pad (with the volume shown, not the saved one)."""
+        slot = self._haptics_pad_slot()
+        if slot is None:
+            return
+        why = rx_speaker.test(slot, self.spk_gain.value() / 100)
         self._status(why or _("Ton próbny wysłany do pada."), "warn" if why else "ok")
 
     def _light_tab(self) -> list[QWidget | QLayout]:
@@ -868,7 +904,7 @@ class ConsoleSettings(QDialog):
         self._load_mouse(rx_settings.cur.mouse)
         self._load_master(rx_settings.cur.master)
         self._load_light(rx_settings.cur.lightbar)
-        self._load_haptics(rx_settings.cur.haptics)
+        self._load_haptics(rx_settings.cur.haptics, rx_settings.cur.speaker)
         self._load_wol(rx_settings.cur.wol)
         self._load_vpad(rx_settings.cur.vpad)
         cfg = rx_console.ctl.cfg if rx_console.ctl else ConsoleConfig()
@@ -994,7 +1030,7 @@ class ConsoleSettings(QDialog):
         return rx_settings.Settings(mouse, master, ui,
                                     LightbarConfig(low_pct=self.low_pct.value(), pads=dict(self._lights)),
                                     self._collect_wol(), rx_settings.cur.log, self._collect_vpad(),
-                                    HapticsConfig(pads=dict(self._haptics)))
+                                    HapticsConfig(pads=dict(self._haptics)), SpeakerConfig(pads=dict(self._speaker)))
 
     def collect(self) -> ConsoleConfig:
         """-> the ConsoleConfig described by the Console mode tab."""

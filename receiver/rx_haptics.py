@@ -18,6 +18,9 @@ sender needs to hear nothing at all while the pad is quiet: a running stream cos
 Chunks go out at the audio clock (one per 10.667 ms), not in bursts of whatever window HIDMaestro delivered; the sender's own
 jitter buffer (haptics_buffer_ms) and its stream timeout do the rest. No packet is repeated.
 
+The same USB endpoint also carries the game's sound for the pad's speaker (channels 1 / 2): rx_speaker is a second consumer of this
+link's ring. The composite pad is created when haptics OR the speaker is wanted; both streams are independent after that.
+
 The virtual pad of slot i is fed by the physical pad rx_swap.route(i) (swapped players): the setting, the sender's capability
 and the packets all follow that physical pad, like the game feedback does.
 """
@@ -198,9 +201,10 @@ class Pacer:
     that is allowed to run 10 % faster than nominal while it holds more than CATCHUP_DEPTH chunks neither grows nor bursts.
     """
 
-    def __init__(self) -> None:
-        """Start due immediately."""
+    def __init__(self, period: float = CHUNK_S) -> None:
+        """Start due immediately; `period` is the time one chunk (or speaker frame) stands for."""
         self.due = 0.0
+        self.period = period
 
     def ready(self, now: float) -> bool:
         """Tell whether a chunk may go out now."""
@@ -208,8 +212,8 @@ class Pacer:
 
     def sent(self, now: float, left: int) -> None:
         """Record a send; `left` = chunks still waiting. A send more than one period late re-anchors on `now`."""
-        step = MIN_SPACING_S if left > CATCHUP_DEPTH else CHUNK_S
-        self.due = self.due + step if now - self.due < CHUNK_S else now + step
+        step = self.period * (MIN_SPACING_S / CHUNK_S) if left > CATCHUP_DEPTH else self.period
+        self.due = self.due + step if now - self.due < self.period else now + step
 
 
 # ---------------- the per-slot link ----------------
@@ -243,6 +247,9 @@ class Link:
         self._noted: set[str] = set()               # event log notes written since the pad was created
         self._thread: threading.Thread | None = None
         self.sent = self.dropped = self.overruns = 0
+        self.channels, self.rate = 4, 48000         # the audio format of the endpoint (set by configure)
+        self.speaker_channels = (0, 1)              # the interleaved channels of the speaker's left and right (rx_speaker)
+        self.on_write: Callable[[int], None] | None = None   # called on the audio thread with the bytes written so far (rx_speaker)
 
     # ----- the audio thread -----
     def write(self, view: memoryview, n: int) -> None:
@@ -259,6 +266,8 @@ class Link:
         self._pcm_at = self._clock()
         if (self._active or w + n - self._r >= WAKE_BYTES) and not self._wake.is_set():
             self._wake.set()
+        if self.on_write is not None:
+            self.on_write(w + n)
 
     # ----- setup -----
     def configure(self, channels: int, rate: int, bits: int, roles: Sequence[str]) -> str | None:
@@ -271,11 +280,41 @@ class Link:
         left, right = (roles.index("hapticLeft"), roles.index("hapticRight")) if {"hapticLeft", "hapticRight"} <= set(roles) else (2, 3)
         if max(left, right) >= channels:
             return "the haptic channels are not in the stream"
+        spk = [roles.index("speakerLeft"), roles.index("speakerRight")] if {"speakerLeft", "speakerRight"} <= set(roles) else [0, 1]
         with self._lock:
             self._dec = Decimator(rate, channels, left, right)
             self._r = self._w
+            self.channels, self.rate = channels, rate
+            self.speaker_channels = (spk[0], spk[1]) if max(spk) < channels else (0, 1)
         return None
 
+    @property
+    def written(self) -> int:
+        """Bytes of PCM written into the ring so far (a position for read_from)."""
+        return self._w
+
+    @property
+    def pcm_at(self) -> float:
+        """When write() last ran (the link's clock)."""
+        return self._pcm_at
+
+    def read_from(self, r: int) -> tuple[bytes | None, int]:
+        """Audio written since byte position `r` (whole frames) -> (the bytes or None, the new position).
+
+        A second consumer of the ring (the speaker) keeps its own position. When the writer lapped it, it skips ahead to the
+        last half of the ring (on a frame boundary: a cut inside one would swap the channels for good).
+        """
+        frame = self.channels * BYTES_PER_SAMPLE
+        w = self._w
+        if w - r > RING_SAFE:
+            r = w - RING_BYTES // 2 // frame * frame
+        n = (w - r) // frame * frame
+        if n <= 0:
+            return None, r
+        i = r & RING_MASK
+        first = RING_BYTES - i
+        data = bytes(self._ring[i:i + n]) if n <= first else bytes(self._ring[i:]) + bytes(self._ring[:n - first])
+        return data, r + n
     def wake(self) -> None:
         """Make the thread look at the settings and the audio now."""
         self._wake.set()
@@ -489,6 +528,8 @@ def stop_all() -> None:
     """Receiver shutdown: end every running stream so the senders release their pads."""
     for lk in links:
         lk.stop()
+    import rx_speaker
+    rx_speaker.stop_all()
 
 
 def sender_haptics(i: int) -> bool:
@@ -510,15 +551,22 @@ def _await_identity(t: int) -> None:
 
 
 def composite_wanted(idx: int) -> bool:
-    """Tell whether the virtual pad of slot idx should be created as the USB composite (game haptics).
+    """Tell whether the virtual pad of slot idx should be created as the USB composite (game haptics and / or the speaker).
 
-    All of: the setting is on for the physical pad behind the slot, its sender announced CAP_HAPTICS, it may use the feature
-    (master only), and no composite create failed lately. Called by the slot thread just before it creates the pad.
+    Haptics: the setting is on for the physical pad behind the slot, its sender announced CAP_HAPTICS and it may use the feature
+    (master only). The speaker (rx_speaker) has the same three conditions with CAP_SPEAKER. Either one is enough, and no composite
+    create may have failed lately. Called by the slot thread just before it creates the pad.
     """
-    if time.monotonic() < _composite_off_until or not _wanted_somewhere():
+    import rx_speaker
+    if time.monotonic() < _composite_off_until or not (_wanted_somewhere() or rx_speaker.wanted_somewhere()):
         return False
     t = rx_swap.route(idx)
     _await_identity(t)
+    return _haptics_wanted(idx, t) or rx_speaker.wanted(idx, t)
+
+
+def _haptics_wanted(idx: int, t: int) -> bool:
+    """The haptics half of composite_wanted for virtual slot idx / physical pad t (says so in the event log when the sender is old)."""
     if not rx_settings.cur.haptics.get(S.profile_key(t)).enabled:
         return False
     if not sender_haptics(t):
@@ -559,7 +607,12 @@ def create_composite(backend: Any, idx: int, on_fb: Callable[..., None]) -> Any 
             pad=ev.pad_name(t), err=_describe(e)))
         return None
     lk.ensure_thread()
-    ev.info(_("{pad}: pad z haptyką gry (HD haptics przez nadajnik)").format(pad=ev.pad_name(t)))
+    import rx_speaker
+    rx_speaker.attach(idx, lk)
+    if rx_settings.cur.haptics.get(S.profile_key(t)).enabled:
+        ev.info(_("{pad}: pad z haptyką gry (HD haptics przez nadajnik)").format(pad=ev.pad_name(t)))
+    if rx_speaker.wanted_now(t):
+        ev.info(_("{pad}: pad z głośnikiem (dźwięk gry przez nadajnik)").format(pad=ev.pad_name(t)))
     if before:
         threading.Thread(target=_guard_defaults, args=(t, before), name=f"audio guard {idx}", daemon=True).start()
     return pad
@@ -571,9 +624,11 @@ def _describe(e: BaseException) -> str:
 
 
 def detach(idx: int) -> None:
-    """The virtual pad of slot idx was closed: end its stream and forget the audio."""
+    """The virtual pad of slot idx was closed: end its streams and forget the audio."""
     if idx < len(links):
         links[idx].detach()
+    import rx_speaker
+    rx_speaker.detach(idx)
 
 
 def test(i: int, gain: float | None = None) -> str | None:
@@ -595,12 +650,14 @@ def test(i: int, gain: float | None = None) -> str | None:
 
 
 def _settings_changed(old: rx_settings.Settings, new: rx_settings.Settings) -> None:
-    """Settings listener: another haptics setting clears the failure pause and wakes the links (a pad turned off ends its stream)."""
+    """Settings listener: another haptics or speaker setting clears the failure pause and wakes the links (off ends a stream)."""
     global _composite_off_until
-    if old.haptics != new.haptics:
+    if old.haptics != new.haptics or old.speaker != new.speaker:
         _composite_off_until = 0.0
         for lk in links:
             lk.wake()
+        import rx_speaker
+        rx_speaker.wake_all()
 
 
 rx_settings.on_change(_settings_changed)

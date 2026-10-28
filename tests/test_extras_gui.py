@@ -68,7 +68,7 @@ ok("dziennik: ikona w nagłówku, poziom, zdarzenia nadajnika, limit linii, kopi
 win.open_settings(); pump(100)
 dlg = win.settings_dlg
 dlg.tabs.setCurrentIndex(3); pump()
-assert dlg.tabs.tabText(3) == "Lightbar" and dlg.tabs.tabText(4) == "Haptyka" and dlg.tabs.tabText(5) == "Wake-on-LAN" and not dlg.tabs.tabIcon(4).isNull()
+assert dlg.tabs.tabText(3) == "Lightbar" and dlg.tabs.tabText(4) == "Haptyka i głośnik" and dlg.tabs.tabText(5) == "Wake-on-LAN" and not dlg.tabs.tabIcon(4).isNull()
 assert [dlg.light_pad.itemData(i) for i in range(dlg.light_pad.count())] == ["*", A]
 assert not dlg.light_own.isVisible(), "domyślne ustawienie zawsze własne"
 dlg.light_mode.set_data("battery"); dlg.light_mode.changed.emit("battery")

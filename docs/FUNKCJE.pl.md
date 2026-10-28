@@ -191,7 +191,7 @@
   - **Master:** pad master, co wolno tylko jemu, przyciski akcji. Mysz i master działają od razu, bez restartu
     (`settings.json`);
   - **Lightbar:** kolor per pad / domyślny, tryb, miganie, próg niskiej baterii (od razu);
-  - **Haptyka:** haptyka gry per pad - włączenie, siła, test (siła od razu, włączenie po ponownym połączeniu pada);
+  - **Haptyka i głośnik:** haptyka gry i głośnik pada per pad - włączenie, siła / głośność, test (siła od razu, włączenie po ponownym połączeniu pada);
   - **Wake-on-LAN:** włączenie, przycisk do pary z PS, czas przytrzymania, MAC i broadcast (puste = automatycznie);
   - **Pady:** które karty padów pokazuje okno - dynamicznie (tylko podłączone) albo stała liczba slotów (1-4, działa
     od razu; same sloty ustawia `pads` w `receiver.toml`, domyślnie 4) - oraz backend wirtualnych padów, HIDMaestro i
@@ -230,6 +230,16 @@
     konsoli go nie pokazuje). Włączenie i wyłączenie działa po ponownym połączeniu pada; gdy pada composite nie da się
     utworzyć, pad działa jak dotąd, a dziennik zdarzeń podaje powód (bez nowej próby przez 10 minut albo do zmiany ustawienia);
   - nadajnik musi ogłaszać haptykę (v13+, zaktualizuj go z okna); „Haptyka” jest też funkcją tylko dla mastera.
+- **Głośnik pada (eksperymentalny)** (Ustawienia → Haptyka i głośnik), opcja do włączenia, osobno dla każdego pada (MAC) albo
+  domyślnie; wymaga backendu HIDMaestro, nadajnika v14+ i libopus na nadajniku (`libopus0` / `opus`):
+  - dźwięk gry z wyjścia „Wireless Controller” (kanały 1-2) jest miksowany do mono i wysyłany w ramkach po 10 ms; nadajnik
+    koduje go Opusem i gra na głośniku pada przez Bluetooth, na wspólnym zegarze z haptyką. W ciszy nic nie jest wysyłane
+    (strumień kończy znacznik końca po ok. 150 ms, potem głośność pada spada do 0);
+  - **Głośność** 0-200 % (od razu), **Test głośnika** gra krótki ton 440 Hz na wybranym padzie, a gdy się nie da, podaje
+    powód (stary nadajnik, pad nie jest masterem, ustawienie wyłączone);
+  - używa tego samego pada composite i urządzenia audio co haptyka, więc obowiązują te same uwagi (sterownik, domyślne
+    wyjście, działa po ponownym połączeniu pada). Bez libopus nadajnik nie ogłasza głośnika, a haptyka działa jak dotąd;
+  - „Głośnik” jest funkcją tylko dla mastera. Gniazdo słuchawkowe i mikrofon nie są obsługiwane.
 - **Wake-on-LAN z pada** (Ustawienia → Wake-on-LAN): gdy komputer nie odpowiada (wyłączony / uśpiony), **PS + Options
   przytrzymane ~1 s** (przycisk i czas do wyboru) - nadajnik wysyła magic packet. Przy działającym komputerze ta sama
   kombinacja idzie do receivera jak zwykle (np. pauza mastera), więc nic nie koliduje; samo długie PS się nie nadaje
