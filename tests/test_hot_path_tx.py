@@ -1,7 +1,7 @@
 """Sender: the hot-path fixes - one persistent evdev reader (pump), no packets after "bye", state files written off the
 event loop, lightbar writes that survive a transient error.
     python3 tests/test_hot_path_tx.py sender"""
-import asyncio, builtins, contextlib, errno, io, json, os, sys, tempfile, threading
+import asyncio, builtins, contextlib, errno, io, json, os, sys, tempfile, threading, time
 sys.path.insert(0, sys.argv[1])
 import sender_config; sender_config.init(["127.0.0.1"])
 from sender_config import C
@@ -147,6 +147,13 @@ asyncio.run(t_sealed())
 
 
 # ---------- 3. state files: fsync in a worker thread, in order, text made at call time ----------
+async def until(cond, limit=5.0):
+    """Wait for the worker thread (a slow CI disk can take longer than a fixed sleep)."""
+    end = time.monotonic() + limit
+    while not cond() and time.monotonic() < end:
+        await asyncio.sleep(0.01)
+
+
 async def t_files():
     path = os.path.join(TMP, "a.json")
     threads = []
@@ -159,18 +166,19 @@ async def t_files():
     state.write_json_later(path, data)
     data["v"] = 99                                   # later changes must not reach the first write
     state.write_json_later(path, {"b": 2, "a": 1}, indent=1, sort_keys=True)
-    await asyncio.sleep(0.2)
+    await until(lambda: len(threads) >= 2 and os.path.exists(path))
+    await asyncio.sleep(0.05)
     state.write_file = real
     check(len(threads) == 2 and all(n.startswith("state-files") for n in threads), f"files are written by the worker thread ({threads})")
     check(json.load(open(path)) == {"a": 1, "b": 2} and open(path).read().startswith('{\n "a": 1'), "the last request wins, indent and key order kept")
     p2 = os.path.join(TMP, "b.json")
     state.write_json_later(p2, data)
-    await asyncio.sleep(0.1)
+    await until(lambda: os.path.exists(p2))
     check(json.load(open(p2)) == {"v": 99}, "the text is made when the call is made (data as it was then)")
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
         state.write_json_later(os.path.join(TMP, "missing-dir", "x.json"), {})
-        await asyncio.sleep(0.1)
+        await until(lambda: "Cannot write" in buf.getvalue())
     check("Cannot write" in buf.getvalue(), "a failed write is only logged")
 
 asyncio.run(t_files())
