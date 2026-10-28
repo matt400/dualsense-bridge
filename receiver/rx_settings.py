@@ -9,6 +9,7 @@
   log       the event log in the window: level, line limit, events from the sender
   vpad      virtual pads: the backend (HIDMaestro DualSense / ViGEmBus DS4), fixed player order (rx_ds4, rx_hm)
   haptics   game HD haptics per pad (by MAC): on / off and the strength - rx_haptics
+  speaker   the game's sound on the pad's speaker per pad (by MAC): on / off and the volume - rx_speaker
 
 A missing file / a bad value -> the default (a message in the log, the file is repaired on save). A change from the window
 takes effect at once: apply() replaces the `cur` object (a single assignment - the network threads always read a consistent whole).
@@ -104,6 +105,7 @@ MASTER_FEATURES: Final = {
     "sens": ("Czułość myszy (PS + ↑ / ↓)", "dpad_up"),
     "triggers": ("Efekty spustów (opór, klik, wibracja)", "r2"),
     "haptics": ("Haptyka gry (HD haptics)", "rumble"),
+    "speaker": ("Głośnik pada (dźwięk gry)", "rumble"),
 }
 # master actions: key -> (label, needs a HOLD_S hold - protection against accidents)
 MASTER_ACTIONS: Final = {
@@ -345,19 +347,24 @@ class PadHaptics:
     gain: int = 100               # strength [%]
 
 
-def _haptic_pads(v: Any) -> dict[str, PadHaptics]:
-    """Turn {"*" | MAC: {"enabled", "gain"}} into {key: PadHaptics}; bad entries are skipped."""
-    if not isinstance(v, dict):
-        raise ValueError("expected {pad: {enabled, gain}}")
-    out: dict[str, PadHaptics] = {}
-    for k, raw in v.items():
-        try:
-            if not isinstance(raw, dict):
-                raise ValueError("expected an object")
-            out[_text(k)] = PadHaptics(enabled=_bool(raw.get("enabled", False)), gain=_num(*HAPTICS_GAIN)(raw.get("gain", 100)))
-        except (ValueError, TypeError) as e:
-            print(f"Settings: haptics for {k!r} ignored ({e})")
-    return out
+def _pad_table(make: Callable[[bool, int], Any], gain: tuple[int, int], what: str) -> Callable[[Any], dict[str, Any]]:
+    """A validator for {"*" | MAC: {"enabled", "gain"}} that builds `make(enabled, gain)` per pad; bad entries are skipped."""
+    def parse(v: Any) -> dict[str, Any]:
+        if not isinstance(v, dict):
+            raise ValueError("expected {pad: {enabled, gain}}")
+        out: dict[str, Any] = {}
+        for k, raw in v.items():
+            try:
+                if not isinstance(raw, dict):
+                    raise ValueError("expected an object")
+                out[_text(k)] = make(_bool(raw.get("enabled", False)), _num(*gain)(raw.get("gain", 100)))
+            except (ValueError, TypeError) as e:
+                print(f"Settings: {what} for {k!r} ignored ({e})")
+        return out
+    return parse
+
+
+_haptic_pads = _pad_table(lambda enabled, gain: PadHaptics(enabled=enabled, gain=gain), HAPTICS_GAIN, "haptics")
 
 
 @dataclass(frozen=True, slots=True)
@@ -376,6 +383,34 @@ class HapticsConfig:
 HapticsConfig.V = {"pads": _haptic_pads}
 
 
+# ---------------- the pad's speaker ----------------
+SPEAKER_GAIN: Final = (0, 200)      # volume [%] of the game's speaker channels (a soft clip catches the peaks)
+
+
+@dataclass(frozen=True, slots=True)
+class PadSpeaker:
+    """The game's sound on the speaker of one pad (rx_speaker)."""
+
+    enabled: bool = False         # opt-in, like haptics: the virtual pad becomes a USB composite on its next connect
+    gain: int = 100               # volume [%] before the pad's own speaker volume (the sender's speaker_volume)
+
+
+@dataclass(frozen=True, slots=True)
+class SpeakerConfig:
+    """Per-pad speaker (keys as in the lightbar: "*" is the default, a MAC is one pad)."""
+
+    pads: dict[str, PadSpeaker] = field(default_factory=dict)
+
+    V: ClassVar[Validators] = None
+
+    def get(self, key: str) -> PadSpeaker:
+        """Return the setting for a pad key: its own entry, else the "*" default, else the built-in default (off)."""
+        return self.pads.get(key) or self.pads.get(DEFAULT_PAD) or PadSpeaker()
+
+
+SpeakerConfig.V = {"pads": _pad_table(lambda enabled, gain: PadSpeaker(enabled=enabled, gain=gain), SPEAKER_GAIN, "speaker")}
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     """All settings sections; replaced as a whole by apply()."""
@@ -388,6 +423,7 @@ class Settings:
     log: LogConfig = field(default_factory=LogConfig)
     vpad: VpadConfig = field(default_factory=VpadConfig)
     haptics: HapticsConfig = field(default_factory=HapticsConfig)
+    speaker: SpeakerConfig = field(default_factory=SpeakerConfig)
 
 
 def _section(cls: Any, raw: dict[str, Any] | None, base: Any, name: str) -> Any:
@@ -446,7 +482,7 @@ def save(s: Settings, path: str) -> None:
     """Write the settings atomically (a temporary file + replace)."""
     data = {"version": 1, "mouse": asdict(s.mouse), "master": {**asdict(s.master), "only_master": list(s.master.only_master)},
             "ui": asdict(s.ui), "lightbar": asdict(s.lightbar), "wol": asdict(s.wol), "log": asdict(s.log),
-            "vpad": asdict(s.vpad), "haptics": asdict(s.haptics)}
+            "vpad": asdict(s.vpad), "haptics": asdict(s.haptics), "speaker": asdict(s.speaker)}
     write_json(path, data, indent=2, ensure_ascii=False)
 
 

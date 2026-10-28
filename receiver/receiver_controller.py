@@ -8,6 +8,7 @@ Files: proto.py (shared), rx_config.py, rx_state.py, rx_buttons.py (remap + rema
        rx_gyro.py (gyro as a mouse), rx_gstick.py + rx_gstick_io.py (pad tilt as a stick),
        rx_feedback.py (rumble, lightbar, confirmations),
        rx_winapi.py, rx_mouse.py, rx_report.py, rx_net.py, rx_dsu.py, rx_ds4.py, rx_haptics.py (game HD haptics),
+       rx_speaker.py (pad speaker),
        rx_console.py + rx_audio.py (console mode: monitor / TV, console.json),
        rx_settings.py (settings.json: mouse, master pad), rx_master.py (master pad: permissions, PS + button),
        window: rx_qt.py (window, tray), rx_qt_sidebar.py (the side menu), rx_qt_diag.py + rx_diag.py (the Diagnostics tab and its data),
@@ -206,6 +207,7 @@ def _init_modules() -> None:
     import rx_mouse
     import rx_net
     import rx_settings
+    import rx_speaker
     import rx_state as S
     import rx_testmode
     import rx_winapi
@@ -220,6 +222,7 @@ def _init_modules() -> None:
     rx_testmode.init(C.NUM_PADS)
     rx_ds4.init()
     rx_haptics.init()
+    rx_speaker.init()
     rx_gstick_io.runner.init()
     rx_net.init()
     rx_dsu.start()
