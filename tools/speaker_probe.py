@@ -17,7 +17,8 @@ pad lookup and the `jitter` command, and root for /dev/hidraw*:
     doas python3 speaker_probe.py jitter            # input interval jitter with and without the stream (A-B-A, 60 s each)
     doas python3 speaker_probe.py stop              # pop at the start / end, silence tail, how long the audio path stays alive
     doas python3 speaker_probe.py edge              # what removes the pop at the end of a stream (tails, fade, volume 0, audio off)
-    doas python3 speaker_probe.py gap               # clean 1 kHz tone in 4 variants, you RECORD each (analysed offline: 94 Hz sidebands)
+    doas python3 speaker_probe.py gap               # clean 1 kHz tone in 6 variants, you RECORD each (analysed offline: 94 Hz buzz)
+    doas python3 speaker_probe.py gap --only var2.5,var5   # only the variable-length packets (4-5 x 2.5 ms, 2-3 x 5 ms per report)
     doas python3 speaker_probe.py gap --wav speech.wav   # the same variants with your own speech (48 kHz mono WAV)
 
 Every command that measures something merges its result into speaker_probe_results.json (paste that file back). `layout` stores the
@@ -120,6 +121,16 @@ def _opus_lib() -> ctypes.CDLL:
         lib.opus_encode.restype = ctypes.c_int32
         lib.opus_encoder_destroy.argtypes = [ctypes.c_void_p]
         lib.opus_encoder_destroy.restype = None
+        lib.opus_repacketizer_create.argtypes = []
+        lib.opus_repacketizer_create.restype = ctypes.c_void_p
+        lib.opus_repacketizer_init.argtypes = [ctypes.c_void_p]
+        lib.opus_repacketizer_init.restype = ctypes.c_void_p
+        lib.opus_repacketizer_cat.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int32]
+        lib.opus_repacketizer_cat.restype = ctypes.c_int
+        lib.opus_repacketizer_out.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int32]
+        lib.opus_repacketizer_out.restype = ctypes.c_int32
+        lib.opus_repacketizer_destroy.argtypes = [ctypes.c_void_p]
+        lib.opus_repacketizer_destroy.restype = None
         lib.opus_encoder_ctl.restype = ctypes.c_int
         lib.opus_get_version_string.restype = ctypes.c_char_p
         _LIB = lib
@@ -138,7 +149,7 @@ def opus_version() -> str:
 class Encoder:
     """A mono 48 kHz Opus encoder for 10 ms frames, CBR, so every frame has the same size (``size`` bytes including the TOC byte)."""
 
-    def __init__(self, size: int, complexity: int | None = None, ms: int = 10) -> None:
+    def __init__(self, size: int, complexity: int | None = None, ms: float = 10) -> None:
         """Create the encoder; the bitrate is chosen so that a CBR frame of ``ms`` milliseconds is ``size`` bytes."""
         self._lib = _opus_lib()
         self.size, self.mismatch = size, 0
@@ -146,7 +157,7 @@ class Encoder:
         self._state = ctypes.c_void_p(self._lib.opus_encoder_create(OPUS_RATE, 1, OPUS_APPLICATION_AUDIO, ctypes.byref(err)))
         if err.value != 0 or not self._state:
             raise SystemExit(f"opus_encoder_create failed ({err.value})")
-        self._ctl(REQ_BITRATE, size * 8 * 1000 // ms)
+        self._ctl(REQ_BITRATE, round(size * 8 * 1000 / ms))
         self._ctl(REQ_VBR, 0)
         if complexity is not None:
             self._ctl(REQ_COMPLEXITY, complexity)
@@ -175,7 +186,7 @@ class Encoder:
 class FakeEncoder:
     """Dry-run stand-in when libopus is missing: ``size`` bytes of deterministic filler, NOT valid Opus."""
 
-    def __init__(self, size: int, complexity: int | None = None, ms: int = 10) -> None:
+    def __init__(self, size: int, complexity: int | None = None, ms: float = 10) -> None:
         """Remember the frame size."""
         self.size, self.mismatch = size, 0
 
@@ -187,7 +198,41 @@ class FakeEncoder:
         """Nothing to free."""
 
 
-def make_encoder(size: int, dry: bool, complexity: int | None = None, ms: int = 10) -> Encoder | FakeEncoder:
+class Repacker:
+    """Joins several Opus packets of the same frame length into one packet (libopus' repacketizer), e.g. 5 x 2.5 ms = 12.5 ms."""
+
+    def __init__(self) -> None:
+        """Create the repacketizer (needs the real libopus: a dry run without it just concatenates the filler)."""
+        try:
+            self._lib: ctypes.CDLL | None = _opus_lib()
+        except SystemExit:
+            self._lib = None
+        self._state = ctypes.c_void_p(self._lib.opus_repacketizer_create()) if self._lib else None
+        self._out = ctypes.create_string_buffer(OPUS_MAX_PACKET)
+
+    def join(self, packets: list[bytes]) -> bytes:
+        """One packet carrying all ``packets`` (in order); a single packet is returned as is."""
+        if len(packets) == 1:
+            return packets[0]
+        if self._lib is None or self._state is None:
+            return b"".join(packets)
+        self._lib.opus_repacketizer_init(self._state)
+        for pkt in packets:
+            if self._lib.opus_repacketizer_cat(self._state, pkt, len(pkt)) != 0:
+                raise OSError("opus_repacketizer_cat refused a packet (different frame lengths?)")
+        n = self._lib.opus_repacketizer_out(self._state, ctypes.addressof(self._out), OPUS_MAX_PACKET)
+        if n < 0:
+            raise OSError(f"opus_repacketizer_out failed ({n})")
+        return ctypes.string_at(ctypes.addressof(self._out), n)
+
+    def close(self) -> None:
+        """Free the repacketizer."""
+        if self._lib is not None and self._state:
+            self._lib.opus_repacketizer_destroy(self._state)
+            self._state = ctypes.c_void_p(0)
+
+
+def make_encoder(size: int, dry: bool, complexity: int | None = None, ms: float = 10) -> Encoder | FakeEncoder:
     """A real encoder; in a dry run without libopus a fake one."""
     try:
         return Encoder(size, complexity, ms)
@@ -402,9 +447,10 @@ class Plan:
     tail_s: float = 0.0                              # digital silence after the tone (0x36 reports)
     fade_s: float = 0.03                             # fade in / out of the speaker tone
     preencode: bool = False                          # endless tone: encode one second up front and loop it (a quiet probe thread)
-    spk_ms: int = 10                                 # length of one Opus frame in ms (10 or 20)
+    spk_ms: float = 10                               # length of one Opus frame in ms (10, 20; 2.5 / 5 with ``mean_ms``)
     spk_every: int = 1                               # a speaker sub-packet only in every Nth report (the others carry none)
     wav: str = ""                                    # play this 48 kHz WAV instead of the sine
+    mean_ms: float = 0.0                             # > 0: reports carry whole numbers of ``spk_ms`` frames, this long on average
 
 
 class Source:
@@ -416,7 +462,8 @@ class Source:
         self.enc_ms: list[float] = []
         self.spk_osc: Sine | Wav = (Wav(plan.wav, SPK_AMP, plan.secs) if plan.wav
                                     else Sine(plan.spk_hz, SPK_AMP, OPUS_RATE, plan.secs, plan.fade_s))
-        self.frame = OPUS_RATE * plan.spk_ms // 1000
+        self.frame = round(OPUS_RATE * plan.spk_ms / 1000)
+        self.repack = Repacker() if plan.mean_ms else None
         self.hapt_osc = Sine(plan.hapt_hz, HAPT_AMP, HAPT_RATE, plan.secs)
         self._cache: list[bytes] = []
         if plan.preencode and enc is not None and plan.secs is None and plan.spk == "tone":
@@ -441,6 +488,8 @@ class Source:
         if self._cache:
             return self._cache[i % len(self._cache)]
         p = self.plan
+        if self.repack is not None:
+            return self._variable(i, silent)
         if p.drop_every and i % p.drop_every == p.drop_every - 1:
             self.spk_osc.take(self.frame)                       # one source frame is dropped: the tone stays real-time
         quiet = silent or p.spk == "silence"
@@ -449,6 +498,22 @@ class Source:
         frame = self.enc.encode(to_pcm(samples))
         self.enc_ms.append((time.perf_counter() - t0) * 1000)
         return frame
+
+    def _frames_in(self, i: int) -> int:
+        """How many short frames report ``i`` carries: the mean length is spread evenly (4 or 5 x 2.5 ms, 2 or 3 x 5 ms)."""
+        per = self.plan.mean_ms / self.plan.spk_ms                 # frames per report on average (4.27 / 2.13)
+        return int((i + 1) * per) - int(i * per)
+
+    def _variable(self, i: int, silent: bool) -> bytes:
+        """One packet of ``_frames_in(i)`` short frames joined by the repacketizer: the average audio per report is the report period."""
+        assert self.enc is not None and self.repack is not None
+        quiet = silent or self.plan.spk == "silence"
+        t0 = time.perf_counter()
+        packets = [self.enc.encode(to_pcm([0.0] * self.frame if quiet else self.spk_osc.take(self.frame)))
+                   for _ in range(self._frames_in(i))]
+        out = self.repack.join(packets)
+        self.enc_ms.append((time.perf_counter() - t0) * 1000)
+        return out
 
     def _haptics(self, tail: bool) -> bytes:
         if self.plan.hapt == "tone" and not tail:
@@ -788,7 +853,7 @@ class Session:
     def source(self, plan: Plan, size: int | None = None, period: float | None = None) -> Source:
         """A source for a plan with a fresh encoder (CBR state starts clean)."""
         ms = plan.spk_ms                                        # the same bitrate whatever the frame length
-        enc = make_encoder((size or self.size) * ms // 10, bool(self.args.dry_run), ms=ms) if plan.spk != "off" else None
+        enc = make_encoder(round((size or self.size) * ms / 10), bool(self.args.dry_run), ms=ms) if plan.spk != "off" else None
         return Source(plan, period or self.period, enc)
 
     def play(self, plan: Plan, *, setup: Setup | None = None, layout: Layout | None = None, size: int | None = None,
@@ -1068,6 +1133,10 @@ GAPS: list[tuple[str, str, float, dict[str, Any]]] = [
     ("p10.0", "10 ms frames every 10.0 ms (the pad overflows; for comparison)", 0.010, {}),
     ("opus20-alt", "20 ms frames in every second report (a gap every 21.3 ms instead of every 10.7 ms)", REPORT_PERIOD,
      {"spk_ms": 20, "spk_every": 2}),
+    ("var2.5", "every report carries 4 or 5 frames of 2.5 ms (10 / 12.5 ms, 10.667 ms on average): no gap if the pad takes it",
+     REPORT_PERIOD, {"spk_ms": 2.5, "mean_ms": REPORT_PERIOD * 1000}),
+    ("var5", "every report carries 2 or 3 frames of 5 ms (10 / 15 ms, 10.667 ms on average)",
+     REPORT_PERIOD, {"spk_ms": 5, "mean_ms": REPORT_PERIOD * 1000}),
 ]
 
 
@@ -1379,11 +1448,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     stop = sub.add_parser("stop", parents=[common], help="pop at start / end, audio path timeout")
     stop.add_argument("--gaps", default="1,3,10,30", help="silence gaps to try, seconds")
     sub.add_parser("edge", parents=[common], help="what removes the pop at the end of a stream")
-    gap = sub.add_parser("gap", parents=[common], help="a tone / speech in 4 variants to RECORD and measure (94 Hz buzz)")
+    gap = sub.add_parser("gap", parents=[common], help="a tone / speech in 6 variants to RECORD and measure (94 Hz buzz)")
     gap.add_argument("--hz", type=float, default=1000.0, help="tone frequency (default 1000: where the pad's speaker is loudest)")
     gap.add_argument("--secs", type=float, default=6.0, help="length of each variant")
     gap.add_argument("--wav", help="play this 48 kHz WAV (speech) instead of the tone")
-    gap.add_argument("--only", help="comma separated variant names (today, nodrop, p10.0, opus20-alt)")
+    gap.add_argument("--only", help="comma separated variant names (today, nodrop, p10.0, opus20-alt, var2.5, var5)")
     return parser.parse_args(argv)
 
 
