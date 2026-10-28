@@ -15,6 +15,8 @@ from evdev import ecodes as ec
 
 import sender_migrate
 from proto import PERMISSION_BITS, clamp, load_config
+from sender_opus import DEFAULT_MODE as DEFAULT_OPUS_MODE
+from sender_opus import MODES as OPUS_MODES
 from sender_opus import OPUS_BYTES_MAX, OPUS_BYTES_MIN
 
 GROUP_OTHER_BITS: Final = 0o077         # chmod bits of "group" and "other"
@@ -58,6 +60,7 @@ DEFAULTS: dict[str, Any] = {
     "speaker_buffer_ms": 30,       # the pad's speaker (Bluetooth pad, needs libopus): jitter buffer [ms]; more = fewer dropouts
     "speaker_volume": 100,         # the pad's speaker volume, 0-255
     "speaker_opus_bytes": 80,      # Opus bytes per 10 ms frame (80 = 64 kbit/s); more = better sound, more Bluetooth traffic
+    "speaker_opus_mode": "hybrid", # hybrid (clean on the pad) | celt (the old mode: a level dip at every frame edge, a robotic voice)
     "haptics_motors": "haptics",   # a game's motor rumble while haptics play: haptics (haptics win, the motors wait) | rumble (rumble wins)
     "idle_off_min": 15,            # switch the pad off (Bluetooth disconnect) after this many minutes of no use; 0 = never
     "rt_priority": 10,             # SCHED_FIFO with this priority (1-99); 0 = normal scheduler; needs doas
@@ -248,6 +251,8 @@ def _apply_runtime(cfg: dict[str, Any]) -> None:
     C.SPEAKER_BUFFER_MS = float(clamp(float(cfg["speaker_buffer_ms"]), SPEAKER_BUFFER_MIN_MS, SPEAKER_BUFFER_MAX_MS))
     C.SPEAKER_VOLUME = max(0, min(BYTE_MAX, int(cfg["speaker_volume"])))
     C.SPEAKER_OPUS_BYTES = max(OPUS_BYTES_MIN, min(OPUS_BYTES_MAX, int(cfg["speaker_opus_bytes"])))
+    opus_mode = str(cfg["speaker_opus_mode"]).strip().lower()
+    C.SPEAKER_OPUS_MODE = opus_mode if opus_mode in OPUS_MODES else DEFAULT_OPUS_MODE
     C.IDLE_OFF_S = max(0.0, float(cfg["idle_off_min"])) * SECONDS_PER_MINUTE
     C.RT_PRIORITY = max(0, min(RT_PRIORITY_MAX, int(cfg["rt_priority"])))
     C.LOW_LATENCY, C.CPU_LATENCY_US = bool(cfg["low_latency"]), max(0, int(cfg["cpu_latency_us"]))

@@ -27,6 +27,7 @@ Most often changed:
 | `speaker_buffer_ms` | sender | 30 | the pad's speaker (Bluetooth pad, needs libopus on the sender: `apt install libopus0` / `apk add opus`): jitter buffer in ms (20-200); bigger = fewer dropouts, more delay |
 | `speaker_volume` | sender | 100 | the pad's speaker volume (0-255) |
 | `speaker_opus_bytes` | sender | 80 | the speaker's Opus bytes per 10 ms frame (30-200; 80 = 64 kbit/s); bigger = better sound, more Bluetooth traffic |
+| `speaker_opus_mode` | sender | hybrid | the speaker's Opus mode: `hybrid` (clean on the pad) or `celt` (the old mode: the pad dips the level at every frame edge, which sounds robotic); hybrid costs about 1 ms more CPU per frame |
 | `haptics_motors` | sender | haptics | when a game rumbles during haptics: `haptics` (motors ignored, logged once) or `rumble` (motors pause the haptics) |
 | `key` | both | "" | shared HMAC key: signed packets and replay protection ([SECURITY.md](SECURITY.md)) |
 | `dsu_bind` | receiver | 127.0.0.1 | DSU server address; `0.0.0.0` = emulator on another device |

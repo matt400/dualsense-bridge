@@ -7,6 +7,12 @@ says so (once, in the log) and the sender then does not announce CAP_SPEAKER to 
 The encoder is constant bitrate with a fixed frame size (the pad's decoder is fed one frame per report), so every packet has the
 same length. It works in place: the caller writes the 960 bytes of PCM into ``pcm`` and the packet is encoded straight into the
 report buffer that was given to ``bind`` - no allocation per frame.
+
+Mode. The default is Opus *hybrid* (SILK for the voice band + CELT above it), not plain CELT. Measured on a real pad (recorded
+tone, spectrum of the recording): CELT 10 ms frames come out of the pad with a deep level dip at every frame edge (the carrier
+holds 9-16 % of the power, the rest is a comb of 93.75 Hz sidebands - the "robotic" voice); hybrid frames give a clean tone (99 %).
+Hybrid is not what libopus picks for 64 kbit/s on its own, so it is forced through the (internal but stable) FORCE_MODE request.
+If this libopus does not give hybrid packets the encoder says so once and falls back to CELT.
 """
 from __future__ import annotations
 
@@ -17,12 +23,18 @@ from typing import Final
 
 from proto import SPK_BYTES, SPK_FRAME, SPK_RATE
 
-OPUS_APPLICATION_AUDIO: Final = 2049
+OPUS_APPLICATION_VOIP, OPUS_APPLICATION_AUDIO = 2048, 2049
 OPUS_SET_BITRATE, OPUS_SET_VBR, OPUS_SET_COMPLEXITY = 4002, 4006, 4010   # opus_defines.h
+OPUS_SET_SIGNAL, OPUS_SET_FORCE_MODE, OPUS_RESET_STATE = 4024, 11002, 4028
+OPUS_SIGNAL_VOICE, MODE_HYBRID = 3001, 1001
+HYBRID_CONFIGS: Final = range(12, 16)       # the TOC byte's config field (toc >> 3): 12-15 = hybrid, 10 ms is config 14 (TOC 0x70)
+MODES: Final = ("hybrid", "celt")
+DEFAULT_MODE: Final = "hybrid"
 OPUS_MAX_PACKET: Final = 1275                                           # the largest packet libopus can produce
 FRAMES_PER_S: Final = 100                                               # 10 ms frames: a CBR frame of N bytes is N * 8 * 100 bit/s
 OPUS_BYTES_MIN, OPUS_BYTES_MAX = 30, 200                                # sane range of bytes per frame (24 .. 160 kbit/s)
 COMPLEXITY: Final = 5       # P3a: 0.43 ms per frame on the OnePlus 6 (3-5 % of a core); 10 would cost 0.56 ms for no audible gain
+HYBRID_COMPLEXITY: Final = 3    # hybrid also runs SILK (about +1 ms per frame at 5 on the OnePlus 6); the pad's speaker hides the rest
 LIB_NAMES: Final = ("libopus.so.0", "libopus.so", "libopus.0.dylib")
 
 _lock = threading.Lock()
@@ -71,14 +83,16 @@ class OpusEncoder:
 
     Attributes:
         size: Bytes of every packet (including the TOC byte).
+        mode: "hybrid" or "celt": what the packets really are (a requested hybrid can fall back to celt).
         pcm: Where the caller puts the next frame: SPK_BYTES of signed 16-bit little endian samples.
     """
 
-    def __init__(self, size: int) -> None:
+    def __init__(self, size: int, mode: str = DEFAULT_MODE) -> None:
         """Create the encoder.
 
         Args:
             size: Bytes per 10 ms packet (the bitrate is chosen to match); clamped to OPUS_BYTES_MIN..OPUS_BYTES_MAX.
+            mode: "hybrid" (default) or "celt"; anything else counts as hybrid.
 
         Raises:
             OSError: libopus is missing or refused to create / configure the encoder.
@@ -88,20 +102,42 @@ class OpusEncoder:
             raise OSError("libopus not found")
         self._lib = lib
         self.size = max(OPUS_BYTES_MIN, min(OPUS_BYTES_MAX, size))
-        err = ctypes.c_int(0)
-        state = lib.opus_encoder_create(SPK_RATE, 1, OPUS_APPLICATION_AUDIO, ctypes.byref(err))
-        if err.value != 0 or not state:
-            raise OSError(f"opus_encoder_create failed ({err.value})")
-        self._state = ctypes.c_void_p(state)
-        for request, value in ((OPUS_SET_BITRATE, self.size * 8 * FRAMES_PER_S), (OPUS_SET_VBR, 0), (OPUS_SET_COMPLEXITY, COMPLEXITY)):
-            if lib.opus_encoder_ctl(self._state, ctypes.c_int(request), ctypes.c_int32(value)) != 0:
+        self._state = ctypes.c_void_p(0)
+        self.mode = "celt"
+        if mode != "celt":
+            force = ((OPUS_SET_SIGNAL, OPUS_SIGNAL_VOICE), (OPUS_SET_FORCE_MODE, MODE_HYBRID))
+            if self._open(OPUS_APPLICATION_VOIP, HYBRID_COMPLEXITY, force) and self._gives_hybrid():
+                self.mode = "hybrid"
+            else:
                 self.close()
-                raise OSError(f"opus_encoder_ctl({request}, {value}) failed")
+                print("Speaker: this libopus does not give hybrid Opus packets - using CELT (the voice may sound choppy on the pad)")
+        if self.mode == "celt" and not self._open(OPUS_APPLICATION_AUDIO, COMPLEXITY, ()):
+            raise OSError("opus_encoder_create / opus_encoder_ctl failed")
         self._pcm = bytearray(SPK_BYTES)
         self.pcm = memoryview(self._pcm)
         self._pcm_addr = ctypes.addressof((ctypes.c_char * SPK_BYTES).from_buffer(self._pcm))
         self._out_addr = 0
         self._out_keep: object = None
+
+    def _open(self, application: int, complexity: int, extra: tuple[tuple[int, int], ...]) -> bool:
+        """Create the encoder state (CBR for ``size`` bytes, the complexity, the ``extra`` requests); False on any refusal."""
+        err = ctypes.c_int(0)
+        state = self._lib.opus_encoder_create(SPK_RATE, 1, application, ctypes.byref(err))
+        if err.value != 0 or not state:
+            return False
+        self._state = ctypes.c_void_p(state)
+        requests = ((OPUS_SET_BITRATE, self.size * 8 * FRAMES_PER_S), (OPUS_SET_VBR, 0), (OPUS_SET_COMPLEXITY, complexity), *extra)
+        if all(self._lib.opus_encoder_ctl(self._state, ctypes.c_int(r), ctypes.c_int32(v)) == 0 for r, v in requests):
+            return True
+        self.close()
+        return False
+
+    def _gives_hybrid(self) -> bool:
+        """Tell whether the packets are hybrid: encode one silent frame into scratch memory and read its TOC byte, then reset."""
+        pcm, out = ctypes.create_string_buffer(SPK_BYTES), ctypes.create_string_buffer(OPUS_MAX_PACKET)
+        n = self._lib.opus_encode(self._state, ctypes.addressof(pcm), SPK_FRAME, ctypes.addressof(out), self.size)
+        self._lib.opus_encoder_ctl(self._state, ctypes.c_int(OPUS_RESET_STATE))
+        return n == self.size and (out.raw[0] >> 3) in HYBRID_CONFIGS
 
     def bind(self, out: bytearray, at: int) -> None:
         """Choose where packets go: ``size`` bytes at offset ``at`` of ``out`` (kept alive and pinned by this object).

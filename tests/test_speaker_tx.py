@@ -239,8 +239,8 @@ class Clock:
 class FakeEnc:
     """Stands in for libopus: the 'packet' is the first byte of the frame repeated, so the played frame can be read from the report."""
 
-    def __init__(self, size):
-        self.size, self.fail, self.closed = size, False, False
+    def __init__(self, size, mode="hybrid"):
+        self.size, self.mode, self.fail, self.closed = size, mode, False, False
         self._pcm = bytearray(SPK_BYTES)
         self.pcm = memoryview(self._pcm)
 
@@ -639,7 +639,7 @@ async def ctrl_scenarios():
     buf = bytearray(398)
     enc.bind(buf, S.OPUS_AT)
     enc.pcm[:] = sine(1)
-    assert enc.encode() and any(buf[S.OPUS_AT:S.OPUS_AT + 80]) and not any(buf[S.OPUS_AT + 80:]) and buf[S.OPUS_AT] == 0xF0 | (buf[S.OPUS_AT] & 7), buf[79:83].hex()
+    assert enc.encode() and any(buf[S.OPUS_AT:S.OPUS_AT + 80]) and not any(buf[S.OPUS_AT + 80:]) and buf[S.OPUS_AT] >> 3 == 14, buf[79:83].hex()   # hybrid fullband 10 ms (TOC 0x70)
     lib = O.library()
     lib.opus_decoder_create.restype = ctypes.c_void_p
     err = ctypes.c_int(0)
@@ -661,6 +661,25 @@ async def ctrl_scenarios():
     enc.close()
     enc.close()
     ok("libopus: CBR packets of exactly the requested size, written in place into the report buffer")
+
+    # the Opus mode: hybrid by default (a clean tone on the pad), celt on request; both decode to 480 samples of the sine we put in
+    lib.opus_decode.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int32, ctypes.c_void_p, ctypes.c_int, ctypes.c_int]
+    for mode, want in (("hybrid", range(12, 16)), ("celt", range(28, 32)), ("anything", range(12, 16))):
+        e = O.OpusEncoder(80) if mode == "hybrid" else O.OpusEncoder(80, mode)
+        b = bytearray(400)
+        e.bind(b, 10)
+        got = set()
+        pcm_out = (ctypes.c_int16 * 480)()
+        for k in range(20):
+            e.pcm[:] = sine(1, hz=1234.0) if k else bytes(960)
+            assert e.encode() and not any(b[10 + 80:]), mode
+            got.add(b[10] >> 3)
+            assert lib.opus_decode(dec, bytes(b[10:90]), 80, ctypes.addressof(pcm_out), 480, 0) == 480
+        assert got <= set(want), (mode, got)
+        assert e.mode == ("celt" if mode == "celt" else "hybrid"), (mode, e.mode)
+        e.close()
+    assert O.OpusEncoder(80).mode == "hybrid" and O.DEFAULT_MODE == "hybrid", "hybrid is the default"
+    ok("libopus: hybrid by default (TOC config 12-15, CBR, decodes), celt on request, an unknown mode counts as hybrid")
 
     # end to end: UDP packets -> sender_net -> supervisor -> Ctrl -> stream -> real libopus -> 0x36 in the HID file
     path = newpath()
@@ -751,7 +770,7 @@ async def ctrl_scenarios():
     c2.rumble = R.Rumble(4, dev, "hidraw", hidraw=(newpath(), True))
     real_enc = S.OpusEncoder
 
-    def broken(size):
+    def broken(size, mode="hybrid"):
         raise OSError("no encoder")
 
     S.OpusEncoder = broken
@@ -770,7 +789,7 @@ asyncio.run(ctrl_scenarios())
 
 # ---------- settings ----------
 cfg = dict(sender_config.DEFAULTS)
-assert (cfg["speaker_buffer_ms"], cfg["speaker_volume"], cfg["speaker_opus_bytes"]) == (30, 100, 80)
+assert (cfg["speaker_buffer_ms"], cfg["speaker_volume"], cfg["speaker_opus_bytes"], cfg["speaker_opus_mode"]) == (30, 100, 80, "hybrid")
 sender_config._apply_runtime(cfg)
 C = sender_config.C
 assert (C.SPEAKER_BUFFER_MS, C.SPEAKER_VOLUME, C.SPEAKER_OPUS_BYTES) == (30.0, 100, 80)
@@ -778,6 +797,11 @@ for given, want in (((5000, 999, 5000), (200.0, 255, O.OPUS_BYTES_MAX)), ((1, -4
     cfg.update(speaker_buffer_ms=given[0], speaker_volume=given[1], speaker_opus_bytes=given[2])
     sender_config._apply_runtime(cfg)
     assert (C.SPEAKER_BUFFER_MS, C.SPEAKER_VOLUME, C.SPEAKER_OPUS_BYTES) == want, given
+assert C.SPEAKER_OPUS_MODE == "hybrid"
+for given, want in (("celt", "celt"), (" CELT ", "celt"), ("hybrid", "hybrid"), ("nonsense", "hybrid")):
+    cfg.update(speaker_opus_mode=given)
+    sender_config._apply_runtime(cfg)
+    assert C.SPEAKER_OPUS_MODE == want, given
 sender_config._apply_runtime(dict(sender_config.DEFAULTS))
-ok("settings: speaker_buffer_ms clamped to 20-200 ms, speaker_volume to a byte, speaker_opus_bytes to 30-200")
+ok("settings: speaker_buffer_ms clamped to 20-200 ms, speaker_volume to a byte, speaker_opus_bytes to 30-200, speaker_opus_mode hybrid | celt")
 print("SPEAKER TX OK")
