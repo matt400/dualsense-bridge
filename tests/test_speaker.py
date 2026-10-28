@@ -30,6 +30,36 @@ check(all(b >= a for a, b in zip(ramp, ramp[1:], strict=False)), "obcinanie jest
 check(list(K.mix([3000], [1000], 1.0)) == [2000] and list(K.mix([20000], [20000], 1.0)) == [20000], "poniżej kolana sygnał bez zmian")
 check(K.pcm_bytes(array("h", [1, -2])) == struct.pack("<hh", 1, -2), "bajty pakietu: int16 little endian")
 
+# ---------- przepróbkowanie 48 -> 45 kHz ----------
+def resample_all(src, chunks=None):
+    """Wszystkie pełne ramki z próbek źródła, podanych na raz albo w kawałkach (-> lista próbek wyjścia)."""
+    rs = K.Resampler()
+    out = []
+    pos = 0
+    for size in chunks or [len(src)]:
+        rs.push(array("h", src[pos:pos + size]))
+        pos += size
+        for fr in iter(rs.frame, None):
+            out += struct.unpack("<480h", fr)
+    return out, rs
+
+
+sine1k = [round(12000 * math.sin(2 * math.pi * 1000 * i / 48000)) for i in range(20000)]
+y, rs0 = resample_all(sine1k)
+want = [12000 * math.sin(2 * math.pi * 1000 * k * 16 / 15 / 48000) for k in range(len(y))]
+check(len(y) == (20000 - 2) // 512 * 480, f"512 próbek źródła = jedna ramka 480 próbek ({len(y) // 480} ramek)")
+check(max(abs(a - b) for a, b in zip(y, want, strict=True)) < 2, "wynik leży w pozycjach k * 16 / 15 źródła (ton 1 kHz po 45 kHz nadal 1 kHz)")
+y_uneven, _ = resample_all(sine1k, [1, 700, 3, 511, 5000, 20000])
+check(y_uneven == y, "kawałki dowolnej długości dają te same próbki co jedna porcja")
+dc, _ = resample_all([2000] * 4000)
+check(set(dc[1:]) == {2000}, "stała zostaje stałą (wagi sumują się do 1)")
+fs, _ = resample_all([32767, -32768] * 2500)
+check(-32768 <= min(fs) and max(fs) <= 32767, "pełna skala: sześcian jest obcinany, nie zawijany")
+rsz = K.Resampler()
+rsz.push_zeros(2000)
+check(all(f == K.ZERO_FRAME for f in iter(rsz.frame, None)), "cisza na wejściu = ramki zerowe bez liczenia")
+check(len(rs0.buf) < K.SRC_NEED, "po ramkach w buforze zostaje mniej niż potrzeba do następnej")
+
 # ---------- pakiet ----------
 got = []
 rx_net.send_peer = lambda pkt: got.append(pkt)
@@ -94,10 +124,12 @@ check(sent_pk[0][3] == SPK_START and all(p[3] == 0 for p in sent_pk[1:n_tone]), 
 nums = [p[2] for p in sent_pk]
 check(all(b - a == 1 for a, b in zip(nums, nums[1:], strict=False)), "numeracja ciągła, +1 na ramkę, bez powtórek")
 gaps = [b[0] - a[0] for a, b in zip(sent_pk[10:], sent_pk[11:n_tone], strict=False)]
-check(gaps and 0.0095 < sum(gaps) / len(gaps) < 0.0105 and max(gaps) < 0.03, f"tempo zegara audio (średnio {1000 * sum(gaps) / len(gaps):.1f} ms)")
+check(gaps and 0.0102 < sum(gaps) / len(gaps) < 0.0112 and max(gaps) < 0.03,
+      f"tempo zegara pada: ramka co okres raportu 10,667 ms (średnio {1000 * sum(gaps) / len(gaps):.2f} ms)")
 check(all(p[1] == 0 and len(p[4]) == SPK_BYTES for p in sent_pk), "pad fizyczny 0, ramka 960 B")
 body = [p[4] for p in sent_pk[:n_tone]]
-check(all(struct.unpack("<480h", b) == (2000,) * 480 for b in body), "każda próbka = średnia kanałów 0 i 1 (kanały haptyki nie przeciekają)")
+check(all(struct.unpack("<480h", b) == (2000,) * 480 for b in body[2:]), "każda próbka = średnia kanałów 0 i 1 (kanały haptyki nie przeciekają)")
+check(all(-400 <= v <= 2400 for b in body[:2] for v in struct.unpack("<480h", b)), "pierwsze ramki (skok z ciszy): sześcian dzwoni najwyżej o kilkanaście %")
 run_link(0.6, lambda k: pcm(lambda i: 0, lambda i: 0, 480))
 end_pk = [p for p in sent_pk if p[3] & SPK_END]
 check(len(end_pk) == 1 and sent_pk[-1] is end_pk[0], "po ciszy dokładnie jeden SPK_END, na końcu")
@@ -132,10 +164,11 @@ for _ in range(60):
 for _ in range(100):
     now[0] += 0.005
     sp2.step(now[0])
-samples = [v for _n, _f, c in sent_pk for v in struct.unpack("<480h", c)]
-sent_n = len(sp2._pend) // 2
-check(samples[:200] == [(4000 + i) // 2 for i in range(200)] and len(samples) + sent_n >= 20000,
-      "siła 50 %, okna po 336 ramek: ciągłość próbek między ramkami (bez luk i powtórek)")
+samples = [v for _n, f, c in sent_pk if not f & SPK_END for v in struct.unpack("<480h", c)]
+# narastająca rampa: po przepróbkowaniu 16 : 15 próbka k leży w pozycji k * 16 / 15 źródła; sześcian na prostej jest dokładny
+ramp_err = max(abs(v - (4000 + k * 16 / 15) / 2) for k, v in enumerate(samples))
+check(len(samples) >= 18000 and ramp_err <= 1.0,
+      f"siła 50 %, okna po 336 ramek: ciągłość próbek między ramkami po przepróbkowaniu (bez luk i powtórek, błąd {ramp_err:.2f})")
 rx_settings.apply(replace(rx_settings.cur, speaker=rx_settings.SpeakerConfig(pads={A: rx_settings.PadSpeaker(True, 100)})))
 
 # kolejka: duża porcja naraz nie robi serii, nadmiar jest odrzucany jako luka
@@ -171,7 +204,7 @@ for _ in range(40):
     now[0] += 0.0107
     sp6.step(now[0])
 rows = [c for _n, _f, c in sent_pk if c != K.ZERO_FRAME]
-check(bool(rows) and set(struct.unpack("<480h", rows[-1])) == {6000}, "po przepełnieniu kanały głośnika nadal są kanałami 2 i 3")
+check(len(rows) > 2 and set(struct.unpack("<480h", rows[len(rows) // 2])) == {6000}, "po przepełnieniu kanały głośnika nadal są kanałami 2 i 3")
 
 # ---------- bramki ----------
 def streams(setup=lambda: None, sec=0.2):
@@ -266,7 +299,7 @@ S.sender_info[1] = (14, 3 | CAP_SPEAKER, 0)
 # ton zakolejkowany, zanim zabroniono: kolejka jest czyszczona
 sent_pk.clear()
 sp7 = K.SpeakerLink(1, send=lambda t, n, f, c: sent_pk.append(n), clock=lambda: now[0])
-sp7._inject.extend([b"\x05\x00" * SPK_FRAME] * 8)
+sp7._inject.extend([array("h", [5]) * K.SRC_FRAME] * 8)
 for _ in range(100):
     now[0] += 0.005
     sp7.step(now[0])
@@ -288,18 +321,19 @@ tone_frames = [c for _n, _f, c in sent_pk if c != K.ZERO_FRAME]
 check(sent_pk[0][1] == SPK_START and sent_pk[-1][1] & SPK_END and len(tone_frames) == K.TEST_FRAMES,
       f"jingiel testowy: START, {len(tone_frames)} ramek dźwięku, END")
 wave = [v for c in tone_frames for v in struct.unpack("<480h", c)]
-check(len(wave) == K.TEST_FRAMES * SPK_FRAME and max(abs(v) for v in wave) <= 32767 * K.TEST_LEVEL + 2, "jingiel testowy: bez przesterowania")
+check(len(wave) == K.TEST_FRAMES * SPK_FRAME and max(abs(v) for v in wave) <= 32767 * K.TEST_LEVEL * 1.02, "jingiel testowy: bez przesterowania")
 at = 0
+PLAY_RATE = K.SPK_RATE * K.BLOCK_OUT / K.BLOCK_IN                # pad gra ramkę 480 próbek przez 10,667 ms: 45 kHz
 for hz, secs in K.JINGLE:                                        # środkowa połowa każdej nuty ma jej wysokość (przejścia przez zero)
-    n = round(secs * K.SPK_RATE)
+    n = round(round(secs * K.SPK_RATE) * K.BLOCK_OUT / K.BLOCK_IN)
     mid = wave[at + n // 4: at + 3 * n // 4]
     cross = sum(1 for a, b in zip(mid, mid[1:], strict=False) if a < 0 <= b)
-    got = cross / (len(mid) / K.SPK_RATE)
+    got = cross / (len(mid) / PLAY_RATE)
     check(abs(got - hz) < hz * 0.04, f"jingiel testowy: nuta {hz:.0f} Hz ({got:.0f} Hz)")
     at += n
 check(wave[0] == 0 and all(abs(a - b) < 6000 for a, b in zip(wave, wave[1:], strict=False)), "jingiel testowy: bez kliknięć na krawędziach nut")
 tune = K.jingle()
-check(tune is K.jingle() and len(tune) == K.TEST_FRAMES * SPK_FRAME, "jingiel liczony raz, pełne ramki")
+check(tune is K.jingle() and len(tune) == K.TEST_FRAMES * K.SRC_FRAME, "jingiel liczony raz, pełne ramki źródła")
 
 # ---------- ustawienia ----------
 path = os.path.join(tempfile.mkdtemp(), "settings.json")

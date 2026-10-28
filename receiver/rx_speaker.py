@@ -6,9 +6,17 @@ rx_haptics.Link already copies the whole window into a ring on HIDMaestro's audi
 ring (its own read position, no second copy of the audio and no second .NET callback):
 
   mix         left + right -> mono, the pad's gain, a soft clip above 75 % of the full scale (never wrap-around), 48 kHz s16
-  SpeakerLink one per slot: ring -> mix -> 480-sample frames (10 ms) -> a short paced queue -> spk packets. One thread per link,
-              started on first use, asleep while nothing plays (rx_net.send_speaker)
+  resample    48 kHz -> 45 kHz (16 : 15, cubic): 512 source samples (10.667 ms) -> one frame of 480 samples
+  SpeakerLink one per slot: ring -> mix -> resample -> 480-sample frames -> a short paced queue -> spk packets (one per 10.667 ms).
+              One thread per link, started on first use, asleep while nothing plays (rx_net.send_speaker)
   glue        wanted / attach / detach / test(), used by rx_haptics (composite pad), rx_ds4 (through rx_haptics) and the window
+
+Why 48 -> 45 kHz. The pad's Bluetooth speaker plays every 480-sample Opus frame over one report period, 10.667 ms (measured on a
+real pad: a 1234 Hz tone comes out at 1157 Hz, exactly x 15/16), i.e. at an effective 45 kHz. Sound sent as it is would play 6.25 %
+too low and too slow, and the sender would have to drop a frame in 16 to stay in real time. So the receiver resamples 16 : 15: each
+frame stands for 512 source samples, and the pad plays them over the 10.667 ms they last. The audio keeps its pitch and its tempo, and
+the sender's buffer neither fills nor needs to drop anything (the two clocks only differ by the PC's drift). The packet format is
+unchanged: an older sender just plays what it gets (it dropped frames because it expected 100 per second, now it gets 93.75).
 
 A stream: the first frame with sound is sent with SPK_START; digital silence sends nothing once SILENCE_END_S has passed (the frames
 of that short tail go out as zeros, so the sender's stream stays continuous) and the last packet carries SPK_END. The sender wants
@@ -42,7 +50,11 @@ from rx_i18n import _
 
 SPEAKER_SENDER: Final = 14                  # from this sender version the T_SPK packet exists (with the CAP_SPEAKER bit)
 BYTES_PER_SAMPLE: Final = 2
-FRAME_S: Final = SPK_FRAME / SPK_RATE       # 10 ms of sound per packet
+SRC_FRAME: Final = 512                      # source samples one frame stands for (10.667 ms of the game's 48 kHz sound) ...
+FRAME_S: Final = SRC_FRAME / SPK_RATE       # ... = the pad's report period: one packet (SPK_FRAME = 480 samples at 45 kHz) per this time
+BLOCK_IN, BLOCK_OUT = 16, 15                # the resampler's unit: 16 source samples -> 15 output samples (48 -> 45 kHz)
+BLOCKS: Final = SRC_FRAME // BLOCK_IN       # 32 blocks per frame
+SRC_NEED: Final = SRC_FRAME + 2             # a frame needs the previous sample (history) and 2 after its last one for the 4-tap cubic
 MAX_QUEUE: Final = 4                        # frames waiting for their turn (40 ms); older ones are dropped (a gap = loss)
 SILENCE_END_S: Final = 0.15                 # digital silence this long ends the stream (the sender's own timeout is 200 ms)
 STALL_S: Final = 0.12                       # no audio from HIDMaestro this long while streaming = the game stopped rendering
@@ -57,7 +69,7 @@ JINGLE: Final[tuple[tuple[float, float], ...]] = (
     (523.25, 0.14), (659.25, 0.14), (783.99, 0.14), (1046.50, 0.28), (783.99, 0.14), (1046.50, 0.50),
 )
 TEST_SAMPLES: Final = sum(round(secs * SPK_RATE) for _hz, secs in JINGLE)
-TEST_FRAMES: Final = -(-TEST_SAMPLES // SPK_FRAME)      # whole 10 ms frames (the last one is padded with zeros)
+TEST_FRAMES: Final = -(-TEST_SAMPLES // SRC_FRAME)      # whole frames of source samples (the last one is padded with zeros)
 TEST_S: Final = TEST_SAMPLES / SPK_RATE
 TEST_LEVEL: Final = 0.5                     # of the full scale, before the pad's volume
 OVERTONE: Final = 0.3                       # the 2nd harmonic: a plain sine sounds thin on a small speaker
@@ -92,7 +104,7 @@ def pcm_bytes(samples: array[int]) -> bytes:
 
 @functools.cache
 def jingle() -> tuple[int, ...]:
-    """The test jingle as mono int16 at SPK_RATE, zero-padded to whole frames (computed once, only when the test button is used)."""
+    """The test jingle as mono int16 at SPK_RATE, zero-padded to whole source frames (computed once, only when the test button is used)."""
     out: list[int] = []
     amp = TEST_LEVEL * S16_MAX / (1 + OVERTONE)         # the peak of fundamental + overtone stays at TEST_LEVEL
     for hz, secs in JINGLE:
@@ -101,8 +113,73 @@ def jingle() -> tuple[int, ...]:
         for k in range(n):                               # every note starts at phase 0, so it starts at zero amplitude
             env = min(1.0, k / EDGE, (n - k) / EDGE) * math.exp(-DECAY * k / n)
             out.append(round(amp * env * (math.sin(w * k) + OVERTONE * math.sin(2 * w * k))))
-    out.extend([0] * (TEST_FRAMES * SPK_FRAME - len(out)))
+    out.extend([0] * (TEST_FRAMES * SRC_FRAME - len(out)))
     return tuple(out)
+
+
+# ---------------- 48 -> 45 kHz ----------------
+def _phases() -> tuple[tuple[int, float, float, float, float], ...]:
+    """The 15 output positions of a 16-sample block as (first tap offset, 4 Catmull-Rom weights).
+
+    Output j sits at source position j * 16 / 15 inside the block; its four taps are the samples around it (one before the integer
+    part, two after) and the weights follow from the fraction t. The weights of a position sum to 1, so a constant stays constant.
+    """
+    out = []
+    for j in range(BLOCK_OUT):
+        pos = j * BLOCK_IN / BLOCK_OUT
+        base = int(pos)
+        t = pos - base
+        out.append((base, (-t ** 3 + 2 * t ** 2 - t) / 2, (3 * t ** 3 - 5 * t ** 2 + 2) / 2, (-3 * t ** 3 + 4 * t ** 2 + t) / 2,
+                    (t ** 3 - t ** 2) / 2))
+    return tuple(out)
+
+
+PHASES: Final = _phases()
+ROUND: Final = 32768.5                      # + 0.5 to round, + 32768 to keep the value positive for int() (which truncates)
+
+
+class Resampler:
+    """48 kHz mono -> 45 kHz mono in frames of SPK_FRAME samples, 512 source samples per frame (cubic, 16 : 15).
+
+    The 15 phases repeat every 16 source samples, so a frame is 32 identical blocks. Each phase is one list comprehension over four
+    strided views of the source (no per-sample indexing in Python), written straight into its slots of the frame (``out[j::15]``).
+    ``buf`` holds one history sample, then the samples not used yet: a frame needs 512 of them plus 1 after the last (the taps reach
+    one sample ahead) and consumes 512, so the last sample it used becomes the history of the next one.
+    """
+
+    def __init__(self) -> None:
+        """Start empty (a history sample of 0: the first output of a block does not use it)."""
+        self.buf = array("h", [0])
+
+    def clear(self) -> None:
+        """Forget everything buffered."""
+        self.buf = array("h", [0])
+
+    def push(self, samples: array[int]) -> None:
+        """Append mono int16 samples at 48 kHz."""
+        self.buf.extend(samples)
+
+    def push_zeros(self, count: int) -> None:
+        """Append digital silence (cheaper than building the zeros as a list first)."""
+        self.buf.frombytes(bytes(count * BYTES_PER_SAMPLE))
+
+    def frame(self) -> bytes | None:
+        """The next frame as SPK_BYTES of little endian int16, or None until enough source samples are buffered."""
+        buf = self.buf
+        if len(buf) < SRC_NEED:
+            return None
+        src = buf[:SRC_NEED]                                        # the strided views below must see exactly this frame
+        del buf[:SRC_FRAME]
+        if not any(src):                                            # silence in, silence out: no work
+            return ZERO_FRAME
+        out = [0] * SPK_FRAME
+        for j, (base, w0, w1, w2, w3) in enumerate(PHASES):
+            out[j::BLOCK_OUT] = [int(a * w0 + b * w1 + c * w2 + d * w3 + ROUND) - 32768
+                                 for a, b, c, d in zip(src[base::BLOCK_IN], src[base + 1::BLOCK_IN], src[base + 2::BLOCK_IN],
+                                                       src[base + 3::BLOCK_IN], strict=False)]
+        if min(out) < -S16_MAX - 1 or max(out) > S16_MAX:           # a cubic can overshoot a full-scale edge: clip, never wrap
+            out = [max(-S16_MAX - 1, min(S16_MAX, v)) for v in out]
+        return pcm_bytes(array("h", out))
 
 
 # ---------------- the per-slot link ----------------
@@ -122,8 +199,8 @@ class SpeakerLink:
         self._r = 0                                 # the read position in the link's ring
         self._wake = threading.Event()
         self._lock = threading.Lock()               # the link's thread vs detach() / stop() from other threads
-        self._inject: deque[bytes] = deque()        # frames from test(): they take the same way out as the game's
-        self._pend = bytearray()                    # mixed mono bytes that do not make a whole frame yet
+        self._inject: deque[array[int]] = deque()   # source frames (512 samples) from test(): the same way out as the game's
+        self._rs = Resampler()                      # mixed mono samples that do not make a whole frame yet
         self._queue: deque[bytes | None] = deque()  # frames to send; None = "end the stream here"
         self._pacer = H.Pacer(FRAME_S)
         self._counter = 0                           # the number of the next frame (wraps at 2**32)
@@ -149,7 +226,7 @@ class SpeakerLink:
         with self._lock:
             self.link = link
             self._r = link.written
-            self._pend.clear()
+            self._rs.clear()
         link.on_write = self.poke
         return None
 
@@ -178,7 +255,7 @@ class SpeakerLink:
             data = self._read() if self.link is not None else None
             if gain is None:                        # off, master only, no capable sender: the audio is dropped, any stream ends
                 self._inject.clear()                # a test tone must not wait for the pad to be allowed later and play then
-                self._pend.clear()
+                self._rs.clear()
                 self._end()
             else:
                 if data:
@@ -217,7 +294,7 @@ class SpeakerLink:
         data, r = self.link.read_from(self._r)
         if r - self._r != (len(data) if data else 0):   # the writer lapped us: what was pending belongs to a past that is gone
             self.overruns += 1
-            self._pend.clear()
+            self._rs.clear()
         self._r = r
         return data
 
@@ -229,18 +306,21 @@ class SpeakerLink:
         samples = memoryview(data).cast("h")
         left, right = samples[left_at::stride].tolist(), samples[right_at::stride].tolist()
         if any(left) or any(right):
-            self._pend += pcm_bytes(mix(left, right, gain))
+            self._rs.push(mix(left, right, gain))
         else:
-            self._pend += bytes(len(left) * BYTES_PER_SAMPLE)       # digital silence: no work
-        while len(self._pend) >= SPK_BYTES:
-            frame = bytes(self._pend[:SPK_BYTES])
-            del self._pend[:SPK_BYTES]
-            self._frame(frame, from_pcm=True)
+            self._rs.push_zeros(len(left))                          # digital silence: no work
+        self._drain(from_pcm=True)
+
+    def _drain(self, from_pcm: bool) -> None:
+        """Turn the buffered source samples into frames."""
+        while (frame := self._rs.frame()) is not None:
+            self._frame(frame, from_pcm)
 
     def _take_injected(self) -> None:
-        """Frames from test() go through the same path as the game's - as fast as the queue drains (it would drop the rest)."""
+        """The jingle goes through the same path as the game's sound - as fast as the queue drains (it would drop the rest)."""
         while self._inject and len(self._queue) < MAX_QUEUE - 1:
-            self._frame(self._inject.popleft(), from_pcm=False)
+            self._rs.push(self._inject.popleft())
+            self._drain(from_pcm=False)
 
     def _frame(self, frame: bytes, from_pcm: bool) -> None:
         """One finished frame: sound opens / keeps a stream, silence is dropped (idle) or counted towards the end (active)."""
@@ -308,10 +388,10 @@ class SpeakerLink:
     def test(self, gain: float) -> None:
         """The jingle through the same path ("Test speaker"): its frames plus the silence that ends the stream."""
         tune = jingle()
-        mono = pcm_bytes(mix(tune, tune, gain))
-        frames = [mono[k * SPK_BYTES:(k + 1) * SPK_BYTES] for k in range(TEST_FRAMES)]
-        frames += [ZERO_FRAME] * (math.ceil(SILENCE_END_S / FRAME_S) + 1)
-        self._inject.extend(frames)
+        mono = mix(tune, tune, gain)
+        self._inject.extend(mono[k * SRC_FRAME:(k + 1) * SRC_FRAME] for k in range(TEST_FRAMES))
+        silence = array("h", bytes(SRC_FRAME * BYTES_PER_SAMPLE))      # +2 frames: one waits for 1 sample ahead
+        self._inject.extend([silence] * (math.ceil(SILENCE_END_S / FRAME_S) + 2))
         self.ensure_thread()
         self.wake()
 
@@ -322,7 +402,7 @@ class SpeakerLink:
                 self.link.on_write = None
                 self._r = self.link.written
             self.link = None
-            self._pend.clear()
+            self._rs.clear()
             self._inject.clear()
             self._noted.clear()
             self._active = False

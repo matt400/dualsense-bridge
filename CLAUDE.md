@@ -34,7 +34,7 @@ Every module has a docstring with its role; find the file here before opening an
 - Core: `receiver_controller` (main), `rx_config` (DEFAULTS + CLI), `rx_state` (`S.xxx`, `run_forever`), `rx_net` (packet receive, events, silence),
   `rx_winapi` (timer, SendInput, single instance, UDP sockets), `rx_settings` (settings.json, changed without restart).
 - Virtual pads: `rx_ds4` (pads on demand, backend choice), `rx_hm` (HIDMaestro), `rx_hm_update` (downloads HIDMaestro), `rx_report` (DS4 / DualSense
-  reports), `rx_feedback` (game rumble, lightbar, triggers back to the pad), `rx_haptics` (game HD haptics: composite pad audio → 3 kHz → `T_HAPT`, default audio guard), `rx_speaker` (game sound → mono 10 ms frames → `T_SPK`, second reader of the haptics audio ring), `rx_lightbar`, `rx_dsu` (Cemuhook server).
+  reports), `rx_feedback` (game rumble, lightbar, triggers back to the pad), `rx_haptics` (game HD haptics: composite pad audio → 3 kHz → `T_HAPT`, default audio guard), `rx_speaker` (game sound → mono, resampled 48 → 45 kHz → `T_SPK` frames, second reader of the haptics audio ring), `rx_lightbar`, `rx_dsu` (Cemuhook server).
 - Input processing: `rx_buttons` (tables, remap, remap.json), `rx_profiles` + `rx_editor` (profile model, no Qt), `rx_shape` (sticks / triggers),
   `rx_gyro` (gyro mouse), `rx_gstick` + `rx_gstick_io` (tilt → stick), `rx_mouse` (touchpad mouse), `rx_padcal` + `rx_drift` (drift deadzone), `rx_access` + `rx_reach` (accessibility mode: range / deadzone / curve / tremor damping of the physical sticks + wizard),
   `rx_hotkeys` + `rx_shortcuts` (PS-modifier shortcuts), `rx_master` (master pad), `rx_swap` (temporary P1 <-> P2 swap), `rx_testmode` (Test view, emergency exit).
