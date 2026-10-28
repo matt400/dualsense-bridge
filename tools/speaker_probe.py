@@ -17,6 +17,8 @@ pad lookup and the `jitter` command, and root for /dev/hidraw*:
     doas python3 speaker_probe.py jitter            # input interval jitter with and without the stream (A-B-A, 60 s each)
     doas python3 speaker_probe.py stop              # pop at the start / end, silence tail, how long the audio path stays alive
     doas python3 speaker_probe.py edge              # what removes the pop at the end of a stream (tails, fade, volume 0, audio off)
+    doas python3 speaker_probe.py gap               # clean 1 kHz tone in 4 variants, you RECORD each (analysed offline: 94 Hz sidebands)
+    doas python3 speaker_probe.py gap --wav speech.wav   # the same variants with your own speech (48 kHz mono WAV)
 
 Every command that measures something merges its result into speaker_probe_results.json (paste that file back). `layout` stores the
 setup / layout / Opus size that worked best under "layout" -> "best", and the later commands use it (override: --setup --layout --size).
@@ -52,6 +54,7 @@ import select
 import sys
 import threading
 import time
+import wave
 import zlib
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -64,6 +67,7 @@ REPORT_PERIOD = HAPT_FRAMES / HAPT_RATE  # 10.667 ms: one haptics chunk per repo
 OPUS_PERIOD = 0.010                      # 10 ms of speaker audio per Opus frame
 OPUS_RATE = 48000                        # speaker sample rate, Hz
 OPUS_FRAME = 480                         # samples per 10 ms Opus frame
+BYTES_PER_SAMPLE = 2                     # signed 16-bit PCM
 OPUS_MAX_PACKET = 1275                   # the largest Opus packet
 OPUS_APPLICATION_AUDIO, REQ_BITRATE, REQ_VBR, REQ_COMPLEXITY = 2049, 4002, 4006, 4010
 R36_LEN, R32_LEN = 398, 142              # report id + data bytes (checked against the HID descriptor in `info`)
@@ -134,15 +138,15 @@ def opus_version() -> str:
 class Encoder:
     """A mono 48 kHz Opus encoder for 10 ms frames, CBR, so every frame has the same size (``size`` bytes including the TOC byte)."""
 
-    def __init__(self, size: int, complexity: int | None = None) -> None:
-        """Create the encoder; the bitrate is chosen so that a 10 ms CBR frame is ``size`` bytes."""
+    def __init__(self, size: int, complexity: int | None = None, ms: int = 10) -> None:
+        """Create the encoder; the bitrate is chosen so that a CBR frame of ``ms`` milliseconds is ``size`` bytes."""
         self._lib = _opus_lib()
         self.size, self.mismatch = size, 0
         err = ctypes.c_int(0)
         self._state = ctypes.c_void_p(self._lib.opus_encoder_create(OPUS_RATE, 1, OPUS_APPLICATION_AUDIO, ctypes.byref(err)))
         if err.value != 0 or not self._state:
             raise SystemExit(f"opus_encoder_create failed ({err.value})")
-        self._ctl(REQ_BITRATE, size * 8 * 100)
+        self._ctl(REQ_BITRATE, size * 8 * 1000 // ms)
         self._ctl(REQ_VBR, 0)
         if complexity is not None:
             self._ctl(REQ_COMPLEXITY, complexity)
@@ -153,8 +157,8 @@ class Encoder:
             raise SystemExit(f"opus_encoder_ctl({request}, {value}) failed")
 
     def encode(self, pcm: array.array) -> bytes:  # type: ignore[type-arg]
-        """Encode 480 signed 16-bit samples into one Opus packet."""
-        n = self._lib.opus_encode(self._state, pcm.buffer_info()[0], OPUS_FRAME, ctypes.addressof(self._out), OPUS_MAX_PACKET)
+        """Encode one frame of signed 16-bit samples (480 = 10 ms, 960 = 20 ms) into one Opus packet."""
+        n = self._lib.opus_encode(self._state, pcm.buffer_info()[0], len(pcm), ctypes.addressof(self._out), OPUS_MAX_PACKET)
         if n < 0:
             raise OSError(f"opus_encode failed ({n})")
         if n != self.size:
@@ -171,7 +175,7 @@ class Encoder:
 class FakeEncoder:
     """Dry-run stand-in when libopus is missing: ``size`` bytes of deterministic filler, NOT valid Opus."""
 
-    def __init__(self, size: int, complexity: int | None = None) -> None:
+    def __init__(self, size: int, complexity: int | None = None, ms: int = 10) -> None:
         """Remember the frame size."""
         self.size, self.mismatch = size, 0
 
@@ -183,14 +187,14 @@ class FakeEncoder:
         """Nothing to free."""
 
 
-def make_encoder(size: int, dry: bool, complexity: int | None = None) -> Encoder | FakeEncoder:
+def make_encoder(size: int, dry: bool, complexity: int | None = None, ms: int = 10) -> Encoder | FakeEncoder:
     """A real encoder; in a dry run without libopus a fake one."""
     try:
-        return Encoder(size, complexity)
+        return Encoder(size, complexity, ms)
     except SystemExit:
         if not dry:
             raise
-        return FakeEncoder(size, complexity)
+        return FakeEncoder(size, complexity, ms)
 
 
 # ---------------------------------------------------------------- report building
@@ -342,6 +346,35 @@ class Sine:
         return out
 
 
+class Wav:
+    """The samples of a 48 kHz WAV file (any channel count, mixed to mono), looped, with the same ``take`` as Sine."""
+
+    def __init__(self, path: str, amp: float, secs: float | None) -> None:
+        """Read the whole file; refuses another sample rate (convert: ffmpeg -i in.mp3 -ac 1 -ar 48000 speech.wav)."""
+        with wave.open(path, "rb") as w:
+            if w.getsampwidth() != BYTES_PER_SAMPLE or w.getframerate() != OPUS_RATE:
+                raise SystemExit(f"{path}: need 16-bit PCM at {OPUS_RATE} Hz (ffmpeg -i in.mp3 -ac 1 -ar 48000 speech.wav)")
+            raw = array.array("h")
+            raw.frombytes(w.readframes(w.getnframes()))
+            ch = w.getnchannels()
+        if sys.byteorder == "big":
+            raw.byteswap()
+        self.data = [sum(raw[i:i + ch]) / ch / 32768 for i in range(0, len(raw) - ch + 1, ch)]
+        if not self.data:
+            raise SystemExit(f"{path}: no samples")
+        self.amp, self.n = amp, 0
+        self.total = None if secs is None else round(secs * OPUS_RATE)
+
+    def take(self, count: int) -> list[float]:
+        """The next ``count`` samples, -1..1 (zeros after ``secs``)."""
+        out = []
+        for _ in range(count):
+            live = self.total is None or self.n < self.total
+            out.append(self.amp * self.data[self.n % len(self.data)] if live else 0.0)
+            self.n += 1
+        return out
+
+
 def to_pcm(samples: list[float]) -> array.array:  # type: ignore[type-arg]
     """Float -1..1 -> signed 16-bit PCM."""
     return array.array("h", [int(max(-1.0, min(1.0, x)) * 32767) for x in samples])
@@ -369,6 +402,9 @@ class Plan:
     tail_s: float = 0.0                              # digital silence after the tone (0x36 reports)
     fade_s: float = 0.03                             # fade in / out of the speaker tone
     preencode: bool = False                          # endless tone: encode one second up front and loop it (a quiet probe thread)
+    spk_ms: int = 10                                 # length of one Opus frame in ms (10 or 20)
+    spk_every: int = 1                               # a speaker sub-packet only in every Nth report (the others carry none)
+    wav: str = ""                                    # play this 48 kHz WAV instead of the sine
 
 
 class Source:
@@ -378,7 +414,9 @@ class Source:
         """Prepare the oscillators; ``enc_ms`` collects the encoder time of every frame."""
         self.plan, self.period, self.enc = plan, period, enc
         self.enc_ms: list[float] = []
-        self.spk_osc = Sine(plan.spk_hz, SPK_AMP, OPUS_RATE, plan.secs, plan.fade_s)
+        self.spk_osc: Sine | Wav = (Wav(plan.wav, SPK_AMP, plan.secs) if plan.wav
+                                    else Sine(plan.spk_hz, SPK_AMP, OPUS_RATE, plan.secs, plan.fade_s))
+        self.frame = OPUS_RATE * plan.spk_ms // 1000
         self.hapt_osc = Sine(plan.hapt_hz, HAPT_AMP, HAPT_RATE, plan.secs)
         self._cache: list[bytes] = []
         if plan.preencode and enc is not None and plan.secs is None and plan.spk == "tone":
@@ -398,15 +436,15 @@ class Source:
         return next((kind for until, kind in self.plan.script if t < until), "36")
 
     def _speaker(self, i: int, silent: bool) -> bytes | None:
-        if self.plan.spk == "off" or self.enc is None:
+        if self.plan.spk == "off" or self.enc is None or i % self.plan.spk_every:
             return None
         if self._cache:
             return self._cache[i % len(self._cache)]
         p = self.plan
         if p.drop_every and i % p.drop_every == p.drop_every - 1:
-            self.spk_osc.take(OPUS_FRAME)                       # one source frame is dropped: the tone stays real-time
+            self.spk_osc.take(self.frame)                       # one source frame is dropped: the tone stays real-time
         quiet = silent or p.spk == "silence"
-        samples = [0.0] * OPUS_FRAME if quiet else self.spk_osc.take(OPUS_FRAME)
+        samples = [0.0] * self.frame if quiet else self.spk_osc.take(self.frame)
         t0 = time.perf_counter()
         frame = self.enc.encode(to_pcm(samples))
         self.enc_ms.append((time.perf_counter() - t0) * 1000)
@@ -749,7 +787,8 @@ class Session:
 
     def source(self, plan: Plan, size: int | None = None, period: float | None = None) -> Source:
         """A source for a plan with a fresh encoder (CBR state starts clean)."""
-        enc = make_encoder(size or self.size, bool(self.args.dry_run)) if plan.spk != "off" else None
+        ms = plan.spk_ms                                        # the same bitrate whatever the frame length
+        enc = make_encoder((size or self.size) * ms // 10, bool(self.args.dry_run), ms=ms) if plan.spk != "off" else None
         return Source(plan, period or self.period, enc)
 
     def play(self, plan: Plan, *, setup: Setup | None = None, layout: Layout | None = None, size: int | None = None,
@@ -1021,6 +1060,42 @@ def cmd_clock(s: Session) -> None:
         s.pad.send_normal()
         wait(3.0)
     save_result(s.out, "clock", results)
+
+
+GAPS: list[tuple[str, str, float, dict[str, Any]]] = [
+    ("today", "what the sender does now: 10 ms frames every 10.667 ms, a source frame dropped every 16", REPORT_PERIOD, {"drop_every": 16}),
+    ("nodrop", "10 ms frames every 10.667 ms, nothing dropped: shows the pad's own artefact (a gap per report?)", REPORT_PERIOD, {}),
+    ("p10.0", "10 ms frames every 10.0 ms (the pad overflows; for comparison)", 0.010, {}),
+    ("opus20-alt", "20 ms frames in every second report (a gap every 21.3 ms instead of every 10.7 ms)", REPORT_PERIOD,
+     {"spk_ms": 20, "spk_every": 2}),
+]
+
+
+def cmd_gap(s: Session) -> None:
+    """Record-and-measure: the same clean tone (or your speech) in four ways, to see which one has no 94 Hz buzz.
+
+    The pad plays one Opus frame per 10.667 ms report; with 10 ms frames that leaves 0.667 ms per report that nothing fills, or
+    the pad stretches / hides it somehow. A steady tone shows it as sidebands 93.75 Hz either side of the tone. Nothing is asked
+    here: for every variant the script says when to press record, plays 1 s of nothing + the tone, and you save one file per variant
+    (name them after the variant). Analysis is offline.
+    """
+    only = set(s.args.only.split(",")) if s.args.only else None
+    results = []
+    for name, note, period, extra in GAPS:
+        if only and name not in only:
+            continue
+        print(f"\n== {name}: {note}")
+        if not AUTO:
+            input("  start the recording, then press Enter (the tone starts after 1 s): ")
+        wait(1.0)
+        plan = Plan(secs=s.args.secs, spk_hz=s.args.hz, wav=s.args.wav or "", **extra)
+        st = s.play(plan, period=period)
+        results.append({"variant": name, **report_stats(name, st)})
+        s.pad.send_normal()
+        wait(2.0)
+        if not AUTO:
+            input(f"  stop the recording and save it as gap_{name}.mp3 (Enter for the next variant): ")
+    save_result(s.out, "gap", results)
 
 
 COMBOS: list[tuple[str, str, Plan, tuple[tuple[str, str, str], ...]]] = [
@@ -1304,12 +1379,17 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     stop = sub.add_parser("stop", parents=[common], help="pop at start / end, audio path timeout")
     stop.add_argument("--gaps", default="1,3,10,30", help="silence gaps to try, seconds")
     sub.add_parser("edge", parents=[common], help="what removes the pop at the end of a stream")
+    gap = sub.add_parser("gap", parents=[common], help="a tone / speech in 4 variants to RECORD and measure (94 Hz buzz)")
+    gap.add_argument("--hz", type=float, default=1000.0, help="tone frequency (default 1000: where the pad's speaker is loudest)")
+    gap.add_argument("--secs", type=float, default=6.0, help="length of each variant")
+    gap.add_argument("--wav", help="play this 48 kHz WAV (speech) instead of the tone")
+    gap.add_argument("--only", help="comma separated variant names (today, nodrop, p10.0, opus20-alt)")
     return parser.parse_args(argv)
 
 
 COMMANDS: dict[str, Callable[[Session], None]] = {"info": cmd_info, "tone": cmd_tone, "layout": cmd_layout, "timing": cmd_timing,
                                                   "clock": cmd_clock, "combo": cmd_combo, "modes": cmd_modes, "jitter": cmd_jitter,
-                                                  "stop": cmd_stop, "edge": cmd_edge}
+                                                  "stop": cmd_stop, "edge": cmd_edge, "gap": cmd_gap}
 
 
 def main(argv: list[str] | None = None) -> None:
