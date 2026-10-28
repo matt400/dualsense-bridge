@@ -207,6 +207,30 @@ assert bytes(dst) == frame(2)
 ok("PcmRing: whole frames, wrap-around, overwrite when full, drop")
 
 
+# ---- crossfade: the drift correction removes one frame without a jump
+def seam(frames):
+    """The biggest sample-to-sample step inside a stream of frames."""
+    samples = struct.unpack(f"<{len(frames) // 2}h", frames)
+    return max(abs(b - a) for a, b in zip(samples, samples[1:], strict=False))
+
+
+wave = sine(4)
+f0, fa, fb, fc = (wave[k * SPK_BYTES:(k + 1) * SPK_BYTES] for k in range(4))
+natural = seam(wave)                                  # a plain sine's own steepest step
+assert seam(fa + fc) > 3 * natural, "test premise: cutting a whole frame out of a sine leaves a jump"
+mix_a = bytearray(fa)
+S.crossfade(memoryview(mix_a), memoryview(fb))
+sa, sb, sm = (struct.unpack(f"<{proto.SPK_FRAME}h", f) for f in (fa, fb, mix_a))
+assert sm[0] == sa[0] and sm[-1] == sb[-1], "the first sample is the old frame's, the last one the next frame's"
+assert seam(bytes(mix_a) + fc) <= 1.5 * natural, "faded frame + the frame after it: no jump at the seam"
+assert seam(f0 + bytes(mix_a)) <= 1.5 * natural, "the previous frame + the faded one: no jump at the start either"
+assert max(map(abs, sm)) <= max(map(abs, sa + sb)), "a convex blend never overshoots (no int16 overflow)"
+flat = bytearray(frame(7))
+S.crossfade(memoryview(flat), memoryview(frame(7)))
+assert bytes(flat) == frame(7), "two equal frames stay equal"
+ok("crossfade: first / last sample kept, no jump at either seam (a hard cut jumps), no overshoot")
+
+
 # ---------- the stream on a fake clock and a fake pad ----------
 class Clock:
     t = 1000.0
@@ -393,7 +417,7 @@ async def fake_clock_scenarios():
         vals = played(pad)
         steps = [(b - a) % 100 for a, b in zip(vals, vals[1:], strict=False)]
         assert set(steps) <= {1, 2}, "frames are dropped one at a time and never reordered"
-        ok(f"drift: {st.dropped} whole frames dropped in 3 s (about 1 in 16), no underrun, the buffer stays shallow")
+        ok(f"drift: {st.dropped} frames crossfaded away in 3 s (about 1 in 16), no underrun, the buffer stays shallow")
 
         # -- a burst after a stall keeps the newest audio
         pad, report, s = mk(30)

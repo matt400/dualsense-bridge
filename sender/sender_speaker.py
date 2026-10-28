@@ -9,9 +9,11 @@ The receiver sends 10 ms frames of 48 kHz mono sound (see the spk packet in prot
   sender_haptics always sent), with one it is 0x36 and every ``finish`` pops one PCM frame from the ring and Opus-encodes it straight
   into the report. The haptics stream is unchanged apart from using this report.
 * Timing. The pad takes exactly one Opus frame per report and reports every 10.667 ms (93.75 per second); any other period dropped
-  out in P3a. The PC sends 100 frames per second, so the ring is watched: deeper than ``high`` -> one whole 10 ms frame is dropped
-  (about one in 16, not audible in P3a). An empty ring plays a silent frame (never a skipped report) and is refilled to the target
-  depth before real audio continues. All ring and frame math is in whole 10 ms frames.
+  out in P3a. The PC sends 100 frames per second, so the ring is watched: deeper than ``high`` -> one 10 ms frame is removed
+  (about one in 16, 6 times a second). It is not cut out: the frame that would play fades out into the one after it (``crossfade``),
+  so the waveform stays continuous at both ends of the report. A hard cut was inaudible on a sine tone but crackled on speech and
+  music. An empty ring plays a silent frame (never a skipped report) and is refilled to the target depth before real audio continues.
+  All ring and frame math is in whole 10 ms frames.
 * Who ticks. While no haptics stream writes, the speaker has its own timer with absolute deadlines (``due += period``). While a
   haptics stream writes, the haptics tick writes the 0x36 reports and the speaker timer only follows its clock (it re-arms one period
   after the last audio report), so there is one clock and exactly one report per period; when the haptics stream ends, the speaker
@@ -32,7 +34,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, fields
 from typing import Final
 
-from proto import HAPT_CHUNK, HAPT_FRAMES, HAPT_RATE, SPK_BYTES, SPK_END, SPK_START, UINT32_MASK
+from proto import HAPT_CHUNK, HAPT_FRAMES, HAPT_RATE, SPK_BYTES, SPK_END, SPK_FRAME, SPK_START, UINT32_MASK
 from sender_haptics import COUNTER_AT, CRC_AT, DATA_AT, HEADER, REPORT_LEN, SEQ_AT, U32_HALF
 from sender_opus import OpusEncoder
 from sender_rumble import BT_SEQ_MASK, BT_SEQ_SHIFT, BYTE_MASK, CRC_LEN, CRC_SEED, Rumble
@@ -62,6 +64,26 @@ FOLLOW_S: Final = 0.002                     # the speaker timer wakes this long 
 RETRY_S: Final = 1.0                        # a refused start (USB pad, no HID report) is retried after this
 _SILENCE: Final = memoryview(bytes(SPK_BYTES))
 _NO_HAPTICS: Final = memoryview(bytes(HAPT_CHUNK))
+_SAMPLES: Final = struct.Struct(f"<{SPK_FRAME}h")   # one frame as samples (explicit little endian, like the spk packet)
+_FADE_LAST: Final = SPK_FRAME - 1
+_FADE_IN: Final = tuple(range(SPK_FRAME))           # the weight of the next frame at each sample: 0 .. SPK_FRAME - 1
+
+
+def crossfade(a: memoryview, b: memoryview) -> None:
+    """Overwrite frame ``a`` with ``a`` fading out into ``b`` (a linear ramp over the whole frame), in place.
+
+    This is how the sender removes one 10 ms frame of drift: ``a`` plays, but its end already is the end of ``b``, so the next frame
+    (the one after ``b``) continues the waveform without a jump. The first sample stays ``a``'s (it follows the previous report) and
+    the last one is ``b``'s (the next report follows it). The blend is a convex combination, so it cannot overflow int16.
+    It allocates a few short lists, about 6 times a second (the drift correction), nothing in the normal path.
+
+    Args:
+        a: SPK_BYTES of s16 little endian samples, overwritten.
+        b: SPK_BYTES of s16 little endian samples, left as is.
+    """
+    xs, ys = _SAMPLES.unpack_from(a), _SAMPLES.unpack_from(b)
+    half = _FADE_LAST // 2
+    _SAMPLES.pack_into(a, 0, *[(x * (_FADE_LAST - w) + y * w + half) // _FADE_LAST for x, y, w in zip(xs, ys, _FADE_IN, strict=True)])
 
 
 class Report3x:
@@ -186,7 +208,7 @@ class Counters:
         played: Reports written with audio.
         silent: Reports written with silence (underruns, refills, the tail).
         underruns: Times the ring ran dry in the middle of a stream.
-        dropped: Frames dropped (drift and bursts).
+        dropped: Frames removed (drift: crossfaded away; bursts: dropped).
         late: Ticks later than LATE_S.
         lost: Frames missing between packets (filled with silence).
         stale: Late, repeated or reordered frames refused.
@@ -246,6 +268,7 @@ class SpeakerStream:
         self.target = max(2, round(buffer_ms / (FRAME_S * 1000)))
         self.high, self.limit = self.target + HIGH_OVER, self.target + LIMIT_OVER
         self.ring = PcmRing()
+        self._spare = memoryview(bytearray(SPK_BYTES))          # the frame the drift correction fades into
         self.active = self.ending = self.priming = False
         self.stats = Counters()
         self._expected = 0                                      # the frame the next packet must carry
@@ -371,9 +394,11 @@ class SpeakerStream:
                 st.underruns += 1
                 self.priming, self._prime_ticks = True, 0
         else:
-            if depth > self.high:                               # more arrives than is played: the PC's clock is faster
-                st.dropped += ring.drop(1)
             ring.pop_into(pcm)
+            if depth > self.high:                               # more arrives than is played: the PC's clock is faster
+                ring.pop_into(self._spare)                      # remove one frame without a jump: this one fades into the next
+                crossfade(pcm, self._spare)
+                st.dropped += 1
             st.played += 1
         if not self.encoder.encode():
             st.encoder_errors += 1
