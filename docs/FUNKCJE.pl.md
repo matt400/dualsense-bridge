@@ -232,8 +232,9 @@
   - nadajnik musi ogłaszać haptykę (v13+, zaktualizuj go z okna); „Haptyka” jest też funkcją tylko dla mastera.
 - **Głośnik pada (eksperymentalny)** (Ustawienia → Haptyka i głośnik), opcja do włączenia, osobno dla każdego pada (MAC) albo
   domyślnie; wymaga backendu HIDMaestro, nadajnika v14+ i libopus na nadajniku (`libopus0` / `opus`):
-  - dźwięk gry z wyjścia „Wireless Controller” (kanały 1-2) jest miksowany do mono i wysyłany w ramkach po 10 ms; nadajnik
-    koduje go Opusem i gra na głośniku pada przez Bluetooth, na wspólnym zegarze z haptyką. W ciszy nic nie jest wysyłane
+  - dźwięk gry z wyjścia „Wireless Controller” (kanały 1-2) jest miksowany do mono i przepróbkowywany 48 → 45 kHz (pad gra
+    każdą ramkę przez okres raportu 10,667 ms, więc dźwięk zachowuje wysokość i tempo); nadajnik koduje go Opusem
+    i gra na głośniku pada przez Bluetooth, na wspólnym zegarze z haptyką. W ciszy nic nie jest wysyłane
     (strumień kończy znacznik końca po ok. 150 ms, potem głośność pada spada do 0);
   - **Głośność** 0-200 % (od razu), **Test głośnika** gra krótki jingiel (melodia z kilku nut, ok. 1,3 s) na wybranym padzie, a gdy się nie da, podaje
     powód (stary nadajnik, pad nie jest masterem, ustawienie wyłączone);

@@ -241,8 +241,9 @@
   - the sender must announce haptics (v13+, update it from the window); "Haptics" is also a master-only feature.
 - **Pad speaker (experimental)** (Settings → Haptics and speaker), opt-in, separately for each pad (MAC) or as the default; needs
   the HIDMaestro backend, sender v14+ and libopus on the sender (`libopus0` / `opus`):
-  - the game's sound from the "Wireless Controller" output (channels 1-2) is mixed to mono and sent in 10 ms frames; the
-    sender encodes it with Opus and plays it on the pad's speaker through Bluetooth, sharing the clock with haptics.
+  - the game's sound from the "Wireless Controller" output (channels 1-2) is mixed to mono and resampled 48 -> 45 kHz (the pad
+    plays each frame over its 10.667 ms report period, so the sound keeps its pitch and tempo); the sender encodes it with Opus
+    and plays it on the pad's speaker through Bluetooth, sharing the clock with haptics.
     In silence nothing is sent (the stream ends with an end mark after ~150 ms, then the pad's volume goes to 0);
   - **Volume** 0-200 % (applies at once), **Test speaker** plays a short jingle (a few notes, about 1.3 s) on the chosen pad and says why when it
     cannot (old sender, not the master pad, setting off);

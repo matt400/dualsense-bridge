@@ -9,10 +9,12 @@ The receiver sends 10 ms frames of 48 kHz mono sound (see the spk packet in prot
   sender_haptics always sent), with one it is 0x36 and every ``finish`` pops one PCM frame from the ring and Opus-encodes it straight
   into the report. The haptics stream is unchanged apart from using this report.
 * Timing. The pad takes exactly one Opus frame per report and reports every 10.667 ms (93.75 per second); any other period dropped
-  out in P3a. The PC sends 100 frames per second, so the ring is watched: deeper than ``high`` -> one 10 ms frame is removed
-  (about one in 16, 6 times a second). It is not cut out: the frame that would play fades out into the one after it (``crossfade``),
-  so the waveform stays continuous at both ends of the report. A hard cut was inaudible on a sine tone but crackled on speech and
-  music. An empty ring plays a silent frame (never a skipped report) and is refilled to the target depth before real audio continues.
+  out in P3a. The receiver resamples the sound to that clock (93.75 frames per second, see rx_speaker), so the ring stays shallow. An
+  older receiver sends 100 per second (and the pad then plays 6 % too low), so the ring is watched: deeper than ``high`` -> one
+  10 ms frame is removed (about one in 16, 6 times a second). It is not cut out: the frame that would play fades out into the one
+  after it (``crossfade``), so the waveform stays continuous at both ends of the report. A hard cut was inaudible on a sine tone
+  but crackled on speech and music. An empty ring plays a silent frame (never a skipped report) and is refilled to the target
+  depth before real audio continues.
   All ring and frame math is in whole 10 ms frames.
 * Who ticks. While no haptics stream writes, the speaker has its own timer with absolute deadlines (``due += period``). While a
   haptics stream writes, the haptics tick writes the 0x36 reports and the speaker timer only follows its clock (it re-arms one period
