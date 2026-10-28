@@ -56,7 +56,8 @@ What works from the PS5 pad (DualSense) and what is still missing.
 | Pairing and switching the pad off | ✅ | from the PC window, no need to walk to the sender |
 | Mute button and its LED | ❌ | |
 | Microphone | ❌ | |
-| Speaker and headphone jack | ❌ | |
+| Speaker | ✅ | experimental, opt-in, the game's sound plays on the pad's speaker over Bluetooth (Opus); needs sender v14+ with libopus, master pad only |
+| Headphone jack | ❌ | |
 | Player LEDs (under the lightbar) | ❌ | |
 | DualSense Edge (back buttons, Fn) | ❌ | |
 

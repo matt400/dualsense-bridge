@@ -56,7 +56,8 @@ Co działa z pada PS5 (DualSense), a czego jeszcze brakuje.
 | Parowanie i wyłączanie pada | ✅ | z okna na PC, bez podchodzenia do sendera |
 | Przycisk mute i jego dioda | ❌ | |
 | Mikrofon | ❌ | |
-| Głośnik i gniazdo słuchawkowe | ❌ | |
+| Głośnik | ✅ | eksperymentalny, do włączenia, dźwięk gry gra na głośniku pada przez Bluetooth (Opus); wymaga nadajnika v14+ z libopus, tylko pad master |
+| Gniazdo słuchawkowe | ❌ | |
 | Diody gracza (pod lightbarem) | ❌ | |
 | DualSense Edge (tylne przyciski, Fn) | ❌ | |
 
