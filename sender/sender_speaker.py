@@ -298,9 +298,11 @@ class SpeakerStream:
         self._rx = now
         st = self.stats
         st.frames += 1
-        if flags & SPK_START and st.frames > 1:
+        if flags & SPK_START and st.frames > 1 and not self.ending:
             self._restart(frame)                                # the PC began a new stream without ending the old one
         else:
+            if flags & SPK_START and st.frames > 1:             # the old stream was ended (a pause in the sound) and sound is back:
+                self._resume()                                  # the numbering goes on, so keep what is buffered
             delta = ((frame - self._expected + U32_HALF) & UINT32_MASK) - U32_HALF     # signed: frames ahead (+) or behind (-)
             if -MAX_GAP_FRAMES <= delta < 0:
                 st.stale += 1                                   # late, repeated or reordered: its place in time has passed
@@ -317,6 +319,17 @@ class SpeakerStream:
             st.dropped += self.ring.drop(self.ring.depth - self.high)
         if flags & SPK_END:
             self.ending, self._why = True, "end of stream"
+
+    def _resume(self) -> None:
+        """Sound came back while the end of the old stream was still playing out: cancel the ending, keep the ring.
+
+        The receiver ends a stream after 150 ms of digital silence (a pause in a video) and starts a new one with the next frame number.
+        Clearing the ring there would throw away the buffered words and then wait for the buffer to fill again - a gap and a click.
+        If the ring ran dry meanwhile it is primed again, as after any other pause.
+        """
+        self.ending, self._tail = False, TAIL_TICKS
+        if self.ring.depth == 0:
+            self.priming, self._prime_ticks = True, 0
 
     def _restart(self, frame: int) -> None:
         """Start the ring over at ``frame``: the stream jumped (a restarted receiver, a long gap) or began again."""
