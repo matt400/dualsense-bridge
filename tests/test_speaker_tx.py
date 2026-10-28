@@ -400,6 +400,16 @@ async def fake_clock_scenarios():
             s.feed(n, 0, memoryview(frame(1)))
         assert s.stats.lost == 0 and s.stats.stale == 0 and s.ring.depth == 4 and s._expected == 2, "the counter wraps at 2**32"
         ok("loss filled with a silent frame, late / repeated frames refused, a jump restarts, the frame counter wraps")
+        # -- a pause in the sound: END, then a new START with the next number while the old stream still plays out: no restart
+        pad, report, s = mk(50)
+        quiet(feed, s, 0, SPK_START)
+        feed(s, 1)
+        feed(s, 2, SPK_END)
+        assert s.ending and s.ring.depth == 3
+        feed(s, 3, SPK_START)
+        assert not s.ending and s.stats.resyncs == 0 and s.stats.lost == 0 and s.ring.depth == 4, "the buffered audio stays"
+        assert s.stats.dropped == 0 and not s.priming
+        ok("a new START right after an END keeps the buffer (no gap, no resync)")
 
         # -- clock drift: the PC sends 100 frames per second, the pad takes 93.75
         pad, report, s = mk(30)
