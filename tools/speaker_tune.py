@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import array
+import dataclasses
 import json
 import math
 import shutil
@@ -47,6 +48,7 @@ NEEDED_GAIN = 0.25                  # the winner must have at least this much fe
 SETTLE_S = 2.0                      # pause between two runs
 TONE_FIND_LO, TONE_FIND_HI = 600, 1300   # Hz; where the played tone can appear (1000 Hz in -> 937.5 Hz out)
 RESULTS_FILE = "speaker_tune_results.json"
+MIN_RUNS_FOR_SE = 2                 # a standard error needs at least two runs
 
 
 # ---------------------------------------------------------------- reading a recording
@@ -206,10 +208,16 @@ class Config:
     period: float = BASE_PERIOD
     size: int = BASE_SIZE
     codec: str = BASE_CODEC
+    layout: str = "hyp"
+    setup: str = "notes"
+    hapt: bool = False
 
     def label(self) -> str:
         """Short text for the tables."""
-        return f"period {self.period:.3f} ms, {self.size} B, {self.codec}"
+        extra = ""
+        if (self.layout, self.setup, self.hapt) != ("hyp", "notes", False):
+            extra = f", layout {self.layout}, setup {self.setup}" + (", 80 Hz haptics" if self.hapt else "")
+        return f"period {self.period:.3f} ms, {self.size} B, {self.codec}{extra}"
 
 
 class Bench:
@@ -228,7 +236,9 @@ class Bench:
         rec = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         time.sleep(0.5)
         play = [sys.executable, str(self.probe), "tone", str(self.hz), str(self.secs), "--period-ms", f"{cfg.period:.4f}",
-                "--size", str(cfg.size), "--codec", cfg.codec, *self.extra]
+                "--size", str(cfg.size), "--codec", cfg.codec, "--layout", cfg.layout, "--setup", cfg.setup, *self.extra]
+        if cfg.hapt:
+            play.append("--hapt")
         try:
             done = subprocess.run(play, capture_output=True, text=True, timeout=self.secs + 60, check=False)
         finally:
@@ -336,6 +346,56 @@ def cmd_tune(args: argparse.Namespace) -> None:
         print(f"RESULT: no setting is clearly better than the default (needed {NEEDED_GAIN * 100:.0f} % fewer). Send {out} anyway.")
 
 
+def stats(values: list[float]) -> tuple[float, float]:
+    """Mean and standard error of the mean."""
+    n = len(values)
+    mean = sum(values) / n
+    if n < MIN_RUNS_FOR_SE:
+        return mean, float("inf")
+    var = sum((v - mean) ** 2 for v in values) / (n - 1)
+    return mean, math.sqrt(var / n)
+
+
+def factor_conditions() -> list[tuple[str, Config]]:
+    """The conditions compared by `factors`: the baseline and one change at a time."""
+    base = Config()
+    return [("baseline", base),
+            ("layout notes-order", dataclasses.replace(base, layout="notes-order")),
+            ("layout spk-first", dataclasses.replace(base, layout="spk-first")),
+            ("layout state-last", dataclasses.replace(base, layout="state-last")),
+            ("setup notes-f1", dataclasses.replace(base, setup="notes-f1")),
+            ("80 Hz haptics on", dataclasses.replace(base, hapt=True)),
+            ("period 10.76", dataclasses.replace(base, period=10.76)),
+            ("size 60", dataclasses.replace(base, size=60))]
+
+
+def cmd_factors(args: argparse.Namespace) -> None:
+    """Compare the baseline with one change at a time, the runs interleaved so a drift in the room affects all of them equally."""
+    probe = Path(args.probe)
+    if not probe.exists():
+        raise SystemExit(f"{probe} not found")
+    recorder_command(Path("x.wav"))
+    search = Search(Bench(probe, args.hz, args.secs, args.probe_args))
+    conditions = factor_conditions()
+    samples: dict[str, list[float]] = {name: [] for name, _ in conditions}
+    for rnd in range(args.reps):
+        print(f"round {rnd + 1}/{args.reps}")
+        for name, cfg in conditions:
+            samples[name].append(search.run(cfg, name[:9]))
+    base_mean, base_se = stats(samples["baseline"])
+    print(f"\n{'condition':<22} {'dropouts/s':>10}  {'+-':>5}  verdict")
+    rows = []
+    for name, _ in conditions:
+        mean, se = stats(samples[name])
+        better = name != "baseline" and mean < 0.6 * base_mean and base_mean - mean > 2 * math.hypot(se, base_se)
+        verdict = "CLEARLY BETTER" if better else ""
+        print(f"{name:<22} {mean:10.2f}  {se:5.2f}  {verdict}")
+        rows.append({"name": name, "mean": mean, "se": se, "runs": samples[name], "clearly_better": better})
+    Path(args.out).write_text(json.dumps({"factors": rows, "runs": search.bench.runs}, indent=1))
+    print(f"\nSaved {args.out}.")
+    print("A condition is marked only when it has under 60 % of the baseline's dropouts, by more than 2 standard errors.")
+
+
 def cmd_analyze(args: argparse.Namespace) -> None:
     """Analyse one or more recordings made by hand."""
     for path in args.files:
@@ -389,6 +449,14 @@ def main() -> None:
     t.add_argument("--out", default=RESULTS_FILE)
     t.add_argument("probe_args", nargs="*", help="extra arguments for the probe, after --")
     t.set_defaults(fn=cmd_tune)
+    f = sub.add_parser("factors", help="compare the default with one change at a time (layout, setup, haptics, period, size)")
+    f.add_argument("--probe", default=str(default_probe if default_probe.exists() else "/tmp/speaker_probe.py"), help="speaker_probe.py")
+    f.add_argument("--hz", type=float, default=1000.0)
+    f.add_argument("--secs", type=float, default=12.0, help="length of the tone of one run")
+    f.add_argument("--reps", type=int, default=3, help="runs per condition (interleaved)")
+    f.add_argument("--out", default="speaker_factors_results.json")
+    f.add_argument("probe_args", nargs="*")
+    f.set_defaults(fn=cmd_factors)
     a = sub.add_parser("analyze", help="count the dropouts in recordings (16-bit WAV)")
     a.add_argument("files", nargs="+")
     a.set_defaults(fn=cmd_analyze)
