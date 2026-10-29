@@ -1046,9 +1046,9 @@ def cmd_info(s: Session) -> None:
 def cmd_tone(s: Session) -> None:
     """Stream a speaker tone (and an 80 Hz haptics tone with --hapt) with the chosen layout and print the bytes and pacing."""
     a = s.args
-    plan = Plan(secs=a.seconds, spk_hz=a.hz, hapt="tone" if a.hapt else "zero")
+    plan = Plan(secs=a.seconds, spk_hz=a.hz, hapt="tone" if a.hapt else "zero", codec="" if a.codec == "celt" else a.codec)
     print(f"streaming {a.hz} Hz for {a.seconds} s: setup '{s.setup.name}', layout '{s.layout.name}', {s.size} B frames, "
-          f"period {a.period_ms} ms ...")
+          f"codec {a.codec}, period {a.period_ms} ms ...")
     st = s.play(plan)
     show_first(s, (f"setup-{s.setup.name}", "0x36"))
     save_result(s.out, f"tone_{s.setup.name}_{s.layout.name}_{s.size}", report_stats("tone", st))
@@ -1462,6 +1462,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     tone.add_argument("hz", nargs="?", type=float, default=SPK_HZ)
     tone.add_argument("seconds", nargs="?", type=float, default=5.0)
     tone.add_argument("--hapt", action="store_true", help="add an 80 Hz haptics tone")
+    tone.add_argument("--codec", choices=["hybrid", "celt", "silk", "lowdelay"], default="hybrid",
+                      help="Opus mode (default hybrid = what the sender uses now; celt = the old default, it smears a tone)")
     sub.add_parser("layout", parents=[common], help="setups, layouts, Opus sizes")
     sub.add_parser("timing", parents=[common], help="10.667 vs 10.0 ms pacing, underruns")
     sub.add_parser("clock", parents=[common], help="report period sweep, dropped frames (440 Hz)")
