@@ -304,11 +304,9 @@ class Search:
         self.sweep([Config(centre, s) for s in sizes], "size")
         winner = self.best()
         print("5/5 the winner against the baseline, once more each")
-        if winner != base:
-            self.run(winner, "winner")
-            self.run(base, "baseline")
-            self.run(winner, "winner")
-        w, b = self.mean(winner), self.mean(base)
+        fresh = [self.run(winner, "winner"), self.run(base, "baseline"), self.run(winner, "winner")] if winner != base else []
+        w = (fresh[0] + fresh[2]) / 2 if fresh else self.mean(winner)     # only the new runs: the search picked the best of many
+        b = self.mean(base)
         gain = 1 - w / b if b > 0 else 0.0
         good = winner != base and gain >= NEEDED_GAIN
         return {"baseline": asdict(base), "baseline_dips_per_s": b, "winner": asdict(winner), "winner_dips_per_s": w, "gain": gain,
