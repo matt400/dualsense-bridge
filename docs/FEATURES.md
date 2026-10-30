@@ -240,7 +240,7 @@
     mode never lists it). Turning it on or off applies when the pad reconnects; if the composite pad cannot be created
     the pad works as before and the event log says why (no new attempt for 10 minutes or until the setting changes);
   - the sender must announce haptics (v13+, update it from the window); "Haptics" is also a master-only feature.
-- **Pad speaker (experimental)** (Settings → Haptics and speaker), opt-in, separately for each pad (MAC) or as the default; needs
+- **Pad speaker** (Settings → Haptics and speaker), opt-in, separately for each pad (MAC) or as the default; needs
   the HIDMaestro backend, sender v14+ and libopus on the sender (`libopus0` / `opus`):
   - the game's sound from the "Wireless Controller" output (channels 1-2) is mixed to mono and resampled 48 -> 45 kHz (the pad
     plays each frame over its 10.667 ms report period, so the sound keeps its pitch and tempo); the sender encodes it with Opus
