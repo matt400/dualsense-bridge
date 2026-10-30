@@ -7,7 +7,8 @@ proto. This module plays them to the pad:
 
 * Timing. The pad plays 3 kHz audio, so one report must go out every 10.667 ms - not earlier (the pad's buffer would overflow), not
   later (it would run dry). The tick is a timer with absolute deadlines (``due += period``, so a late tick is made up for by the
-  next one and errors do not add up); the jitter buffer in front of it absorbs the network. A free-running timer drifts against the
+  next one and errors do not add up; ``TickTimer``: a timerfd, which is not late by up to a millisecond like ``call_at``); the jitter
+  buffer in front of it absorbs the network. A free-running timer drifts against the
   PC's audio clock, so the depth of the buffer is watched: too deep -> one frame is dropped per tick, too shallow -> one frame is
   repeated (a frame is 0.33 ms - nothing to feel). An empty buffer plays a silence chunk (the stream never stalls) and is filled up
   to the target depth again before the next real chunk is played.
@@ -24,7 +25,6 @@ Rumble owns the HID file descriptor and the sequence counter; this module only b
 """
 from __future__ import annotations
 
-import asyncio
 import struct
 import time
 import zlib
@@ -33,6 +33,7 @@ from typing import Final, Protocol
 
 from proto import HAPT_CHUNK, HAPT_END, HAPT_FRAMES, HAPT_RATE, HAPT_START, UINT32_MASK
 from sender_rumble import BT_SEQ_MASK, BT_SEQ_SHIFT, BYTE_MASK, CRC_LEN, CRC_SEED, HapticsReport, Rumble
+from sender_tick import TickTimer
 
 # ---- report 0x32 (measured on the real pad, P0) ----
 REPORT_ID: Final = 0x32
@@ -251,7 +252,8 @@ class HapticsStream:
         self._due = 0.0                                         # when the next tick is due (absolute)
         self._prime_ticks = 0
         self._retry = 0.0                                       # a refused start (the pad cannot play haptics) is retried after this
-        self._timer: asyncio.TimerHandle | None = None
+        self._ticker: TickTimer | None = None                   # the tick timer of the running stream (one descriptor, closed at its end)
+        self._timer: TickTimer | None = None                    # the same object while a tick is pending, None otherwise
         self._why = "end of stream"
 
     # ---------- chunks from the network ----------
@@ -315,7 +317,8 @@ class HapticsStream:
         self._expected = frame
         self._why = "end of stream"
         self._due = now + self.target / HAPT_RATE               # the playout delay: the first tick finds a buffer of `target` frames
-        self._timer = asyncio.get_running_loop().call_at(self._due, self._tick)
+        self._ticker = TickTimer(self._tick)
+        self._arm()
         print(f"Controller {self.idx}: haptics start (buffer {self.target * 1000 / HAPT_RATE:.0f} ms, "
               f"{self.report.chunks} chunk(s) per report)")
         return True
@@ -345,7 +348,12 @@ class HapticsStream:
             self.stats.unwritten += 1
         self.writing = True
         self._due += self.period
-        self._timer = asyncio.get_running_loop().call_at(self._due, self._tick)
+        self._arm()
+
+    def _arm(self) -> None:
+        """Arm the tick timer for the next deadline (``_due``)."""
+        if self._ticker is not None:
+            self._timer = self._ticker.arm(self._due)
 
     def _play_or_silence(self) -> None:
         """Fill the report's payload for this tick: the oldest audio, or silence while the buffer refills."""
@@ -386,9 +394,10 @@ class HapticsStream:
     # ---------- end ----------
     def _finish(self, why: str) -> None:
         """End the stream: stop the timer, give the actuators back to rumble and log what happened."""
-        if self._timer is not None:
-            self._timer.cancel()
-            self._timer = None
+        if self._ticker is not None:
+            self._ticker.close()
+            self._ticker = None
+        self._timer = None
         self.active = self.ending = self.writing = False
         self.rumble.haptics_end()
         self.ring.clear()

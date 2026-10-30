@@ -567,7 +567,7 @@ class Ctrl:
                 self.speaker.close()
             try:
                 self.speaker = SpeakerStream(self.idx, r, self._report(), self._haptics_drives, C.SPEAKER_BUFFER_MS,
-                                             C.SPEAKER_VOLUME, C.SPEAKER_OPUS_BYTES, C.SPEAKER_OPUS_MODE)
+                                             C.SPEAKER_VOLUME, C.SPEAKER_OPUS_BYTES, C.SPEAKER_OPUS_MODE, C.SPEAKER_OPUS_COMPLEXITY)
             except OSError as e:
                 print(f"Controller {self.idx}: speaker unavailable ({e})")
                 self.speaker, self._speaker_failed = None, r

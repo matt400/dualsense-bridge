@@ -254,8 +254,8 @@ class Clock:
 class FakeEnc:
     """Stands in for libopus: the 'packet' is the first byte of the frame repeated, so the played frame can be read from the report."""
 
-    def __init__(self, size, mode="hybrid"):
-        self.size, self.mode, self.fail, self.closed = size, mode, False, False
+    def __init__(self, size, mode="hybrid", complexity=-1):
+        self.size, self.mode, self.fail, self.closed, self.complexity = size, mode, False, False, complexity
         self._pcm = bytearray(SPK_BYTES)
         self.pcm = memoryview(self._pcm)
 
@@ -718,6 +718,21 @@ async def ctrl_scenarios():
     assert O.OpusEncoder(80).mode == "hybrid" and O.DEFAULT_MODE == "hybrid", "hybrid is the default"
     ok("libopus: hybrid by default (TOC config 12-15, CBR, decodes), celt on request, an unknown mode counts as hybrid")
 
+    # the complexity: automatic = 3 for hybrid and 5 for celt, a number sets it, a larger one counts as 10, the packets stay CBR
+    def complexity_of(enc):
+        value = ctypes.c_int32(-1)
+        assert lib.opus_encoder_ctl(enc._state, ctypes.c_int(4011), ctypes.byref(value)) == 0     # OPUS_GET_COMPLEXITY
+        return value.value
+    for mode, given, want in (("hybrid", O.COMPLEXITY_AUTO, 3), ("celt", O.COMPLEXITY_AUTO, 5), ("hybrid", 0, 0), ("hybrid", 1, 1),
+                              ("celt", 10, 10), ("hybrid", 99, 10), ("celt", -7, 5)):
+        e = O.OpusEncoder(80, mode, given)
+        b = bytearray(400)
+        e.bind(b, 0)
+        e.pcm[:] = sine(1, hz=1234.0)
+        assert complexity_of(e) == want and e.mode == mode and e.encode(), (mode, given, complexity_of(e))
+        e.close()
+    ok("libopus: complexity automatic (3 hybrid / 5 celt) or set, 0-10, larger values count as 10")
+
     # end to end: UDP packets -> sender_net -> supervisor -> Ctrl -> stream -> real libopus -> 0x36 in the HID file
     path = newpath()
     c = sender_ctrl.Ctrl(3, "aa:bb:cc:dd:ee:03", dev, None, None)
@@ -727,6 +742,7 @@ async def ctrl_scenarios():
     net.fb_filter = SeqFilter(1.0)
     net.codec = Codec()
     tx = Codec()
+    sender_config.C.SPEAKER_OPUS_COMPLEXITY = 1                     # from the settings, through Ctrl, into the encoder
     count = 150
     pcm = sine(count)
     stamps = []
@@ -768,7 +784,9 @@ async def ctrl_scenarios():
     assert all(common(x)[:2] == bytes([0, 0x62]) for x in mid) and len(mid) <= 1, "the only other 0x31 in the stream is the repeated setup"
     assert all(crc_ok(x) for x in out) and all(x[77:79] == bytes([0x93, 80]) and not any(x[13:77]) for x in r36)
     assert all((b[1] >> 4) - (a[1] >> 4) in (1, -15) for a, b in zip(out, out[1:], strict=False)), "one sequence for every report"
-    assert not c.rumble.speaker and not c.speaker.active and c.speaker._timer is None
+    assert not c.rumble.speaker and not c.speaker.active and c.speaker._timer is None and c.speaker._ticker is None, "timer released"
+    assert complexity_of(c.speaker.encoder) == 1, "speaker_opus_complexity reaches the real encoder"
+    sender_config.C.SPEAKER_OPUS_COMPLEXITY = O.COMPLEXITY_AUTO
     gaps = [(b - a) * 1000 for a, b in zip(stamps, stamps[1:], strict=False)]
     mean = (stamps[-1] - stamps[0]) * 1000 / (len(stamps) - 1)
     assert 10.55 < mean < 10.78 and 9.5 < statistics.median(gaps) < 11.5, (mean, statistics.median(gaps))   # the pad's clock is 10.667 ms
@@ -807,7 +825,7 @@ async def ctrl_scenarios():
     c2.rumble = R.Rumble(4, dev, "hidraw", hidraw=(newpath(), True))
     real_enc = S.OpusEncoder
 
-    def broken(size, mode="hybrid"):
+    def broken(size, mode="hybrid", complexity=-1):
         raise OSError("no encoder")
 
     S.OpusEncoder = broken
@@ -839,6 +857,12 @@ for given, want in (("celt", "celt"), (" CELT ", "celt"), ("hybrid", "hybrid"), 
     cfg.update(speaker_opus_mode=given)
     sender_config._apply_runtime(cfg)
     assert C.SPEAKER_OPUS_MODE == want, given
+assert cfg["speaker_opus_complexity"] == -1 and C.SPEAKER_OPUS_COMPLEXITY == -1, "automatic by default"
+for given, want in ((0, 0), (3, 3), (10, 10), (11, -1), (-1, -1), (-9, -1), ("7", 7)):
+    cfg.update(speaker_opus_complexity=given)
+    sender_config._apply_runtime(cfg)
+    assert C.SPEAKER_OPUS_COMPLEXITY == want, given
 sender_config._apply_runtime(dict(sender_config.DEFAULTS))
 ok("settings: speaker_buffer_ms clamped to 20-200 ms, speaker_volume to a byte, speaker_opus_bytes to 30-200, speaker_opus_mode hybrid | celt")
+ok("settings: speaker_opus_complexity 0-10, automatic (-1) by default and for anything out of range")
 print("SPEAKER TX OK")
