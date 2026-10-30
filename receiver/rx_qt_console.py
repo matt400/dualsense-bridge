@@ -620,8 +620,10 @@ class ConsoleSettings(QDialog):
                 items.append((key, _("Pad {n}  ·  {key}").format(n=i + 1, key=key)))
         items += [(k, _("{key}  (niepodłączony)").format(key=k)) for k in {**self._haptics, **self._speaker} if k not in known]
         self.hap_pad.set_items(items)
-        self.hap_pad.set_data(DEFAULT_PAD)
-        self._pick_haptics_pad(DEFAULT_PAD)
+        # reopening the window keeps the pad that was picked last (it would look like its setting was lost otherwise)
+        keep = self._haptics_key if any(it[0] == self._haptics_key for it in items) else DEFAULT_PAD
+        self.hap_pad.set_data(keep)
+        self._pick_haptics_pad(keep)
 
     def _pick_haptics_pad(self, key: str) -> None:
         """Show the haptics settings of the chosen pad key (falling back to the default entry); loading is not an edit."""
@@ -771,8 +773,10 @@ class ConsoleSettings(QDialog):
                 items.append((key, _("Pad {n}  ·  {key}").format(n=i + 1, key=key)))
         items += [(k, _("{key}  (niepodłączony)").format(key=k)) for k in self._lights if k not in known]
         self.light_pad.set_items(items)
-        self.light_pad.set_data(DEFAULT_PAD)
-        self._pick_light_pad(DEFAULT_PAD)
+        # reopening the window keeps the pad that was picked last (it would look like its setting was lost otherwise)
+        keep = self._light_key if any(it[0] == self._light_key for it in items) else DEFAULT_PAD
+        self.light_pad.set_data(keep)
+        self._pick_light_pad(keep)
 
     def _pick_light_pad(self, key: str) -> None:
         """Show the lightbar settings of the chosen pad key (falling back to the default entry); loading does not count as an edit."""
