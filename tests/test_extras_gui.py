@@ -88,6 +88,8 @@ assert lb.low_pct == 25 and lb.pads == {"*": R.PadLight("battery", "", True), A:
 assert json.load(open(C.SETTINGS_PATH))["lightbar"]["pads"][A]["color"] == "#ff8800"
 assert rx_qt.ST.low_pct() == 25, "ten sam próg dla karty pada"
 dlg.close(); win.open_settings(); pump()
+assert dlg.light_pad.currentData() == A and dlg.light_own.isChecked() and dlg.light_mode.currentData() == "solid", \
+    "po ponownym otwarciu okna zostaje ostatnio wybrany pad z własnym ustawieniem"
 dlg.tabs.setCurrentIndex(3)
 dlg.light_pad.set_data(A); dlg.light_pad.changed.emit(A)
 dlg.light_own.setChecked(False)
@@ -119,6 +121,9 @@ assert h.get("*") == R.PadHaptics(True, 60) and h.get(A) == R.PadHaptics(False, 
 dlg._test_haptics(); pump()
 assert rx_haptics.link(0)._inject, "przycisk testu zakolejkował ton"
 rx_haptics.link(0).detach()
+dlg.close(); win.open_settings(); pump()
+assert dlg.hap_pad.currentData() == A and dlg.hap_own.isChecked() and dlg.hap_gain.value() == 120, \
+    "po ponownym otwarciu okna zostaje ostatnio wybrany pad z własnym ustawieniem"
 ok("Ustawienia -> Haptyka: domyślne + per pad, siła, notka o starym nadajniku, test, zapis bez restartu")
 
 # ---------- Ustawienia: Wake-on-LAN ----------
