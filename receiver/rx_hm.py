@@ -1,9 +1,11 @@
 """Receiver: the HIDMaestro backend - a virtual DualSense (a user-mode UMDF2 driver, MIT, actively developed).
 
-Compatible with HIDMaestro 1.x and 2.0.x (checked against the 2.0.3 migration guide). Calls used:
-LoadDefaultProfiles, InstallDriver, GetProfile, CreateControllerAt, SubmitRawReport, OutputReceived, Dispose - the
-same in both versions; 2.0 only adds diagnostics: ProfileLoadIssues, LastDriverInstall, TransportIndex and
-exceptions derived from InvalidOperationException - see describe_error.
+Compatible with HIDMaestro 1.x, 2.0.x and 2.1.x (the calls below were checked against the v2.1.0 source: no signature
+used here changed since 2.0.3; 2.1.0 only snapshots HMProfile.ButtonMap / AxisMap / ExtendedReport / Layout, which this
+module never touches). Calls used: LoadDefaultProfiles, InstallDriver, GetProfile, CreateControllerAt, SubmitRawReport,
+OutputReceived, Dispose - the same in all versions; 2.0 only adds diagnostics: ProfileLoadIssues, LastDriverInstall,
+TransportIndex and exceptions derived from InvalidOperationException - see describe_error. Composite pads also use
+UsbAudio.Output (FramesReceived, Channels, SampleRateHz, BitsPerSample, ChannelRoles), unchanged in 2.1.0.
 
 HIDMaestro is a .NET library (HIDMaestro.Core.dll, .NET 10) - called from Python through pythonnet (CoreCLR). The driver
 lives inside the DLL and installs on first use (InstallDriver, idempotent). Creating a device needs administrator
