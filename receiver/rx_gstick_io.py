@@ -165,10 +165,6 @@ class Runner:
         self.engines[slot].start_center(time.monotonic())
         self.wake.set()
 
-    def reset_center(self, slot: int) -> None:
-        """Forget the calibrated center: the pad lying flat is neutral again."""
-        self.set_config(slot, replace(self.config(slot), center=None))
-
     def cal_result(self, slot: int, clear: bool = False) -> bool | None:
         """The last calibration outcome of the slot (None / True / False); clear=True forgets it."""
         self._ready()

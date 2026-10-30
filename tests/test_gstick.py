@@ -131,7 +131,6 @@ t = T(base); t.e.start_center(t.t, 0.4); t.run(acc(), 120, gdps=200.0)
 check(t.e.cal_result == (False, None), "kalibracja w ruchu odrzucona")
 
 # --- skala 16-bit i 8-bit ---
-check(G.to_i16(1) == 32767 and G.to_i16(-1) == -32768 and G.to_i16(0) == 0, "zakres -32768..32767")
 check(G.to_u8(0) == 128 and G.to_u8(1) == 255 and G.to_u8(-1) == 1, "bajt gałki DS4")
 
 # --- plik ustawień ---

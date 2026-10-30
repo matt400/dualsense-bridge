@@ -15,7 +15,7 @@ from typing import Any
 import rx_events as ev
 import rx_net
 from proto import (BODY, BTC_ACTIVE, BTC_BLOCKED, BTC_FIXED, BTC_PICKED, BTC_USB, BTD_CONNECTED, BTD_PAD, BTD_PAIRED,
-                   BTD_TRUSTED, BTF_BUSY, BTF_HAS_BUILTIN, BTF_HAS_USB, BTF_MODE_SHIFT, BTF_ON_USB, BTF_SCANNING,
+                   BTF_BUSY, BTF_HAS_BUILTIN, BTF_HAS_USB, BTF_MODE_SHIFT, BTF_ON_USB, BTF_SCANNING,
                    BTR_AUTH, BTR_BUSY, BTR_DENIED, BTR_FAILED, BTR_NONE, BTR_NOT_FOUND, BTR_OFF, BTR_OK, BTR_RUNNING,
                    BTR_TIMEOUT, BTS_BLOCKED, BTS_DENIED, BTS_ERROR, BTS_NO_ADAPTER, BTS_NO_SERVICE, BTS_NO_TOOL,
                    BTS_OFF, BTS_OK, BT_ADAPTER, BT_ADAPTER_USE, BT_CONNECT, BT_DISCONNECT, BT_LIST, BT_PAIR,
@@ -66,11 +66,6 @@ class Device:
     def connected(self) -> bool:
         """Whether the device is connected."""
         return bool(self.flags & BTD_CONNECTED)
-
-    @property
-    def trusted(self) -> bool:
-        """Whether the device is trusted (it may reconnect by itself)."""
-        return bool(self.flags & BTD_TRUSTED)
 
     @property
     def pad(self) -> bool:
@@ -152,11 +147,6 @@ class Status:
     def has_usb(self) -> bool:
         """Whether the sender has a USB controller."""
         return bool(self.flags & BTF_HAS_USB)
-
-    @property
-    def has_builtin(self) -> bool:
-        """Whether the sender has a built-in controller."""
-        return bool(self.flags & BTF_HAS_BUILTIN)
 
     @property
     def on_usb(self) -> bool:

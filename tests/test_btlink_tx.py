@@ -18,15 +18,19 @@ check(BL.hci_command(BL.OPCODE_RSSI, 0x2A).hex() == "010514022a00", "Read RSSI: 
 check(BL.hci_command(BL.OPCODE_LINK_QUALITY, 0x0102).hex() == "010314020201", "Read Link Quality: opcode 0x1403")
 
 
+def parse_reply(packet, opcode, handle):
+    return BL.classify_reply(packet, opcode, handle)[1]
+
+
 def complete(opcode, handle, value, status=0):
     return bytes([4, 0x0E, 7, 1]) + struct.pack("<HBH", opcode, status, handle) + bytes([value & 0xFF])
 
 
-check(BL.parse_reply(complete(BL.OPCODE_RSSI, 42, -5), BL.OPCODE_RSSI, 42) == b"\xfb", "Command Complete: wartość po statusie i uchwycie (-5 dB)")
-check(BL.parse_reply(complete(BL.OPCODE_RSSI, 42, 0), BL.OPCODE_RSSI, 43) is None, "zły uchwyt: odpowiedź dla innego pada jest pomijana")
-check(BL.parse_reply(complete(BL.OPCODE_LINK_QUALITY, 42, 9), BL.OPCODE_RSSI, 42) is None, "zły opcode: odpowiedź na inne polecenie jest pomijana")
-check(BL.parse_reply(complete(BL.OPCODE_RSSI, 42, 0, status=1), BL.OPCODE_RSSI, 42) is None, "status != 0 (unknown command): brak wartości")
-check(BL.parse_reply(bytes([4, 0x0F, 4, 0, 1, 0]), BL.OPCODE_RSSI, 42) is None and BL.parse_reply(b"\x04\x0e", BL.OPCODE_RSSI, 1) is None,
+check(parse_reply(complete(BL.OPCODE_RSSI, 42, -5), BL.OPCODE_RSSI, 42) == b"\xfb", "Command Complete: wartość po statusie i uchwycie (-5 dB)")
+check(parse_reply(complete(BL.OPCODE_RSSI, 42, 0), BL.OPCODE_RSSI, 43) is None, "zły uchwyt: odpowiedź dla innego pada jest pomijana")
+check(parse_reply(complete(BL.OPCODE_LINK_QUALITY, 42, 9), BL.OPCODE_RSSI, 42) is None, "zły opcode: odpowiedź na inne polecenie jest pomijana")
+check(parse_reply(complete(BL.OPCODE_RSSI, 42, 0, status=1), BL.OPCODE_RSSI, 42) is None, "status != 0 (unknown command): brak wartości")
+check(parse_reply(bytes([4, 0x0F, 4, 0, 1, 0]), BL.OPCODE_RSSI, 42) is None and parse_reply(b"\x04\x0e", BL.OPCODE_RSSI, 1) is None,
       "Command Status i za krótki pakiet: brak wartości")
 
 # ---------- lista połączeń kontrolera (HCIGETCONNLIST) ----------
