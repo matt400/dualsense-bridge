@@ -35,7 +35,7 @@ After going back to a version without protocol v3 on one side, delete `auth.json
 | `allow` | receiver | "" | accept packets only from this IP (the sender) |
 | `dsu_bind` | receiver | `127.0.0.1` | the DSU server (gyro for emulators) only for this PC; `0.0.0.0` = an emulator on another device, but then anyone on the network sees the pads' motion and buttons |
 | `dsu_max_clients` | receiver | 4 | at most this many DSU subscribers (each gets a stream of up to `dsu_hz` packets/s) |
-| `hm_min_age_days` | receiver | 7 | a new HIDMaestro release is installed only this many days after it is published (it has no signature, and it runs in an administrator process); the first install doesn't wait; `0` = immediately; **Settings → Pads → Install now** skips the wait for the release that is waiting, once |
+| `hm_min_age_days` | receiver | 7 | unused while HIDMaestro is pinned (the default: a fixed version and link in `PINNED_TAG` of `rx_hm_update.py`, the SHA-256 of every file taken from the zip is checked, a newer release never installs on its own, and moving the pin is a reviewed commit). Without a pin a new release is installed only this many days after it is published (it has no signature, and it runs in an administrator process); the first install doesn't wait; `0` = immediately; **Settings → Pads → Install now** skips the wait for the release that is waiting, once |
 
 ## Files and permissions
 

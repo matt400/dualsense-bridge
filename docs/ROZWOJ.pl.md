@@ -99,3 +99,7 @@ Testy obejmują:
 
 Działanie z prawdziwym padem, ViGEm, HIDMaestro (pythonnet, sterownik), `DisplaySwitch.exe`, przełączaniem dźwięku (pycaw) i powiadomieniami Windows trzeba
 sprawdzić ręcznie.
+
+## Przesuwanie przypięcia HIDMaestro
+
+Receiver instaluje dokładnie jedną wersję HIDMaestro: `PINNED_TAG` w `receiver/rx_hm_update.py`, pobieraną ze stałego linku (`zip_url`), z SHA-256 pliku `HIDMaestro.Core.dll` i dwóch DLL Windows SDK w `PINNED_SHA256`. Żeby przejść na nowsze wydanie, zmień oba w jednym commicie: hash `HIDMaestro.Core.dll` to „SDK SHA-256” z notatek wydania (porównaj z pobraną DLL), pozostałe dwa policz z tego samego zipa. Uruchom `./tests/run_tests.sh`, potem sprawdź pad na Windowsie (pierwsze utworzenie instaluje nowy sterownik). Receiver, który pobierze ten commit, zainstaluje nową wersję przy najbliższym sprawdzeniu, bez czekania.

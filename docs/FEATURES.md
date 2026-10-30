@@ -5,7 +5,8 @@
 - **Virtual DualSense** (HIDMaestro) or **DS4** (ViGEmBus) with buttons, sticks, triggers, touchpad, gyro, rumble
   and the lightbar colour from the game. Settings → Pads: `auto` (HIDMaestro when the DLL is present and the receiver
   runs as administrator, otherwise ViGEmBus), `hidmaestro` (the same, but a missing HIDMaestro is a warning in the
-  event log) or `vigem`. HIDMaestro downloads and updates itself from GitHub (only the DLL from the release zip, via
+  event log) or `vigem`. HIDMaestro downloads itself from GitHub - a pinned version (currently v2.1.0, a fixed link, SHA-256 checked), so a release the
+  author publishes later is never installed on its own; the pin moves with a receiver update (only the DLL from the release zip, via
   HTTP Range), and the receiver starts as administrator (UAC; autostart task with highest privileges). The change takes
   effect immediately (pads are recreated). A HIDMaestro error while creating a pad = that pad goes through ViGEmBus
   and a warning in the event log. The pad card (touchpad icon) shows what kind of pad the slot is.

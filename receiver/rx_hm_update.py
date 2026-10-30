@@ -7,10 +7,13 @@ about 56 MB is downloaded instead of 160, each entry in one request (prefetch). 
 request (~900 TLS connections), and GitHub's signed link to the storage expires after ~5 min - a slow link did not make it in time.
 zipfile checks the CRC32 of every entry, and the whole version goes to its folder atomically (tmp + rename).
 
-Protection against a malicious release (a hijacked author account): the DLL is loaded into the administrator process and installs a
-driver, and a release has no Authenticode signature or checksums. So a new version waits MIN_AGE_DAYS after
-publication (hm_min_age_days in receiver.toml, 0 = at once) - replaced releases usually disappear within days. The first
-installation (no version at all) does not wait, and a person can skip the wait for one release with the "Install now" button.
+Protection against a malicious or broken release (a hijacked author account, a bad update while nobody is watching): the DLL is
+loaded into the administrator process and installs a driver, and a release has no Authenticode signature. So the receiver does not
+follow `releases/latest`: PINNED_TAG fixes the version and its download link, and PINNED_SHA256 the SHA-256 of every file taken
+from the zip (a swapped asset is refused). A newer HIDMaestro arrives only with a reviewed commit that moves the pin.
+With PINNED_TAG = "" the newest release is followed instead, and a new version waits MIN_AGE_DAYS after publication
+(hm_min_age_days in receiver.toml, 0 = at once) - replaced releases usually disappear within days; the first installation does
+not wait, and a person can skip the wait for one release with the "Install now" button.
 
   receiver/hidmaestro/v2.0.3/HIDMaestro.Core.dll   a version in its own folder: a newer one does not overwrite a DLL loaded
                                                     in the running process (the CLR holds the file) - it works after a restart
@@ -24,6 +27,7 @@ installation (no version at all) does not wait, and a person can skip the wait f
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -48,6 +52,17 @@ DLL: Final = "HIDMaestro.Core.dll"
 DEPS: Final = ("Microsoft.Windows.SDK.NET.dll", "WinRT.Runtime.dll")   # Windows SDK projections (TFM net10.0-windows10.0.26100)
 # the HIDMaestro licence from the DLL folder in the zip (optional - older releases may not have it)
 LICENSE: Final = "LICENSE"
+# The version the receiver installs: a fixed tag with a fixed download link (zip_url), not `releases/latest` - a release the author
+# publishes later is never installed behind the user's back. Moving to a newer one is a reviewed commit that changes PINNED_TAG and
+# PINNED_SHA256 together. "" = follow the newest GitHub release (then MIN_AGE_DAYS applies). Plain module variables: tests switch them.
+PINNED_TAG: str = "v2.1.0"
+# SHA-256 of what is taken from that zip. HIDMaestro.Core.dll: the "SDK SHA-256" of the v2.1.0 release notes (it matched the DLL
+# downloaded from the zip); the two Windows SDK projections have no published hash, so theirs were computed from the same zip.
+PINNED_SHA256: dict[str, str] = {
+    "HIDMaestro.Core.dll": "f13e32591404db0f418af9265b8e240f71257297cfae5a41dcd696fd87e9b4d5",
+    "Microsoft.Windows.SDK.NET.dll": "c633ab241cd09846c2aa409f0bee2026962610404a7bf132c75cbd66b0e5a9f4",
+    "WinRT.Runtime.dll": "bcf3a14e8712a90837fc5c0d8c8a24696af2bd7f74e9767597ec81ededfb23db",
+}
 DAY_S: Final = 24 * 3600
 CHECK_S: Final = DAY_S
 MIN_AGE_DAYS: Final = 7                     # a new version installs only this many days after publication (see above)
@@ -69,7 +84,7 @@ class Status:
     """What the updater knows: the downloaded version, the latest on GitHub and the progress."""
 
     version: str = ""        # the downloaded version (the newest in the folder), "" = none
-    latest: str = ""         # the newest on GitHub at the last check
+    latest: str = ""         # the version to have: the pinned one, else the newest on GitHub at the last check
     busy: bool = False       # a check / download is running
     error: str = ""          # the last error (network, zip) - "" = OK
     checked: float = 0.0     # time.time() of the last check
@@ -177,8 +192,19 @@ def _published(rel: Mapping[str, Any]) -> float:
         return 0.0
 
 
+def zip_url(tag: str) -> str:
+    """Return the download link of the x64 zip of release `tag` (what the GitHub API calls browser_download_url)."""
+    return f"https://github.com/{REPO}/releases/download/{tag}/HIDMaestro-{tag}.zip"
+
+
 def latest_release() -> tuple[str, str, float]:
-    """Return (tag, x64 zip url, publication time or 0). The DLL is identical in the x64 and arm64 zips - we take the plain one."""
+    """Return (tag, x64 zip url, publication time or 0). The DLL is identical in the x64 and arm64 zips - we take the plain one.
+
+    With PINNED_TAG set it is that release with its fixed link and no GitHub API call (the time is 0: a pinned version never
+    waits, see _waits). Otherwise it is the newest release from the API.
+    """
+    if PINNED_TAG:
+        return PINNED_TAG, zip_url(PINNED_TAG), 0.0
     with _get(API) as r:
         rel = json.load(r)
     tag = rel.get("tag_name", "")
@@ -316,6 +342,23 @@ def extract(zf: zipfile.ZipFile, dest: str, prefetch: Callable[[int, int], None]
     return names
 
 
+def verify(folder: str, tag: str) -> None:
+    """Check the files taken from the pinned release against PINNED_SHA256 (any other release is not checked).
+
+    Raises:
+        OSError: A file is missing or its SHA-256 differs - the caller discards the download.
+    """
+    if tag != PINNED_TAG:
+        return
+    for name, want in PINNED_SHA256.items():
+        digest = hashlib.sha256()
+        with open(os.path.join(folder, name), "rb") as f:
+            while block := f.read(CHUNK):
+                digest.update(block)
+        if digest.hexdigest() != want:
+            raise OSError(f"{name} of {tag} does not match the pinned SHA-256 - not installing")
+
+
 def install(tag: str, url: str, opener: Callable[..., Any] | None = None) -> tuple[str, int]:
     """Download version `tag` into hidmaestro/<tag> (first .<tag>.tmp, then rename); returns (folder, downloaded bytes)."""
     os.makedirs(root(), exist_ok=True)
@@ -325,6 +368,7 @@ def install(tag: str, url: str, opener: Callable[..., Any] | None = None) -> tup
     try:
         with zipfile.ZipFile(io.BufferedReader(raw, CHUNK)) as zf:
             names = extract(zf, tmp, raw.prefetch)
+        verify(tmp, tag)
         shutil.rmtree(final, ignore_errors=True)
         os.replace(tmp, final)
     except Exception:
@@ -368,16 +412,46 @@ def check(force: bool = False, skip_wait: bool = False) -> Status:
     return status
 
 
+def _behind_pin() -> bool:
+    """Tell whether the downloaded version is older than the pin (an update of the receiver moved it): act now, not tomorrow."""
+    return bool(PINNED_TAG) and version_tuple(status.version) < version_tuple(PINNED_TAG)
+
+
+def _waits(tag: str, published: float, skip_wait: bool, now: float) -> bool:
+    """Tell whether the install of `tag` must wait for MIN_AGE_DAYS (and remember until when in status.held_until).
+
+    Never for the pinned version (it was reviewed when the pin was committed), for the first installation, or for a release the
+    person asked for with skip_wait.
+
+    Raises:
+        OSError: The publication date is unreadable - there is no proof that the release has aged.
+    """
+    if tag == PINNED_TAG or not status.version:
+        return False
+    if skip_wait:
+        print(f"HIDMaestro {tag}: installing at the user's request without waiting {min_age_s() / DAY_S:g} days")
+        return False
+    if not published:
+        # no usable date = no proof that the release has aged: block instead of waving it through (the next check retries)
+        raise OSError(f"HIDMaestro {tag}: unreadable publication date - not installing until it is known")
+    ready = published + min_age_s()
+    if now >= ready:
+        return False                                           # a fresh release waits (also on "Check now")
+    _set(held_until=ready)
+    print(f"HIDMaestro {tag} published {(now - published) / 3600:.0f} h ago - installing it after "
+          f"{time.strftime('%Y-%m-%d %H:%M', time.localtime(ready))} (hm_min_age_days)")
+    return True
+
+
 def _check(force: bool, skip_wait: bool = False) -> None:
     """The check itself (under the lock).
 
-    Skip when checked recently, ask GitHub for the latest release, hold a fresh one until it is old enough (the first
-    installation never waits, and neither does one the person asked for with skip_wait), otherwise install it, clean up
-    and notify.
+    Skip when checked recently (not when the pin moved past the downloaded version), take the pinned release or ask GitHub
+    for the latest one, hold a fresh unpinned one until it is old enough (see _waits), otherwise install it, clean up and notify.
     """
     refresh_status()
     # 0 <=: a clock set back (a check "in the future") must not stop checking until that date
-    if not force and 0 <= time.time() - status.checked < CHECK_S and status.version:
+    if not force and 0 <= time.time() - status.checked < CHECK_S and status.version and not _behind_pin():
         return
     _set(busy=True, error="")
     tag, url, published = latest_release()
@@ -386,16 +460,7 @@ def _check(force: bool, skip_wait: bool = False) -> None:
     _set(latest=tag, checked=now, held_until=0.0)
     if status.version and version_tuple(status.version) >= version_tuple(tag):
         return
-    if skip_wait and status.version:
-        print(f"HIDMaestro {tag}: installing at the user's request without waiting {min_age_s() / DAY_S:g} days")
-    elif status.version and not published:
-        # no usable date = no proof that the release has aged: block instead of waving it through (the next check retries)
-        raise OSError(f"HIDMaestro {tag}: unreadable publication date - not installing until it is known")
-    elif status.version and now < published + min_age_s():     # a fresh release waits (also on "Check now")
-        ready = published + min_age_s()
-        _set(held_until=ready)
-        print(f"HIDMaestro {tag} published {(now - published) / 3600:.0f} h ago - installing it after "
-              f"{time.strftime('%Y-%m-%d %H:%M', time.localtime(ready))} (hm_min_age_days)")
+    if _waits(tag, published, skip_wait, now):
         return
     install(tag, url)
     _set(version=tag)

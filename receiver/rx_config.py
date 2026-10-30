@@ -18,7 +18,7 @@ DEFAULTS: dict[str, Any] = {
     "dsu_port": 26760,
     "dsu_bind": "127.0.0.1", # DSU server address: this computer only; "0.0.0.0" = the emulator runs on another device in the network
     "dsu_max_clients": 4,    # the most DSU subscribers at once (each gets a stream of up to dsu_hz packets/s)
-    "hm_min_age_days": 7,    # a new HIDMaestro version is installed only this many days after it is published; 0 = at once
+    "hm_min_age_days": 7,    # unpinned mode only (rx_hm_update.PINNED_TAG = ""): days a new HIDMaestro waits after publication; 0 = now
     "pads": 4,               # number of slots (max 4); virtual pads are created only for connected pads (which cards the
                              # window shows: Settings -> Pads - only connected ones, or a fixed number)
     "mouse_pads": [0],       # which controllers start in mouse mode (when there is a master pad: the master has the mouse)

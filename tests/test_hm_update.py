@@ -6,6 +6,9 @@ sys.path.insert(0, os.path.dirname(__file__))
 from rxenv import *                                              # noqa
 import rx_hm, rx_hm_update as U
 
+REAL_PIN = (U.PINNED_TAG, dict(U.PINNED_SHA256))
+U.PINNED_TAG = ""                      # sekcje poniżej idą za najnowszym wydaniem (przez API); przypięta wersja ma własną sekcję
+
 fails = []
 def check(cond, msg):
     print(("OK  " if cond else "FAIL"), msg)
@@ -129,6 +132,48 @@ check(st.version == "v1.16.0" and os.path.isdir(old) and sorted(os.listdir(old))
 rx_hm._loaded = None
 U.cleanup(keep="v1.16.0")
 check(not os.path.exists(old) and os.path.isdir(os.path.join(ROOT, "v1.16.0")), "po restarcie stara wersja usunięta")
+
+# ---------- przypięta wersja: stały link, bez API, bez czekania, SHA-256 plików, bez cofania ----------
+import hashlib
+sha = lambda b: hashlib.sha256(b).hexdigest()
+check(U.version_key(REAL_PIN[0]) is not None and set(REAL_PIN[1]) == {U.DLL, *U.DEPS}
+      and all(len(h) == 64 and int(h, 16) >= 0 for h in REAL_PIN[1].values()), f"przypięcie w kodzie: tag i SHA-256 DLL + zależności: {REAL_PIN[0]}")
+check(U.zip_url("v2.1.0") == "https://github.com/hifihedgehog/HIDMaestro/releases/download/v2.1.0/HIDMaestro-v2.1.0.zip",
+      "stały link do zipa x64")
+real_root = U.root
+ROOT_PIN = tempfile.mkdtemp()
+U.root = lambda: ROOT_PIN
+def pin(tag, dll):
+    """Przypina wersję `tag`, której zip (make_zip) ma DLL `dll`; hasze pasują do jego zawartości."""
+    SERVED[U.zip_url(tag).replace("github.com", "storage")] = make_zip(dll)
+    U.PINNED_TAG = tag
+    U.PINNED_SHA256 = {U.DLL: sha(dll), U.DEPS[0]: sha(b"MZsdk"), U.DEPS[1]: sha(b"MZwinrt")}
+DLL_P1, DLL_P2 = b"MZ" + b"pin1" * 500, b"MZ" + b"pin2" * 500
+pin("v1.20.0", DLL_P1)
+RELEASE[0] = release("v9.9.9", z1)                           # nowsze wydanie na GitHubie nie ma wpływu
+calls.clear()
+st = U.check(force=True)
+check(st.version == "v1.20.0" and not st.error and st.latest == "v1.20.0", f"przypięta wersja zainstalowana, a nie najnowsza z GitHuba: {st}")
+check(all(u != U.API for u, _ in calls) and any(u == U.zip_url("v1.20.0") for u, _ in calls), "bez zapytania do API, pobranie ze stałego linku")
+check(open(os.path.join(ROOT_PIN, "v1.20.0", U.DLL), "rb").read() == DLL_P1, "DLL przypiętej wersji")
+pin("v1.21.0", DLL_P2)                                       # aktualizacja receivera przesunęła przypięcie; ostatnie sprawdzenie sprzed chwili
+st = U.check()
+check(st.version == "v1.21.0" and not st.error, f"przesunięte przypięcie: instalacja od razu (bez czekania i bez dobowego odstępu): {st}")
+check(sorted(os.listdir(ROOT_PIN)) == ["state.json", "v1.21.0"], f"stara wersja usunięta: {os.listdir(ROOT_PIN)}")
+U.PINNED_SHA256 = {**U.PINNED_SHA256, U.DLL: sha(b"MZ" + b"good" * 500)}      # zip podmieniony: DLL inny niż w przypięciu
+SERVED[U.zip_url("v1.22.0").replace("github.com", "storage")] = make_zip(b"MZ" + b"evil" * 500)
+U.PINNED_TAG = "v1.22.0"
+st = U.check(force=True)
+check("does not match the pinned SHA-256" in st.error and st.version == "v1.21.0" and not os.path.exists(os.path.join(ROOT_PIN, "v1.22.0")),
+      f"podmieniony plik: odmowa, wersja bez zmian: {st.error}")
+check(not any(n.startswith(".") for n in os.listdir(ROOT_PIN)), "po odmowie folder tymczasowy sprzątnięty")
+U.verify(os.path.join(ROOT_PIN, "v1.21.0"), "v1.0.1")
+check(True, "inne wydanie niż przypięte nie jest sprawdzane (tryb „najnowsze”)")
+calls.clear()
+U.PINNED_TAG = "v1.0.0"                                      # przypięcie starsze od pobranej wersji: bez cofania
+st = U.check(force=True)
+check(st.version == "v1.21.0" and not any(u.endswith(".zip") for u, _ in calls), "przypięcie starsze od pobranej wersji: bez pobierania")
+U.PINNED_TAG, U.PINNED_SHA256, U.root = "", REAL_PIN[1], real_root
 
 # ---------- receiver: włączenie / wyłączenie automatu, zmiana backendu po pobraniu ----------
 import rx_ds4, rx_settings
