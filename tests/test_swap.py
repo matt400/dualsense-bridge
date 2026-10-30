@@ -10,11 +10,7 @@ from dataclasses import replace
 from proto import T_IDENT
 from rx_settings import MasterConfig, MouseConfig, Settings
 
-fails = []
-def check(cond, msg):
-    print(("OK  " if cond else "FAIL"), msg)
-    if not cond:
-        fails.append(msg)
+from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 def wait_for(pred, timeout=2.0):
     end = time.monotonic() + timeout

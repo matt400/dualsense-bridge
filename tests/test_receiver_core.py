@@ -182,4 +182,4 @@ except (TimeoutError, BlockingIOError) as e:
 assert _sk.gettimeout() is None and _err is not None and 0.05 < time.monotonic() - _t0 < 1.0, (_sk.gettimeout(), _err)
 _sk.close()
 ok("gniazdo odbioru: limit czasu w jądrze (SO_RCVTIMEO), bez select() przed każdym pakietem")
-print("RECEIVER v5 OK")
+print("RECEIVER CORE OK")

@@ -11,11 +11,7 @@ import rx_audio, rx_haptics as H, rx_master, rx_net, rx_settings, rx_speaker as 
 import rx_state as S
 from proto import CAP_HAPTICS, CAP_SPEAKER, SPK_BYTES, SPK_END, SPK_FRAME, SPK_START, T_CMD
 
-fails = []
-def check(cond, msg):
-    print(("OK  " if cond else "FAIL"), msg)
-    if not cond:
-        fails.append(msg)
+from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 
 # ---------- miks ----------

@@ -87,8 +87,8 @@ The tests cover:
   (`test_autostart.py`);
 - performance and reliability: SCHED_FIFO on musl via syscall (`test_rt_tx.py`), pad detection via inotify on
   `/dev/input` and bye / command / trigger repeats as the same packet spread over time (`test_devwatch_tx.py`,
-  `test_rx2.py`, `test_e2e.py`), reading only the needed bytes of the HIDMaestro output report (`test_vpad.py`),
-  kernel receive timeout (SO_RCVTIMEO) instead of select() before every packet (`test_rx2.py`);
+  `test_receiver_core.py`, `test_e2e.py`), reading only the needed bytes of the HIDMaestro output report (`test_vpad.py`),
+  kernel receive timeout (SO_RCVTIMEO) instead of select() before every packet (`test_receiver_core.py`);
 - virtual pads: HIDMaestro / ViGEmBus backend and switching between them at runtime, placeholder pad for fixed
   player order, DualSense report, feedback from the DualSense output report (`test_vpad.py`, the Pads tab in
   `test_settings_gui.py`), downloading HIDMaestro via HTTP Range, versions, zip / network errors and running as

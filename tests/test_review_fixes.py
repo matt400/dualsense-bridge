@@ -7,11 +7,7 @@ from rxenv import *                                              # noqa
 import rx_settings
 from dataclasses import replace
 
-fails = []
-def check(cond, msg):
-    print(("OK  " if cond else "FAIL"), msg)
-    if not cond:
-        fails.append(msg)
+from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 # 1. periodic checks keep running when _receive() yields nothing (junk datagram / timeout)
 calls = {"stale": 0}

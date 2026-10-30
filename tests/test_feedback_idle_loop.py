@@ -6,11 +6,7 @@ import os, sys, threading, time
 sys.path.insert(0, os.path.dirname(__file__))
 from rxenv import *                                              # noqa
 
-fails = []
-def check(cond, msg):
-    print(("OK  " if cond else "FAIL"), msg)
-    if not cond:
-        fails.append(msg)
+from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 S.alive[0] = False
 F.fb[0].update(large=100, small=0, set=True, t=time.monotonic() - 5.0)     # gra trzyma wibrację, ostatni raport dawno temu

@@ -11,11 +11,7 @@ import sender_net as net
 from proto import (BODY, CMD_POWER_OFF, FRESH_PAST_MS, T_CMD, T_PING, T_PONG, T_PONG2, T_STATE, Codec, EpochClock,
                    token_fresh)
 
-fails = []
-def check(cond, msg):
-    print(("OK  " if cond else "FAIL"), msg)
-    if not cond:
-        fails.append(msg)
+from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 
 class FakeSock:

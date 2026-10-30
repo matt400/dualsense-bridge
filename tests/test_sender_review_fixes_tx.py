@@ -27,11 +27,7 @@ import sender_wol as W
 from evdev import ecodes as ec
 
 TMP = tempfile.mkdtemp()
-fails = []
-def check(cond, msg):
-    print(("OK  " if cond else "FAIL"), msg)
-    if not cond:
-        fails.append(msg)
+from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 
 # ---------- 3: state files are written through the worker thread, not with an fsync on the loop ----------

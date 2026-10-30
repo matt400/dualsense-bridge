@@ -1,3 +1,4 @@
+"""The state packet sent when a pad / motion stream ends carries the last stick value (the trailing flush is not lost)."""
 import asyncio, sys, time
 sys.path.insert(0, sys.argv[1])
 sys.path.insert(1, sys.argv[1] + "/../common")
@@ -7,6 +8,7 @@ sender_config.init(["127.0.0.1"])
 from sender_config import C
 import sender_net as net, sender_streams as st, sender_ctrl
 from sender_ctrl import Ctrl
+from chk import check, fails
 out = []
 def emit(t, idx, *v): out.append((time.monotonic(), t, v))
 net.emit = emit; sender_ctrl.net.emit = emit
@@ -32,14 +34,10 @@ def motion_script(n):
 async def main():
     c = Ctrl(0, "aa:bb", Dev(pad_script(500, 1)), Dev(motion_script(500)), None)
     C.CAL_S = 0; C.AUTOBIAS = False
-    t0 = time.monotonic()
     await asyncio.gather(st.stream_pad(c), st.stream_motion(c))
     await asyncio.sleep(0.02)
-    dur = time.monotonic() - t0
     states = [o for o in out if o[1] == 1]
-    gaps = [ (b[0]-a[0])*1000 for a, b in zip(states, states[1:])]
-    print(f"{len(states)} pakietów stanu w {dur*1000:.0f} ms = {len(states)/dur:.0f} pkt/s; min przerwa {min(gaps):.1f} ms")
     last_ev_pad = 100 + (499 % 50)
-    print("ostatni stan lx =", states[-1][2][0], "(oczekiwane", last_ev_pad, ")  |  gyro x =", states[-1][2][14])
-    assert states[-1][2][0] == last_ev_pad, "trailing flush zgubił końcową wartość"
+    check(states and states[-1][2][0] == last_ev_pad, f"the last stick value is flushed when the streams end ({states[-1][2][0] if states else None} != {last_ev_pad})")
 asyncio.run(main())
+sys.exit(1 if fails else 0)

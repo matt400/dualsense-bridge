@@ -13,11 +13,7 @@ import sender_state as state
 import sender_supervisor as sup
 import sender_wol
 
-fails = []
-def check(cond, msg):
-    print(("OK  " if cond else "FAIL"), msg)
-    if not cond:
-        fails.append(msg)
+from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 TMP = tempfile.mkdtemp()
 

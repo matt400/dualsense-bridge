@@ -11,11 +11,7 @@ import sender_net as net, sender_ctrl, sender_state as state, sender_streams as 
 from sender_ctrl import Ctrl
 from proto import T_BYE, T_CLICK, T_MOUSE, T_STATE, T_STATE2
 
-fails = []
-def check(cond, msg):
-    print(("OK  " if cond else "FAIL"), msg)
-    if not cond:
-        fails.append(msg)
+from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 TMP = tempfile.mkdtemp()
 

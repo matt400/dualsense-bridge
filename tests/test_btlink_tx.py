@@ -8,11 +8,7 @@ import sender_bt as SB
 import sender_btlink as BL
 from proto import BODY, BTD_CONNECTED, BTD_PAD, BTD_PAIRED, BTL_LQ, BTL_RSSI, T_BTLINK, mac_bytes
 
-fails = []
-def check(cond, msg):
-    print(("OK  " if cond else "FAIL"), msg)
-    if not cond:
-        fails.append(msg)
+from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 
 PAD, PAD2, OTHER = "aa:bb:cc:dd:ee:01", "aa:bb:cc:dd:ee:02", "11:22:33:44:55:66"

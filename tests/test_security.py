@@ -13,11 +13,7 @@ import rx_net
 import rx_security
 from proto import BODY, FRESH_PAST_MS, T_PING, T_PONG2, T_STATE, Codec, EpochClock
 
-fails = []
-def check(cond, msg):
-    print(("OK  " if cond else "FAIL"), msg)
-    if not cond:
-        fails.append(msg)
+from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 
 ST = (128, 128, 0, 128, 128, 0, 0, 0, 0, 80, 0, 0, 0, 8192, 0, 0, 0)

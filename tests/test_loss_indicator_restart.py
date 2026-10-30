@@ -9,11 +9,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from rxenv import *                                              # noqa
 import rx_events as ev
 
-fails = []
-def check(cond, msg):
-    print(("OK  " if cond else "FAIL"), msg)
-    if not cond:
-        fails.append(msg)
+from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 
 # ---------- 1. utrata pakietów przy długiej przerwie ----------

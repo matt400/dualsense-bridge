@@ -8,11 +8,7 @@ from rxenv import *                                              # noqa
 import rx_ds4, rx_events as ev, rx_feedback as F, rx_hm, rx_report as R, rx_settings
 import rx_state as S
 
-fails = []
-def check(cond, msg):
-    print(("OK  " if cond else "FAIL"), msg)
-    if not cond:
-        fails.append(msg)
+from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 
 def vpad(**kw):

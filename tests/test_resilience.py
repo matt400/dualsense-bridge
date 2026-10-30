@@ -44,5 +44,6 @@ start("gyro", rx_gyro.mouse_thread)
 state(0, gyro=(0, -1024 * 100, 0)); time.sleep(0.9); state(0, gyro=(0, -1024 * 100, 1)); time.sleep(0.3)
 res["mysz z gyro działa po błędzie"] = len(moves) > 5
 for k, v in res.items():
-    print(("PASS " if v else "FAIL ") + k)
+    print(("OK   " if v else "FAIL ") + k)
 S.stop.set()
+sys.exit(0 if all(res.values()) else 1)

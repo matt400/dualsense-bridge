@@ -25,11 +25,7 @@ import sender_supervisor as sup
 from proto import BTD_PAD, BTD_PAIRED, BTD_TRUSTED, CAL_FEW, T_MOUSE
 from sender_config import C
 
-fails = []
-def check(cond, msg):
-    print(("OK  " if cond else "FAIL"), msg)
-    if not cond:
-        fails.append(msg)
+from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 out = []
 net.emit = sender_ctrl.net.emit = lambda t, i, *v: out.append((t, v))

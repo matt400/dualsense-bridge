@@ -10,11 +10,7 @@ import sender_config
 from sender_config import C, DEFAULTS, MIN_PERIOD_S
 import sender_net as net
 
-fails = []
-def check(cond, msg):
-    print(("OK  " if cond else "FAIL"), msg)
-    if not cond:
-        fails.append(msg)
+from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 
 # ---- the periods of the polling loops are never below MIN_PERIOD_S ----

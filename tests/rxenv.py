@@ -30,7 +30,7 @@ N.codec = Codec()
 N.clock.base = 0          # zegar PC = perf_counter (testy liczą czasy pong2 / state2 bez losowego przesunięcia)
 ORIG_SEND_PEER = N.send_peer
 ORIG_SEND_REPEAT = N.send_repeat
-N.send_repeat = lambda pkt, n: [N.send_peer(pkt) for _ in range(n)]   # testy: kopie od razu (rozłożenie: test_rx2)
+N.send_repeat = lambda pkt, n: [N.send_peer(pkt) for _ in range(n)]   # testy: kopie od razu (rozłożenie: test_receiver_core)
 sent = []                                      # pakiety wysłane do nadajnika
 N.send_peer = lambda pkt: sent.append(N.codec.parse(pkt) + (pkt,))
 BIT = {c: 1 << k for k, c in enumerate(PAD_KEYS)}

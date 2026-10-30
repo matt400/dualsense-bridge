@@ -15,11 +15,7 @@ import sender_streams
 from proto import (BT_CONNECT, BT_SCAN_START, BTR_BUSY, BTR_DENIED, BTR_FAILED, BTR_RUNNING, BTS_DENIED, BTS_ERROR,
                    BTS_OK)
 
-fails = []
-def check(cond, msg):
-    print(("OK  " if cond else "FAIL"), msg)
-    if not cond:
-        fails.append(msg)
+from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 MAC = bytes(range(1, 7))
 

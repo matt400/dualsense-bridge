@@ -3,7 +3,10 @@
 Zamiast GitHuba: atrapa ssh, która jak GitHub wpuszcza tylko klucz dodany jako deploy key (plik "authorized"),
 a po wpuszczeniu uruchamia git-upload-pack na lokalnym repozytorium - git pull działa naprawdę.
 """
-import asyncio, os, subprocess, sys, tempfile
+import asyncio, os, shutil, subprocess, sys, tempfile
+if not shutil.which("ssh-keygen"):
+    print("SKIP  no ssh-keygen (the deploy key is generated with it)")
+    sys.exit(0)
 sys.path.insert(0, sys.argv[1])
 sys.path.insert(1, sys.argv[1] + "/../common")
 TX = os.path.abspath(sys.argv[1])
@@ -11,11 +14,7 @@ import sender_config; sender_config.init(["127.0.0.1"])
 import proto, sender_net as net, sender_state as state, sender_update as U
 from proto import BODY, T_BUILD, T_UPDMSG, UPD_DONE, UPD_FAILED
 
-fails = []
-def check(cond, msg):
-    print(("OK  " if cond else "FAIL"), msg)
-    if not cond:
-        fails.append(msg)
+from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
 os.environ.update(ENV)

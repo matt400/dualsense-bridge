@@ -8,11 +8,7 @@ from rxenv import *                                              # noqa
 import rx_bt as BT
 import rx_display as D
 
-fails = []
-def check(cond, msg):
-    print(("OK  " if cond else "FAIL"), msg)
-    if not cond:
-        fails.append(msg)
+from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 # 1. a sender that went silent in the middle of an operation does not keep the buttons locked
 old = BT.status

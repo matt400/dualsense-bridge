@@ -69,4 +69,4 @@ infos = [v for t, i, v in out if t == T_INFO]
 assert len(infos) >= 2 and 400 <= infos[-1][1] <= 560 and 380 <= infos[-1][2] <= 540, infos
 assert open(LOG).read().count(f"disconnect {mac}") == 1, "bezczynność 1.5 s -> jedno wyłączenie"
 print(f"OK   info: {infos[-1]} (ping x10, Hz pada, Hz ruchu), wyłączenie po bezczynności")
-print("SENDER v5 OK")
+print("CONTROL OK")

@@ -1,6 +1,7 @@
 import asyncio, sys
 sys.path.insert(0, sys.argv[1])
 sys.path.insert(1, sys.argv[1] + "/../common")
+from chk import check, fails
 import sender_config; sender_config.init(["127.0.0.1"])
 import sender_controller as M, sender_streams as st, sender_supervisor as sup, sender_net as net
 net.init()
@@ -20,5 +21,6 @@ async def run():
     task.cancel()
     try: await task
     except (asyncio.CancelledError, Exception): pass
-    print(("PASS" if alive and beats["n"] >= 2 else "FAIL"), "nadajnik działa dalej po błędzie w pętli heartbeat", beats)
+    check(alive and beats["n"] >= 2, f"nadajnik działa dalej po błędzie w pętli heartbeat {beats}")
 asyncio.run(run())
+sys.exit(1 if fails else 0)

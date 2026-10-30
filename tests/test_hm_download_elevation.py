@@ -10,11 +10,7 @@ import rx_config
 import rx_hm_update as U
 import rx_winapi
 
-fails = []
-def check(cond, msg):
-    print(("OK  " if cond else "FAIL"), msg)
-    if not cond:
-        fails.append(msg)
+from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 
 # ---------- 1. HIDMaestro: każdy potrzebny plik zipa jednym zapytaniem Range ----------

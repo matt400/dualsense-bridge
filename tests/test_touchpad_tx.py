@@ -65,4 +65,4 @@ nid = sup._node_id(p); sup._not_pads[p] = nid
 os.remove(p); time.sleep(0.01); open(p, "w").close()
 assert sup._node_id(p) != nid, "nowy węzeł musi mieć inny identyfikator"
 print("recykling ścieżki: nowy węzeł rozpoznany")
-print("SENDER OK")
+print("TOUCHPAD OK")

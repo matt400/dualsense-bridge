@@ -8,11 +8,7 @@ import proto
 import rx_feedback as F
 from proto import T_BUILD, T_BUILD3, T_STATE, T_UPDMSG, Codec, SeqFilter
 
-fails = []
-def check(cond, msg):
-    print(("OK  " if cond else "FAIL"), msg)
-    if not cond:
-        fails.append(msg)
+from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 
 # ---------- write_file: dwa równoległe zapisy tego samego pliku nie dzielą pliku tymczasowego ----------

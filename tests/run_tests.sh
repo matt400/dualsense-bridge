@@ -4,10 +4,11 @@
 set -u
 cd "$(dirname "$0")/.."
 T=tests; RX=receiver; TX=sender; CM=common
+export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-offscreen}"      # the window tests need no display
 export BTLOG="$(mktemp)" PATH="$PWD/$T/fakebin:$PATH"
 fail=0
 run() { name=$1; shift
-  if out=$(timeout 120 "$@" 2>&1); then printf 'OK    %s\n' "$name"; else printf 'FAIL  %s\n%s\n' "$name" "$out" | tail -20; fail=1; fi
+  if out=$(timeout 120 "$@" 2>&1); then printf 'OK    %s\n' "$name"; else printf 'FAIL  %s\n' "$name"; printf '%s\n' "$out" | tail -20; fail=1; fi
   if printf '%s' "$out" | grep -q '^FAIL'; then printf 'FAIL  %s (assert)\n' "$name"; fail=1; fi; }
 if command -v ruff >/dev/null 2>&1; then ruff check --quiet $RX $TX $CM $T || fail=1      # rules in pyproject.toml
 else python3 -m pyflakes $RX/*.py $TX/*.py $CM/*.py | grep -v "imported but unused" && fail=1; fi
@@ -17,8 +18,8 @@ if python3 -m mypy --version >/dev/null 2>&1; then      # python3 -m: the same i
   (cd $TX && python3 -m mypy --config-file ../pyproject.toml --no-error-summary .) || fail=1
 fi
 if [ -e $RX/proto.py ] || [ -e $TX/proto.py ]; then echo "FAIL  proto.py ma być tylko w $CM/ (bez kopii w receiver/ i sender/)"; fail=1; fi
-for t in test_tx test_drop test_tx2 test_bugs_tx test_shutdown test_resilience_tx test_slots_tx test_rumble_tx test_rumble_fw_tx test_trigfx_tx test_rt_tx test_devwatch_tx test_review_tx test_update_key_tx test_features_tx test_wol_tx test_calib_tx test_critical_path_tx test_hidraw_errors_tx test_bt_scan_lifecycle_tx test_bt_window_errors_tx test_atomic_writes_tx test_file_modes_tx test_bt_multi_adapter_tx test_bt_link_policy_tx test_pad_limit_tx test_gametrig_tx test_security_tx test_battery_tx test_hot_path_tx test_config_hardening_tx test_btlink_tx test_sender_review_fixes_tx test_pad_filter_tx test_sender_review_followups_tx test_sender_bug_review_tx test_late_devices_slots_tx test_haptics_tx test_haptics_stream_tx test_speaker_tx h_rate; do run $t python3 $T/$t.py $TX; done
-for t in test_i18n test_rx2 test_editor test_bugs test_resilience test_startup test_console test_master test_restart test_relaunch_job test_review test_features test_trigfx test_extras test_padtest test_access test_autostart test_critical_path test_release_on_exit test_touchpad_tv_mode test_vigem_callbacks test_input_state_boundaries test_atomic_writes test_hm_download_elevation test_lightbar_game_color test_loss_indicator_restart test_feedback_idle_loop test_review_fixes test_display test_vpad test_hm_update test_gametrig test_security test_gstick test_proto_fields test_proto_golden test_battery test_report_hardening_writes test_review_followups test_review_nits test_hot_path test_swap test_diag test_haptics test_speaker test_hm_il; do run $t python3 $T/$t.py $RX; done
+for t in test_touchpad_tx test_drop test_control_tx test_info_loop_tx test_shutdown test_resilience_tx test_slots_tx test_rumble_tx test_rumble_fw_tx test_trigfx_tx test_rt_tx test_devwatch_tx test_review_tx test_update_key_tx test_features_tx test_wol_tx test_calib_tx test_critical_path_tx test_hidraw_errors_tx test_bt_scan_lifecycle_tx test_bt_window_errors_tx test_atomic_writes_tx test_file_modes_tx test_bt_multi_adapter_tx test_bt_link_policy_tx test_pad_limit_tx test_gametrig_tx test_security_tx test_battery_tx test_hot_path_tx test_config_hardening_tx test_btlink_tx test_sender_review_fixes_tx test_pad_filter_tx test_sender_review_followups_tx test_sender_bug_review_tx test_late_devices_slots_tx test_haptics_tx test_haptics_stream_tx test_speaker_tx test_stream_flush_tx; do run $t python3 $T/$t.py $TX; done
+for t in test_i18n test_receiver_core test_editor test_bugs test_resilience test_startup test_console test_master test_restart test_relaunch_job test_review test_features test_trigfx test_extras test_padtest test_access test_autostart test_critical_path test_release_on_exit test_touchpad_tv_mode test_vigem_callbacks test_input_state_boundaries test_atomic_writes test_hm_download_elevation test_lightbar_game_color test_loss_indicator_restart test_feedback_idle_loop test_review_fixes test_display test_vpad test_hm_update test_gametrig test_security test_gstick test_proto_fields test_proto_golden test_battery test_report_hardening_writes test_review_followups test_review_nits test_hot_path test_swap test_diag test_haptics test_speaker test_hm_il; do run $t python3 $T/$t.py $RX; done
 run test_e2e python3 $T/test_e2e.py $RX $TX
 run test_e2e_key python3 $T/test_e2e_key.py $RX $TX
 run test_bt python3 $T/test_bt.py $RX $TX

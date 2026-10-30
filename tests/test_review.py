@@ -6,11 +6,7 @@ import rx_buttons as B, rx_config, rx_console, rx_master, rx_profiles as P, rx_s
 from proto import T_BYE, T_IDENT, T_MOUSE, T_STATE
 from rx_settings import MasterConfig, MouseConfig, Settings
 
-fails = []
-def check(cond, msg):
-    print(("OK  " if cond else "FAIL"), msg)
-    if not cond:
-        fails.append(msg)
+from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 def wait_for(pred, timeout=2.0):
     end = time.monotonic() + timeout

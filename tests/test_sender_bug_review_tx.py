@@ -29,11 +29,7 @@ import sender_update as UPD
 from pathlib import Path
 from proto import CAL_FEW, T_CALRES
 
-fails = []
-def check(cond, msg):
-    print(("OK  " if cond else "FAIL"), msg)
-    if not cond:
-        fails.append(msg)
+from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 
 OP = BL.OPCODE_RSSI

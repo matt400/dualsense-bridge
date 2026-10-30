@@ -10,11 +10,7 @@ import sender_rumble as R
 from proto import BODY, T_EVENT, T_PING, T_STATE, T_STATE2, T_TRIG, T_TRIG2, TFX_CLICK, TFX_RES, TRIG2_OFF, Codec, cstr
 
 TMP = tempfile.mkdtemp()
-fails = []
-def check(cond, msg):
-    print(("OK  " if cond else "FAIL"), msg)
-    if not cond:
-        fails.append(msg)
+from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 
 class Dev:
