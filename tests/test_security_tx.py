@@ -3,6 +3,7 @@ i podpisanych pakietów v2 po przejściu, zapamiętane przejście), próbny ping
     python3 tests/test_security_tx.py sender"""
 import asyncio, os, sys, tempfile, time
 sys.path.insert(0, sys.argv[1])
+sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1", "--key", "sekret"])
 from sender_config import C
 import proto

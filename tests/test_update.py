@@ -1,6 +1,7 @@
 """Receiver: aktualizacja (rx_update) na prawdziwych repozytoriach git w katalogu tymczasowym."""
 import os, subprocess, sys, tempfile
 sys.path.insert(0, sys.argv[1])
+sys.path.insert(1, sys.argv[1] + "/../common")
 import rx_update as U
 
 ok = lambda m: print("OK  ", m)

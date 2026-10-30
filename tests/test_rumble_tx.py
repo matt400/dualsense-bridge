@@ -1,6 +1,7 @@
 """Nadajnik: wibracja (sender_rumble) - evdev FF albo raport HID przez hidraw, strażnik, przełączenie po błędzie."""
 import asyncio, os, sys, tempfile, types, zlib
 sys.path.insert(0, sys.argv[1])
+sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
 import sender_opus
 import sender_rumble as R

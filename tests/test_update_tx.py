@@ -2,6 +2,7 @@
 import asyncio, os, subprocess, sys, tempfile, types
 from unittest import mock
 sys.path.insert(0, sys.argv[1])
+sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
 import proto, sender_control, sender_net as net, sender_state as state, sender_update as U
 from proto import BODY, CMD_UPDATE, T_BUILD, UPD_DONE, UPD_NO_CHANGE, UPD_NOT_GIT, UPD_RUNNING

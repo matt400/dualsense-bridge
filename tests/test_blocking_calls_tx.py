@@ -7,6 +7,7 @@
 python3 tests/test_blocking_calls_tx.py sender"""
 import asyncio, json, sys, threading, time, types
 sys.path.insert(0, sys.argv[1])
+sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
 import sender_bt as SB
 import sender_supervisor as sup

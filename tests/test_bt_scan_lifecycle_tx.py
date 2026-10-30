@@ -3,6 +3,7 @@ palec leżący na touchpadzie przy podłączeniu, licznik błędów pętli zerow
     python3 tests/test_bt_scan_lifecycle_tx.py sender"""
 import asyncio, contextlib, io, json, os, stat, sys, tempfile, time
 sys.path.insert(0, sys.argv[1])
+sys.path.insert(1, sys.argv[1] + "/../common")
 from evdev import ecodes as ec
 import sender_config; sender_config.init(["127.0.0.1"])
 from sender_config import C

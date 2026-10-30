@@ -5,6 +5,7 @@ a po wpuszczeniu uruchamia git-upload-pack na lokalnym repozytorium - git pull d
 """
 import asyncio, os, subprocess, sys, tempfile
 sys.path.insert(0, sys.argv[1])
+sys.path.insert(1, sys.argv[1] + "/../common")
 TX = os.path.abspath(sys.argv[1])
 import sender_config; sender_config.init(["127.0.0.1"])
 import proto, sender_net as net, sender_state as state, sender_update as U

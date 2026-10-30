@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 TX = sys.argv[2]
 from rxenv import *                                              # noqa  (receiver: argv[1])
 sys.path.insert(1, TX)
+sys.path.insert(1, TX + "/../common")
 import proto
 from proto import (BODY, BT_ACTIVE_S, BT_CONNECT, BT_DISCONNECT, BT_LIST, BT_PAIR, BT_POWER, BT_REMOVE, BT_RSSI_NONE,
                    BT_SCAN_MAX_S, BT_SCAN_START, BT_SCAN_STOP, BTD_CONNECTED, BTD_PAD, BTD_PAIRED, BTD_TRUSTED,

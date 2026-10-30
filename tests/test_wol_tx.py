@@ -2,6 +2,7 @@
 build2 i lokalne potwierdzenie na padzie (Ctrl.local_pulse)."""
 import asyncio, json, os, socket, sys, tempfile, time
 sys.path.insert(0, sys.argv[1])
+sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
 from sender_config import C
 TMP = tempfile.mkdtemp()

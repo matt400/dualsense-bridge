@@ -11,6 +11,7 @@ DualSense pad → Bluetooth → **sender** (Linux, evdev) → UDP 5005 → **rec
 ## Layout
 ```
 sender/    sender_controller.py (entry point) + sender_*.py; install-service.sh, service/
+common/    proto.py (wire protocol + git update helpers), the one copy used by sender and receiver
 receiver/  receiver_controller.py (entry point) + rx_*.py (logic) + rx_qt*.py (window)
 tests/     Linux tests with Windows/evdev stubs (rxenv.py); fakebin/ = fake bluetoothctl; run_tests.sh = the CI entry
 docs/      EN by default, PL as *.pl.md (user docs, not needed for code work)
@@ -46,14 +47,15 @@ Every module has a docstring with its role; find the file here before opening an
   `rx_qt_sidebar` (the vertical icon menu), `rx_qt_diag` (Diagnostics tab: tiles, charts), `rx_qt_bt`, `rx_qt_tv` (pad control in TV mode), `rx_qt_drawer`, `rx_qt_keys`, `rx_qt_log`, `rx_qt_gstick`, `rx_qt_gyro` (gyro aim preview), `rx_qt_screens` (screen / fullscreen placement),
   `rx_qt_style`, `rx_qt_icons`, `rx_qt_widgets`.
 
-**Large files** – grep or read by range, never whole: `rx_i18n` (~1000, translation dicts), `proto` (~960, two identical copies), `rx_qt`, `rx_qt_console`,
+**Large files** – grep or read by range, never whole: `rx_i18n` (~1000, translation dicts), `proto` (~1000, in `common/`), `rx_qt`, `rx_qt_console`,
 `sender_rumble`, `sender_bt`, `rx_net`.
 
 **Runtime files** (gitignored, never commit, no need to read): `*.toml` except `*.example.toml`, `remap.json`, `settings.json`, `console.json`, `slots.json`,
 `wol.json`, `gyro_cal.json`, `bt.json`, `auth.json` (HMAC key), `padcal.json`, `receiver_ui.ini`, `receiver/backups/`, `receiver/hidmaestro/`.
 
 ## Hard rules
-- `receiver/proto.py` and `sender/proto.py` MUST be byte-for-byte identical (a test checks this). Changing one means editing both.
+- `common/proto.py` is the only copy of the protocol; do not add `proto.py` to `receiver/` or `sender/` (`run_tests.sh` fails on that).
+  Entry scripts and tests put `common/` on `sys.path` (a new entry script or test needs the same line); mypy uses `mypy_path`.
 - The protocol is backward compatible: new fields = a longer variant of the same packet type, sent only to a peer
   known to understand it (version / CAP_* / pong2 / scfg). An older peer drops an unknown length.
   Never change the formats of existing packets.

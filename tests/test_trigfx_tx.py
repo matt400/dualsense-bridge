@@ -2,6 +2,7 @@
 spustach (L2 = duży silnik, R2 = mały, po RFX_HOLD_S powrót do efektu), stary trig dalej działa."""
 import asyncio, os, sys, tempfile
 sys.path.insert(0, sys.argv[1])
+sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
 import sender_ctrl
 import sender_net as net

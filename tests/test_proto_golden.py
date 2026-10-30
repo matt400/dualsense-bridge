@@ -11,6 +11,7 @@ import struct
 import sys
 
 sys.path.insert(0, sys.argv[1])
+sys.path.insert(1, sys.argv[1] + "/../common")
 import proto
 
 PACKETS = {0: {'fmt': '!HBBH56s',

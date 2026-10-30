@@ -2,6 +2,7 @@
     python3 tests/test_proto_fields.py receiver"""
 import sys
 sys.path.insert(0, sys.argv[1])
+sys.path.insert(1, sys.argv[1] + "/../common")
 from proto import utf8_field
 
 assert utf8_field("abc", 8) == b"abc"

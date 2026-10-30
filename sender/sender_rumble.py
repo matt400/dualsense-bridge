@@ -48,6 +48,8 @@ from evdev import InputDevice
 from evdev import ecodes as ec
 from evdev import ff
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "common"))   # proto.py is shared, it lives in common/
+
 import sender_opus
 from sender_ioctl import IOC_READ, IOC_WRITE, ioc
 from proto import (CAP_HAPTICS, CAP_SPEAKER, CAP_TRIG_FX, CAP_TRIG_RAW, CAP_TRIGGERS, RFX_GAIN_MAX, RFX_HOLD_S, RFX_ON, RUMBLE_EVDEV,

@@ -3,6 +3,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 TX = sys.argv[2]
 from rxenv import *                              # noqa  (receiver: argv[1])
 sys.path.insert(1, TX)
+sys.path.insert(1, TX + "/../common")
 from proto import CMD_POWER_OFF
 # --- receiver na losowym porcie ---
 N.send_peer = ORIG_SEND_PEER

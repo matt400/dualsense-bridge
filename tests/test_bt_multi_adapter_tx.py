@@ -4,6 +4,7 @@
 python3 tests/test_bt_multi_adapter_tx.py sender"""
 import asyncio, json, os, stat, sys, tempfile, time
 sys.path.insert(0, sys.argv[1])
+sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
 import sender_bt as SB, sender_control as ctl
 from proto import BT_SCAN_START, BTR_OK, BTS_OK

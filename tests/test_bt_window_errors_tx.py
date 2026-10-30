@@ -3,6 +3,7 @@ bluetoothctl (operacja nie zostaje "w toku" na zawsze) i autobias żyroskopu nie
     python3 tests/test_bt_window_errors_tx.py sender"""
 import asyncio, sys, types
 sys.path.insert(0, sys.argv[1])
+sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
 from sender_config import C
 C.GYRO_CAL_FILE = ""

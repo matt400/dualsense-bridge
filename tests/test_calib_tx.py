@@ -2,6 +2,7 @@
 dla zapisanego pada) i gałki bez strefy martwej na czas pomiaru dryfu (CMD_RAW_STICKS, sam wraca po czasie)."""
 import asyncio, json, os, sys, tempfile, time, types
 sys.path.insert(0, sys.argv[1])
+sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
 from sender_config import C
 TMP = tempfile.mkdtemp()

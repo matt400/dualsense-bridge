@@ -2,6 +2,7 @@
 chunks, underrun and re-priming, overrun, clock drift (drop / repeat of one frame), the 200 ms timeout, the end tail and a restart."""
 import asyncio, contextlib, io, sys
 sys.path.insert(0, sys.argv[1])
+sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
 import sender_haptics as H
 from proto import HAPT_CHUNK, HAPT_END, HAPT_FRAMES, HAPT_RATE, HAPT_START

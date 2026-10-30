@@ -12,6 +12,7 @@ import time
 import types
 
 sys.path.insert(0, sys.argv[1])
+sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
 import proto
 import sender_btadapter as BA

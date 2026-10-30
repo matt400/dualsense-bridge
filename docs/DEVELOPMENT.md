@@ -10,7 +10,7 @@ sender/     Linux:   sender_controller.py (entry), sender_*.py (modules)
 tests/      tests on Linux with Windows and evdev device stubs
 ```
 
-`proto.py` (packet format) must be identical in `receiver/` and `sender/`. The tests check this.
+`proto.py` (packet format) lives in `common/` and is shared by `receiver/` and `sender/`; there is only one copy.
 
 ## Screenshots
 

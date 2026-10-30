@@ -1,6 +1,7 @@
 """Ctrl+C / SIGTERM: pad musi wysłać 'bye' zanim gniazdo zostanie zamknięte."""
 import asyncio, sys, socket
 sys.path.insert(0, sys.argv[1])
+sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
 from sender_config import C
 rx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); rx.bind(("127.0.0.1", 0)); rx.settimeout(0.2)

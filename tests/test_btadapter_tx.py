@@ -5,6 +5,7 @@ import asyncio, json, os, sys, tempfile
 from pathlib import Path
 TX = os.path.abspath(sys.argv[1])
 sys.path.insert(0, TX)
+sys.path.insert(1, TX + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
 from sender_config import C
 import sender_btadapter as A

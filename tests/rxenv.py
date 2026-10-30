@@ -2,6 +2,7 @@
 import ctypes, sys, types, tempfile, os
 RX = sys.argv[1]
 sys.path.insert(0, RX)
+sys.path.insert(1, RX + "/../common")
 class _F:
     def __getattr__(s, n): return _F()
     def __call__(s, *a, **k): return 1

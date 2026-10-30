@@ -1,6 +1,7 @@
 """Pad discovery accepts only Sony DualSense devices, and resync() keeps the buttons when the device cannot be read."""
 import sys, types
 sys.path.insert(0, sys.argv[1])
+sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
 import sender_supervisor as sup, sender_state as state
 from sender_ctrl import Ctrl
