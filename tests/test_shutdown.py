@@ -2,6 +2,7 @@
 import asyncio, sys, socket
 sys.path.insert(0, sys.argv[1])
 sys.path.insert(1, sys.argv[1] + "/../common")
+from chk import check, fails
 import sender_config; sender_config.init(["127.0.0.1"])
 from sender_config import C
 rx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); rx.bind(("127.0.0.1", 0)); rx.settimeout(0.2)
@@ -40,4 +41,5 @@ try:
         if p: types.append(p[0])
 except TimeoutError:
     pass
-print("PASS" if types.count(T_BYE) == 1 + len(net.REPEAT_DELAYS) else "FAIL", "bye z powtórkami przy zamykaniu nadajnika:", types.count(T_BYE), "; gniazdo zamknięte:", net.sock is None)
+check(types.count(T_BYE) == 1 + len(net.REPEAT_DELAYS), f"bye z powtórkami przy zamykaniu nadajnika: {types.count(T_BYE)}; gniazdo zamknięte: {net.sock is None}")
+sys.exit(1 if fails else 0)

@@ -1,5 +1,5 @@
 """Okno ustawień: zakładki Mysz i Master (zapis bez restartu), korona mastera na karcie pada, ikony przycisków."""
-import sys, os, json
+import sys, os, json, time
 sys.path.insert(0, os.path.dirname(__file__))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from rxenv import *                                              # noqa
@@ -228,26 +228,31 @@ ok("ekran okna: lista ekranów, zapis, przeniesienie, brak ekranu, zawsze środe
 import os
 is_ci = os.getenv("CI") == "true"
 
+
+def until(cond, timeout=3.0):
+    """Pump the event loop until cond() holds (the window manager changes the window state asynchronously)."""
+    end = time.monotonic() + timeout
+    while not cond() and time.monotonic() < end:
+        pump(20)
+    return cond()
+
+
+def full(on):
+    """The window is (not) full screen; CI (Xvfb) does not report the physical state reliably, so only the setting is checked there."""
+    return win.fullscreen() == on and (is_ci or win.isFullScreen() == on)
+
+
 assert not win.fullscreen()
-win.toggle_fullscreen(); pump(100)
+win.toggle_fullscreen()
+assert until(lambda: full(True)) and win.settings.value("fullscreen") in (True, "true"), "F11: pełny ekran"
 
-# W trybie CI (GitHub Actions) pomijamy fizyczne isFullScreen(), bo Xvfb często tego nie obsługuje poprawnie
-if is_ci:
-    assert win.fullscreen() and win.settings.value("fullscreen") in (True, "true")
-else:
-    assert win.fullscreen() and win.isFullScreen() and win.settings.value("fullscreen") in (True, "true")
-
-win.fs_btn.click(); pump(100)
-
-if is_ci:
-    assert not win.fullscreen(), "F11 / przycisk: z powrotem okno"
-else:
-    assert not win.fullscreen() and not win.isFullScreen(), "F11 / przycisk: z powrotem okno"
+win.fs_btn.click()
+assert until(lambda: full(False)), "F11 / przycisk: z powrotem okno"
 
 dlg.hide(); dlg.present(); pump()
 assert dlg.win_mode.currentData() == "size" and dlg.lang.currentData() == "pl"
-dlg.win_mode.set_data("full"); dlg.save_btn.click(); pump(100)
-assert win.fullscreen() and (is_ci or win.isFullScreen()), "Ustawienia -> Okno -> Pełny ekran"   # CI: jak wyżej
+dlg.win_mode.set_data("full"); dlg.save_btn.click()
+assert until(lambda: full(True)), "Ustawienia -> Okno -> Pełny ekran"
 win.set_fullscreen(False); pump(100)
 assert "steam.exe" in dlg.apps.toPlainText().split()
 dlg.hide(); dlg.present(); pump()
@@ -294,7 +299,6 @@ rx_qt.UPDATE_RESTART_MS = 50
 results = iter([rx_update.Result(True, False, "Masz najnowszą wersję"),
                 rx_update.Result(True, True, "Zaktualizowano (2 zmian): aaaaaaa → bbbbbbb", "a", "b")])
 rx_update.update = lambda **_: (time.sleep(0.1), next(results))[1]
-import time
 btn = win.update_btn
 assert btn.text() == "" and btn.toolTip().startswith("Aktualizuj") and not btn.icon().isNull(), "sama ikona"
 S.restart = False; closed.clear()

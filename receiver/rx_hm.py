@@ -385,7 +385,6 @@ class Backend:
     """The loaded HIDMaestro library: creates virtual DualSense pads (Backend.create)."""
 
     name = "hm"
-    order_wait = ORDER_WAIT
 
     def __init__(self, path: str) -> None:
         """Load the CLR and the DLL, install the driver.

@@ -12,11 +12,7 @@ import sender_config; sender_config.init(["127.0.0.1"])
 import sender_bt as SB
 import sender_supervisor as sup
 
-fails = []
-def check(cond, msg):
-    print(("OK  " if cond else "FAIL"), msg)
-    if not cond:
-        fails.append(msg)
+from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 MAIN = threading.get_ident()
 SLOW_S = 0.3

@@ -16,11 +16,7 @@ import sender_state as state
 import sender_streams as streams
 import sender_supervisor as sup
 
-fails = []
-def check(cond, msg):
-    print(("OK  " if cond else "FAIL"), msg)
-    if not cond:
-        fails.append(msg)
+from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 
 class Dev:

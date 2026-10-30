@@ -13,11 +13,7 @@ import rx_winapi as Wapi
 from rx_buttons import BUTTON_CODES
 from rx_console import Console, ConsoleConfig
 
-fails = []
-def check(cond, msg):
-    print(("OK  " if cond else "FAIL"), msg)
-    if not cond:
-        fails.append(msg)
+from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 PS, SHARE, CROSS, OPTIONS = (BIT[BUTTON_CODES[n]] for n in ("ps", "share", "cross", "options"))
 

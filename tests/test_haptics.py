@@ -10,11 +10,7 @@ import rx_audio, rx_haptics as H, rx_master, rx_settings
 import rx_state as S
 from proto import CAP_HAPTICS, HAPT_CHUNK, HAPT_END, HAPT_FRAMES, HAPT_START, T_CMD
 
-fails = []
-def check(cond, msg):
-    print(("OK  " if cond else "FAIL"), msg)
-    if not cond:
-        fails.append(msg)
+from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 
 def pcm(fn, n, rate=48000, ch=4, amp=16000):

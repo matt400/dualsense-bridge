@@ -1,17 +1,11 @@
-"""Receiver: regressions from the receiver review (net loop checks, peer takeover by pings, settings races, repeat scheduler,
-feedback wake-ups).
-    python3 tests/test_review_fixes.py receiver"""
+"""Receiver: net loop checks, peer takeover by pings, the repeat scheduler, the latency summary.
+    python3 tests/test_net_loop_checks.py receiver"""
 import os, sys, threading, time
 sys.path.insert(0, os.path.dirname(__file__))
 from rxenv import *                                              # noqa
-import rx_settings
-from dataclasses import replace
 
-fails = []
-def check(cond, msg):
-    print(("OK  " if cond else "FAIL"), msg)
-    if not cond:
-        fails.append(msg)
+from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
+
 
 # 1. periodic checks keep running when _receive() yields nothing (junk datagram / timeout)
 calls = {"stale": 0}
@@ -49,22 +43,6 @@ finally:
     C.KEY = old_key
     S.peer = None
 
-# 3. concurrent rx_settings.update() calls do not lose changes
-rx_settings.cur = rx_settings.Settings()
-def upd(name):
-    for k in range(50):
-        cur = getattr(rx_settings.cur, name)
-        rx_settings.update(None, **{name: cur})
-ths = [threading.Thread(target=upd, args=(n,)) for n in ("mouse", "master", "ui")]
-for x in ths: x.start()
-for x in ths: x.join()
-check(isinstance(rx_settings.cur, rx_settings.Settings), "settings: parallel update() calls finish without a deadlock")
-mouse_new = replace(rx_settings.cur.mouse)
-seen = []
-rx_settings.on_change(lambda o, n: seen.append(n))
-rx_settings.update(None, mouse=mouse_new)
-check(len(seen) == 1, "settings: a listener is still called once per update")
-
 # 4. repeat scheduler: one copy now, the rest later, same packet; flush sends the pending ones at once
 sent = []
 orig_peer = N.send_peer
@@ -89,26 +67,6 @@ try:
     N.flush_repeats()
 finally:
     N.send_peer = orig_peer
-
-# 5. feedback: a repeated game report does not wake the thread, a change does
-F.fb[0].update(large=0, small=0, set=False, rgb=False)
-F.fb_event.clear()
-F.game(0, large=100, small=0)
-check(F.fb_event.is_set(), "feedback: the first report wakes the thread")
-F.fb_event.clear()
-F.game(0, large=100, small=0)
-check(not F.fb_event.is_set(), "feedback: an unchanged report does not wake the thread")
-F.game(0, large=50, small=0)
-check(F.fb_event.is_set(), "feedback: a changed motor value wakes the thread")
-F.fb_event.clear()
-F.game(0, rgb=(1, 2, 3))
-check(F.fb_event.is_set(), "feedback: a report without motors during rumble wakes the thread (gap timer)")
-F.fb_event.clear()
-F.fb[0].update(large=0, small=0)
-F.game(0, rgb=(1, 2, 3))
-check(not F.fb_event.is_set(), "feedback: the same colour with no rumble does not wake the thread")
-F.game(0, rgb=(9, 2, 3))
-check(F.fb_event.is_set(), "feedback: a new colour wakes the thread")
 
 # 6. latency summary still filters by window
 import rx_latency as L

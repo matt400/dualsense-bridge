@@ -8,11 +8,7 @@ import rx_net as N
 import rx_state as S
 from proto import T_CLICK
 
-fails = []
-def check(cond, msg):
-    print(("OK  " if cond else "FAIL"), msg)
-    if not cond:
-        fails.append(msg)
+from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 
 # ---------- klik touchpada a blokada wyjścia (widok Test) ----------

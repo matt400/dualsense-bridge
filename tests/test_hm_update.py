@@ -9,11 +9,7 @@ import rx_hm, rx_hm_update as U
 REAL_PIN = (U.PINNED_TAG, dict(U.PINNED_SHA256))
 U.PINNED_TAG = ""                      # sekcje poniżej idą za najnowszym wydaniem (przez API); przypięta wersja ma własną sekcję
 
-fails = []
-def check(cond, msg):
-    print(("OK  " if cond else "FAIL"), msg)
-    if not cond:
-        fails.append(msg)
+from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 
 DLL_BYTES = b"MZ" + os.urandom(200_000)

@@ -8,7 +8,7 @@ Everything here is cheap and always on, so the tab shows the last minute the mom
   pad       the pad's report rate over Bluetooth (the info packet), the state packets per second reaching the PC, the radio link
             read by the sender (btlink: RSSI and link quality, see sender_btlink), how many times the pad connected.
 
-`sample()` is called by the window's slow refresh (SAMPLE_S) and appends one value per series; a series holds HISTORY values
+`sample()` is called by the window's slow refresh and appends one value per series; a series holds HISTORY values
 (about a minute). A missing value (the pad is off, the sender has no reading) is None, which the charts draw as a gap.
 """
 from __future__ import annotations
@@ -21,7 +21,6 @@ from typing import Final
 import rx_state as S
 from proto import BODY, BTL_LQ, BTL_RSSI, T_BTLINK, mac_text
 
-SAMPLE_S: Final = 0.4                  # the window's slow refresh - one sample per series
 HISTORY: Final = 150                   # samples kept (150 x 0.4 s = 60 s)
 LINK_STALE_S: Final = 4.0              # a btlink reading older than this is not shown (the sender sends one a second)
 PING_RESTART_S: Final = 1.0            # a longer gap between the sender's pings restarts the jitter estimate

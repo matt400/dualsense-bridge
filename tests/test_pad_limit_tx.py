@@ -14,11 +14,7 @@ import sender_supervisor as sup
 import sender_wol as wol
 from proto import E_NO_SLOT
 
-fails = []
-def check(cond, msg):
-    print(("OK  " if cond else "FAIL"), msg)
-    if not cond:
-        fails.append(msg)
+from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 
 C.SLOTS_FILE = ""

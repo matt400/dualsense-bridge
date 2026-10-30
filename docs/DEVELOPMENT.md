@@ -48,7 +48,7 @@ The tests cover:
   profiles, master only (`test_trigfx.py`, `test_trigfx_tx.py`); trigger effects from games (HIDMaestro, trig3):
   reading from the output report, the profile wins per trigger, release after the program closes (`test_gametrig.py`,
   `test_gametrig_tx.py`);
-- regressions from bug reviews (`test_review.py`, `test_review_tx.py`, and the topic-named tests below) - among others starting /
+- regressions from bug reviews (topic-named tests such as `test_master_follow.py`, `test_hidraw_write_retry_tx.py`, and the ones below) - among others starting /
   stopping a Bluetooth scan at the same time, a finger resting on the touchpad when connecting, a touchpad click
   released in the Test view, PS shortcuts in TV mode, registering game rumble in ViGEm (callback signature from
   vgamepad, lightbar colour as a struct), receiver without ViGEmBus, COM audio objects released before
@@ -87,8 +87,8 @@ The tests cover:
   (`test_autostart.py`);
 - performance and reliability: SCHED_FIFO on musl via syscall (`test_rt_tx.py`), pad detection via inotify on
   `/dev/input` and bye / command / trigger repeats as the same packet spread over time (`test_devwatch_tx.py`,
-  `test_rx2.py`, `test_e2e.py`), reading only the needed bytes of the HIDMaestro output report (`test_vpad.py`),
-  kernel receive timeout (SO_RCVTIMEO) instead of select() before every packet (`test_rx2.py`);
+  `test_receiver_core.py`, `test_e2e.py`), reading only the needed bytes of the HIDMaestro output report (`test_vpad.py`),
+  kernel receive timeout (SO_RCVTIMEO) instead of select() before every packet (`test_receiver_core.py`);
 - virtual pads: HIDMaestro / ViGEmBus backend and switching between them at runtime, placeholder pad for fixed
   player order, DualSense report, feedback from the DualSense output report (`test_vpad.py`, the Pads tab in
   `test_settings_gui.py`), downloading HIDMaestro via HTTP Range, versions, zip / network errors and running as

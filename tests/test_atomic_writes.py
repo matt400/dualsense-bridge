@@ -10,11 +10,7 @@ import rx_dsu
 import rx_settings
 from rx_console import ConsoleConfig
 
-fails = []
-def check(cond, msg):
-    print(("OK  " if cond else "FAIL"), msg)
-    if not cond:
-        fails.append(msg)
+from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 
 # ---------- 1. DSU: nowy subskrybent od razu dostaje stan pada, który się nie zmienia ----------

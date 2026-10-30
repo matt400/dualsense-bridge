@@ -11,11 +11,7 @@ import sender_bt as SB
 import sender_ctrl, sender_net as net, sender_streams as st
 from proto import BT_SCAN_START, BT_SCAN_STOP, T_MOUSE, T_TOUCH
 
-fails = []
-def check(cond, msg):
-    print(("OK  " if cond else "FAIL"), msg)
-    if not cond:
-        fails.append(msg)
+from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 
 # ---------- skan Bluetooth: start / stop w trakcie startu ----------

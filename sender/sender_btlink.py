@@ -117,17 +117,6 @@ def classify_reply(packet: bytes, opcode: int, handle: int) -> tuple[bool, bytes
     return (True, packet[9:]) if len(packet) >= REPLY_MIN_LEN else (False, None)
 
 
-def parse_reply(packet: bytes, opcode: int, handle: int) -> bytes | None:
-    """The return parameters (after the status byte) of the Command Complete for `opcode` and `handle`.
-
-    Returns:
-        The bytes after the status and the echoed handle, or None for another event, another command / handle, a short packet,
-        a non-zero status or a Command Status (the controller refused before running it). See `classify_reply` to tell a
-        refusal from an unrelated packet.
-    """
-    return classify_reply(packet, opcode, handle)[1]
-
-
 def find_handle(buf: bytes, mac: str) -> int | None:
     """The handle of the ACL connection to `mac` in an HCIGETCONNLIST answer (`buf`), None when it is not there."""
     raw = mac_bytes(mac)

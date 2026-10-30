@@ -10,11 +10,7 @@ import rx_feedback as F
 import rx_update as U
 from proto import T_PING, T_STATE, TRIG2_OFF, UPD_DONE, UPD_FAILED, UPD_NO_CHANGE, UPD_NONE, UPD_RUNNING, Codec
 
-fails = []
-def check(cond, msg):
-    print(("OK  " if cond else "FAIL"), msg)
-    if not cond:
-        fails.append(msg)
+from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 # ---------- zwolnienie efektów spustów przy zamykaniu receivera ----------
 out = []

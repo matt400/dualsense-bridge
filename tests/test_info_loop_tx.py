@@ -1,6 +1,7 @@
 import asyncio, sys
 sys.path.insert(0, sys.argv[1])
 sys.path.insert(1, sys.argv[1] + "/../common")
+from chk import check, fails
 import sender_config; sender_config.init(["127.0.0.1"])
 import sender_net as net, sender_ctrl, sender_control as ctl, sender_state as state
 from sender_ctrl import Ctrl
@@ -22,7 +23,8 @@ async def main():
     alive = not task.done()
     exc = task.exception() if task.done() else None
     task.cancel()
-    print("PASS" if alive else f"FAIL info_loop padł: {exc!r}", "pętla info przeżywa reconnect pada")
+    check(alive, f"pętla info przeżywa reconnect pada (wyjątek: {exc!r})")
     infos = [v for t, i, v in out if t == T_INFO]
-    print("PASS" if all(x >= 0 for v in infos for x in v) else "FAIL", "Hz nieujemne:", infos)
+    check(all(x >= 0 for v in infos for x in v), f"Hz nieujemne: {infos}")
 asyncio.run(main())
+sys.exit(1 if fails else 0)

@@ -11,11 +11,7 @@ import rx_net
 import rx_report as R
 from rx_state import new_state
 
-fails = []
-def check(cond, msg):
-    print(("OK  " if cond else "FAIL"), msg)
-    if not cond:
-        fails.append(msg)
+from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 
 # ---------- 1. apply_remap: wynik identyczny z pełnym przebiegiem po 17 wejściach ----------

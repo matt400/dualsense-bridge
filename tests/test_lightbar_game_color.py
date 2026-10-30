@@ -9,11 +9,7 @@ import rx_events as ev
 import rx_settings as R
 from proto import T_IDENT
 
-fails = []
-def check(cond, msg):
-    print(("OK  " if cond else "FAIL"), msg)
-    if not cond:
-        fails.append(msg)
+from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 
 A = "aa:aa:aa:aa:aa:01"
