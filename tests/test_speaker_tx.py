@@ -68,11 +68,11 @@ def vol_report(seq, volume):
     return bytes(r) + (zlib.crc32(b"\xa2" + bytes(r)) & 0xFFFFFFFF).to_bytes(4, "little")
 
 
-def build36(seq, counter, hapt, opus):
+def build36(seq, counter, hapt, opus, buffer=0x10):
     """Report 0x36 the way P3a verified it on the pad, built without any code of the sender."""
     r = bytearray(398)
     r[0], r[1] = 0x36, (seq & 15) << 4
-    body = bytes([0x91, 0x07, 0xFE, 0x10, 0x10, 0x10, 0x10, 0x10, counter, 0x92, 0x40]) + hapt + bytes([0x93, len(opus)]) + opus
+    body = bytes([0x91, 0x07, 0xFE, *[buffer] * 5, counter, 0x92, 0x40]) + hapt + bytes([0x93, len(opus)]) + opus
     r[2:2 + len(body)] = body
     r[-4:] = (zlib.crc32(b"\xa2" + bytes(r[:-4])) & 0xFFFFFFFF).to_bytes(4, "little")
     return bytes(r)
@@ -183,6 +183,20 @@ rep.detach()
 back = bytes(rep.finish(3))
 assert len(back) == 142 and back[0] == 0x32 and not any(back[77:138]) and crc_ok(back), "back to a clean 0x32, no leftovers of the packet"
 ok("report 0x36: layout, speaker sub-packet 0x93, counter, CRC32 (seed 0xA2) against an independent computation; 0x32 unchanged")
+
+# the pad's own audio buffer length: five bytes of the control sub-packet, set while the speaker plays, the old 0x10 otherwise
+rep = S.Report3x()
+rep.payload[:] = hapt
+rep.attach(fill_with(opus), 80, 48)
+big = bytes(rep.finish(5))
+assert big == build36(5, 1, hapt, opus, buffer=48), "the five buffer bytes carry the setting, everything else stays"
+assert big[5:10] == bytes([48]) * 5 and big[4] == 0xFE and crc_ok(big), "bytes 5-9 only; the CRC covers them"
+rep.detach()
+back = bytes(rep.finish(6))
+assert back[5:10] == bytes([0x10]) * 5 and back[0] == 0x32 and crc_ok(back), "haptics alone keeps the old buffer length"
+rep.attach(fill_with(opus), 80)
+assert bytes(rep.finish(7))[5:10] == bytes([0x10]) * 5, "no buffer given: the old default"
+ok("report 0x36: the pad's buffer length is set per stream (bytes 5-9, CRC32 valid), 0x32 and the default stay at 0x10")
 
 # ---------- the jitter buffer storage ----------
 ring = S.PcmRing(4)
@@ -344,6 +358,18 @@ async def fake_clock_scenarios():
         assert all(not any(r[13:77]) for r in pad.out), "no haptics: the haptics part of the report is silent"
         assert [r[1] >> 4 for r in pad.out] == [1, 2, 3], "one report per tick, sequence numbers from Rumble"
         ok("start: audio mode and volume, first tick after the buffer time, frames played in order, 0x36 reports with a silent haptics part")
+
+        # -- the pad's own audio buffer length goes out with the stream and the default comes back at its end
+        pad, report, s = mk(30)
+        assert report.buf[5:10] == bytes([0x10]) * 5, "idle: the old default"
+        quiet(feed, s, 0, SPK_START)
+        feed(s, 1)
+        feed(s, 2)
+        tick(s, 0.03)
+        assert pad.out[0][5:10] == bytes([S.PAD_BUFFER]) * 5 and 16 <= S.PAD_BUFFER <= 128 and crc_ok(pad.out[0]), "the stream's reports carry it"
+        quiet(s.close)
+        assert report.buf[5:10] == bytes([0x10]) * 5 and report.buf[0] == 0x32, "the end of the stream gives the default back"
+        ok("speaker stream: the pad's audio buffer length (bytes 5-9) is set while it plays and back to 0x10 afterwards")
 
         # -- an underrun plays a silent frame (never a skipped report), refills to the target, then continues
         pad, report, s = mk(30)

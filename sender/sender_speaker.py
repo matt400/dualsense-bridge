@@ -37,7 +37,7 @@ from dataclasses import dataclass, fields
 from typing import Final
 
 from proto import HAPT_CHUNK, HAPT_FRAMES, HAPT_RATE, SPK_BYTES, SPK_END, SPK_FRAME, SPK_START, UINT32_MASK
-from sender_haptics import COUNTER_AT, CRC_AT, DATA_AT, HEADER, REPORT_LEN, SEQ_AT, U32_HALF
+from sender_haptics import BUFFER_AT, BUFFER_BYTES, COUNTER_AT, CRC_AT, DATA_AT, HEADER, PAD_BUFFER_DEFAULT, REPORT_LEN, SEQ_AT, U32_HALF
 from sender_opus import DEFAULT_MODE, OpusEncoder
 from sender_rumble import BT_SEQ_MASK, BT_SEQ_SHIFT, BYTE_MASK, CRC_LEN, CRC_SEED, Rumble
 
@@ -59,6 +59,9 @@ LIMIT_OVER: Final = 5                       # deeper than target + this: a burst
 MAX_GAP_FRAMES: Final = 8                   # a gap up to this long (80 ms) is a loss and is filled with silence; a larger one restarts
 TIMEOUT_S: Final = 0.2                      # no packet for this long ends the stream
 TAIL_TICKS: Final = 10                      # silent reports after the last frame, before the volume goes to 0 (~107 ms)
+PAD_BUFFER: Final = 48                      # the pad's own audio buffer while it plays, 16..128: bigger rides out BT jitter, costs delay
+                                            # (16 = the old fixed value and the lowest the pad takes; the ~32 ms dropouts that remained are
+                                            # suspected to come from it; 48 is what DS5Dongle ships)
 LATE_S: Final = 0.004                       # a tick later than this is counted as late
 RESYNC_S: Final = 0.05                      # a tick later than this (a stalled loop): restart the timeline instead of catching up
 PRIME_MAX_TICKS: Final = 8                  # after an underrun wait at most this many ticks for the ring to refill
@@ -112,21 +115,25 @@ class Report3x:
         self._counter = 0
         self._fill: Callable[[], None] | None = None
 
-    def attach(self, fill: Callable[[], None], size: int) -> None:
+    def attach(self, fill: Callable[[], None], size: int, pad_buffer: int = PAD_BUFFER_DEFAULT) -> None:
         """Turn the report into a 0x36: from now on ``fill`` puts an Opus packet of ``size`` bytes at OPUS_AT before every report.
 
         Args:
             fill: Called by ``finish`` to write the next packet into ``buf``.
             size: The packet length in bytes.
+            pad_buffer: The pad's own audio buffer length (the five bytes of the control sub-packet, 16..128): the pad plays from
+                this buffer, so a bigger one rides out Bluetooth jitter at the price of delay. Set once per stream, not per report.
         """
+        self.buf[BUFFER_AT:BUFFER_AT + BUFFER_BYTES] = bytes((pad_buffer,)) * BUFFER_BYTES
         self.buf[HAPT_END_AT:CRC36_AT] = bytes(CRC36_AT - HAPT_END_AT)
         self.buf[0], self.buf[HAPT_END_AT], self.buf[HAPT_END_AT + 1] = REPORT_ID, SPK_SUB_ID, size
         self._fill = fill
 
     def detach(self) -> None:
-        """Back to a plain 0x32 (the bytes after the haptics sub-packet must be zero again)."""
+        """Back to a plain 0x32 (the bytes after the haptics sub-packet must be zero again, the pad's buffer length the default)."""
         self._fill = None
         self.buf[0] = HEADER[0]
+        self.buf[BUFFER_AT:BUFFER_AT + BUFFER_BYTES] = HEADER[BUFFER_AT:BUFFER_AT + BUFFER_BYTES]
         self.buf[HAPT_END_AT:CRC36_AT] = bytes(CRC36_AT - HAPT_END_AT)
 
     def finish(self, seq: int) -> memoryview:
@@ -352,11 +359,12 @@ class SpeakerStream:
         self.stats = Counters()
         self._expected = frame
         self._why = "end of stream"
-        self.report.attach(self.fill, self.encoder.size)
+        self.report.attach(self.fill, self.encoder.size, PAD_BUFFER)
         self._due = now + self.target * FRAME_S                 # the playout delay: the first tick finds `target` frames
         self._timer = asyncio.get_running_loop().call_at(self._due, self._tick)
         enc = self.encoder
-        print(f"Controller {self.idx}: speaker start (buffer {self.target * 10} ms, Opus {enc.mode}, {enc.size} B per frame)")
+        print(f"Controller {self.idx}: speaker start (buffer {self.target * 10} ms, pad buffer {PAD_BUFFER}, "
+              f"Opus {enc.mode}, {enc.size} B per frame)")
         return True
 
     # ---------- the pad's clock ----------
