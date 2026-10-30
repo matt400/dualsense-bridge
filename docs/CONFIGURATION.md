@@ -31,7 +31,7 @@ Most often changed:
 | `haptics_motors` | sender | haptics | when a game rumbles during haptics: `haptics` (motors ignored, logged once) or `rumble` (motors pause the haptics) |
 | `key` | both | "" | shared HMAC key: signed packets and replay protection ([SECURITY.md](SECURITY.md)) |
 | `dsu_bind` | receiver | 127.0.0.1 | DSU server address; `0.0.0.0` = emulator on another device |
-| `hm_min_age_days` | receiver | 7 | a new HIDMaestro release waits this many days after publishing; `0` = immediately |
+| `hm_min_age_days` | receiver | 7 | unused while HIDMaestro is pinned to a version (the default); without a pin a new release waits this many days after publishing; `0` = immediately |
 | `mouse_sens`, `scroll_sens` | receiver | 0.5, 0.6 | touchpad mouse and scroll sensitivity |
 | `ps_modifier` | receiver | true | PS as the shortcut key (PS goes to the game on release) |
 | `ps_hold_action` | receiver | gamebar | long PS: `gamebar`, `bigpicture`, `none` |

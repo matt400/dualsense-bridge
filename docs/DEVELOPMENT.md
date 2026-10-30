@@ -103,3 +103,7 @@ The tests cover:
 
 Behaviour with a real pad, ViGEm, HIDMaestro (pythonnet, driver), `DisplaySwitch.exe`, audio switching (pycaw) and
 Windows notifications has to be checked manually.
+
+## Moving the HIDMaestro pin
+
+The receiver installs exactly one HIDMaestro version: `PINNED_TAG` in `receiver/rx_hm_update.py`, downloaded from a fixed link (`zip_url`), with the SHA-256 of `HIDMaestro.Core.dll` and its two Windows SDK DLLs in `PINNED_SHA256`. To move to a newer release, change both in one commit: the hash of `HIDMaestro.Core.dll` is the "SDK SHA-256" from the release notes (compare it with the downloaded DLL), the other two are computed from the same zip. Run `./tests/run_tests.sh`, then check a pad on Windows (the first create installs the new driver). A receiver that pulls the commit installs the new version at its next check, without waiting.

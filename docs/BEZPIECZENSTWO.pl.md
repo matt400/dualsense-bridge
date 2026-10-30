@@ -35,7 +35,7 @@ Po powrocie po jednej stronie do wersji bez protokołu v3 usuń `auth.json` po d
 | `allow` | receiver | "" | przyjmuj pakiety tylko z tego IP (nadajnika) |
 | `dsu_bind` | receiver | `127.0.0.1` | serwer DSU (żyroskop dla emulatorów) tylko dla tego komputera; `0.0.0.0` = emulator na innym urządzeniu, ale wtedy każdy w sieci widzi ruchy i przyciski padów |
 | `dsu_max_clients` | receiver | 4 | najwyżej tylu subskrybentów DSU (każdy dostaje strumień do `dsu_hz` pakietów/s) |
-| `hm_min_age_days` | receiver | 7 | nowe wydanie HIDMaestro instaluje się dopiero tyle dni po publikacji (nie ma podpisu, a działa w procesie administratora); pierwsza instalacja nie czeka; `0` = od razu; **Ustawienia → Pady → Zainstaluj teraz** pomija czekanie dla oczekującego wydania, jednorazowo |
+| `hm_min_age_days` | receiver | 7 | nieużywane, dopóki HIDMaestro jest przypięty (domyślnie: stała wersja i link w `PINNED_TAG` w `rx_hm_update.py`, sprawdzany jest SHA-256 każdego pliku z zipa, nowsze wydanie nigdy nie instaluje się samo, a przesunięcie przypięcia to przejrzany commit). Bez przypięcia nowe wydanie HIDMaestro instaluje się dopiero tyle dni po publikacji (nie ma podpisu, a działa w procesie administratora); pierwsza instalacja nie czeka; `0` = od razu; **Ustawienia → Pady → Zainstaluj teraz** pomija czekanie dla oczekującego wydania, jednorazowo |
 
 ## Pliki i uprawnienia
 
