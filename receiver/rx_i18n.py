@@ -704,6 +704,7 @@ EN: Final[dict[str, str]] = {
         "HIDMaestro {v} downloaded - pads switch to DualSense on their next connection",
     "HIDMaestro {v} pobrany - zadziała po restarcie receivera": "HIDMaestro {v} downloaded - takes effect after a receiver restart",
     "Sprawdź teraz": "Check now",
+    "Zainstaluj teraz": "Install now",
     "KOLEJNOŚĆ GRACZY": "PLAYER ORDER",
     "Gry i Steam numerują pady wg kolejności podłączenia. Gdy pad 2 włączy się pierwszy, pad 1 dostaje najpierw pad "
     "zastępczy, więc pad 2 zawsze zostaje graczem 2. Który fizyczny pad to pad 1 / 2, pamięta nadajnik (slots.json, "
