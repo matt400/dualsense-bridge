@@ -3,6 +3,7 @@ against independent code, the flags of every other report while a stream runs, t
 the UDP packet to the pad's HID file, and the new settings."""
 import asyncio, contextlib, errno, io, os, struct, sys, tempfile, zlib
 sys.path.insert(0, sys.argv[1])
+sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
 import proto
 import sender_ctrl

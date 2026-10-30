@@ -10,7 +10,7 @@ sender/     Linux:   sender_controller.py (start), sender_*.py (moduły)
 tests/      testy na Linuksie z zaślepkami Windows i urządzeń evdev
 ```
 
-`proto.py` (format pakietów) musi być identyczny w `receiver/` i `sender/`. Testy to sprawdzają.
+`proto.py` (format pakietów) leży w `common/` i jest wspólny dla `receiver/` i `sender/`; jest tylko jedna kopia.
 
 ## Zrzuty ekranu
 

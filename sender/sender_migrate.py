@@ -21,6 +21,8 @@ import sys
 from collections.abc import Callable, Collection
 from typing import Final
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "common"))   # proto.py is shared, it lives in common/
+
 from proto import PERMISSION_BITS, write_file
 
 Change = tuple[str, str, str, str]      # (key, old text, new text, reason)

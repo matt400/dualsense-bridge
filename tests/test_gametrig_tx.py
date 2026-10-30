@@ -3,6 +3,7 @@ profil wygrywa, trig2 / zamknięcie / strażnik je zwalniają, kodowanie i odbi�
     python3 tests/test_gametrig_tx.py sender"""
 import asyncio, os, sys, tempfile, time
 sys.path.insert(0, sys.argv[1])
+sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
 import sender_net as net
 import sender_rumble as R

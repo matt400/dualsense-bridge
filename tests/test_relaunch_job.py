@@ -1,6 +1,7 @@
 """Receiver: a restarted receiver must leave the Task Scheduler job (otherwise it is killed with the old process)."""
 import sys
 sys.path.insert(0, sys.argv[1])
+sys.path.insert(1, sys.argv[1] + "/../common")
 import rxenv  # noqa: F401 - Windows stubs
 import rx_winapi as W
 

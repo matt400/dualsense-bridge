@@ -36,6 +36,8 @@ ignore_missing_imports = true   # evdev, vgamepad, pythonnet, pycaw, PySide6 are
 warn_unused_ignores = true
 warn_redundant_casts = true
 exclude = ["^tests/", "^tools/"]
+# proto.py lives in common/ (shared by sender and receiver); mypy runs from receiver/ and sender/, so point it there
+mypy_path = "$MYPY_CONFIG_FILE_DIR/common"
 
 # Module-level state such as `states = None` is filled in by init() before any thread starts, so mypy sees an Optional it can
 # never narrow, and many empty containers carry no element type. Until those globals get real types, these error kinds are

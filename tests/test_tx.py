@@ -1,5 +1,6 @@
 import asyncio, os, sys, time, tempfile
 sys.path.insert(0, sys.argv[1])
+sys.path.insert(1, sys.argv[1] + "/../common")
 from evdev import ecodes as ec
 import sender_config; sender_config.init(["127.0.0.1"])
 from sender_config import C

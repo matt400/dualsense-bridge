@@ -1,6 +1,6 @@
 """Shared wire protocol of the sender and the receiver (v2, v3 with an HMAC key) plus the shared git update code.
 
-This file must be byte-for-byte identical in sender/ and receiver/ (a test checks it).
+There is one copy, in common/. The entry scripts (and the tests) add common/ to sys.path, so both sides `import proto`.
 
 
 Header "!BBH" = (VER<<4 | type), controller idx, sequence number; then the body,

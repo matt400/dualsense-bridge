@@ -4,6 +4,7 @@ import sys
 import types
 
 sys.path.insert(0, sys.argv[1])
+sys.path.insert(1, sys.argv[1] + "/../common")
 import rx_display as D  # noqa: E402
 import rx_gamebar as G  # noqa: E402
 

@@ -7,6 +7,7 @@ python3 tests/test_bt_link_policy_tx.py sender"""
 import asyncio, ctypes, os, sys, tempfile
 from pathlib import Path
 sys.path.insert(0, sys.argv[1])
+sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
 from sender_config import C
 import sender_btadapter as A

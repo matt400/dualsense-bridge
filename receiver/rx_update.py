@@ -26,6 +26,8 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Final
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "common"))   # proto.py is shared, it lives in common/
+
 import proto
 import rx_backup
 import rx_events as ev

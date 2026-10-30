@@ -1,6 +1,7 @@
 """Nadajnik: nowy węzeł w /dev/input budzi supervisora od razu (inotify), a nie po rescan_s."""
 import asyncio, os, sys, tempfile, time
 sys.path.insert(0, sys.argv[1])
+sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
 from sender_config import C, SETTLE_S
 import sender_supervisor as sup

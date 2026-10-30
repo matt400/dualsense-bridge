@@ -4,6 +4,7 @@ volume 0 at the end), the flags of every other report during a stream, the setti
 a real libopus to the pad's HID file."""
 import asyncio, contextlib, ctypes, io, math, os, statistics, struct, sys, tempfile, time, zlib
 sys.path.insert(0, sys.argv[1])
+sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
 import proto
 import sender_ctrl

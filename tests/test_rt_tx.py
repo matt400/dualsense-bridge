@@ -1,6 +1,7 @@
 """Nadajnik: tryb niskich opóźnień (sender_rt) - PM QoS, najszybsze rdzenie, SCHED_FIFO; bez uprawnień nic nie psuje."""
 import os, struct, sys, tempfile, types
 sys.path.insert(0, sys.argv[1])
+sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
 from sender_config import C
 import sender_rt as R

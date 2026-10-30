@@ -72,9 +72,11 @@ assert cod.parse(cod.pack(T_PONG2, 255, 1, 2))[0] == T_PONG2 and cod.parse(cod.p
 assert cod.parse(p2[:-1]) is None and cod.parse(cod.pack(T_TRIG, 0, 1, 2, 3, 4))[0] == T_TRIG
 kc = Codec(b"klucz")
 assert kc.parse(kc.pack(T_STATE2, 1, *st, 1, 2, 3))[0] == T_STATE2, "z podpisem HMAC też"
-assert open(os.path.join(os.path.dirname(proto.__file__), "proto.py"), "rb").read() == \
-    open(os.path.join(os.path.dirname(proto.__file__), "..", "sender", "proto.py"), "rb").read()
-ok("protokół: state2 / pong2 / trig po długości, podpis, ten sam proto.py po obu stronach")
+root = os.path.abspath(os.path.join(os.path.dirname(proto.__file__), ".."))
+assert os.path.basename(os.path.dirname(os.path.abspath(proto.__file__))) == "common"
+assert not os.path.exists(os.path.join(root, "sender", "proto.py")) and not os.path.exists(os.path.join(root, "receiver", "proto.py")), \
+    "proto.py ma być tylko w common/"
+ok("protokół: state2 / pong2 / trig po długości, podpis, jeden proto.py w common/")
 
 # ---------- pomiar: odcinek sieci z zegara PC ----------
 arr = 5_000_000_000                                   # ns

@@ -1,5 +1,6 @@
 import asyncio, sys
 sys.path.insert(0, sys.argv[1])
+sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
 import sender_controller as M, sender_streams as st, sender_supervisor as sup, sender_net as net
 net.init()

@@ -1,6 +1,7 @@
 """Uruchamia prawdziwe receiver_controller.main() (bez GUI) z zaślepkami Windows i wysyła pakiety przez UDP."""
 import ctypes, sys, types, threading, time, socket, tempfile, os
 RX = sys.argv[1]; sys.path.insert(0, RX)
+sys.path.insert(1, RX + "/../common")
 class _F:
     def __getattr__(s, n): return _F()
     def __call__(s, *a, **k): return 1

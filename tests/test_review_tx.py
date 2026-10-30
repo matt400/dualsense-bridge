@@ -1,6 +1,7 @@
 """Nadajnik: regresje z przeglądu bugów (wibracja przy chwilowym błędzie zapisu, lista plików z aktualizacji)."""
 import asyncio, errno, os, subprocess, sys, tempfile
 sys.path.insert(0, sys.argv[1])
+sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
 import proto
 import sender_rumble as R

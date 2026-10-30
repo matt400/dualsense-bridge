@@ -2,6 +2,7 @@
 MSC_TIMESTAMP (BtDelay) i pakiet state2 z pomiarem (Ctrl.send_state)."""
 import asyncio, os, sys, tempfile, time, types, zlib
 sys.path.insert(0, sys.argv[1])
+sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
 import sender_ctrl
 import sender_net as net

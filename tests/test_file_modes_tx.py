@@ -5,6 +5,7 @@
 python3 tests/test_file_modes_tx.py sender"""
 import contextlib, io, os, stat, sys, tempfile
 sys.path.insert(0, sys.argv[1])
+sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
 import proto, sender_migrate
 

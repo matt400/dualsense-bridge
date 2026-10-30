@@ -31,6 +31,8 @@ import traceback
 from collections.abc import Awaitable, Callable
 from typing import Final
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "common"))   # proto.py is shared, it lives in common/
+
 import sender_bt
 import sender_config
 import sender_control as control

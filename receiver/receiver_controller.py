@@ -49,6 +49,8 @@ import threading
 import time
 from types import ModuleType
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "common"))   # proto.py is shared, it lives in common/
+
 import rx_config
 from rx_config import C
 

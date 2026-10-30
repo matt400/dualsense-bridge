@@ -5,6 +5,7 @@
 python3 tests/test_config_hardening_tx.py sender"""
 import asyncio, sys, time
 sys.path.insert(0, sys.argv[1])
+sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config
 from sender_config import C, DEFAULTS, MIN_PERIOD_S
 import sender_net as net
