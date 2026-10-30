@@ -51,7 +51,6 @@ VEC_LEN = 3                             # center = [x, y, z]
 EDGE_MIN_G = 0.35                       # a saved center with less gravity in the Y-Z plane = the pad was on its edge
 FULL_RANGE_SQ = 0.998                   # x^2 + y^2 from here the stick is at the edge of its range (always sent)
 FREEFALL_G2, IMPACT_G2 = 0.09, 9.0      # |acc|^2 [g^2] outside this (0.3 g .. 3 g): free fall / impact, no tilt information
-I16_MAX = 32767                         # full output range -32768..+32767 (the DS4 report has 8 bits - the sink scales)
 
 
 def _clamp(v: float, name: str) -> float:
@@ -134,11 +133,6 @@ def to_raw(cfg: Config) -> dict[str, Any]:
     else:
         out["center"] = list(cfg.center)
     return out
-
-
-def to_i16(v: float) -> int:
-    """-1..1 -> -32768..32767 (the range from the feature spec; the DS4 / DualSense report has 8 bits, XInput / vJoy 16)."""
-    return max(-32768, min(I16_MAX, round(v * (32768 if v < 0 else I16_MAX))))
 
 
 # ---------------- geometria ----------------

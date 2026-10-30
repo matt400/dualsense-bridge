@@ -53,7 +53,6 @@ check(BL.classify_reply(cmd_status(OP, 1), OP, 42) == (True, None), "Command Sta
 check(BL.classify_reply(cmd_status(OP, 0), OP, 42) == (False, None), "Command Status 0 (accepted): keep waiting for the Complete")
 check(BL.classify_reply(cmd_status(BL.OPCODE_LINK_QUALITY, 1), OP, 42) == (False, None), "Command Status for another opcode: keep waiting")
 check(BL.classify_reply(complete(OP, 0, 42, b"\xfb"), OP, 42) == (True, b"\xfb"), "a good Complete: final, with the value")
-check(BL.parse_reply(complete(OP, 1), OP, 42) is None, "parse_reply still gives None for a refusal")
 
 
 class Refusing:

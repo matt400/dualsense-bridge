@@ -53,7 +53,6 @@ BYTES_PER_SAMPLE: Final = 2
 SRC_FRAME: Final = 512                      # source samples one frame stands for (10.667 ms of the game's 48 kHz sound) ...
 FRAME_S: Final = SRC_FRAME / SPK_RATE       # ... = the pad's report period: one packet (SPK_FRAME = 480 samples at 45 kHz) per this time
 BLOCK_IN, BLOCK_OUT = 16, 15                # the resampler's unit: 16 source samples -> 15 output samples (48 -> 45 kHz)
-BLOCKS: Final = SRC_FRAME // BLOCK_IN       # 32 blocks per frame
 SRC_NEED: Final = SRC_FRAME + 2             # a frame needs the previous sample (history) and 2 after its last one for the 4-tap cubic
 MAX_QUEUE: Final = 4                        # frames waiting for their turn (40 ms); older ones are dropped (a gap = loss)
 SILENCE_END_S: Final = 0.15                 # digital silence this long ends the stream (the sender's own timeout is 200 ms)
