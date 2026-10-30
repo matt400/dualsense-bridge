@@ -13,6 +13,10 @@
 #   and takes precedence
 # bt_file = "bt.json"
 # auth_file = "auth.json"   # with a key: the remembered switch to protocol v3 (protection against replayed packets)
+# remote_cfg_file = "remote_cfg.json"   # settings changed in the receiver window (Settings -> Sender): saved here and they win over this
+#   file for the same key; needs the HMAC key (key) on both sides, a packet without it is refused. "" = no changes from the receiver.
+#   Not changeable from the receiver: host, port, key, the *_file paths, bt_adapter, stats. Delete a line in remote_cfg.json (or press
+#   "Back to the config file" in the window) to use the value from this file again
 # grab_pad = true
 # grab_touch = true
 # tap_click = true

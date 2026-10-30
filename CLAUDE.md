@@ -11,7 +11,7 @@ DualSense pad → Bluetooth → **sender** (Linux, evdev) → UDP 5005 → **rec
 ## Layout
 ```
 sender/    sender_controller.py (entry point) + sender_*.py; install-service.sh, service/
-common/    proto.py (wire protocol + git update helpers), the one copy used by sender and receiver
+common/    proto.py (wire protocol + git update helpers), cfgspec.py (sender settings changeable from the receiver; ids are append-only), the one copy used by sender and receiver
 receiver/  receiver_controller.py (entry point) + rx_*.py (logic) + rx_qt*.py (window)
 tests/     Linux tests with Windows/evdev stubs (rxenv.py); fakebin/ = fake bluetoothctl; run_tests.sh = the CI entry
 docs/      EN by default, PL as *.pl.md (user docs, not needed for code work)
@@ -26,7 +26,7 @@ Every module has a docstring with its role; find the file here before opening an
 **Sender** (`sender/`)
 - Core: `sender_controller` (main, `forever()`), `sender_config` (DEFAULTS + CLI), `sender_supervisor` (pad discovery, slots, pad lifecycle),
   `sender_ctrl` (`Ctrl`: one pad, packets), `sender_streams` (evdev read loops, heartbeat), `sender_net` (UDP, feedback, pongs), `sender_state`.
-- Feedback and features: `sender_rumble` (evdev FF / hidraw), `sender_haptics` (HD haptics: jitter buffer, report 0x32), `sender_speaker` (the pad's speaker: jitter buffer, Opus in report 0x36, shares the clock with haptics) + `sender_opus` (libopus over ctypes), `sender_tick` (the audio tick timer: timerfd in the loop, `call_at` fallback), `sender_calib` (gyro calibration per MAC), `sender_wol` (Wake-on-LAN from the pad),
+- Feedback and features: `sender_rumble` (evdev FF / hidraw), `sender_haptics` (HD haptics: jitter buffer, report 0x32), `sender_speaker` (the pad's speaker: jitter buffer, Opus in report 0x36, shares the clock with haptics) + `sender_opus` (libopus over ctypes), `sender_tick` (the audio tick timer: timerfd in the loop, `call_at` fallback), `sender_calib` (gyro calibration per MAC), `sender_wol` (Wake-on-LAN from the pad), `sender_remotecfg` (settings changed from the receiver window: cfgset / cfgval, `remote_cfg.json`),
   `sender_control` (PC commands, idle power-off, info), `sender_events` (event packets), `sender_batt`, `sender_update`.
 - System: `sender_bt` + `sender_btadapter` (BlueZ driven from the receiver window, several adapters), `sender_btlink` (RSSI / link quality of connected pads over raw HCI, the `btlink` packet), `sender_rt` (low-latency mode, needs root),
   `sender_migrate` (sender.toml migration), `sender_ioctl`.
@@ -42,16 +42,16 @@ Every module has a docstring with its role; find the file here before opening an
 - Windows integration: `rx_console` (console mode monitor ↔ TV), `rx_display`, `rx_audio` (pycaw), `rx_games` (foreground program → profile, stop rumble),
   `rx_gamebar`, `rx_autostart` (Task Scheduler).
 - Support: `rx_i18n` (PL texts in code + EN dict), `rx_status`, `rx_events` (log model), `rx_latency`, `rx_security`, `rx_backup`, `rx_update` (git pull),
-  `rx_bt` (sender Bluetooth model), `rx_diag` (network / Bluetooth link numbers for the Diagnostics tab, no Qt), `rx_icon`.
+  `rx_bt` (sender Bluetooth model), `rx_diag` (network / Bluetooth link numbers for the Diagnostics tab, no Qt), `rx_sender_cfg` (the sender's own settings: cfgval table, push on online, no Qt), `rx_icon`.
 - Window (PySide6): `rx_qt` (main window, the foldable pad column), `rx_qt_pad` (pad drawing), `rx_qt_panels` (right column), `rx_qt_console` (settings window, tabs in a left column), `rx_qt_test`, `rx_qt_access` (accessibility panel of the Test view),
-  `rx_qt_sidebar` (the vertical icon menu), `rx_qt_diag` (Diagnostics tab: tiles, charts), `rx_qt_bt`, `rx_qt_tv` (pad control in TV mode), `rx_qt_drawer`, `rx_qt_keys`, `rx_qt_log`, `rx_qt_gstick`, `rx_qt_gyro` (gyro aim preview), `rx_qt_screens` (screen / fullscreen placement),
+  `rx_qt_sidebar` (the vertical icon menu), `rx_qt_diag` (Diagnostics tab: tiles, charts), `rx_qt_bt`, `rx_qt_sendercfg` (Sender tab of the settings window), `rx_qt_tv` (pad control in TV mode), `rx_qt_drawer`, `rx_qt_keys`, `rx_qt_log`, `rx_qt_gstick`, `rx_qt_gyro` (gyro aim preview), `rx_qt_screens` (screen / fullscreen placement),
   `rx_qt_style`, `rx_qt_icons`, `rx_qt_widgets`.
 
 **Large files** – grep or read by range, never whole: `rx_i18n` (~1000, translation dicts), `proto` (~1000, in `common/`), `rx_qt`, `rx_qt_console`,
 `sender_rumble`, `sender_bt`, `rx_net`.
 
 **Runtime files** (gitignored, never commit, no need to read): `*.toml` except `*.example.toml`, `remap.json`, `settings.json`, `console.json`, `slots.json`,
-`wol.json`, `gyro_cal.json`, `bt.json`, `auth.json` (HMAC key), `padcal.json`, `receiver_ui.ini`, `receiver/backups/`, `receiver/hidmaestro/`.
+`wol.json`, `remote_cfg.json`, `gyro_cal.json`, `bt.json`, `auth.json` (HMAC key), `padcal.json`, `receiver_ui.ini`, `receiver/backups/`, `receiver/hidmaestro/`.
 
 ## Hard rules
 - `common/proto.py` is the only copy of the protocol; do not add `proto.py` to `receiver/` or `sender/` (`run_tests.sh` fails on that).

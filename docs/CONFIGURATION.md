@@ -69,6 +69,18 @@ The sender stores the fixed pad → slot assignment in `sender/slots.json` (`slo
 Gyro calibration from the window (Test view) is in `sender/gyro_cal.json` (`gyro_cal_file = ""` - not saved),
 stick drift correction and the accessibility mode in `receiver/padcal.json` (next to `remap.json`, included in settings backups on update).
 
+### Sender settings from the receiver window
+
+Settings → Sender changes most `sender.toml` keys without touching the file: the receiver sends a signed `cfgset` packet, the
+sender checks the value (type and range, `common/cfgspec.py`), applies it at once and saves it in `remote_cfg_file`
+(`remote_cfg.json` by default; `""` switches remote changes off). Where both have a key, `remote_cfg.json` wins over
+`sender.toml`; "Back to the config file" (or deleting the entry) restores the value from `sender.toml`. Some values are read when
+something starts: haptics and speaker buffers, volume and Opus settings at the next sound stream, `grab_*`, `calibrate_*`, `rumble`
+and `haptics_motors` when a pad connects next. `rt_priority`, `low_latency` and `cpu_latency_us` need root on the sender. Not
+changeable from the window: `host`, `port`, `key`, the `*_file` paths, `bt_adapter`, `stats`. The receiver stores the choice
+in `settings.json` (`sender.values`: only what differs from `sender.toml`) and sends it again when the sender comes online.
+Changes need the HMAC key on both sides and protocol v3; without them the sender refuses and the window says why.
+
 ## Updating
 
 The **Update** button in the window (or in the tray icon menu) updates **both sides**:

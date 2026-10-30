@@ -53,6 +53,13 @@ Po powrocie po jednej stronie do wersji bez protokołu v3 usuń `auth.json` po d
   (`ProtectSystem=strict`), `/home` tylko do odczytu, prywatnym `/tmp`. Coś przestało działać w Twoim systemie?
   `doas systemctl edit dualsense-sender` i wyzeruj winną opcję.
 
+## Ustawienia nadajnika z okna
+
+Zmiana ustawień nadajnika (Ustawienia → Nadajnik) jest przyjmowana tylko w protokole v3 z poprawnym HMAC: nadajnik bez klucza
+albo pakiet w v2 dostaje odmowę i nic się nie zmienia. Bez klucza pozostałe polecenia są otwarte dla sieci jak dotąd, ale to
+jest zamknięte. Każdą wartość nadajnik sprawdza pod kątem zakresu; adresu, portu, klucza i ścieżek plików nie da się tak
+zmienić. `remote_cfg_file = ""` w `sender.toml` wyłącza tę funkcję.
+
 ## Bluetooth z okna
 
 Parowanie z okna działa tylko dla padów do gier; tylko pady dostają flagę „zaufany” (zaufane urządzenie może łączyć

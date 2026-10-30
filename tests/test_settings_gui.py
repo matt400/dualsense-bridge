@@ -65,7 +65,7 @@ ok("aktualizacja: pasek 'Dostępna aktualizacja: N zmian - tytuł' i 'Nadajnik m
 # ---------- zakładki ustawień ----------
 win.open_settings(); pump(100)
 dlg = win.settings_dlg
-assert [dlg.tabs.tabText(i) for i in range(dlg.tabs.count())] == ["Tryb konsoli", "Mysz", "Master", "Lightbar", "Haptyka i głośnik", "Wake-on-LAN", "Pady", "Okno", "Kopie", "Bezpieczeństwo"]
+assert [dlg.tabs.tabText(i) for i in range(dlg.tabs.count())] == ["Tryb konsoli", "Mysz", "Master", "Lightbar", "Haptyka i głośnik", "Wake-on-LAN", "Pady", "Nadajnik", "Okno", "Kopie", "Bezpieczeństwo"]
 assert dlg.toggle_button == "r2" and "R2" in dlg.pick_name.text() and not dlg.pick_icon.pixmap().isNull()
 assert dlg.auto_on.isChecked(), "domyślnie: tryb konsoli po połączeniu mastera"
 assert not dlg.tabs.tabIcon(2).isNull(), "zakładki z ikonami"

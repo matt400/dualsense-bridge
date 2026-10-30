@@ -15,8 +15,8 @@ import sender_config
 import sender_events as events
 import sender_state as state
 from proto import (BODY, E_NET_DOWN, E_NO_RECEIVER, HAPT_CHUNK, HAPT_DATA_AT, NS_PER_MS, RTT_NONE, SCFG_BATT, SPK_BYTES, SPK_DATA_AT,
-                   UINT32_MASK, Codec, EpochClock, SeqFilter, T_BTCMD, T_CMD, T_FB, T_HAPT, T_PING, T_PONG, T_PONG2, T_SCFG, T_SPK, T_TRIG,
-                   T_TRIG2, T_TRIG3)
+                   UINT32_MASK, VER3, VER_SHIFT, Codec, EpochClock, SeqFilter, T_BTCMD, T_CFGSET, T_CMD, T_FB, T_HAPT, T_PING, T_PONG,
+                   T_PONG2, T_SCFG, T_SPK, T_TRIG, T_TRIG2, T_TRIG3)
 from sender_config import C
 
 # the packet header is 4 bytes (see proto.HDR); the body of every received packet is unpacked right after it
@@ -62,6 +62,7 @@ on_haptics: Callable[[int, int, int, memoryview], None] | None = None   # callba
 on_speaker: Callable[[int, int, int, memoryview], None] | None = None   # callback(idx, frame, SPK_* flags, samples) set in main
 on_scfg: Callable[..., None] | None = None          # callback(flags, mac, broadcast, button, hold ms) set in main
 on_bt: Callable[..., None] | None = None            # callback(BT_* operation, argument, MAC 6 B) set in main (sender_bt)
+on_cfg: Callable[..., None] | None = None           # callback(authenticated, CFG_* operation, setting id, reference, value) set in main
 scfg_t = 0.0                          # when the scfg packet arrived - the receiver knows build2 and events
 batt_t = 0.0                          # when an scfg packet with SCFG_BATT arrived - the receiver knows build3
 recent_rtt: collections.deque[float] = collections.deque(maxlen=RTT_RECENT)   # latest measurements - for the info packet
@@ -207,14 +208,14 @@ def send_raw(data: bytes) -> None:
             sock_bad = True
 
 
-def emit(ptype: int, idx: int, *vals: int | bytes) -> None:
+def emit(ptype: int, idx: int, *vals: int | float | bytes) -> None:
     """Pack a packet of type ptype for slot idx with the given field values and send it."""
     data = codec.pack(ptype, idx, *vals)
     if data is not None:              # None: v3 without the PC clock (before the first pong2) - the receiver would reject it anyway
         send_raw(data)
 
 
-def emit_repeat(ptype: int, idx: int, *vals: int | bytes, delays: tuple[float, ...] = REPEAT_DELAYS) -> None:
+def emit_repeat(ptype: int, idx: int, *vals: int | float | bytes, delays: tuple[float, ...] = REPEAT_DELAYS) -> None:
     """Send a packet that must not get lost (bye): the same one now and again after each of ``delays`` seconds.
 
     The copies carry the same number, so the receiver handles the packet once. Three copies at once were lost
@@ -262,7 +263,7 @@ def _on_scfg(sq: int, data: bytes) -> None:
 
 
 def _on_control(t: int, idx: int, sq: int, data: bytes) -> None:
-    """Handle feedback, commands, trigger settings, haptics chunks, speaker frames and Bluetooth requests.
+    """Handle feedback, commands, trigger settings, haptics chunks, speaker frames, settings and Bluetooth requests.
 
     Each stream passes through its own SeqFilter key, so UDP duplicates (the receiver repeats important packets) and
     old reordered packets are dropped without blocking the other streams.
@@ -285,6 +286,9 @@ def _on_control(t: int, idx: int, sq: int, data: bytes) -> None:
     elif t == T_SPK and fb_filter.fresh(("spk", idx), sq, now) and on_speaker is not None:   # the speaker (v14+): no copy either
         frame, flags = HAPT_HEAD.unpack_from(data, HEADER_LEN)
         on_speaker(idx, frame, flags, memoryview(data)[SPK_AT:SPK_AT + SPK_BYTES])
+    elif t == T_CFGSET and fb_filter.fresh(("cfg",), sq, now) and on_cfg is not None:   # a setting from the window (v15+)
+        # authenticated = v3 (HMAC + freshness token, so no replay) AND a key: v3 cannot be parsed without one, the check is explicit
+        on_cfg(bool(codec.key) and data[0] >> VER_SHIFT == VER3, *BODY[T_CFGSET].unpack_from(data, HEADER_LEN))
 
 
 def _dispatch(t: int, idx: int, sq: int, data: bytes) -> None:

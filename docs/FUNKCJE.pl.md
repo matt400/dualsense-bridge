@@ -273,6 +273,12 @@
   zastępczego bez ponownego podłączania, a zastępczy znika razem z ostatnim padem z wyższego slotu. Wyłączenie:
   Ustawienia → Pady → „Stała kolejność graczy”. HIDMaestro tworzy też pady ze stałą tożsamością slotu (te same
   ścieżki urządzeń po każdym podłączeniu).
+- **Ustawienia nadajnika z okna:** Ustawienia → Nadajnik zmienia ustawienia z `sender.toml` (limit padów, martwe strefy,
+  częstotliwość pakietów, panel dotykowy, wibracje, bufory haptyki i głośnika, Opus, opóźnienia systemu) z opisem każdego.
+  Nadajnik stosuje zmianę od razu, bez restartu, zapisuje ją w `remote_cfg.json` (`sender.toml` nigdy nie jest zapisywany)
+  i mówi, czy działa od razu, od następnego strumienia dźwięku, czy po ponownym połączeniu pada. Wybór jest też w
+  `settings.json` odbiornika (`sender`) i wysyłany ponownie, gdy nadajnik wraca online. Wymaga klucza HMAC i protokołu v3;
+  adresu, portu, klucza, ścieżek plików i adaptera Bluetooth nie da się tu zmienić. „Z pliku konfiguracji” cofa zmianę.
 - **Niskie opóźnienia:**
   - przyciski wysyłane natychmiast, z powtórkami na wypadek zgubionego pakietu,
   - gałki, ruch i dotyk bez opóźnienia do 1000 Hz (szybsze serie raportów zlewane, ostatni stan zawsze dochodzi),

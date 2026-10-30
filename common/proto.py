@@ -74,6 +74,15 @@ unknown length, so a variant only goes to a side that is known to understand it)
                          frame (10 ms frames, wraps at 2**32), SPK_* flags, SPK_FRAME = 480 samples of 48 kHz mono, signed 16-bit
                          little endian (the sender encodes them to Opus itself). Not repeated. Only to a sender with CAP_SPEAKER;
                          an older one rejects the unknown length
+  cfgset (type 10) "BBHd" PC -> sender (idx = 255): operation CFG_GET (answer: a cfgval for every setting) / CFG_SET (change the setting)
+                         / CFG_RESET (drop the change: back to the value from sender.toml; CFG_ALL = all of them), the id of the
+                         setting (position in cfgspec.SPECS), a reference that the answer repeats, the new value as a float64 (a bool
+                         0 / 1, a choice = its index). Only v3 with an HMAC key is accepted - the sender refuses a packet without
+                         a key or in v2 (the answer says so) and changes nothing. Repeated like a command (the sender handles one)
+  cfgval (type 14) "BBHBdd" sender -> PC (idx = 255): the id of the setting (CFG_ALL for a refusal of the whole request), the result
+                         CFGR_*, the reference of the request, flags CFGF_*, the value now in use and the one from sender.toml (so the
+                         window can show "changed" and offer to go back). Sent for every setting after CFG_GET and for the one
+                         changed after CFG_SET / CFG_RESET. A receiver / sender pair that does not know them drops the unknown length
 The phone's Bluetooth driven from the window (v10+; a phone with no screen). The sender announces the support itself - with a btstate
 packet (idx 255)
 to the receiver from which scfg arrived; the receiver sends btcmd only after btstate (an older sender would reject the length):
@@ -182,17 +191,19 @@ T_BTCTRL = 0x209                                                    # the sender
 T_BTLINK = 0x30C                                                    # the radio link of a connected pad: RSSI, link quality
 T_HAPT = 0x30A                                                      # a chunk of HD haptics for the pad (PC -> sender, v13+)
 T_SPK = 0x40A                                                       # 10 ms of sound for the pad's speaker (PC -> sender, v14+)
+T_CFGSET = 0x50A                                                    # read / change / reset a sender setting (PC -> sender, v15+)
+T_CFGVAL = 0x10E                                                    # a sender setting: the value, the file's value, the result (v15+)
 WIRE: Final[dict[int, int]] = {
     T_STATE2: T_STATE, T_PONG2: T_PONG, T_SCFG: T_CMD, T_CALRES: T_INFO, T_BUILD2: T_BUILD, T_TRIG2: T_TRIG,
     T_BTDEV: T_IDENT, T_BTSTATE: T_VERSION, T_BTCMD: T_CMD, T_BTCTRL: T_IDENT, T_TRIG3: T_TRIG,
-    T_BUILD3: T_BUILD, T_BTLINK: T_VERSION, T_HAPT: T_CMD, T_SPK: T_CMD,
+    T_BUILD3: T_BUILD, T_BTLINK: T_VERSION, T_HAPT: T_CMD, T_SPK: T_CMD, T_CFGSET: T_CMD, T_CFGVAL: T_UPDMSG,
 }
 FRESH_EXEMPT = frozenset({T_PING})
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Capabilities and limits announced in the version packet, trigger effects.
 # ---------------------------------------------------------------------------------------------------------------------
-SENDER_VERSION: Final = 14
+SENDER_VERSION: Final = 15
 RUMBLE_EVDEV, RUMBLE_HIDRAW, CAP_TRIGGERS = 1, 2, 4     # bits of the version packet (CAP_TRIGGERS: trigger resistance works)
 CAP_TRIG_FX: Final = 8                                  # a bit of the version packet: the sender knows trig2 (click, vibration)
 CAP_CALIB: Final = 16                                   # a bit of the version packet: CMD_GYRO_CAL and CMD_RAW_STICKS (v9+)
@@ -209,6 +220,12 @@ SPK_FRAME: Final = 480                                  # ... one frame = 480 sa
 SPK_BYTES: Final = 2 * SPK_FRAME                        # ... = 960 B
 SPK_DATA_AT: Final = 5                                  # offset of the samples in the spk body (after the u32 counter and the flags)
 SPK_START, SPK_END = 1, 2                               # spk flags: the first frame of a stream / the last one
+CFG_GET, CFG_SET, CFG_RESET = range(3)                  # cfgset operations: read, change a setting, drop the change (back to sender.toml)
+CFG_ALL: Final = 255                                    # cfgset / cfgval key id: every setting (CFG_GET, CFG_RESET) or none (a refusal)
+# cfgval result: applied now, saved but counts later (the next stream / pad connection), refused: the value is not allowed, an unknown
+# setting, the sender has no HMAC key, the packet was not v3, the sender has remote changes switched off (remote_cfg_file = "")
+CFGR_OK, CFGR_LATER, CFGR_INVALID, CFGR_UNKNOWN, CFGR_NO_KEY, CFGR_NO_V3, CFGR_OFF = range(7)
+CFGF_REMOTE: Final = 1                                  # cfgval flag: the value comes from a change made in the receiver window
 LAT_NONE: Final = 0xFFFF                                # the delay field in state2: no measurement (a repeat, no data)
 TRIG_START_MAX, TRIG_FORCE_MAX = 9, 8                   # trigger resistance: the start zone 0-9 (every 10 %), strength 1-8
 TFX_OFF, TFX_RES, TFX_CLICK, TFX_VIB = range(4)         # trigger effect mode (trig2 packet)
@@ -321,6 +338,8 @@ BODY: Final[dict[int, struct.Struct]] = {
     T_BTLINK: struct.Struct("!6sbBBB"),         # MAC, RSSI [dBm], link quality 0-255, BTL_*, N of hciN
     T_HAPT: struct.Struct(f"!IB{HAPT_CHUNK}s"),  # the first frame's number (3 kHz), HAPT_* flags, HAPT_FRAMES stereo frames (s8)
     T_SPK: struct.Struct(f"!IB{SPK_BYTES}s"),    # the frame's number (10 ms), SPK_* flags, SPK_FRAME mono samples (s16 little endian)
+    T_CFGSET: struct.Struct("!BBHd"),           # operation CFG_*, setting id (cfgspec.SPECS) or CFG_ALL, reference, the value as float64
+    T_CFGVAL: struct.Struct("!BBHBdd"),         # setting id, result CFGR_*, request reference, CFGF_* flags, value, sender.toml value
 }
 STATE_FIELDS: Final = 17                        # the state fields in state / state2 (without the latency measurement)
 BODY_LEN: Final = {ptype: body.size for ptype, body in BODY.items()}
@@ -562,7 +581,7 @@ class Codec:
             except OSError as e:
                 print(f"WARNING: cannot save {self.state_path}: {e}")
 
-    def pack(self, ptype: int, idx: int, *vals: int | bytes, v3: bool | None = None) -> bytes | None:
+    def pack(self, ptype: int, idx: int, *vals: int | float | bytes, v3: bool | None = None) -> bytes | None:
         """Build a packet.
 
         Layout: header (version | wire type, idx, sequence) + the struct-packed body. Without a key that is all. With a key,

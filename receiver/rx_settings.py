@@ -10,6 +10,7 @@
   vpad      virtual pads: the backend (HIDMaestro DualSense / ViGEmBus DS4), fixed player order (rx_ds4, rx_hm)
   haptics   game HD haptics per pad (by MAC): on / off and the strength - rx_haptics
   speaker   the game's sound on the pad's speaker per pad (by MAC): on / off and the volume - rx_speaker
+  sender    the sender's own settings chosen in the Sender tab (only what differs from its sender.toml) - rx_sender_cfg
 
 A missing file / a bad value -> the default (a message in the log, the file is repaired on save). A change from the window
 takes effect at once: apply() replaces the `cur` object (a single assignment - the network threads always read a consistent whole).
@@ -25,6 +26,7 @@ from collections.abc import Callable, Iterable, Sequence
 from dataclasses import asdict, dataclass, field, fields, replace
 from typing import Any, ClassVar, Final, TypeAlias
 
+import cfgspec
 from proto import mac_bytes, mac_text, write_json
 from rx_buttons import BUTTON_CODES
 from rx_i18n import _
@@ -412,6 +414,39 @@ SpeakerConfig.V = {"pads": _pad_table(lambda enabled, gain: PadSpeaker(enabled=e
 
 
 @dataclass(frozen=True, slots=True)
+class SenderConfig:
+    """Sender settings chosen in the Sender tab (sent to the sender over the network, see rx_sender_cfg).
+
+    ``values`` holds only what differs from the sender's own sender.toml: name (cfgspec) -> checked value. The receiver pushes
+    these to the sender whenever it comes online, so a sender that lost its remote_cfg.json gets them back.
+    """
+
+    values: dict[str, Any] = field(default_factory=dict)
+
+    V: ClassVar[Validators] = None
+
+
+def _sender_values(v: Any) -> dict[str, Any]:
+    """Validate the table; an unknown name or a bad value is skipped with a message (the rest stays)."""
+    if not isinstance(v, dict):
+        raise ValueError("expected a table name -> value")
+    out: dict[str, Any] = {}
+    for name, value in v.items():
+        idx = cfgspec.BY_KEY.get(name)
+        if idx is None:
+            print(f"Settings: sender.values: unknown setting {name!r} skipped")
+            continue
+        try:
+            out[name] = cfgspec.check(cfgspec.SPECS[idx], value)
+        except ValueError as e:
+            print(f"Settings: sender.values.{name} = {value!r} skipped ({e})")
+    return out
+
+
+SenderConfig.V = {"values": _sender_values}
+
+
+@dataclass(frozen=True, slots=True)
 class Settings:
     """All settings sections; replaced as a whole by apply()."""
 
@@ -424,6 +459,7 @@ class Settings:
     vpad: VpadConfig = field(default_factory=VpadConfig)
     haptics: HapticsConfig = field(default_factory=HapticsConfig)
     speaker: SpeakerConfig = field(default_factory=SpeakerConfig)
+    sender: SenderConfig = field(default_factory=SenderConfig)
 
 
 def _section(cls: Any, raw: dict[str, Any] | None, base: Any, name: str) -> Any:
@@ -482,7 +518,8 @@ def save(s: Settings, path: str) -> None:
     """Write the settings atomically (a temporary file + replace)."""
     data = {"version": 1, "mouse": asdict(s.mouse), "master": {**asdict(s.master), "only_master": list(s.master.only_master)},
             "ui": asdict(s.ui), "lightbar": asdict(s.lightbar), "wol": asdict(s.wol), "log": asdict(s.log),
-            "vpad": asdict(s.vpad), "haptics": asdict(s.haptics), "speaker": asdict(s.speaker)}
+            "vpad": asdict(s.vpad), "haptics": asdict(s.haptics), "speaker": asdict(s.speaker),
+            "sender": asdict(s.sender)}
     write_json(path, data, indent=2, ensure_ascii=False)
 
 

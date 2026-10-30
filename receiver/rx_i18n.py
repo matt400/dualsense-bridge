@@ -1162,4 +1162,207 @@ EN: Final[dict[str, str]] = {
     "połączony od {t}": "connected for {t}",
     "ponowne połączenia: {n}": "reconnects: {n}",
     "Połączony od {t}": "Connected since {t}",
+    "Największa liczba padów": "Maximum number of pads",
+    ("Ile padów nadajnik obsługuje naraz (sloty 1-8). Kolejny pad ponad limit jest ignorowany. "
+     "Zmniejszenie nie rozłącza padów, które już grają."):
+        ("How many pads the sender serves at once (slots 1-8). A pad over the limit is ignored. Lowering it "
+         "does not disconnect pads that are already playing."),
+    "Przejmij pada na wyłączność": "Grab the pad exclusively",
+    ("Nadajnik przejmuje urządzenie wejściowe pada na wyłączność, więc system nadajnika (np. telefonu) nie"
+     " reaguje na jego przyciski. Wyłącz, jeśli pad ma też sterować samym nadajnikiem."):
+        ("The sender takes the pad's input device exclusively, so the sender's own system (e.g. a phone) does "
+         "not react to its buttons. Turn it off if the pad should also control the sender itself."),
+    "Przejmij panel dotykowy na wyłączność": "Grab the touchpad exclusively",
+    "To samo dla panelu dotykowego pada: bez tego system nadajnika porusza własnym kursorem.":
+        "The same for the pad's touchpad: without it the sender's system moves its own cursor.",
+    "Wyłącz bezczynnego pada po": "Switch an idle pad off after",
+    ("Po tylu minutach bez dotknięcia gałek i przycisków nadajnik rozłącza pada (Bluetooth), żeby nie "
+     "wyczerpał baterii. 0 = nigdy."):
+        ("After this many minutes without a touch of the sticks or buttons the sender disconnects the pad "
+         "(Bluetooth) so its battery does not run down. 0 = never."),
+    "Odczyt baterii pada co": "Read the pad battery every",
+    ("Jak często nadajnik pyta o poziom baterii pada. Rzadziej = mniej ruchu, wolniejsza reakcja ikony "
+     "baterii."):
+        ("How often the sender asks for the pad's battery level. Less often = less traffic, a slower battery "
+         "icon."),
+    "Zapasowe skanowanie padów co": "Fallback pad scan every",
+    ("Nowy pad jest wykrywany od razu (inotify na /dev/input); to skanowanie łapie tylko to, co "
+     "powiadomienie przegapiło."):
+        ("A new pad is detected at once (inotify on /dev/input); this scan only catches what the notification "
+         "missed."),
+    "Martwa strefa gałek": "Stick deadzone",
+    ("Wychylenie gałki poniżej tej wartości (w jednostkach 0-255 wokół środka) nadajnik wysyła jako "
+     "środek. Duża strefa ukrywa dryf, ale też drobne ruchy. Dotyczy od razu padów, które już grają."):
+        ("A stick deflection below this value (in 0-255 units around the centre) is sent as the centre. A "
+         "large zone hides drift but also small movements. Applies at once to pads that are already playing."),
+    "Próg szumu żyroskopu": "Gyro noise threshold",
+    ("Zmiany odczytu żyroskopu mniejsze niż ta wartość nie wywołują nowego pakietu ruchu (nieruchomy pad "
+     "nie zalewa sieci szumem). 0 = wysyłaj każdą zmianę."):
+        ("Gyro changes smaller than this value do not produce a new motion packet (a pad lying still does not "
+         "flood the network with noise). 0 = send every change."),
+    "Próg szumu akcelerometru": "Accelerometer noise threshold",
+    "To samo dla akcelerometru. 0 = wysyłaj każdą zmianę.": "The same for the accelerometer. 0 = send every change.",
+    "Kalibracja żyroskopu przy starcie": "Gyro calibration at start",
+    ("Jak długo nadajnik mierzy spoczynkowy odczyt żyroskopu, gdy pad się połączy (pad musi leżeć "
+     "nieruchomo). Pad skalibrowany z okna odbiornika pomija ten krok. 0 = bez kalibracji. Dotyczy "
+     "kolejnego połączenia pada."):
+        ("How long the sender measures the resting gyro reading when a pad connects (the pad must lie still). "
+         "A pad calibrated from the receiver window skips this step. 0 = no calibration. Applies to the next "
+         "pad connection."),
+    "Największy odczyt uznany za spoczynek": "Largest reading taken as rest",
+    ("Jeśli podczas kalibracji odczyt żyroskopu jest większy, pad uznany jest za ruszany i kalibracja jest"
+     " powtarzana. Dotyczy kolejnego połączenia pada."):
+        ("If the gyro reading during calibration is larger, the pad is considered moved and the calibration is"
+         " repeated. Applies to the next pad connection."),
+    "Automatyczna korekta dryfu żyroskopu": "Automatic gyro drift correction",
+    ("Gdy pad leży nieruchomo, nadajnik na bieżąco poprawia zerowy odczyt żyroskopu, żeby kamera w grze "
+     "nie uciekała."):
+        ("While the pad lies still the sender keeps correcting the gyro's zero reading so the in-game camera "
+         "does not drift."),
+    "Czas bezruchu przed korektą": "Stillness time before correcting",
+    "Tak długo pad musi leżeć nieruchomo, zanim zacznie się korekta dryfu.":
+        "How long the pad must lie still before the drift correction starts.",
+    "Zakres uznawany za bezruch": "Range counted as stillness",
+    "Odczyty żyroskopu w tym zakresie liczą się jako bezruch dla korekty dryfu.":
+        "Gyro readings within this range count as stillness for the drift correction.",
+    "Pakiet podtrzymujący co": "Keep-alive packet every",
+    ("Gdy nic się nie zmienia, nadajnik i tak wysyła stan pada co tyle sekund: odbiornik wie, że pad żyje,"
+     " a zgubiony pakiet jest szybko nadrabiany. Mniej = pewniej, więcej ruchu sieciowego."):
+        ("When nothing changes the sender still sends the pad state this often: the receiver knows the pad is "
+         "alive and a lost packet is made up quickly. Less = safer, more network traffic."),
+    "Najmniejszy odstęp pakietów stanu": "Smallest gap between state packets",
+    ("Najczęściej co tyle sekund idzie pakiet stanu (0,001 s = 1000 Hz). Pierwsza zmiana po ciszy wychodzi"
+     " od razu, zmiany w oknie łączą się w jeden pakiet. Większy odstęp oszczędza sieć i procesor kosztem "
+     "opóźnienia gałek. 0 = bez limitu."):
+        ("A state packet goes out at most this often (0.001 s = 1000 Hz). The first change after silence goes "
+         "out at once, changes inside the window merge into one packet. A larger gap saves network and CPU at "
+         "the cost of stick latency. 0 = no limit."),
+    "Najmniejszy odstęp pakietów ruchu": "Smallest gap between motion packets",
+    "To samo dla żyroskopu i akcelerometru; próbki z okna są uśredniane. 0 = bez limitu.":
+        "The same for gyro and accelerometer; the samples inside the window are averaged. 0 = no limit.",
+    "Stuknięcie w panel = klik": "Tap on the pad = click",
+    "Krótkie stuknięcie palcem w panel dotykowy jest klikiem myszy (gdy panel steruje myszą).":
+        "A short tap on the touchpad is a mouse click (when the touchpad drives the mouse).",
+    "Najdłuższe stuknięcie": "Longest tap",
+    "Dłuższy dotyk nie jest stuknięciem, tylko przytrzymaniem.": "A longer touch is not a tap but a hold.",
+    "Największy ruch podczas stuknięcia": "Largest movement during a tap",
+    "Dotyk, w którym palec przesunął się dalej (w jednostkach panelu 1920x943), nie jest stuknięciem.":
+        "A touch where the finger moved farther (in touchpad units, 1920x943) is not a tap.",
+    "Łączenie dotyku (DS4 / DSU)": "Touch coalescing (DS4 / DSU)",
+    "Dotyk dla pada DS4 i serwera DSU wychodzi najwyżej raz na tyle milisekund. 0 = każda zmiana.":
+        ("Touch for the DS4 pad and the DSU server goes out at most once per this many milliseconds. 0 = every"
+         " change."),
+    "Próg szumu dotyku": "Touch noise threshold",
+    "Zmiany położenia palca mniejsze niż ta wartość są ignorowane (szum czujnika).":
+        "Finger position changes smaller than this value are ignored (sensor noise).",
+    "Ruch przed startem kursora": "Movement before the cursor starts",
+    "Kursor myszy rusza dopiero po tak dużym przesunięciu palca, więc stuknięcie nie drży.":
+        "The mouse cursor only starts moving after the finger travels this far, so a tap does not jitter.",
+    "Gesty dwoma palcami": "Two-finger gestures",
+    "Dwa palce = przewijanie, stuknięcie dwoma palcami = prawy przycisk myszy.":
+        "Two fingers = scrolling, a two-finger tap = the right mouse button.",
+    ("Którędy nadajnik wysyła wibracje do pada: auto = sterownik evdev i raport HID naraz, evdev albo "
+     "hidraw osobno, off = wyłączone. Dotyczy kolejnego połączenia pada."):
+        ("How the sender delivers rumble to the pad: auto = the evdev driver and a HID report at once, evdev "
+         "or hidraw alone, off = no rumble. Applies to the next pad connection."),
+    "Wibracje podczas haptyki": "Rumble during haptics",
+    ("Gdy gra gra haptykę i jednocześnie wibruje silnikami: haptyka ma pierwszeństwo (silniki czekają) "
+     "albo wibracja (haptyka pauzuje). Dotyczy kolejnego połączenia pada."):
+        ("When a game plays haptics and rumbles the motors at the same time: haptics win (the motors wait) or "
+         "rumble wins (haptics pause). Applies to the next pad connection."),
+    "Bufor haptyki": "Haptics buffer",
+    ("Bufor przed padem (Bluetooth), 10-200 ms. Większy = mniej przerw w haptyce, większe opóźnienie. "
+     "Zmiana działa od następnego strumienia haptyki."):
+        ("Buffer before the pad (Bluetooth), 10-200 ms. Larger = fewer haptics dropouts, more delay. Applies "
+         "from the next haptics stream."),
+    "Bufor głośnika pada": "Pad speaker buffer",
+    ("Bufor przed głośnikiem pada, 20-200 ms. Większy = mniej przerw, większe opóźnienie. Zmiana działa od"
+     " następnego strumienia dźwięku."):
+        ("Buffer before the pad's speaker, 20-200 ms. Larger = fewer dropouts, more delay. Applies from the "
+         "next sound stream."),
+    "Głośność głośnika pada": "Pad speaker volume",
+    ("Głośność sprzętowa głośnika pada, 0-255 (osobno od siły dźwięku z odbiornika). Zmiana działa od "
+     "następnego strumienia dźwięku."):
+        ("The hardware volume of the pad's speaker, 0-255 (separate from the sound level set in the receiver)."
+         " Applies from the next sound stream."),
+    "Bajtów Opus na ramkę 10 ms": "Opus bytes per 10 ms frame",
+    ("Jakość dźwięku wysyłanego na głośnik: 80 = 64 kbit/s. Więcej = lepszy dźwięk i więcej ruchu "
+     "Bluetooth. Zmiana działa od następnego strumienia dźwięku."):
+        ("Quality of the sound sent to the speaker: 80 = 64 kbit/s. More = better sound and more Bluetooth "
+         "traffic. Applies from the next sound stream."),
+    "Tryb Opus": "Opus mode",
+    ("hybrid daje czysty głos na padzie; celt to stary tryb (spadek poziomu na brzegu każdej ramki, "
+     "robotyczny głos). Zmiana działa od następnego strumienia dźwięku."):
+        ("hybrid gives a clean voice on the pad; celt is the old mode (a level dip at every frame edge, a "
+         "robotic voice). Applies from the next sound stream."),
+    "Wysiłek kodera Opus": "Opus encoder effort",
+    ("0-10: niżej = mniej procesora w nadajniku (np. w telefonie), -1 = automatycznie. Zmiana działa od "
+     "następnego strumienia dźwięku."):
+        ("0-10: lower = less CPU on the sender (e.g. a phone), -1 = automatic. Applies from the next sound "
+         "stream."),
+    "Priorytet czasu rzeczywistego": "Real-time priority",
+    ("Nadajnik działa w SCHED_FIFO z tym priorytetem (1-99); 0 = zwykły planista. Wymaga uprawnień roota "
+     "na nadajniku; bez nich zmiana jest zapisana, ale nie działa."):
+        ("The sender runs as SCHED_FIFO with this priority (1-99); 0 = the normal scheduler. Needs root on the"
+         " sender; without it the change is saved but has no effect."),
+    "Tryb małego opóźnienia": "Low-latency mode",
+    "Bez głębokiego uśpienia procesora i na najszybszych rdzeniach (wymaga roota na nadajniku).":
+        "No deep CPU sleep and the fastest cores (needs root on the sender).",
+    "Najdłuższe wybudzenie procesora": "Longest CPU wake-up",
+    ("Dla trybu małego opóźnienia: ile najwyżej µs może trwać wybudzenie procesora (głębokie stany "
+     "uśpienia potrafią do ok. 6,5 ms)."):
+        ("For the low-latency mode: the longest CPU wake-up allowed, in µs (deep sleep states take up to ~6.5 "
+         "ms)."),
+    "PADY I OSZCZĘDZANIE ENERGII": "PADS AND POWER SAVING",
+    "GAŁKI I ŻYROSKOP": "STICKS AND GYRO",
+    "CZĘSTOŚĆ PAKIETÓW": "PACKET RATE",
+    "PANEL DOTYKOWY": "TOUCHPAD",
+    "WIBRACJE, HAPTYKA I GŁOŚNIK": "RUMBLE, HAPTICS AND SPEAKER",
+    "MAŁE OPÓŹNIENIA SYSTEMU (wymaga roota na nadajniku)": "LOW SYSTEM LATENCY (needs root on the sender)",
+    "automatycznie (evdev i hidraw naraz)": "automatic (evdev and hidraw at once)",
+    "tylko sterownik evdev": "the evdev driver only",
+    "tylko raport HID (hidraw)": "the HID report only (hidraw)",
+    "wyłączone": "off",
+    "haptyka ma pierwszeństwo": "haptics win",
+    "wibracja ma pierwszeństwo": "rumble wins",
+    "hybrid (czysty głos)": "hybrid (clean voice)",
+    "celt (stary tryb)": "celt (old mode)",
+    "USTAWIENIA NADAJNIKA": "SENDER SETTINGS",
+    "Odczytaj z nadajnika": "Read from the sender",
+    "Wszystko z pliku konfiguracji": "Everything back to the config file",
+    "Z pliku konfiguracji": "Back to the config file",
+    ("Zmiany stosują się na nadajniku od razu, bez restartu, i zostają po jego restarcie (plik "
+     "remote_cfg.json na nadajniku; sender.toml nie jest ruszany). Wymagają klucza HMAC po obu stronach i "
+     "protokołu v3. Tu są tylko ustawienia, których nie ma w innych zakładkach; adres, port, klucz i "
+     "ścieżki plików ustawia się wyłącznie na nadajniku."):
+        ("Changes apply on the sender at once, without a restart, and survive its restart (remote_cfg.json on "
+         "the sender; sender.toml is not touched). They need the HMAC key on both sides and protocol v3. Only "
+         "settings that are not in other tabs are here; the address, port, key and file paths are set on the "
+         "sender only."),
+    "w pliku nadajnika: {v}": "in the sender's file: {v}",
+    "zmienione tutaj": "changed here",
+    "zmienione tutaj - zapisz, żeby wysłać": "changed here - save to send",
+    "zadziała od razu": "applies at once",
+    "zadziała od następnego strumienia dźwięku": "applies from the next sound stream",
+    "zadziała po ponownym połączeniu pada": "applies after the pad reconnects",
+    "tak": "yes",
+    "nie": "no",
+    "Nadajnik offline - ustawienia zostaną wysłane, gdy wróci.":
+        "The sender is offline - the settings will be sent when it is back.",
+    ("Zmiana ustawień nadajnika wymaga klucza HMAC w odbiorniku i protokołu v3 (klucz w obu miejscach, ten"
+     " sam)."):
+        ("Changing the sender's settings needs an HMAC key in the receiver and protocol v3 (the same key on "
+         "both sides)."),
+    "Nadajnik nie ma klucza HMAC, więc odmawia zmian.": "The sender has no HMAC key, so it refuses changes.",
+    "Nadajnik nie przeszedł jeszcze na protokół v3 i odmawia zmian.":
+        "The sender has not switched to protocol v3 yet and refuses changes.",
+    "Nadajnik ma wyłączone zmiany z odbiornika (remote_cfg_file = \"\").":
+        "The sender has changes from the receiver switched off (remote_cfg_file = \"\").",
+    ("Brak odpowiedzi nadajnika - starsza wersja nie zna tych pakietów, albo odpowiedź jeszcze nie "
+     "dotarła."):
+        ("No answer from the sender - an older version does not know these packets, or the answer has not "
+         "arrived yet."),
+    "Nadajnik zgłosił {n} z {total} ustawień.": "The sender reported {n} of {total} settings.",
+    "Nadajnik odrzucił wartość ustawienia {name}": "The sender rejected the value of the setting {name}",
+    "Ustawienia nadajnika z tego komputera wysłane ponownie ({n})": "Sender settings from this computer sent again ({n})",
 }

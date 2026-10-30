@@ -11,7 +11,8 @@ Modules: proto.py (shared with the receiver), sender_config.py, sender_state.py,
          sender_ctrl.py, sender_streams.py, sender_supervisor.py, sender_control.py, sender_rumble.py (rumble),
          sender_wol.py (Wake-on-LAN: PS + button while the receiver is silent), sender_events.py (events for the PC window),
          sender_bt.py (phone Bluetooth driven from the receiver window: scan, pair, connect - busctl / bluetoothctl),
-         sender_batt.py (the battery of the device the sender runs on, shown in the window).
+         sender_batt.py (the battery of the device the sender runs on, shown in the window),
+         sender_remotecfg.py (settings changed in the receiver window: checked, applied at once, saved in remote_cfg.json).
 Configuration: --config file.toml|json (keys as in DEFAULTS); CLI flags override the file.
 --stats also prints the real pad report rate and traffic rate (Hz, p99/max gaps).
 Switching a pad off: the "Off" button in the receiver window, or automatically after idle_off_min minutes without
@@ -38,6 +39,7 @@ import sender_config
 import sender_control as control
 import sender_events as events
 import sender_net as net
+import sender_remotecfg
 import sender_rt
 import sender_state as state
 import sender_streams as streams
@@ -154,6 +156,7 @@ if __name__ == "__main__":
     net.on_speaker = sup.dispatch_speaker      # the game's sound on the pad's speaker (sender_speaker)
     net.on_scfg = wol.apply_scfg
     net.on_bt = sender_bt.bt.on_command        # phone Bluetooth driven from the receiver window (scan, pair, connect)
+    net.on_cfg = sender_remotecfg.on_packet    # settings changed in the receiver window (only v3 with the key)
     wol.load()                         # Wake-on-LAN and events: settings from the receiver window saved at the last scfg
     sender_rt.setup(C.LOW_LATENCY, C.CPU_LATENCY_US, C.RT_PRIORITY)
     gc.collect()

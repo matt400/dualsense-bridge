@@ -253,6 +253,8 @@ slots.json.tmp
 # Wake-on-LAN i zdarzenia nadajnika - ustawienia z okna receivera zapisane na telefonie
 wol.json
 wol.json.tmp
+remote_cfg.json
+remote_cfg.json.tmp
 # gyro calibration from the receiver window, stored on the sender (per pad)
 gyro_cal.json
 gyro_cal.json.tmp

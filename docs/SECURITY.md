@@ -53,6 +53,13 @@ After going back to a version without protocol v3 on one side, delete `auth.json
   (`ProtectSystem=strict`), read-only `/home`, private `/tmp`. If something stops working on your system:
   `sudo systemctl edit dualsense-sender` and reset the offending option.
 
+## Sender settings from the window
+
+Changing the sender's settings (Settings → Sender) is accepted only in protocol v3 with a valid HMAC: a sender without a key, or a
+packet in v2, answers with a refusal and changes nothing. Without a key the other commands stay open to the network as before,
+but this one is closed. Every value is range-checked by the sender; host, port, key and file paths cannot be changed this way.
+`remote_cfg_file = ""` in `sender.toml` switches the feature off.
+
 ## Bluetooth from the window
 
 Pairing from the window works only for game controllers; only pads get the "trusted" flag (a trusted device can
