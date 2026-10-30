@@ -48,7 +48,7 @@ The tests cover:
   profiles, master only (`test_trigfx.py`, `test_trigfx_tx.py`); trigger effects from games (HIDMaestro, trig3):
   reading from the output report, the profile wins per trigger, release after the program closes (`test_gametrig.py`,
   `test_gametrig_tx.py`);
-- regressions from bug reviews (`test_review.py`, `test_review_tx.py`, and the topic-named tests below) - among others starting /
+- regressions from bug reviews (topic-named tests such as `test_master_follow.py`, `test_hidraw_write_retry_tx.py`, and the ones below) - among others starting /
   stopping a Bluetooth scan at the same time, a finger resting on the touchpad when connecting, a touchpad click
   released in the Test view, PS shortcuts in TV mode, registering game rumble in ViGEm (callback signature from
   vgamepad, lightbar colour as a struct), receiver without ViGEmBus, COM audio objects released before
