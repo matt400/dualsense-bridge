@@ -38,9 +38,12 @@ from sender_rumble import BT_SEQ_MASK, BT_SEQ_SHIFT, BYTE_MASK, CRC_LEN, CRC_SEE
 REPORT_ID: Final = 0x32
 REPORT_LEN: Final = 142                     # with the report id; the HID descriptor says 141 data bytes
 SEQ_AT, COUNTER_AT, DATA_AT = 1, 10, 13
-# bytes 2-4: control sub-packet (0x11 | "sized" bit, length 7, flags); 5-9: queue depth 0x10 x5 (the community notes' 16,0,0,0,0 was
-# silent); 11-12: haptics sub-packet (0x12 | "sized" bit, length 64) followed by the samples at DATA_AT
+# bytes 2-4: control sub-packet (0x11 | "sized" bit, length 7, flags); 5-9: the pad's audio buffer length x5 (0x10 = 16, the lowest value
+# it takes; the community notes' 16,0,0,0,0 was silent); 11-12: haptics sub-packet (0x12 | "sized" bit, length 64) followed by the samples
+# at DATA_AT
 HEADER: Final = bytes([REPORT_ID, 0x00, 0x91, 0x07, 0xFE, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00, 0x92, HAPT_CHUNK])
+BUFFER_AT, BUFFER_BYTES = 5, 5              # the pad's audio buffer length: 16 (least delay) .. 128 (most resistant to Bluetooth jitter)
+PAD_BUFFER_DEFAULT: Final = 0x10            # what the sender always sent; the haptics-only report keeps it
 CRC_AT: Final = REPORT_LEN - CRC_LEN        # the CRC32 is little endian, seeded with 0xA2 (like 0x31), over bytes 0..CRC_AT-1
 _SEED_CRC: Final = zlib.crc32(CRC_SEED)     # zlib.crc32(data, _SEED_CRC) == zlib.crc32(CRC_SEED + data) without building the sum
 
