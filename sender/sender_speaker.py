@@ -16,7 +16,8 @@ The receiver sends 10 ms frames of 48 kHz mono sound (see the spk packet in prot
   but crackled on speech and music. An empty ring plays a silent frame (never a skipped report) and is refilled to the target
   depth before real audio continues.
   All ring and frame math is in whole 10 ms frames.
-* Who ticks. While no haptics stream writes, the speaker has its own timer with absolute deadlines (``due += period``). While a
+* Who ticks. While no haptics stream writes, the speaker has its own timer (``TickTimer``: a timerfd) with absolute deadlines
+  (``due += period``). While a
   haptics stream writes, the haptics tick writes the 0x36 reports and the speaker timer only follows its clock (it re-arms one period
   after the last audio report), so there is one clock and exactly one report per period; when the haptics stream ends, the speaker
   timer is already in phase.
@@ -28,7 +29,6 @@ Rumble owns the HID file descriptor and the sequence counter; this module builds
 """
 from __future__ import annotations
 
-import asyncio
 import struct
 import time
 import zlib
@@ -38,8 +38,9 @@ from typing import Final
 
 from proto import HAPT_CHUNK, HAPT_FRAMES, HAPT_RATE, SPK_BYTES, SPK_END, SPK_FRAME, SPK_START, UINT32_MASK
 from sender_haptics import BUFFER_AT, BUFFER_BYTES, COUNTER_AT, CRC_AT, DATA_AT, HEADER, PAD_BUFFER_DEFAULT, REPORT_LEN, SEQ_AT, U32_HALF
-from sender_opus import DEFAULT_MODE, OpusEncoder
+from sender_opus import COMPLEXITY_AUTO, DEFAULT_MODE, OpusEncoder
 from sender_rumble import BT_SEQ_MASK, BT_SEQ_SHIFT, BYTE_MASK, CRC_LEN, CRC_SEED, Rumble
+from sender_tick import TickTimer
 
 # ---- report 0x36 (measured on the real pad, P3a) ----
 REPORT_ID: Final = 0x36
@@ -255,7 +256,7 @@ class SpeakerStream:
     """
 
     def __init__(self, idx: int, rumble: Rumble, report: Report3x, drives: Callable[[], bool], buffer_ms: float,
-                 volume: int, opus_bytes: int, opus_mode: str = DEFAULT_MODE) -> None:
+                 volume: int, opus_bytes: int, opus_mode: str = DEFAULT_MODE, opus_complexity: int = COMPLEXITY_AUTO) -> None:
         """Create an idle stream.
 
         Args:
@@ -267,13 +268,14 @@ class SpeakerStream:
             volume: The speaker volume byte, 0..255.
             opus_bytes: Bytes per 10 ms Opus packet (64 kbit/s = 80).
             opus_mode: "hybrid" (default) or "celt" (see sender_opus).
+            opus_complexity: The encoder's effort, 0..10; COMPLEXITY_AUTO picks the usual one for the mode (see sender_opus).
 
         Raises:
             OSError: libopus is missing or the encoder cannot be created.
         """
         self.idx, self.rumble, self.report, self.drives = idx, rumble, report, drives
         self.volume = volume
-        self.encoder = OpusEncoder(opus_bytes, opus_mode)
+        self.encoder = OpusEncoder(opus_bytes, opus_mode, opus_complexity)
         self.encoder.bind(report.buf, OPUS_AT)
         self.target = max(2, round(buffer_ms / (FRAME_S * 1000)))
         self.high, self.limit = self.target + HIGH_OVER, self.target + LIMIT_OVER
@@ -287,7 +289,8 @@ class SpeakerStream:
         self._prime_ticks = 0
         self._tail = 0                                          # silent reports still to send after the last frame
         self._retry = 0.0
-        self._timer: asyncio.TimerHandle | None = None
+        self._ticker: TickTimer | None = None                   # the tick timer of the running stream (one descriptor, closed at its end)
+        self._timer: TickTimer | None = None                    # the same object while a tick is pending, None otherwise
         self._why = "end of stream"
 
     # ---------- frames from the network ----------
@@ -361,7 +364,8 @@ class SpeakerStream:
         self._why = "end of stream"
         self.report.attach(self.fill, self.encoder.size, PAD_BUFFER)
         self._due = now + self.target * FRAME_S                 # the playout delay: the first tick finds `target` frames
-        self._timer = asyncio.get_running_loop().call_at(self._due, self._tick)
+        self._ticker = TickTimer(self._tick)
+        self._arm()
         enc = self.encoder
         print(f"Controller {self.idx}: speaker start (buffer {self.target * 10} ms, pad buffer {PAD_BUFFER}, "
               f"Opus {enc.mode}, {enc.size} B per frame)")
@@ -388,7 +392,12 @@ class SpeakerStream:
             self._due = self.rumble.t_audio + PERIOD_S + FOLLOW_S   # the haptics tick writes and consumes our frames
         else:
             self._write(now)
-        self._timer = asyncio.get_running_loop().call_at(self._due, self._tick)
+        self._arm()
+
+    def _arm(self) -> None:
+        """Arm the tick timer for the next deadline (``_due``)."""
+        if self._ticker is not None:
+            self._timer = self._ticker.arm(self._due)
 
     def _write(self, now: float) -> None:
         """Write one report from the speaker's own clock (no haptics: the haptics part is silent) and advance the deadline."""
@@ -431,9 +440,10 @@ class SpeakerStream:
     # ---------- end ----------
     def _finish(self, why: str) -> None:
         """End the stream: stop the timer, set the volume to 0 and give the actuators back to rumble, log what happened."""
-        if self._timer is not None:
-            self._timer.cancel()
-            self._timer = None
+        if self._ticker is not None:
+            self._ticker.close()
+            self._ticker = None
+        self._timer = None
         self.active = self.ending = False
         self.report.detach()
         self.rumble.speaker_end()

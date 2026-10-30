@@ -42,6 +42,7 @@
 # speaker_volume = 100   # the pad's speaker volume, 0-255
 # speaker_opus_bytes = 80   # Opus bytes per 10 ms frame, 30-200 (80 = 64 kbit/s); more = better sound, more Bluetooth traffic
 # speaker_opus_mode = "hybrid"   # Opus mode: hybrid (clean voice on the pad) | celt (the old mode: a level dip at every frame edge, a robotic voice)
+# speaker_opus_complexity = -1   # Opus encoder effort 0-10: lower = less CPU on the phone; -1 = automatic (3 for hybrid, 5 for celt)
 # haptics_motors = "haptics"   # a game's motor rumble while haptics play: haptics (haptics win, the motors wait) | rumble (rumble wins, haptics pause)
 # idle_off_min = 15   # switch the pad off (disconnect Bluetooth) after this many idle minutes; 0 = never
 # rt_priority = 10   # SCHED_FIFO with this priority (1-99); 0 = the normal scheduler; needs doas

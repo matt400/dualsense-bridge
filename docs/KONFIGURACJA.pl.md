@@ -28,6 +28,7 @@ Najczęściej zmieniane:
 | `speaker_volume` | sender | 100 | głośność głośnika pada (0-255) |
 | `speaker_opus_bytes` | sender | 80 | bajtów Opus na ramkę 10 ms dla głośnika (30-200; 80 = 64 kbit/s); więcej = lepszy dźwięk, więcej ruchu Bluetooth |
 | `speaker_opus_mode` | sender | hybrid | tryb Opus dla głośnika: `hybrid` (czysty dźwięk na padzie) albo `celt` (stary tryb: pad obniża poziom na brzegu każdej ramki, co brzmi robotycznie); hybrid kosztuje ok. 1 ms CPU więcej na ramkę |
+| `speaker_opus_complexity` | sender | -1 | wysiłek enkodera Opus, 0-10: mniej = mniej CPU w telefonie, możliwe że trochę mniej czysty dźwięk; `-1` = automatycznie (3 dla hybrid, 5 dla celt) |
 | `haptics_motors` | sender | haptics | gdy gra wibruje podczas haptyki: `haptics` (silniki ignorowane, log raz) lub `rumble` (silniki wstrzymują haptykę) |
 | `key` | oba | "" | wspólny klucz HMAC: podpisane pakiety i ochrona przed replay ([BEZPIECZENSTWO.pl.md](BEZPIECZENSTWO.pl.md)) |
 | `dsu_bind` | receiver | 127.0.0.1 | adres serwera DSU; `0.0.0.0` = emulator na innym urządzeniu |

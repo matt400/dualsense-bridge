@@ -35,6 +35,8 @@ FRAMES_PER_S: Final = 100                                               # 10 ms 
 OPUS_BYTES_MIN, OPUS_BYTES_MAX = 30, 200                                # sane range of bytes per frame (24 .. 160 kbit/s)
 COMPLEXITY: Final = 5       # P3a: 0.43 ms per frame on the OnePlus 6 (3-5 % of a core); 10 would cost 0.56 ms for no audible gain
 HYBRID_COMPLEXITY: Final = 3    # hybrid also runs SILK (about +1 ms per frame at 5 on the OnePlus 6); the pad's speaker hides the rest
+COMPLEXITY_AUTO: Final = -1     # the setting "pick it for the mode": HYBRID_COMPLEXITY for hybrid, COMPLEXITY for celt
+COMPLEXITY_MAX: Final = 10      # libopus takes 0 (fastest) .. 10 (best)
 LIB_NAMES: Final = ("libopus.so.0", "libopus.so", "libopus.0.dylib")
 
 _lock = threading.Lock()
@@ -87,12 +89,14 @@ class OpusEncoder:
         pcm: Where the caller puts the next frame: SPK_BYTES of signed 16-bit little endian samples.
     """
 
-    def __init__(self, size: int, mode: str = DEFAULT_MODE) -> None:
+    def __init__(self, size: int, mode: str = DEFAULT_MODE, complexity: int = COMPLEXITY_AUTO) -> None:
         """Create the encoder.
 
         Args:
             size: Bytes per 10 ms packet (the bitrate is chosen to match); clamped to OPUS_BYTES_MIN..OPUS_BYTES_MAX.
             mode: "hybrid" (default) or "celt"; anything else counts as hybrid.
+            complexity: libopus effort, 0 (least CPU) .. COMPLEXITY_MAX; COMPLEXITY_AUTO (or any other negative value) picks the usual
+                one for the mode, a larger value counts as COMPLEXITY_MAX.
 
         Raises:
             OSError: libopus is missing or refused to create / configure the encoder.
@@ -104,14 +108,15 @@ class OpusEncoder:
         self.size = max(OPUS_BYTES_MIN, min(OPUS_BYTES_MAX, size))
         self._state = ctypes.c_void_p(0)
         self.mode = "celt"
+        explicit = min(COMPLEXITY_MAX, complexity) if complexity >= 0 else None
         if mode != "celt":
             force = ((OPUS_SET_SIGNAL, OPUS_SIGNAL_VOICE), (OPUS_SET_FORCE_MODE, MODE_HYBRID))
-            if self._open(OPUS_APPLICATION_VOIP, HYBRID_COMPLEXITY, force) and self._gives_hybrid():
+            if self._open(OPUS_APPLICATION_VOIP, HYBRID_COMPLEXITY if explicit is None else explicit, force) and self._gives_hybrid():
                 self.mode = "hybrid"
             else:
                 self.close()
                 print("Speaker: this libopus does not give hybrid Opus packets - using CELT (the voice may sound choppy on the pad)")
-        if self.mode == "celt" and not self._open(OPUS_APPLICATION_AUDIO, COMPLEXITY, ()):
+        if self.mode == "celt" and not self._open(OPUS_APPLICATION_AUDIO, COMPLEXITY if explicit is None else explicit, ()):
             raise OSError("opus_encoder_create / opus_encoder_ctl failed")
         self._pcm = bytearray(SPK_BYTES)
         self.pcm = memoryview(self._pcm)
