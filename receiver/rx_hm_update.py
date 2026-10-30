@@ -10,14 +10,15 @@ zipfile checks the CRC32 of every entry, and the whole version goes to its folde
 Protection against a malicious release (a hijacked author account): the DLL is loaded into the administrator process and installs a
 driver, and a release has no Authenticode signature or checksums. So a new version waits MIN_AGE_DAYS after
 publication (hm_min_age_days in receiver.toml, 0 = at once) - replaced releases usually disappear within days. The first
-installation (no version at all) does not wait.
+installation (no version at all) does not wait, and a person can skip the wait for one release with the "Install now" button.
 
   receiver/hidmaestro/v2.0.3/HIDMaestro.Core.dll   a version in its own folder: a newer one does not overwrite a DLL loaded
                                                     in the running process (the CLR holds the file) - it works after a restart
   receiver/hidmaestro/state.json                    when it was last checked and what the result was
 
   newest_dll()      the DLL of the newest downloaded version or None (rx_hm.candidates)
-  check(force)      one check (at most every CHECK_S, unless force) -> Status
+  check(force)      one check (at most every CHECK_S, unless force) -> Status; skip_wait=True (the window's "Install now"
+                    button) installs a release that is still inside the MIN_AGE_DAYS wait
   thread()          the receiver thread: a check after startup and then once a day
 """
 from __future__ import annotations
@@ -348,12 +349,16 @@ def refresh_status() -> Status:
     return status
 
 
-def check(force: bool = False) -> Status:
-    """Run one check: a newer version on GitHub gets downloaded. A network error does not touch the downloaded version."""
+def check(force: bool = False, skip_wait: bool = False) -> Status:
+    """Run one check: a newer version on GitHub gets downloaded. A network error does not touch the downloaded version.
+
+    skip_wait installs the latest release even if it is younger than MIN_AGE_DAYS. Only a person pressing a button in the
+    window may ask for that - the background thread never does.
+    """
     if not _lock.acquire(blocking=False):
         return status                         # already running (a background thread or the button in the window)
     try:
-        _check(force)
+        _check(force or skip_wait, skip_wait)
     except Exception as e:  # noqa: BLE001 - a background update must never raise: network, zip and JSON errors all end up in status.error
         _set(error=f"{type(e).__name__}: {e}")
         print(f"HIDMaestro update check failed: {e!r}")
@@ -363,11 +368,12 @@ def check(force: bool = False) -> Status:
     return status
 
 
-def _check(force: bool) -> None:
+def _check(force: bool, skip_wait: bool = False) -> None:
     """The check itself (under the lock).
 
     Skip when checked recently, ask GitHub for the latest release, hold a fresh one until it is old enough (the first
-    installation never waits), otherwise install it, clean up and notify.
+    installation never waits, and neither does one the person asked for with skip_wait), otherwise install it, clean up
+    and notify.
     """
     refresh_status()
     # 0 <=: a clock set back (a check "in the future") must not stop checking until that date
@@ -380,11 +386,13 @@ def _check(force: bool) -> None:
     _set(latest=tag, checked=now, held_until=0.0)
     if status.version and version_tuple(status.version) >= version_tuple(tag):
         return
-    if status.version and not published:
+    if skip_wait and status.version:
+        print(f"HIDMaestro {tag}: installing at the user's request without waiting {min_age_s() / DAY_S:g} days")
+    elif status.version and not published:
         # no usable date = no proof that the release has aged: block instead of waving it through (the next check retries)
         raise OSError(f"HIDMaestro {tag}: unreadable publication date - not installing until it is known")
-    ready = published + min_age_s()
-    if status.version and now < ready:                    # a fresh release waits (also on "Check now")
+    elif status.version and now < published + min_age_s():     # a fresh release waits (also on "Check now")
+        ready = published + min_age_s()
         _set(held_until=ready)
         print(f"HIDMaestro {tag} published {(now - published) / 3600:.0f} h ago - installing it after "
               f"{time.strftime('%Y-%m-%d %H:%M', time.localtime(ready))} (hm_min_age_days)")
