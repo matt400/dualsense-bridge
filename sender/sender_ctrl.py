@@ -554,8 +554,9 @@ class Ctrl:
             if h is not None:
                 h.close()
             self._stream_cfg["haptics"] = cfg
-            self.haptics = HapticsStream(self.idx, r, C.HAPTICS_BUFFER_MS, self._report())
-        self.haptics.feed(frame, flags, data)
+            h = self.haptics = HapticsStream(self.idx, r, C.HAPTICS_BUFFER_MS, self._report(), self._speaker_clock,
+                                             self._haptics_ended)
+        h.feed(frame, flags, data)
 
     def _report(self) -> Report3x:
         """The pad's audio report, created on first use (both streams of the pad write into the same one)."""
@@ -564,8 +565,21 @@ class Ctrl:
         return self.audio_report
 
     def _haptics_drives(self) -> bool:
-        """Whether the haptics stream is writing reports (its tick is then the pad's clock for the speaker as well)."""
-        return self.haptics is not None and self.haptics.writing
+        """Whether the haptics stream writes the reports (its tick is then the pad's clock for the speaker as well)."""
+        return self.haptics is not None and self.haptics.drives()
+
+    def _speaker_clock(self) -> float | None:
+        """The speaker's next own deadline (a haptics stream that starts joins that clock), or None when it does not write."""
+        return self.speaker.clock_due() if self.speaker is not None else None
+
+    def _haptics_clock(self) -> float | None:
+        """The haptics stream's next deadline (a speaker stream that starts joins that clock), or None when it does not run."""
+        return self.haptics.clock_due() if self.haptics is not None else None
+
+    def _haptics_ended(self, due: float) -> None:
+        """The haptics stream ended: the speaker (if it plays) writes the report the haptics tick will not, on the same clock."""
+        if self.speaker is not None:
+            self.speaker.take_clock(due)
 
     def on_speaker(self, frame: int, flags: int, data: memoryview) -> None:
         """Take 10 ms of the game's sound from the PC; the first one starts the pad's speaker stream.
@@ -586,14 +600,15 @@ class Ctrl:
         if sp is None or sp.rumble is not r or (not sp.active and self._stream_cfg.get("speaker", cfg) != cfg):    # see on_haptics
             if sp is not None:
                 sp.close()
+                self.speaker = None
             self._stream_cfg["speaker"] = cfg
             try:
-                self.speaker = SpeakerStream(self.idx, r, self._report(), self._haptics_drives, *cfg)
+                sp = self.speaker = SpeakerStream(self.idx, r, self._report(), self._haptics_drives, *cfg, clock=self._haptics_clock)
             except OSError as e:
                 print(f"Controller {self.idx}: speaker unavailable ({e})")
                 self.speaker, self._speaker_failed = None, r
                 return
-        self.speaker.feed(frame, flags, data)
+        sp.feed(frame, flags, data)
 
     def set_raw_sticks(self, secs: int) -> None:
         """Run the drift measurement from the window: sticks without the sender's deadzone for ``secs`` seconds.
