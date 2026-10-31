@@ -4,13 +4,15 @@
 
 > **Projekt w trakcie prac (WIP).** To jeszcze nie jest stabilny program: spodziewaj się błędów i zmian łamiących zgodność.
 
-DualSense bridge przesyła dane z pada PS5 (DualSense) do komputera z Windows przez sieć lokalną. Na PC pad działa
-jak zwykły DualSense (z HIDMaestro) albo pad PS4 (z ViGEmBus): przyciski, gałki, żyroskop, touchpad, a w drugą
-stronę wibracje i lightbar.
+DualSense bridge to mostek UDP dla pada PS5 (DualSense): przenosi pada do komputera z Windows przez sieć lokalną.
+Na PC pad działa jak zwykły DualSense (z HIDMaestro) albo pad PS4 (z ViGEmBus): przyciski, gałki, żyroskop,
+touchpad, a w drugą stronę wibracje, lightbar, adaptacyjne triggery, haptyka i głośnik.
 
 Pad łączy się przez Bluetooth z **nadajnikiem**, czyli małym urządzeniem z Linuksem w pobliżu, np. Raspberry Pi albo
-starym telefonem z postmarketOS. Nadajnik od razu wysyła do PC każdą zmianę stanu pada. Dzięki temu PC może stać
-w innym pokoju, a grasz z kanapy przed telewizorem.
+starym telefonem z postmarketOS. Nadajnik od razu wysyła do PC każdą zmianę stanu pada.
+
+Używam go razem z kablem HDMI 2.1 AOC: obraz i dźwięk idą z komputera do telewizora kablem, a pad przez ten mostek.
+Dzięki temu PC może stać w innym pokoju, a grasz z kanapy przed telewizorem.
 
 Na PC jest okno do sterowania wszystkim, także samym padem:
 - przełączenie obrazu i dźwięku na TV jednym skrótem (tryb konsoli),
@@ -56,7 +58,7 @@ Co działa z pada PS5 (DualSense), a czego jeszcze brakuje.
 | Parowanie i wyłączanie pada | ✅ | z okna na PC, bez podchodzenia do sendera |
 | Przycisk mute i jego dioda | ❌ | |
 | Mikrofon | ❌ | |
-| Głośnik | ✅ | eksperymentalny, do włączenia, dźwięk gry gra na głośniku pada przez Bluetooth (Opus); wymaga nadajnika v14+ z libopus, tylko pad master |
+| Głośnik | ✅ | do włączenia, dźwięk gry gra na głośniku pada przez Bluetooth (Opus); wymaga nadajnika v14+ z libopus, tylko pad master |
 | Gniazdo słuchawkowe | ❌ | |
 | Diody gracza (pod lightbarem) | ❌ | |
 | DualSense Edge (tylne przyciski, Fn) | ❌ | |

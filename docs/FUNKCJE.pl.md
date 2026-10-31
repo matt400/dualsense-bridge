@@ -231,7 +231,7 @@
     konsoli go nie pokazuje). Włączenie i wyłączenie działa po ponownym połączeniu pada; gdy pada composite nie da się
     utworzyć, pad działa jak dotąd, a dziennik zdarzeń podaje powód (bez nowej próby przez 10 minut albo do zmiany ustawienia);
   - nadajnik musi ogłaszać haptykę (v13+, zaktualizuj go z okna); „Haptyka” jest też funkcją tylko dla mastera.
-- **Głośnik pada (eksperymentalny)** (Ustawienia → Haptyka i głośnik), opcja do włączenia, osobno dla każdego pada (MAC) albo
+- **Głośnik pada** (Ustawienia → Haptyka i głośnik), opcja do włączenia, osobno dla każdego pada (MAC) albo
   domyślnie; wymaga backendu HIDMaestro, nadajnika v14+ i libopus na nadajniku (`libopus0` / `opus`):
   - dźwięk gry z wyjścia „Wireless Controller” (kanały 1-2) jest miksowany do mono i przepróbkowywany 48 → 45 kHz (pad gra
     każdą ramkę przez okres raportu 10,667 ms, więc dźwięk zachowuje wysokość i tempo); nadajnik koduje go Opusem
