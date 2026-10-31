@@ -56,11 +56,11 @@ What works from the PS5 pad (DualSense) and what is still missing.
 | Adaptive triggers | ✅ | resistance, click, vibration; from the profile or from the game (HIDMaestro) |
 | HD haptics (real ones, not 2 motors) | ✅ | opt-in, from the game's audio (HIDMaestro composite pad), per pad; needs sender v13+ |
 | Pairing and switching the pad off | ✅ | from the PC window, no need to walk to the sender |
-| Mute button and its LED | ❌ | |
+| Mute button and its LED | ✅ | the button reaches the PC as the DualSense's mute button, the LED follows what the game / program sets; needs sender v15+ |
 | Microphone | ❌ | |
 | Speaker | ✅ | opt-in, the game's sound plays on the pad's speaker over Bluetooth (Opus); needs sender v14+ with libopus, master pad only |
 | Headphone jack | ❌ | |
-| Player LEDs (under the lightbar) | ❌ | |
+| Player LEDs (under the lightbar) | ✅ | follow what the game sets; needs sender v15+ |
 | DualSense Edge (back buttons, Fn) | ❌ | |
 
 ## Installation

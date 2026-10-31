@@ -72,7 +72,8 @@ def new_state() -> PadState:
     return {
         "lx": 128, "ly": 128, "rx": 128, "ry": 128, "lt": 0, "rt": 0,   # sticks/lt/rt/hx/hy/mask: AFTER remapping
         "hx": 0, "hy": 0, "mask": 0,
-        "raw": (0, 0, 0, 0, 0),                                          # (mask, hatx, haty, l2, r2) raw
+        "mute": False,                       # the mute button (MUTE_BIT of the mask): not remappable, only in a DualSense report
+        "raw": (0, 0, 0, 0, 0),                                         # (mask, hatx, haty, l2, r2) raw
         "fwd": (0, 0, 0),                    # (mask, hatx, haty) passed to the remap - without inputs consumed by shortcuts
         "rawst": (128, 128, 128, 128),                                   # (lx, ly, rx, ry) raw
         "ast": (128, 128, 128, 128),         # the raw sticks after the accessibility mode (rx_access) - its damping needs the last one

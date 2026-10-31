@@ -24,10 +24,10 @@ import rx_settings
 import rx_state as S
 import rx_swap
 import rx_testmode as testmode
-from proto import (BATT_CHARGING, BATT_UNKNOWN, BODY, CAL_MOVED, CAL_OK, CLICK_PRESSED, CLICK_TWO_FINGERS, LAT_NONE, NO_PAD, PAD_KEYS,
-                   RTT_NONE, SCFG_BATT, SCFG_EVENTS, SCFG_WOL, STATE_CHARGING, STATE_FIELDS, UINT32_MASK, WIRE, Codec, EpochClock,
-                   T_BTCTRL, T_BTDEV, T_BTLINK, T_BTSTATE, T_BUILD, T_BUILD2, T_BUILD3, T_BYE, T_CALRES, T_CLICK, T_CMD, T_EVENT, T_FB,
-                   T_HAPT, T_IDENT, T_INFO,
+from proto import (BATT_CHARGING, BATT_UNKNOWN, BODY, CAL_MOVED, CAL_OK, CLICK_PRESSED, CLICK_TWO_FINGERS, LAT_NONE, MUTE_BIT, NO_PAD,
+                   PAD_KEYS, RTT_NONE, SCFG_BATT, SCFG_EVENTS, SCFG_WOL, STATE_CHARGING, STATE_FIELDS, UINT32_MASK, WIRE, Codec,
+                   EpochClock, T_BTCTRL, T_BTDEV, T_BTLINK, T_BTSTATE, T_BUILD, T_BUILD2, T_BUILD3, T_BYE, T_CALRES, T_CLICK, T_CMD,
+                   T_EVENT, T_FB, T_HAPT, T_IDENT, T_INFO, T_LEDS,
                    T_MOUSE, T_PING, T_PONG, T_PONG2, T_SCFG, T_SPK, T_STATE, T_STATE2, T_TOUCH, T_TRIG, T_TRIG2, T_TRIG3, T_UPDMSG,
                    T_VERSION, TRIG2_OFF, clamp, cstr, mac_bytes, mac_text)
 from rx_buttons import BUTTON_CODES, MASK_ALL, PS_BIT, TRIG_ON
@@ -303,6 +303,17 @@ def send_triggers(i: int, vals: Sequence[Any], repeat: int = 1) -> None:
     send_repeat(codec.pack(t, i, *vals), repeat)
 
 
+def send_leds(i: int, vals: Sequence[int], repeat: int = 1) -> None:
+    """Send the mute button LED / player LEDs the game set to the sender.
+
+    Args:
+        i: The pad's slot.
+        vals: ``(LEDS_* flags, mute LED MUTE_*, player LEDs)``.
+        repeat: How many times to send it (a change goes several times, a refresh once: UDP may drop a packet).
+    """
+    send_repeat(codec.pack(T_LEDS, i, *vals), repeat)
+
+
 def send_haptics(i: int, first_frame: int, flags: int, chunk: bytes) -> None:
     """Send one chunk of game HD haptics to the sender (not repeated: audio tolerates a loss, a repeat only adds latency).
 
@@ -495,6 +506,7 @@ def _on_state(t: int, i: int, data: bytes, arr: int, now: float) -> None:
     now_us = int(now * 1_000_000)
     lx, ly, lt, rx, ry, rt, hat_x, hat_y, buttons, batt_pct, batt_flags = v[:STATE_HEAD]
     mask = buttons & MASK_ALL
+    mute = bool(buttons & MUTE_BIT)         # not a remappable button: straight to the virtual DualSense's report
     batt_dsu, batt_ds4 = batt_codes(batt_pct, batt_flags)
     batt_ds5 = ds5_batt_byte(batt_pct, batt_flags)
     S.batt_info[i] = (batt_pct, batt_flags)
@@ -518,6 +530,7 @@ def _on_state(t: int, i: int, data: bytes, arr: int, now: float) -> None:
     with S.lock:
         s = S.states[i]
         s["raw"] = (mask, hx, hy, lt, rt)
+        s["mute"] = mute
         s["fwd"] = hotkeys.forward(i, mask, hx, hy)
         s["rawst"] = (lx, ly, rx, ry)
         if (p := S.probe[i]) is not None and len(p) < MAX_PROBE:   # drift measurement (rx_drift)

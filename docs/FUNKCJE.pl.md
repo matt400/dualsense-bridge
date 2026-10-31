@@ -242,6 +242,18 @@
   - używa tego samego pada composite i urządzenia audio co haptyka, więc obowiązują te same uwagi (sterownik, domyślne
     wyjście, działa po ponownym połączeniu pada). Bez libopus nadajnik nie ogłasza głośnika, a haptyka działa jak dotąd;
   - „Głośnik” jest funkcją tylko dla mastera. Gniazdo słuchawkowe i mikrofon nie są obsługiwane.
+- **Przycisk mute i diody** (bez ustawień, zawsze włączone; nadajnik v15+):
+  - **przycisk mute** pada trafia na PC jako przycisk mute wirtualnego DualSense (backend HIDMaestro; backend DS4 nie ma takiego
+    przycisku). Sterownik jądra nie zgłasza tego przycisku jako zdarzenia wejścia, tylko przełącza własny stan „wyciszony” i pokazuje
+    go na diodzie pada (`*:micmute` w sysfs). Nadajnik obserwuje tę diodę i każdą jej zmianę zamienia na krótkie naciśnięcie (ok.
+    80 ms). Nie da się go przemapować i nie bierze udziału w skrótach. Bez diody z jądra (starsze jądro) nadajnik zapisuje w logu
+    „mute button not available” i nic więcej się nie zmienia;
+  - **dioda mute** i **diody gracza** (pięć diod pod lightbarem) wykonują to, co gra lub program ustawi na wirtualnym DualSense
+    (np. czat głosowy zapalający diodę mute); idą do pada tym samym raportem HID co wibracje i są ponawiane co 5 s. Dopóki żaden
+    program ich nie ustawi, zostaje sterownik jądra: dioda mute nadal podąża za własnym przełączeniem pada, diody gracza pokazują
+    numer ze sterownika. Jądro przełącza też własny stan mute przy każdym naciśnięciu, więc program, który chce pokazać na diodzie
+    coś innego, ustawia ją po tym, jak naciśnięcie do niego dotrze;
+  - **mikrofon** pada nie jest obsługiwany (jego dźwięk nie jest wysyłany na PC).
 - **Wake-on-LAN z pada** (Ustawienia → Wake-on-LAN): gdy komputer nie odpowiada (wyłączony / uśpiony), **PS + Options
   przytrzymane ~1 s** (przycisk i czas do wyboru) - nadajnik wysyła magic packet. Przy działającym komputerze ta sama
   kombinacja idzie do receivera jak zwykle (np. pauza mastera), więc nic nie koliduje; samo długie PS się nie nadaje

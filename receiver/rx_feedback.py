@@ -26,7 +26,8 @@ import rx_lightbar as L
 import rx_settings
 import rx_state as S
 import rx_swap
-from proto import CAP_TRIG_FX, CAP_TRIG_RAW, STATE_CHARGING, TRG3_L2, TRG3_R2, TRIG2_OFF, TRIG_RAW_LEN, clamp
+from proto import (CAP_TRIG_FX, CAP_TRIG_RAW, LEDS_MUTE, LEDS_PLAYER, LEDS_SENDER, STATE_CHARGING, TRG3_L2, TRG3_R2, TRIG2_OFF,
+                   TRIG_RAW_LEN, clamp)
 from rx_config import C
 from rx_i18n import _
 from rx_shape import BYTE_MAX, legacy_values, trigger_values
@@ -36,6 +37,8 @@ Trig: TypeAlias = tuple[bytes | None, bytes | None]   # the game's trigger effec
 Pulse: TypeAlias = tuple[float, int, int, tuple[int, int, int] | None]   # (end, small, large, colour | None)
 SendFeedback: TypeAlias = Callable[[int, tuple[int, int, int, int, int]], None]
 SendTriggers: TypeAlias = Callable[[int, Sequence[Any], int], None]
+SendLeds: TypeAlias = Callable[[int, tuple[int, int, int], int], None]
+Leds: TypeAlias = tuple[int | None, int | None]       # the game's (mute button LED, player LEDs); None = not set
 
 _games: ModuleType | None = None          # rx_games (it imports this module) - loaded lazily, on first use
 
@@ -52,6 +55,7 @@ def in_game() -> bool:
 FX_SENDER: Final = 8          # from this version the sender knows trig2 (with the CAP_TRIG_FX bit in the version packet)
 RAW_SENDER: Final = 11        # from this version the sender knows trig3 - trigger effects from the game (the CAP_TRIG_RAW bit)
 NO_GAME_TRIG: Final[Trig] = (None, None)    # the game has set no trigger effects (L2, R2)
+NO_LEDS: Final[Leds] = (None, None)         # the game has set neither the mute LED nor the player LEDs
 TRIG_OFF_MODES: Final = (0x00, 0x05)  # first byte of a trigger effect: none / Off - the game released the trigger
 
 TRIG_REFRESH_S: Final = 2.0   # trigger effects are refreshed this often (a pad after reconnecting / a lost packet)
@@ -95,6 +99,7 @@ pulses: list[Pulse | None] = []       # the active confirmation per slot: (end, 
 fb_sent: list[tuple[tuple[int, ...], float] | None] = []      # (value, time) of the feedback sent last; None = send at the next opportunity
 # (trigger effects, time) sent last per slot; None = nothing (the pad has default triggers)
 trig_sent: list[tuple[Sequence[Any], float] | None] = []
+leds_sent: list[tuple[tuple[int, int, int], float] | None] = []   # (leds packet values, time) sent last; None = send at once
 cbs: list[Callable[..., None]] = []
 
 
@@ -130,17 +135,23 @@ def make_cb(i: int):  # noqa: ANN201 - the return type would only be the unannot
 
 
 def game(i: int, large: int | None = None, small: int | None = None, rgb: Sequence[int] | None = None,
-         trig: Sequence[bytes | None] | None = None) -> None:
-    """Record rumble / lightbar colour / trigger effects from the game for slot i (on the virtual pad backend thread).
+         trig: Sequence[bytes | None] | None = None, leds: Sequence[int | None] | None = None) -> None:
+    """Record rumble / lightbar colour / trigger effects / LEDs from the game for slot i (on the virtual pad backend thread).
 
-    None = leave that part unchanged. A DualSense output report carries the motors, the colour and each trigger
+    None = leave that part unchanged. A DualSense output report carries the motors, the colour, each trigger and each LED
     separately, with their own validity flags. trig = (L2, R2): the raw 11 B effect or None (that trigger unchanged).
+    leds = (mute button LED, player LEDs): the raw bytes or None (that LED unchanged).
     """
     try:
         f = fb[rx_swap.route(i)]                # virtual pad i -> the physical pad it is fed by (swapped players)
     except IndexError:
         return
     changed = not f["set"]                      # only a real change wakes the feedback thread (games repeat reports every frame)
+    if leds is not None:
+        new_leds = tuple(old if v is None else int(v) for v, old in zip(leds, f["leds"], strict=True))
+        if new_leds != f["leds"]:
+            f["leds"] = new_leds                # the whole tuple is replaced - the feedback thread reads a consistent one
+            changed = True
     if trig is not None and any(t is not None for t in trig):
         new = tuple(bytes(t) if t is not None else old for t, old in zip(trig, f["trig"], strict=True))
         if new != f["trig"]:
@@ -205,10 +216,11 @@ def init() -> None:
     """
     n = C.NUM_PADS
     fb[:] = [{"small": 0, "large": 0, "r": 0, "g": 0, "b": 0, "set": False, "rgb": False, "note": False,
-              "t": 0.0, "t_other": 0.0, "trig": NO_GAME_TRIG, "trig_owner": None, "trig_note": False}
+              "t": 0.0, "t_other": 0.0, "trig": NO_GAME_TRIG, "trig_owner": None, "trig_note": False, "leds": NO_LEDS}
              for _ in range(n)]
     fb_sent[:] = [None] * n
     trig_sent[:] = [None] * n
+    leds_sent[:] = [None] * n
     pulses[:] = [None] * n
     cbs[:] = [make_cb(i) for i in range(n)]    # keep the references (GC)
     S.on_remap = fb_event.set
@@ -221,8 +233,8 @@ def reset(i: int) -> None:
     """Forget what the game set after a new / disconnected virtual DS4 in the slot (without init() - nothing to clear)."""
     if i < len(fb):
         fb[i].update(set=False, small=0, large=0, t_other=0.0, rgb=False, note=False, trig=NO_GAME_TRIG,
-                     trig_owner=None, trig_note=False)
-        fb_sent[i] = None
+                     trig_owner=None, trig_note=False, leds=NO_LEDS)
+        fb_sent[i] = leds_sent[i] = None
 
 
 def pulse(i: int, kind: str, force: bool = False) -> None:
@@ -318,12 +330,45 @@ def _target(i: int, now: float) -> tuple[tuple[int, ...], bool, bool]:
     return (p[1], p[2], *(p[3] or base[2:])), True, blink
 
 
-def feedback_thread(send: SendFeedback, send_trig: SendTriggers | None = None) -> None:
+def feedback_thread(send: SendFeedback, send_trig: SendTriggers | None = None, send_leds: SendLeds | None = None) -> None:
     """Run the feedback loop: send(slot, (small, large, r, g, b)) goes to the sender (rx_net.send_feedback).
 
     send_trig(slot, trig3 values (15), trig2 (12) or trig (4), repeats) sends trigger effects (rx_net.send_triggers).
+    send_leds(slot, (flags, mute LED, player LEDs), repeats) sends the LEDs the game set (rx_net.send_leds).
     """
-    _loop(send, send_trig)
+    _loop(send, send_trig, send_leds)
+
+
+def sender_leds(i: int) -> bool:
+    """Tell whether this pad's sender understands the leds packet (v15+; the ways byte has no free bit left, so the version decides)."""
+    info = S.sender_info[i]
+    return info is not None and info[0] >= LEDS_SENDER
+
+
+def leds_target(i: int) -> tuple[int, int, int] | None:
+    """Return the leds packet values for what the game set (flags, mute LED, player LEDs), or None when it set neither."""
+    mute, player = fb[i]["leds"]
+    if mute is None and player is None:
+        return None
+    return ((LEDS_MUTE if mute is not None else 0) | (LEDS_PLAYER if player is not None else 0), mute or 0, player or 0)
+
+
+def leds_tick(i: int, now: float, send_leds: SendLeds) -> None:
+    """Send the LEDs the game set: a change at once (several times), the same values again every IDLE_REFRESH_S.
+
+    Nothing is sent while the game has set no LED (the pad's driver keeps both) or to a sender that does not know the packet.
+    The refresh brings the LEDs back after the pad reconnected or a packet was lost.
+    """
+    vals = leds_target(i)
+    if vals is None or not sender_leds(i):
+        return
+    last = leds_sent[i]
+    if last is None or last[0] != vals:
+        leds_sent[i] = (vals, now)
+        send_leds(i, vals, TRIG_REPEAT)
+    elif now - last[1] >= IDLE_REFRESH_S:
+        leds_sent[i] = (vals, now)
+        send_leds(i, vals, 1)
 
 
 def sender_fx(i: int) -> bool:
@@ -416,10 +461,12 @@ def _wait_time(now: float, blink: bool) -> float:
     return max(0.0, min(waits))
 
 
-def _tick_pad(i: int, now: float, send: SendFeedback, send_trig: SendTriggers | None) -> bool:
-    """Handle one connected pad: trigger effects, log notes, rumble expiry and the feedback itself; return whether it blinks."""
+def _tick_pad(i: int, now: float, send: SendFeedback, send_trig: SendTriggers | None, send_leds: SendLeds | None = None) -> bool:
+    """Handle one connected pad: trigger effects, LEDs, log notes, rumble expiry and the feedback itself; return whether it blinks."""
     if send_trig is not None:
         triggers_tick(i, now, send_trig)
+    if send_leds is not None:
+        leds_tick(i, now, send_leds)
     if fb[i]["note"]:
         _note_game_color(i)
     if fb[i]["trig_note"]:
@@ -438,7 +485,7 @@ def _tick_pad(i: int, now: float, send: SendFeedback, send_trig: SendTriggers | 
     return blink
 
 
-def _loop(send: SendFeedback, send_trig: SendTriggers | None = None) -> None:
+def _loop(send: SendFeedback, send_trig: SendTriggers | None = None, send_leds: SendLeds | None = None) -> None:
     """Send feedback on change.
 
     Every 0.5 s while rumbling (refreshes its timeout on the sender) and every 5 s at rest (a lost packet will not leave
@@ -452,6 +499,6 @@ def _loop(send: SendFeedback, send_trig: SendTriggers | None = None) -> None:
         blink = False
         for i in range(C.NUM_PADS):
             if not S.alive[i]:
-                fb_sent[i] = pulses[i] = trig_sent[i] = None
+                fb_sent[i] = pulses[i] = trig_sent[i] = leds_sent[i] = None
                 continue
-            blink = _tick_pad(i, now, send, send_trig) or blink
+            blink = _tick_pad(i, now, send, send_trig, send_leds) or blink

@@ -249,7 +249,8 @@ def _start_workers() -> tuple[list[threading.Thread], threading.Thread]:
     gc.collect()
     gc.freeze()        # objects from startup are no longer scanned by the GC - shorter, rarer pauses in the real-time threads
     slot_threads = [S.start_thread(f"slot{i}", rx_ds4.slot_thread, i) for i in range(C.NUM_PADS)]
-    fb_thread = S.start_thread("feedback", rx_feedback.feedback_thread, rx_net.send_feedback, rx_net.send_triggers)
+    fb_thread = S.start_thread("feedback", rx_feedback.feedback_thread, rx_net.send_feedback, rx_net.send_triggers,
+                              rx_net.send_leds)
     if os.name == "nt":
         import rx_hm_update
         rx_hm_update.on_installed = rx_ds4.hm_installed

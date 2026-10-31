@@ -109,7 +109,7 @@ def build_ds5_report(s: Mapping[str, Any], counter: int, mmode: bool, b: bytearr
     face, sh = ds4_bits(s["mask"])
     b[7] = DPAD[(s["hx"], s["hy"])] | face
     b[8] = sh | (0x04 if s["lt"] else 0) | (0x08 if s["rt"] else 0)
-    b[9] = (1 if s["mask"] & PS_BIT else 0) | (2 if (s["tp"] and not mmode) else 0)
+    b[9] = (1 if s["mask"] & PS_BIT else 0) | (2 if (s["tp"] and not mmode) else 0) | (4 if s.get("mute") else 0)   # PS, touchpad, mute
     gx, gy, gz = s["gyro"]
     ax, ay, az = s["acc"]
     k = C.GYRO_TO_DS4                       # the DualSense and the DS4 use the same gyro and accelerometer units

@@ -56,11 +56,11 @@ Co działa z pada PS5 (DualSense), a czego jeszcze brakuje.
 | Adaptacyjne triggery | ✅ | opór, klik, wibracja; z profilu lub z gry (HIDMaestro) |
 | Haptyka HD (prawdziwa, nie 2 silniki) | ✅ | do włączenia, z dźwięku gry (pad composite HIDMaestro), per pad; wymaga nadajnika v13+ |
 | Parowanie i wyłączanie pada | ✅ | z okna na PC, bez podchodzenia do sendera |
-| Przycisk mute i jego dioda | ❌ | |
+| Przycisk mute i jego dioda | ✅ | przycisk trafia na PC jako przycisk mute DualSense, dioda wykonuje to, co ustawi gra / program; wymaga nadajnika v15+ |
 | Mikrofon | ❌ | |
 | Głośnik | ✅ | do włączenia, dźwięk gry gra na głośniku pada przez Bluetooth (Opus); wymaga nadajnika v14+ z libopus, tylko pad master |
 | Gniazdo słuchawkowe | ❌ | |
-| Diody gracza (pod lightbarem) | ❌ | |
+| Diody gracza (pod lightbarem) | ✅ | wykonują to, co ustawi gra; wymagają nadajnika v15+ |
 | DualSense Edge (tylne przyciski, Fn) | ❌ | |
 
 ## Instalacja

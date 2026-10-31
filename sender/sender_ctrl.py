@@ -15,9 +15,9 @@ from evdev import InputDevice, InputEvent
 
 import sender_net as net
 import sender_state as state
-from proto import (CAP_CALIB, CAP_HAPTICS, CAP_SPEAKER, IDENT_LEN, KEY_BIT, LAT_NONE, MOUSE_TAP_ID_MAX, MOUSE_TAP_ID_SHIFT,
-                   RAW_STICKS_MAX_S, SENDER_VERSION, T_CLICK, T_IDENT, T_MOUSE, T_STATE, T_STATE2, T_TOUCH, T_VERSION, TRIG2_OFF,
-                   UINT32_MASK, WHY_OFF, clamp, trig2_from_legacy)
+from proto import (CAP_CALIB, CAP_HAPTICS, CAP_SPEAKER, IDENT_LEN, KEY_BIT, LAT_NONE, LEDS_MUTE, LEDS_PLAYER, MOUSE_TAP_ID_MAX,
+                   MOUSE_TAP_ID_SHIFT, MUTE_BIT, RAW_STICKS_MAX_S, SENDER_VERSION, T_CLICK, T_IDENT, T_MOUSE, T_STATE, T_STATE2,
+                   T_TOUCH, T_VERSION, TRIG2_OFF, UINT32_MASK, WHY_OFF, clamp, trig2_from_legacy)
 from sender_config import (AXIS_MAX, BURST_DELAYS, C, DEVICE_READ_ERRORS, HAT_AXES, IDLE_TP, L2_AXIS, NEUTRAL_PAD, PAD_ABS,
                            R2_AXIS, STICK_AXES, STICK_CENTER, US_PER_S)
 from sender_haptics import HapticsStream
@@ -56,21 +56,22 @@ LOCAL_PULSES: Final = {
 }
 
 
-def find_led(pad_dev: InputDevice) -> str | None:
-    """Find the sysfs lightbar (RGB indicator LED) that belongs to the same HID device as the pad's evdev node.
+def find_led(pad_dev: InputDevice, pattern: str = LED_GLOB) -> str | None:
+    """Find the sysfs LED that belongs to the same HID device as the pad's evdev node (the lightbar by default).
 
-    The pad's /sys/class/input/eventN path is compared against the parent HID device of every
-    ``*:rgb:indicator`` LED: the LED whose HID device is a prefix of the input path is the pad's own lightbar.
+    The pad's /sys/class/input/eventN path is compared against the parent HID device of every LED matching ``pattern``
+    (``*:rgb:indicator`` = the lightbar): the LED whose HID device is a prefix of the input path is the pad's own.
 
     Args:
         pad_dev: The pad's evdev device.
+        pattern: The glob of the LED directories to look through.
 
     Returns:
-        The LED directory, or None (no kernel lightbar driver / no permission).
+        The LED directory, or None (no kernel driver for that LED / no permission).
     """
     try:
         event_path = os.path.realpath(f"/sys/class/input/{os.path.basename(os.fsdecode(pad_dev.path))}")
-        for led in glob.glob(LED_GLOB):
+        for led in glob.glob(pattern):
             hid = os.path.dirname(os.path.dirname(os.path.realpath(led)))
             if event_path.startswith(hid + "/"):
                 return led
@@ -118,11 +119,9 @@ class Ctrl:
         self.motion = [0] * 6
         self.batt, self.flags = 255, 0
         self.touch = IDLE_TP
-        self.tp = 0                   # 0 / 1 / 2 (click with two fingers)
-        self.tap_id = 0
-        self.t_state = 0.0
+        self.tp, self.tap_id = 0, 0   # tp: 0 / 1 / 2 (click with two fingers)
+        self.t_state, self.pending = 0.0, False
         self.last_key: tuple[int, ...] | None = None
-        self.pending = False
         self.rumble: Rumble | None = None
         self.haptics: HapticsStream | None = None
         self.speaker: SpeakerStream | None = None
@@ -148,6 +147,8 @@ class Ctrl:
         # the Bluetooth delay above the minimum at that moment, and the current one (from sender_streams.BtDelay)
         self.t_event: int | None = None
         self.ev_bt = self.bt_us = LAT_NONE
+        self.mute_down = False      # the mute button is "held" for a moment after each press (sender_mute); not part of self.mask
+        self.leds: tuple[int | None, int | None] = (None, None)   # the game's (mute LED, player LEDs) from the PC; None = not set
         self.triggers: tuple[Any, ...] = TRIG2_OFF     # trigger effects from the PC (trig2 values: L2, R2, rumble from the game)
         self.fb: tuple[int, int, int, int, int] | None = None   # the last feedback from the PC (small, large, r, g, b)
         self.wol_timer: asyncio.TimerHandle | None = None       # countdown of holding the Wake-on-LAN combination (sender_wol)
@@ -263,7 +264,7 @@ class Ctrl:
         """
         if self.sealed:
             return
-        key = (*self.pad, *self.hat, self.mask, self.batt, self.flags, *self.motion)
+        key = (*self.pad, *self.hat, self.mask | MUTE_BIT if self.mute_down else self.mask, self.batt, self.flags, *self.motion)
         self.pending = False
         if not force and key == self.last_key:
             # a change with no effect (stick noise inside the deadzone, the same value): its time must not stay as the "oldest
@@ -520,6 +521,18 @@ class Ctrl:
         self.triggers = trig2_from_legacy(vals) if len(vals) == len(TRIG2_OFF) // 3 else vals
         if self.rumble is not None:
             self.rumble.set_triggers(self.triggers)
+
+    def apply_leds(self, flags: int, mute: int, player: int) -> None:
+        """Take the mute button LED and the player LEDs the game set; only the HID report can apply them.
+
+        Args:
+            flags: LEDS_MUTE / LEDS_PLAYER: which of the two values is valid (the other one stays as it was).
+            mute: The mute LED (MUTE_OFF / MUTE_ON / MUTE_PULSE).
+            player: The player LEDs, 5 bits.
+        """
+        self.leds = (mute if flags & LEDS_MUTE else self.leds[0], player if flags & LEDS_PLAYER else self.leds[1])
+        if self.rumble is not None:
+            self.rumble.set_leds(*self.leds)
 
     def on_haptics(self, frame: int, flags: int, data: memoryview) -> None:
         """Take a chunk of the game's HD haptics from the PC; the first one starts the pad's stream.
