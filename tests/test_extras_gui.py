@@ -69,15 +69,17 @@ win.open_settings(); pump(100)
 dlg = win.settings_dlg
 dlg.tabs.setCurrentIndex(3); pump()
 assert dlg.tabs.tabText(3) == "Lightbar" and dlg.tabs.tabText(4) == "Haptyka i głośnik" and dlg.tabs.tabText(5) == "Wake-on-LAN" and not dlg.tabs.tabIcon(4).isNull()
-assert [dlg.light_pad.itemData(i) for i in range(dlg.light_pad.count())] == ["*", A]
-assert not dlg.light_own.isVisible(), "domyślne ustawienie zawsze własne"
+sc = dlg.light_scope
+assert [sc.pads.itemData(i) for i in range(sc.pads.count())] == [A], "lista bez wpisu domyślnego"
+assert sc.use_default.isChecked() and not sc.pads.isEnabled() and not sc.drop.isVisible(), "start: edytujesz domyślne"
 dlg.light_mode.set_data("battery"); dlg.light_mode.changed.emit("battery")
 assert not dlg.light_color.isEnabled(), "kolor stały nieaktywny w trybie wg baterii"
-dlg.light_pad.set_data(A); dlg.light_pad.changed.emit(A); pump()
-assert dlg.light_own.isVisible() and not dlg.light_own.isChecked() and not dlg.light_mode.isEnabled()
-assert dlg.light_mode.currentData() == "battery", "pad bez wpisu pokazuje domyślne"
-dlg.light_own.setChecked(True)
+sc.use_default.setChecked(False); pump()
+assert sc.pads.isEnabled() and dlg._light_key == A and not sc.drop.isVisible()
+assert dlg.light_mode.isEnabled() and dlg.light_mode.currentData() == "battery", "pad bez wpisu pokazuje domyślne, pola aktywne"
+assert A not in dlg._lights, "samo wybranie pada nie tworzy wpisu"
 dlg.light_mode.set_data("solid"); dlg.light_mode.changed.emit("solid")
+assert dlg._lights[A].blink and sc.drop.isVisible(), "pierwsza zmiana robi kopię domyślnych"
 dlg._set_color("#ff8800")
 dlg.light_blink.setChecked(False)
 dlg.low_pct.setValue(25)
@@ -88,13 +90,17 @@ assert lb.low_pct == 25 and lb.pads == {"*": R.PadLight("battery", "", True), A:
 assert json.load(open(C.SETTINGS_PATH))["lightbar"]["pads"][A]["color"] == "#ff8800"
 assert rx_qt.ST.low_pct() == 25, "ten sam próg dla karty pada"
 dlg.close(); win.open_settings(); pump()
-assert dlg.light_pad.currentData() == A and dlg.light_own.isChecked() and dlg.light_mode.currentData() == "solid", \
+sc = dlg.light_scope
+assert sc.key() == A and not sc.use_default.isChecked() and dlg.light_mode.currentData() == "solid", \
     "po ponownym otwarciu okna zostaje ostatnio wybrany pad z własnym ustawieniem"
 dlg.tabs.setCurrentIndex(3)
-dlg.light_pad.set_data(A); dlg.light_pad.changed.emit(A)
-dlg.light_own.setChecked(False)
+sc.use_default.setChecked(True); pump()
+assert dlg._light_key == "*" and A in dlg._lights and not sc.pads.isEnabled(), "przełączenie na domyślne nie kasuje wpisu pada"
+sc.use_default.setChecked(False); pump()
+sc.drop.click(); pump()
+assert A not in dlg._lights and dlg.light_mode.currentData() == "battery" and not sc.drop.isVisible(), "przycisk: pad wraca do domyślnych"
 dlg.save_btn.click(); pump()
-assert A not in R.cur.lightbar.pads, "odznaczenie - pad wraca do domyślnego"
+assert A not in R.cur.lightbar.pads, "pad wraca do domyślnego"
 ok("Ustawienia -> Lightbar: domyślne + per pad (MAC), tryb, kolor, miganie, próg; zapis bez restartu")
 
 # ---------- Ustawienia: Haptyka ----------
@@ -102,12 +108,14 @@ import rx_haptics
 from proto import CAP_HAPTICS
 dlg.close(); win.open_settings(); pump()
 dlg.tabs.setCurrentIndex(4); pump()
-assert [dlg.hap_pad.itemData(i) for i in range(dlg.hap_pad.count())] == ["*", A]
-assert not dlg.hap_on.isChecked() and dlg.hap_gain.value() == 100 and not dlg.hap_own.isVisible(), "domyślnie wyłączona"
+hs = dlg.hap_scope
+assert [hs.pads.itemData(i) for i in range(hs.pads.count())] == [A], "lista bez wpisu domyślnego"
+assert not dlg.hap_on.isChecked() and dlg.hap_gain.value() == 100 and hs.use_default.isChecked(), "domyślnie wyłączona"
 dlg.hap_on.setChecked(True); dlg.hap_gain.setValue(60)
-dlg.hap_pad.set_data(A); dlg.hap_pad.activated.emit(dlg.hap_pad.currentIndex()); pump()
-assert dlg.hap_own.isVisible() and not dlg.hap_own.isChecked() and not dlg.hap_on.isEnabled(), "pad bez własnego ustawienia: pola nieaktywne"
-dlg.hap_own.setChecked(True); dlg.hap_on.setChecked(False); dlg.hap_gain.setValue(120)
+hs.use_default.setChecked(False); pump()
+assert dlg._haptics_key == A and A not in dlg._haptics and dlg.hap_on.isEnabled(), "pad bez wpisu: pola aktywne, bez wpisu"
+assert dlg.hap_on.isChecked() and dlg.hap_gain.value() == 60, "pad bez wpisu pokazuje domyślne"
+dlg.hap_on.setChecked(False); dlg.hap_gain.setValue(120)
 S.alive[0], S.pad_id[0], S.sender_info[0] = True, A, (12, 3, 0)
 dlg._haptics_enable()
 assert dlg.hap_test.isEnabled() and "starszej" in dlg.hap_note.text(), "stary nadajnik: notka"
@@ -122,7 +130,7 @@ dlg._test_haptics(); pump()
 assert rx_haptics.link(0)._inject, "przycisk testu zakolejkował ton"
 rx_haptics.link(0).detach()
 dlg.close(); win.open_settings(); pump()
-assert dlg.hap_pad.currentData() == A and dlg.hap_own.isChecked() and dlg.hap_gain.value() == 120, \
+assert dlg.hap_scope.key() == A and not dlg.hap_scope.use_default.isChecked() and dlg.hap_gain.value() == 120, \
     "po ponownym otwarciu okna zostaje ostatnio wybrany pad z własnym ustawieniem"
 ok("Ustawienia -> Haptyka: domyślne + per pad, siła, notka o starym nadajniku, test, zapis bez restartu")
 

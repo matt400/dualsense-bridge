@@ -55,6 +55,7 @@ from rx_console import DEFAULT_APPS, STARTUP_MODES, ConsoleConfig
 from rx_display import DPI_VALUES
 from rx_i18n import LANGS
 from rx_qt_icons import icon
+from rx_qt_padscope import PadScope
 from rx_qt_screens import parse_size
 from rx_qt_sendercfg import SenderCfgPanel
 from rx_qt_style import set_prop
@@ -583,11 +584,10 @@ class ConsoleSettings(QDialog):
         """The Haptics tab: game HD haptics and the pad's speaker per pad (opt-in), the strength / volume and the test buttons."""
         self._haptics, self._haptics_key, self._haptics_loading = {}, DEFAULT_PAD, False
         self._speaker: dict[str, PadSpeaker] = {}
-        self.hap_pad = Combo()
-        self.hap_pad.changed.connect(self._pick_haptics_pad)
-        self.hap_own = QCheckBox(_("Własne ustawienie dla tego pada (inaczej domyślne)"))
-        self.hap_own.toggled.connect(self._haptics_edited)
-        self.hap_on = QCheckBox(_("Haptyka gry (HD haptics) na tym padzie"))
+        self.hap_scope = PadScope()
+        self.hap_scope.changed.connect(self._pick_haptics_pad)
+        self.hap_scope.reset.connect(self._reset_haptics_pad)
+        self.hap_on =QCheckBox(_("Haptyka gry (HD haptics) na tym padzie"))
         self.hap_on.toggled.connect(self._haptics_edited)
         self.hap_gain = spinbox(*HAPTICS_GAIN, 5, " %")
         self.hap_gain.valueChanged.connect(self._haptics_edited)
@@ -606,7 +606,7 @@ class ConsoleSettings(QDialog):
                             "wirtualnego pada USB (profil composite) i nadajnika w wersji z haptyką. Jest wyłączona domyślnie: "
                             "pierwsze włączenie instaluje sterownik jądra (usbip-win2), a Windows dodaje urządzenie dźwiękowe "
                             "„Wireless Controller” (domyślne wyjście dźwięku zostaje bez zmian)."), "dim", wrap=True),
-                    field(_("Pad"), self.hap_pad), self.hap_own, self.hap_on,
+                    self.hap_on,
                     pair(field(_("Siła"), self.hap_gain), field(_("Próba"), self.hap_test)),
                     self.hap_note,
                     label(_("Zmiana włączenia działa po ponownym połączeniu pada; siła - od razu."), "dim", wrap=True))
@@ -619,41 +619,50 @@ class ConsoleSettings(QDialog):
                         pair(field(_("Głośność"), self.spk_gain), field(_("Próba"), self.spk_test)),
                         self.spk_note,
                         label(_("Zmiana włączenia działa po ponownym połączeniu pada; głośność - od razu."), "dim", wrap=True))
-        return [box, speaker]
+        return [group("", self.hap_scope), box, speaker]
 
-    # ---------- haptics ----------
-    def _load_haptics(self, cfg: HapticsConfig, speaker: SpeakerConfig) -> None:
-        """Fill the Haptics tab: the pad list (default, connected, remembered) and the first entry's values."""
-        self._haptics = dict(cfg.pads)
-        self._speaker = dict(speaker.pads)
-        items: list[tuple] = [(DEFAULT_PAD, _("Domyślne - pady bez własnego ustawienia"), "rumble")]
+    def _scope_items(self, remembered: Iterable[str]) -> list[tuple[str, str]]:
+        """The pads for a PadScope list: connected ones first, then the saved ones that are not connected (no default entry)."""
+        items: list[tuple[str, str]] = []
         known = {DEFAULT_PAD}
         for i in range(C.NUM_PADS):
             key = S.profile_key(i)
             if key not in known and S.pad_id[i] and (S.alive[i] or S.want[i].is_set()):
                 known.add(key)
                 items.append((key, _("Pad {n}  ·  {key}").format(n=i + 1, key=key)))
-        items += [(k, _("{key}  (niepodłączony)").format(key=k)) for k in {**self._haptics, **self._speaker} if k not in known]
-        self.hap_pad.set_items(items)
-        # reopening the window keeps the pad that was picked last (it would look like its setting was lost otherwise)
-        keep = self._haptics_key if any(it[0] == self._haptics_key for it in items) else DEFAULT_PAD
-        self.hap_pad.set_data(keep)
-        self._pick_haptics_pad(keep)
+        items += [(k, _("{key}  (niepodłączony)").format(key=k)) for k in remembered if k not in known]
+        return items
+
+    # ---------- haptics ----------
+    def _load_haptics(self, cfg: HapticsConfig, speaker: SpeakerConfig) -> None:
+        """Fill the Haptics tab: the pad list (connected, remembered) and the values of the entry that was shown last."""
+        self._haptics = dict(cfg.pads)
+        self._speaker = dict(speaker.pads)
+        # reopening the window keeps the entry that was picked last (it would look like its setting was lost otherwise)
+        self.hap_scope.set_pads(self._scope_items({**self._haptics, **self._speaker}), self._haptics_key)
+        self._pick_haptics_pad(self.hap_scope.key())
 
     def _pick_haptics_pad(self, key: str) -> None:
-        """Show the haptics settings of the chosen pad key (falling back to the default entry); loading is not an edit."""
+        """Show the haptics settings of the chosen entry (a pad without its own one shows the defaults); loading is not an edit."""
         self._haptics_key = key
         cfg = self._haptics.get(key) or self._haptics.get(DEFAULT_PAD) or PadHaptics()
         spk = self._speaker.get(key) or self._speaker.get(DEFAULT_PAD) or PadSpeaker()
         self._haptics_loading = True
-        self.hap_own.setVisible(key != DEFAULT_PAD)
-        self.hap_own.setChecked(key == DEFAULT_PAD or key in self._haptics or key in self._speaker)
         self.hap_on.setChecked(cfg.enabled)
         self.hap_gain.setValue(cfg.gain)
         self.spk_on.setChecked(spk.enabled)
         self.spk_gain.setValue(spk.gain)
         self._haptics_loading = False
+        self.hap_scope.show_state(key in self._haptics or key in self._speaker)
         self._haptics_enable()
+
+    def _reset_haptics_pad(self) -> None:
+        """Drop the chosen pad's own haptics / speaker entry: it uses the defaults again."""
+        key = self._haptics_key
+        if key != DEFAULT_PAD:
+            self._haptics.pop(key, None)
+            self._speaker.pop(key, None)
+            self._pick_haptics_pad(key)
 
     def _haptics_pad_slot(self) -> int | None:
         """The slot of the pad chosen in the combo (None for the default entry or a pad that is not connected)."""
@@ -663,10 +672,7 @@ class ConsoleSettings(QDialog):
         return None
 
     def _haptics_enable(self) -> None:
-        """Enable the fields only for an own setting; the test button only for a connected pad; say when its sender is too old."""
-        own = self.hap_own.isChecked()
-        for w in (self.hap_on, self.hap_gain, self.spk_on, self.spk_gain):
-            w.setEnabled(own)
+        """Enable the test buttons only for a connected pad; say when its sender is too old."""
         slot = self._haptics_pad_slot()
         self.hap_test.setEnabled(slot is not None)
         self.spk_test.setEnabled(slot is not None)
@@ -677,16 +683,13 @@ class ConsoleSettings(QDialog):
                               if old else "")
 
     def _haptics_edited(self, *_args: Any) -> None:
-        """Record the edited fields for the current pad key, or drop the entry when it uses the default."""
+        """Record the edited fields under the current entry: for a pad without one this is the copy of the defaults plus the change."""
         if self._haptics_loading:
             return
         key = self._haptics_key
-        if key != DEFAULT_PAD and not self.hap_own.isChecked():
-            self._haptics.pop(key, None)
-            self._speaker.pop(key, None)
-        else:
-            self._haptics[key] = PadHaptics(enabled=self.hap_on.isChecked(), gain=self.hap_gain.value())
-            self._speaker[key] = PadSpeaker(enabled=self.spk_on.isChecked(), gain=self.spk_gain.value())
+        self._haptics[key] = PadHaptics(enabled=self.hap_on.isChecked(), gain=self.hap_gain.value())
+        self._speaker[key] = PadSpeaker(enabled=self.spk_on.isChecked(), gain=self.spk_gain.value())
+        self.hap_scope.show_state(True)
         self._haptics_enable()
 
     def _test_haptics(self) -> None:
@@ -713,11 +716,10 @@ class ConsoleSettings(QDialog):
                     field(_("Próg niskiej baterii"), self.low_pct),
                     label(_("Ten sam próg ma ostrzeżenie na karcie pada i powiadomienie z zasobnika. Ładujący się pad "
                             "nie miga."), "dim", wrap=True))
-        self.light_pad = Combo()
-        self.light_pad.changed.connect(self._pick_light_pad)
-        self.light_own = QCheckBox(_("Własne ustawienie dla tego pada (inaczej domyślne)"))
-        self.light_own.toggled.connect(self._light_edited)
-        self.light_mode = Combo([(k, _(v), "lightbar") for k, v in LIGHT_MODES.items()])
+        self.light_scope = PadScope()
+        self.light_scope.changed.connect(self._pick_light_pad)
+        self.light_scope.reset.connect(self._reset_light_pad)
+        self.light_mode =Combo([(k, _(v), "lightbar") for k, v in LIGHT_MODES.items()])
         self.light_mode.changed.connect(self._light_edited)
         self.light_color = button("", small=True)
         self.light_color.setToolTip(_("Wybierz kolor"))
@@ -736,10 +738,9 @@ class ConsoleSettings(QDialog):
                     label(_("Poza grą (pulpit, Steam, launchery - lista w Trybie konsoli) zawsze świeci ten kolor. W grze "
                             "może go zastąpić kolor gry, chyba że wyłączysz „Gra może zmienić kolor”. Miganie przy niskiej "
                             "baterii działa zawsze, a potwierdzenia (np. złoty błysk mastera) są na wierzchu."), "dim", wrap=True),
-                    field(_("Pad"), self.light_pad), self.light_own,
                     pair(field(_("Tryb"), self.light_mode), field(_("Kolor"), _wrap(colors))),
                     self.light_game, self.light_blink)
-        return [low, pad]
+        return [group("", self.light_scope), pad, low]
 
     def _wol_tab(self) -> list[QWidget | QLayout]:
         """The Wake-on-LAN tab: enable, the pad combination and hold time, and the MAC / broadcast addresses."""
@@ -775,44 +776,37 @@ class ConsoleSettings(QDialog):
     def _load_light(self, cfg: LightbarConfig) -> None:
         """Fill the Lightbar tab from a LightbarConfig.
 
-        The pad list (default, connected pads, remembered ones) and the first entry's values.
+        The pad list (connected pads, remembered ones) and the values of the entry that was shown last.
         """
         self.low_pct.setValue(cfg.low_pct)
         self._lights = dict(cfg.pads)
-        items: list[tuple] = [(DEFAULT_PAD, _("Domyślne - pady bez własnego ustawienia"), "lightbar")]    # (key, label[, icon])
-        known = {DEFAULT_PAD}
-        for i in range(C.NUM_PADS):
-            key = S.profile_key(i)
-            if key not in known and S.pad_id[i] and (S.alive[i] or S.want[i].is_set()):
-                known.add(key)
-                items.append((key, _("Pad {n}  ·  {key}").format(n=i + 1, key=key)))
-        items += [(k, _("{key}  (niepodłączony)").format(key=k)) for k in self._lights if k not in known]
-        self.light_pad.set_items(items)
-        # reopening the window keeps the pad that was picked last (it would look like its setting was lost otherwise)
-        keep = self._light_key if any(it[0] == self._light_key for it in items) else DEFAULT_PAD
-        self.light_pad.set_data(keep)
-        self._pick_light_pad(keep)
+        # reopening the window keeps the entry that was picked last (it would look like its setting was lost otherwise)
+        self.light_scope.set_pads(self._scope_items(self._lights), self._light_key)
+        self._pick_light_pad(self.light_scope.key())
 
     def _pick_light_pad(self, key: str) -> None:
-        """Show the lightbar settings of the chosen pad key (falling back to the default entry); loading does not count as an edit."""
+        """Show the lightbar settings of the chosen entry (a pad without its own one shows the defaults); loading is not an edit."""
         self._light_key = key
         light = self._lights.get(key) or self._lights.get(DEFAULT_PAD) or PadLight()
         self._loading = True
-        self.light_own.setVisible(key != DEFAULT_PAD)
-        self.light_own.setChecked(key == DEFAULT_PAD or key in self._lights)
         self.light_mode.set_data(light.mode)
         self.light_blink.setChecked(light.blink)
         self.light_game.setChecked(light.game)
         self._set_color(light.color, store=False)
         self._loading = False
+        self.light_scope.show_state(key in self._lights)
         self._light_enable()
 
+    def _reset_light_pad(self) -> None:
+        """Drop the chosen pad's own lightbar entry: it uses the defaults again."""
+        key = self._light_key
+        if key != DEFAULT_PAD:
+            self._lights.pop(key, None)
+            self._pick_light_pad(key)
+
     def _light_enable(self) -> None:
-        """Enable the lightbar fields only for an own setting; the colour only in the solid mode."""
-        own = self.light_own.isChecked()
-        for w in (self.light_mode, self.light_color, self.light_blink, self.light_game):
-            w.setEnabled(own)
-        self.light_color.setEnabled(own and self.light_mode.currentData() == "solid")
+        """The colour button works only in the solid mode."""
+        self.light_color.setEnabled(self.light_mode.currentData() == "solid")
 
     def _set_color(self, hex_color: str, store: bool = True) -> None:
         """Set the chosen colour (empty = the default) and paint the button with it; store=False skips recording the edit."""
@@ -833,15 +827,13 @@ class ConsoleSettings(QDialog):
             self._set_color(c.name())
 
     def _light_edited(self, *_args: Any) -> None:
-        """Record the edited fields for the current pad key (an own setting), or drop the entry when it uses the default."""
+        """Record the edited fields under the current entry: for a pad without one this is the copy of the defaults plus the change."""
         if getattr(self, "_loading", False):
             return
         key = self._light_key
-        if key != DEFAULT_PAD and not self.light_own.isChecked():
-            self._lights.pop(key, None)
-        else:
-            self._lights[key] = PadLight(mode=self.light_mode.currentData(), color=self._color,
-                                         blink=self.light_blink.isChecked(), game=self.light_game.isChecked())
+        self._lights[key] = PadLight(mode=self.light_mode.currentData(), color=self._color,
+                                     blink=self.light_blink.isChecked(), game=self.light_game.isChecked())
+        self.light_scope.show_state(True)
         self._light_enable()
 
     # ---------- Wake-on-LAN ----------

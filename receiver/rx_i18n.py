@@ -770,8 +770,15 @@ EN: Final[dict[str, str]] = {
     "{pad}: program na PC ustawił kolor lightbara {hex} - pominięty (zawsze kolor z ustawień)":
         "{pad}: a program on the PC set the lightbar colour {hex} - ignored (always the colour from settings)",
     "Pad": "Pad",
-    "Domyślne - pady bez własnego ustawienia": "Default - pads without their own setting",
-    "Własne ustawienie dla tego pada (inaczej domyślne)": "Own setting for this pad (otherwise the default)",
+    "Ustawienia domyślne": "Default settings",
+    "Włączone: edytujesz ustawienia, które dostają pady bez własnego. Wyłączone: edytujesz wybrany pad.":
+        "On: you edit the settings that pads without their own one get. Off: you edit the chosen pad.",
+    "Przywróć ustawienia domyślne dla tego pada": "Use the default settings for this pad again",
+    "Edytujesz ustawienia domyślne: dostają je pady bez własnego ustawienia.":
+        "You are editing the default settings: pads without their own setting get them.",
+    "Ten pad ma własne ustawienie.": "This pad has its own setting.",
+    "Ten pad używa ustawień domyślnych. Zmiana poniżej da mu własne ustawienie.":
+        "This pad uses the default settings. Changing anything below gives it its own setting.",
     "Kolor": "Colour",
     "Stały kolor": "Solid colour",
     "Kolor wg stanu baterii": "Colour by battery level",

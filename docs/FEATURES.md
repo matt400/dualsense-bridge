@@ -204,8 +204,8 @@
   - **Mouse:** sensitivity and touchpad click stabilisation;
   - **Master:** the master pad, what only it is allowed, action buttons. Mouse and master take effect immediately,
     without a restart (`settings.json`);
-  - **Lightbar:** colour per pad / default, mode, blinking, low battery threshold (immediately);
-  - **Haptics and speaker:** game HD haptics and the pad's speaker per pad - enable, strength / volume, test (strength immediately, enable on the pad's reconnect);
+  - **Lightbar:** colour per pad / default, mode, blinking, low battery threshold (immediately). The pad list sits at the top of the tab with a **Default settings** checkbox: on = you edit what pads without their own setting get, off = you edit the chosen pad (its first change makes a copy of the defaults; the reset button next to the list drops the pad's own setting);
+  - **Haptics and speaker:** game HD haptics and the pad's speaker per pad (same pad bar at the top) - enable, strength / volume, test (strength immediately, enable on the pad's reconnect);
   - **Wake-on-LAN:** enable, the button paired with PS, hold time, MAC and broadcast (empty = automatic);
   - **Pads:** which pad cards the window shows - dynamic (only connected) or a fixed number of slots (1-4, takes effect
     immediately; the slots themselves are set by `pads` in `receiver.toml`, 4 by default) - plus the virtual pad
