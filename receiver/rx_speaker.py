@@ -61,7 +61,9 @@ SILENCE_END_S: Final = 0.15                 # digital silence this long ends the
 STALL_S: Final = 0.12                       # no audio from HIDMaestro this long while streaming = the game stopped rendering
 IDLE_WAIT_S: Final = 1.0                    # the thread's longest sleep (a write wakes it at once)
 WAKE_BYTES: Final = 1536                    # an idle link is woken once this much audio (4 ms) waits: windows of silence stay cheap
-HOST_FLOOR_DB: Final = -90.0                # the Windows slider at or below this is silence (a full-scale sample would shrink to 1 LSB)
+HOST_MIN_DB: Final = -100.0                 # the endpoint's volume range (profile dualsense-composite) is -100 .. 0 dB
+HOST_RANGE_DB: Final = 40.0                 # the span the slider really covers: its quietest audible step plays 40 dB down (host_factor)
+HOST_MUTE_POS: Final = 0.005                # a slider position this low or lower (the minimum, 0 %) is silence
 KNEE: Final = 24576                         # the soft clip is linear up to 75 % of the int16 full scale ...
 S16_MAX: Final = 32767
 SPAN: Final = S16_MAX - KNEE                # ... then bends towards 32767 (tanh)
@@ -104,6 +106,20 @@ def mix_eq(left: Sequence[int], right: Sequence[int], gain: float, eq: rx_eq.Equ
     k = gain / 2
     x = eq.process([(a + b) * k for a, b in zip(left, right, strict=True)])
     return array("h", [int(v) if -KNEE <= v <= KNEE else _bend(v) for v in x])
+
+
+def host_factor(volume_db: float) -> float:
+    """The factor for a Windows volume write (the UAC value in dB, -100 .. 0): a curve, not the dB taken literally.
+
+    The endpoint declares a 100 dB range and Windows seems to spread its slider linearly over all of it (8 % was silent when the dB
+    were taken literally, which fits about -92 dB; the log line of set_host_volume shows what really arrives). Literally, 50 % is
+    a signal at 0.3 % of the full scale and 8 % is below one LSB: only the top of the slider would be audible. The pad's tiny
+    speaker needs the slider to cover the span that can be heard, so the position p (0 = the minimum, 1 = 0 dB) is mapped
+    linearly in dB onto HOST_RANGE_DB: 100 % = full level, 50 % = -20 dB, 8 % = -37 dB, and only the very bottom
+    (p <= HOST_MUTE_POS) is silent. The curve is monotonic and continuous, so a drag has no steps.
+    """
+    pos = min(1.0, (volume_db - HOST_MIN_DB) / -HOST_MIN_DB)
+    return 0.0 if pos <= HOST_MUTE_POS else 10 ** (-HOST_RANGE_DB * (1.0 - pos) / 20)
 
 
 def pcm_bytes(samples: array[int]) -> bytes:
@@ -254,11 +270,11 @@ class SpeakerLink:
         """The host wrote a volume or mute control of the pad's audio endpoint (HIDMaestro's ControlChanged, its audio event thread).
 
         Windows leaves the PCM of an endpoint that has a hardware volume untouched and sends the slider as a UAC write instead, so
-        the speaker applies it itself: a device attenuates by the dB it is told (0 dB = full, the profile's range is -100 .. 0 dB),
-        mute is silence. Only the speaker unit counts, and only the speaker: the haptics are the game's own signal and keep
-        their strength setting. Until the first write the level is full (the endpoint reports -100 dB as its initial value, which
-        must not make the speaker silent before anybody touched a slider). The next frame uses the new factor; the state is
-        two plain attributes, so the event thread and the link's thread need no lock.
+        the speaker applies it itself: the volume goes through host_factor (a curve over the audible span), mute is silence. Only
+        the speaker unit counts, and only the speaker: the haptics are the game's own signal and keep their strength setting.
+        Until the first write the level is full (the endpoint reports its minimum as the initial value, which must not make the
+        speaker silent before anybody touched a slider). The next frame uses the new factor; the state is two plain attributes,
+        so the event thread and the link's thread need no lock.
         """
         if function != "speaker":
             return
@@ -266,7 +282,9 @@ class SpeakerLink:
             self._host_muted = muted
         else:
             self._host_db = volume_db
-        self.host_gain = 0.0 if self._host_muted or self._host_db <= HOST_FLOOR_DB else 10 ** (self._host_db / 20)
+        self.host_gain = 0.0 if self._host_muted else host_factor(self._host_db)
+        if not is_mute:                                 # the numbers Windows really sends: what to look at when the curve needs tuning
+            print(f"Controller {rx_swap.route(self.idx)}: speaker volume {volume_db:.0f} dB -> x{self.host_gain:.3f}")
 
     def ensure_thread(self) -> None:
         """Start the link's thread (once; the thread sleeps while nothing plays)."""
