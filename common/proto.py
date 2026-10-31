@@ -74,6 +74,11 @@ unknown length, so a variant only goes to a side that is known to understand it)
                          frame (10 ms frames, wraps at 2**32), SPK_* flags, SPK_FRAME = 480 samples of 48 kHz mono, signed 16-bit
                          little endian (the sender encodes them to Opus itself). Not repeated. Only to a sender with CAP_SPEAKER;
                          an older one rejects the unknown length
+  leds   (type 6) "3B"   PC -> sender (idx = pad slot): what the game set on the virtual DualSense besides motors and colour (v15+) -
+                         LEDS_* flags (which of the two values is valid), the mute button LED (0 off, 1 on, 2 pulsing), the player
+                         LEDs under the lightbar (5 bits, the middle LED is 0x04). Only to a v15+ sender; an older one rejects the
+                         unknown length. The mute button itself travels in the state packet: MUTE_BIT of the button mask (the sender
+                         sets it for a moment on every press; an older receiver masks the bit off)
   cfgset (type 10) "BBHd" PC -> sender (idx = 255): operation CFG_GET (answer: a cfgval for every setting) / CFG_SET (change the setting)
                          / CFG_RESET (drop the change: back to the value from sender.toml; CFG_ALL = all of them), the id of the
                          setting (position in cfgspec.SPECS), a reference that the answer repeats, the new value as a float64 (a bool
@@ -191,19 +196,20 @@ T_BTCTRL = 0x209                                                    # the sender
 T_BTLINK = 0x30C                                                    # the radio link of a connected pad: RSSI, link quality
 T_HAPT = 0x30A                                                      # a chunk of HD haptics for the pad (PC -> sender, v13+)
 T_SPK = 0x40A                                                       # 10 ms of sound for the pad's speaker (PC -> sender, v14+)
-T_CFGSET = 0x50A                                                    # read / change / reset a sender setting (PC -> sender, v15+)
-T_CFGVAL = 0x10E                                                    # a sender setting: the value, the file's value, the result (v15+)
+T_CFGSET = 0x50A                                                    # read / change / reset a sender setting (PC -> sender, v16+)
+T_CFGVAL = 0x10E                                                    # a sender setting: the value, the file's value, the result (v16+)
+T_LEDS = 0x106                                                      # mute button LED + player LEDs from the game (PC -> sender, v15+)
 WIRE: Final[dict[int, int]] = {
     T_STATE2: T_STATE, T_PONG2: T_PONG, T_SCFG: T_CMD, T_CALRES: T_INFO, T_BUILD2: T_BUILD, T_TRIG2: T_TRIG,
     T_BTDEV: T_IDENT, T_BTSTATE: T_VERSION, T_BTCMD: T_CMD, T_BTCTRL: T_IDENT, T_TRIG3: T_TRIG,
-    T_BUILD3: T_BUILD, T_BTLINK: T_VERSION, T_HAPT: T_CMD, T_SPK: T_CMD, T_CFGSET: T_CMD, T_CFGVAL: T_UPDMSG,
+    T_BUILD3: T_BUILD, T_BTLINK: T_VERSION, T_HAPT: T_CMD, T_SPK: T_CMD, T_LEDS: T_FB, T_CFGSET: T_CMD, T_CFGVAL: T_UPDMSG,
 }
 FRESH_EXEMPT = frozenset({T_PING})
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Capabilities and limits announced in the version packet, trigger effects.
 # ---------------------------------------------------------------------------------------------------------------------
-SENDER_VERSION: Final = 15
+SENDER_VERSION: Final = 16
 RUMBLE_EVDEV, RUMBLE_HIDRAW, CAP_TRIGGERS = 1, 2, 4     # bits of the version packet (CAP_TRIGGERS: trigger resistance works)
 CAP_TRIG_FX: Final = 8                                  # a bit of the version packet: the sender knows trig2 (click, vibration)
 CAP_CALIB: Final = 16                                   # a bit of the version packet: CMD_GYRO_CAL and CMD_RAW_STICKS (v9+)
@@ -220,6 +226,10 @@ SPK_FRAME: Final = 480                                  # ... one frame = 480 sa
 SPK_BYTES: Final = 2 * SPK_FRAME                        # ... = 960 B
 SPK_DATA_AT: Final = 5                                  # offset of the samples in the spk body (after the u32 counter and the flags)
 SPK_START, SPK_END = 1, 2                               # spk flags: the first frame of a stream / the last one
+LEDS_SENDER: Final = 15                                 # from this sender version the leds packet is understood (no free ways bit)
+LEDS_MUTE, LEDS_PLAYER = 1, 2                           # leds flags: the mute LED value / the player LEDs value is valid
+MUTE_OFF, MUTE_ON, MUTE_PULSE = range(3)                # the pad's mute button LED: off, on, pulsing (the output report's byte)
+PLAYER_LEDS_MASK: Final = 0x1F                          # the 5 player LEDs under the lightbar, one bit each
 CFG_GET, CFG_SET, CFG_RESET = range(3)                  # cfgset operations: read, change a setting, drop the change (back to sender.toml)
 CFG_ALL: Final = 255                                    # cfgset / cfgval key id: every setting (CFG_GET, CFG_RESET) or none (a refusal)
 # cfgval result: applied now, saved but counts later (the next stream / pad connection), refused: the value is not allowed, an unknown
@@ -338,6 +348,7 @@ BODY: Final[dict[int, struct.Struct]] = {
     T_BTLINK: struct.Struct("!6sbBBB"),         # MAC, RSSI [dBm], link quality 0-255, BTL_*, N of hciN
     T_HAPT: struct.Struct(f"!IB{HAPT_CHUNK}s"),  # the first frame's number (3 kHz), HAPT_* flags, HAPT_FRAMES stereo frames (s8)
     T_SPK: struct.Struct(f"!IB{SPK_BYTES}s"),    # the frame's number (10 ms), SPK_* flags, SPK_FRAME mono samples (s16 little endian)
+    T_LEDS: struct.Struct("!3B"),                # LEDS_* flags, the mute LED MUTE_*, the player LEDs (5 bits)
     T_CFGSET: struct.Struct("!BBHd"),           # operation CFG_*, setting id (cfgspec.SPECS) or CFG_ALL, reference, the value as float64
     T_CFGVAL: struct.Struct("!BBHBdd"),         # setting id, result CFGR_*, request reference, CFGF_* flags, value, sender.toml value
 }
@@ -358,6 +369,9 @@ BTN_SELECT, BTN_START, BTN_MODE = 314, 315, 316                         # create
 BTN_THUMBL, BTN_THUMBR = 317, 318                                       # L3, R3
 PAD_KEYS: Final = (BTN_SOUTH, BTN_EAST, BTN_NORTH, BTN_WEST, BTN_TL, BTN_TR, BTN_SELECT, BTN_START, BTN_MODE, BTN_THUMBL, BTN_THUMBR)
 KEY_BIT: Final = {code: 1 << bit for bit, code in enumerate(PAD_KEYS)}
+# The mute button is not an evdev key (hid-playstation toggles its own state and drives the LED, no input event), so it is not in
+# PAD_KEYS. The sender sets this bit above the real buttons for a moment on each press (v15+); a receiver masks unknown bits off.
+MUTE_BIT: Final = 1 << len(PAD_KEYS)
 
 _Number = TypeVar("_Number", int, float)
 

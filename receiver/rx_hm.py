@@ -472,11 +472,14 @@ OUT_BASE = (0, 1, 2, 3)                       # validity flags 0 / 1, motors - a
 OUT_RGB = (44, 45, 46)                        # lightbar colour - only with flag 1 bit 2
 R2_AT, L2_AT = 10, 21                         # trigger effects (TRIG_RAW_LEN B each) - only with flag 0 bit 2 / bit 3
 R2_BYTES, L2_BYTES = range(R2_AT, R2_AT + TRIG_RAW_LEN), range(L2_AT, L2_AT + TRIG_RAW_LEN)
+MUTE_LED_AT, PLAYER_LEDS_AT = 8, 43           # mute_button_led (only with flag 1 bit 0), player_leds (only with flag 1 bit 4)
+FLAG1_MUTE_LED, FLAG1_PLAYER_LEDS = 0x01, 0x10
 
 
 def out_used(f0: int, f1: int) -> tuple[int, ...]:
-    """The output report bytes parse_output needs for these validity flags (the rest is not read)."""
-    return ((*OUT_RGB,) if f1 & 0x04 else ()) + (tuple(R2_BYTES) if f0 & 0x04 else ()) + (tuple(L2_BYTES) if f0 & 0x08 else ())
+    """The output report bytes parse_output and parse_leds need for these validity flags (the rest is not read)."""
+    return (((*OUT_RGB,) if f1 & 0x04 else ()) + (tuple(R2_BYTES) if f0 & 0x04 else ()) + (tuple(L2_BYTES) if f0 & 0x08 else ())
+            + ((MUTE_LED_AT,) if f1 & FLAG1_MUTE_LED else ()) + ((PLAYER_LEDS_AT,) if f1 & FLAG1_PLAYER_LEDS else ()))
 
 
 ParsedOutput: TypeAlias = tuple[
@@ -500,6 +503,20 @@ def parse_output(report_id: int, data: Sequence[int]) -> ParsedOutput:
     trig = ((bytes(data[L2_AT:L2_AT + TRIG_RAW_LEN]) if f0 & 0x08 else None,
              bytes(data[R2_AT:R2_AT + TRIG_RAW_LEN]) if f0 & 0x04 else None) if f0 & 0x0C else None)
     return motors, rgb, trig
+
+
+def parse_leds(report_id: int, data: Sequence[int]) -> tuple[int | None, int | None] | None:
+    """A DualSense output report (without the ID byte) -> ``(mute LED, player LEDs)`` the game set, or None when it sets neither.
+
+    Bit 0 of flag 1 = the mute button LED (byte 8: 0 off, 1 on, 2 pulsing), bit 4 of flag 1 = the player LEDs (byte 43, 5 bits);
+    a value without its flag is None (unchanged).
+    """
+    if report_id != OUT_REPORT or len(data) < OUT_LEN:
+        return None
+    f1 = data[1]
+    mute = data[MUTE_LED_AT] if f1 & FLAG1_MUTE_LED else None
+    player = data[PLAYER_LEDS_AT] if f1 & FLAG1_PLAYER_LEDS else None
+    return (mute, player) if mute is not None or player is not None else None
 
 
 class Pad:
@@ -549,8 +566,12 @@ class Pad:
                 data[k] = d[k]
             for k in out_used(data[0], data[1]):        # triggers (22 B) only when the game sets them in this report
                 data[k] = d[k]
-            motors, rgb, trig = parse_output(int(pkt.ReportId), data)
-            if motors is not None or rgb is not None or trig is not None:
+            report_id = int(pkt.ReportId)
+            motors, rgb, trig = parse_output(report_id, data)
+            leds = parse_leds(report_id, data)
+            if leds is not None:
+                self.on_fb(motors, rgb, trig, leds)
+            elif motors is not None or rgb is not None or trig is not None:
                 self.on_fb(motors, rgb, trig)
         except Exception:  # noqa: BLE001, S110 - the .NET event thread: an unparsable report must not raise into HIDMaestro
             pass

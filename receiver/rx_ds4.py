@@ -313,9 +313,10 @@ def create_pad(idx: int) -> tuple[Any, str]:
     """
     hm = hm_backend()
     if hm is not None:
-        def on_fb(motors: tuple[int, int] | None, rgb: Sequence[int] | None, trig: Any = None) -> None:
+        def on_fb(motors: tuple[int, int] | None, rgb: Sequence[int] | None, trig: Any = None,
+                  leds: tuple[int | None, int | None] | None = None) -> None:
             large, small = motors or (None, None)
-            F.game(idx, large, small, rgb=rgb, trig=trig)
+            F.game(idx, large, small, rgb=rgb, trig=trig, leds=leds)
         try:
             pad = rx_haptics.create_composite(hm, idx, on_fb) if rx_haptics.composite_wanted(idx) else None
             return (pad if pad is not None else hm.create(idx, on_fb)), "hm"

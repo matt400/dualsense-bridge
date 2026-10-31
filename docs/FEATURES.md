@@ -240,7 +240,7 @@
     mode never lists it). Turning it on or off applies when the pad reconnects; if the composite pad cannot be created
     the pad works as before and the event log says why (no new attempt for 10 minutes or until the setting changes);
   - the sender must announce haptics (v13+, update it from the window); "Haptics" is also a master-only feature.
-- **Pad speaker (experimental)** (Settings → Haptics and speaker), opt-in, separately for each pad (MAC) or as the default; needs
+- **Pad speaker** (Settings → Haptics and speaker), opt-in, separately for each pad (MAC) or as the default; needs
   the HIDMaestro backend, sender v14+ and libopus on the sender (`libopus0` / `opus`):
   - the game's sound from the "Wireless Controller" output (channels 1-2) is mixed to mono and resampled 48 -> 45 kHz (the pad
     plays each frame over its 10.667 ms report period, so the sound keeps its pitch and tempo); the sender encodes it with Opus
@@ -251,6 +251,18 @@
   - it uses the same composite pad and audio device as haptics, so the notes above apply (driver, default output,
     applies on reconnect). Without libopus the sender does not announce the speaker and haptics work as before;
   - "Speaker" is a master-only feature. Headphone jack and microphone are not supported.
+- **Mute button and LEDs** (no setting, always on; sender v15+):
+  - the pad's **mute button** reaches the PC as the mute button of the virtual DualSense (HIDMaestro backend; the DS4 backend has no
+    such button). The kernel driver does not report that button as an input event, it only toggles its own "muted" state and shows
+    it on the pad's LED (`*:micmute` in sysfs). The sender watches that LED and turns every change into a short press (about
+    80 ms). It cannot be remapped and does not take part in shortcuts. Without the kernel LED (an older kernel) the sender logs
+    "mute button not available" and nothing else changes;
+  - the **mute LED** and the **player LEDs** (the five LEDs under the lightbar) follow what a game or program sets on the virtual
+    DualSense (for example a voice chat that lights the mute LED), sent to the pad in the same HID report as the rumble and resent
+    every 5 s. Until a program sets one of them the kernel driver keeps it: the mute LED still follows the pad's own toggle, the
+    player LEDs show the driver's number. The kernel also toggles its own mute state on every press, so a program that wants the LED
+    to show something else sets it after the press has arrived;
+  - the pad's **microphone** is not supported (its audio is not sent to the PC).
 - **Wake-on-LAN from the pad** (Settings → Wake-on-LAN): when the PC doesn't respond (off / asleep), **PS + Options
   held ~1 s** (button and time configurable) - the sender sends a magic packet. With the PC running the same combo goes
   to the receiver as usual (e.g. master pause), so nothing collides; long PS alone isn't suitable (that's how the pad

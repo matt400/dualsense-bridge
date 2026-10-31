@@ -4,13 +4,15 @@
 
 > **Work in progress.** This is not a stable program yet: expect bugs and breaking changes.
 
-DualSense bridge sends input from a PS5 pad (DualSense) to a Windows PC over the local network. On the PC the pad
-shows up as a regular DualSense (with HIDMaestro) or a PS4 pad (with ViGEmBus): buttons, sticks, gyro, touchpad, and
-in the other direction rumble and the lightbar.
+DualSense bridge is a UDP bridge for the PS5 pad (DualSense): it carries the pad to a Windows PC over the local network.
+On the PC the pad shows up as a regular DualSense (with HIDMaestro) or a PS4 pad (with ViGEmBus): buttons, sticks, gyro,
+touchpad, and in the other direction rumble, the lightbar, adaptive triggers, haptics and the speaker.
 
 The pad connects over Bluetooth to the **sender**, a small Linux device nearby, e.g. a Raspberry Pi or an old phone
-running postmarketOS. The sender forwards every change of the pad's state to the PC immediately. This way the PC can
-sit in another room while you play from the couch in front of the TV.
+running postmarketOS. The sender forwards every change of the pad's state to the PC immediately.
+
+I use it together with an HDMI 2.1 AOC cable: picture and sound go from the PC to the TV over the cable, the pad goes
+through this bridge. This way the PC can sit in another room while you play from the couch in front of the TV.
 
 The PC has a window that controls everything, including from the pad itself:
 - switching picture and sound to the TV with a single shortcut (console mode),
@@ -54,11 +56,11 @@ What works from the PS5 pad (DualSense) and what is still missing.
 | Adaptive triggers | ✅ | resistance, click, vibration; from the profile or from the game (HIDMaestro) |
 | HD haptics (real ones, not 2 motors) | ✅ | opt-in, from the game's audio (HIDMaestro composite pad), per pad; needs sender v13+ |
 | Pairing and switching the pad off | ✅ | from the PC window, no need to walk to the sender |
-| Mute button and its LED | ❌ | |
+| Mute button and its LED | ✅ | the button reaches the PC as the DualSense's mute button, the LED follows what the game / program sets; needs sender v15+ |
 | Microphone | ❌ | |
-| Speaker | ✅ | experimental, opt-in, the game's sound plays on the pad's speaker over Bluetooth (Opus); needs sender v14+ with libopus, master pad only |
+| Speaker | ✅ | opt-in, the game's sound plays on the pad's speaker over Bluetooth (Opus); needs sender v14+ with libopus, master pad only |
 | Headphone jack | ❌ | |
-| Player LEDs (under the lightbar) | ❌ | |
+| Player LEDs (under the lightbar) | ✅ | follow what the game sets; needs sender v15+ |
 | DualSense Edge (back buttons, Fn) | ❌ | |
 
 ## Installation

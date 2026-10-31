@@ -15,8 +15,8 @@ import sender_config
 import sender_events as events
 import sender_state as state
 from proto import (BODY, E_NET_DOWN, E_NO_RECEIVER, HAPT_CHUNK, HAPT_DATA_AT, NS_PER_MS, RTT_NONE, SCFG_BATT, SPK_BYTES, SPK_DATA_AT,
-                   UINT32_MASK, VER3, VER_SHIFT, Codec, EpochClock, SeqFilter, T_BTCMD, T_CFGSET, T_CMD, T_FB, T_HAPT, T_PING, T_PONG,
-                   T_PONG2, T_SCFG, T_SPK, T_TRIG, T_TRIG2, T_TRIG3)
+                   UINT32_MASK, VER3, VER_SHIFT, Codec, EpochClock, SeqFilter, T_BTCMD, T_CFGSET, T_CMD, T_FB, T_HAPT, T_LEDS, T_PING,
+                   T_PONG, T_PONG2, T_SCFG, T_SPK, T_TRIG, T_TRIG2, T_TRIG3)
 from sender_config import C
 
 # the packet header is 4 bytes (see proto.HDR); the body of every received packet is unpacked right after it
@@ -58,6 +58,7 @@ fb_filter = SeqFilter(1.0)            # with a time window: a receiver restart (
 on_feedback: Callable[[int, tuple[int, int, int, int, int]], None] | None = None   # (idx, (small, large, r, g, b)); set in main
 on_command: Callable[..., None] | None = None       # callback(idx, cmd, arg) set in main
 on_triggers: Callable[[int, tuple[Any, ...]], None] | None = None   # callback(idx, trig2 values (12) or trig (4)) set in main
+on_leds: Callable[[int, tuple[int, int, int]], None] | None = None   # callback(idx, (LEDS_* flags, mute LED, player LEDs)) set in main
 on_haptics: Callable[[int, int, int, memoryview], None] | None = None   # callback(idx, first frame, HAPT_* flags, samples) set in main
 on_speaker: Callable[[int, int, int, memoryview], None] | None = None   # callback(idx, frame, SPK_* flags, samples) set in main
 on_scfg: Callable[..., None] | None = None          # callback(flags, mac, broadcast, button, hold ms) set in main
@@ -262,6 +263,16 @@ def _on_scfg(sq: int, data: bytes) -> None:
             on_scfg(*values)
 
 
+def _on_setting(t: int, idx: int, sq: int, data: bytes, now: float) -> None:
+    """Handle the packets that set something on the sender: the game's LEDs (leds) and a setting from the window (cfgset)."""
+    if t == T_LEDS:
+        if fb_filter.fresh(("leds", idx), sq, now) and on_leds is not None:
+            on_leds(idx, BODY[T_LEDS].unpack_from(data, HEADER_LEN))
+    elif fb_filter.fresh(("cfg",), sq, now) and on_cfg is not None:
+        # authenticated = v3 (HMAC + freshness token, so no replay) AND a key: v3 cannot be parsed without one, the check is explicit
+        on_cfg(bool(codec.key) and data[0] >> VER_SHIFT == VER3, *BODY[T_CFGSET].unpack_from(data, HEADER_LEN))
+
+
 def _on_control(t: int, idx: int, sq: int, data: bytes) -> None:
     """Handle feedback, commands, trigger settings, haptics chunks, speaker frames, settings and Bluetooth requests.
 
@@ -278,6 +289,8 @@ def _on_control(t: int, idx: int, sq: int, data: bytes) -> None:
     elif t in (T_TRIG, T_TRIG2, T_TRIG3):   # trig3: + game effects (v11+), trig2: profile (v8+), trig: resistance only
         if fb_filter.fresh(("trig", idx), sq, now) and on_triggers is not None:
             on_triggers(idx, BODY[t].unpack_from(data, HEADER_LEN))
+    elif t in (T_LEDS, T_CFGSET):           # the mute LED / player LEDs from the game (v15+), a setting from the window (v16+)
+        _on_setting(t, idx, sq, data, now)
     elif t == T_BTCMD and fb_filter.fresh(("bt",), sq, now) and on_bt is not None:   # phone Bluetooth from the window (v10+)
         on_bt(*BODY[T_BTCMD].unpack_from(data, HEADER_LEN))
     elif t == T_HAPT and fb_filter.fresh(("hapt", idx), sq, now) and on_haptics is not None:   # HD haptics (v13+): no copy of the samples
@@ -286,9 +299,6 @@ def _on_control(t: int, idx: int, sq: int, data: bytes) -> None:
     elif t == T_SPK and fb_filter.fresh(("spk", idx), sq, now) and on_speaker is not None:   # the speaker (v14+): no copy either
         frame, flags = HAPT_HEAD.unpack_from(data, HEADER_LEN)
         on_speaker(idx, frame, flags, memoryview(data)[SPK_AT:SPK_AT + SPK_BYTES])
-    elif t == T_CFGSET and fb_filter.fresh(("cfg",), sq, now) and on_cfg is not None:   # a setting from the window (v15+)
-        # authenticated = v3 (HMAC + freshness token, so no replay) AND a key: v3 cannot be parsed without one, the check is explicit
-        on_cfg(bool(codec.key) and data[0] >> VER_SHIFT == VER3, *BODY[T_CFGSET].unpack_from(data, HEADER_LEN))
 
 
 def _dispatch(t: int, idx: int, sq: int, data: bytes) -> None:
