@@ -56,6 +56,31 @@ win.on_part("cross")
 assert win.part is None, "w teście klik w część pada nie otwiera remapowania"
 ok("Test: panel zamiast edycji, blokada tylko wybranego pada (przełącznik), klik w pad nie remapuje")
 
+# ---------- touchpad jako mysz: kursor działa, przycisk "Testuj touchpad" go przechwytuje ----------
+import rx_testmode as TM
+S.mouse_mode[0] = False; panel.refresh(); pump()
+assert not panel.tp_box.isVisible(), "dotyk DS4: blok touchpada ukryty (nic do przechwytywania)"
+S.mouse_mode[0] = True; panel.refresh(); pump()
+assert panel.tp_box.isVisible() and panel.tp_btn.isEnabled() and panel.tp_btn.text() == "Testuj touchpad"
+assert "steruje teraz kursorem" in panel.tp_hint.text()
+QTest.mouseClick(panel.tp_btn, Qt.MouseButton.LeftButton); pump()
+assert TM.capture_slot == 0 and "Zakończ test touchpada" in panel.tp_btn.text() and "Kursor stoi" in panel.tp_hint.text()
+QTest.mouseClick(panel.tp_btn, Qt.MouseButton.LeftButton); pump()
+assert TM.capture_slot is None and panel.tp_btn.text() == "Testuj touchpad", "przycisk kończy przechwyt"
+panel.toggle_touchpad(); state(0, mask=BIT[316]); state(0); panel.refresh()
+assert TM.capture_slot is None and panel.tp_btn.text() == "Testuj touchpad", "PS na padzie kończy przechwyt, przycisk wraca"
+panel.toggle_touchpad(); win.select_pad(1); pump()
+assert TM.capture_slot is None, "zmiana testowanego pada kończy przechwyt"
+win.select_pad(0); pump()
+panel.toggle_touchpad(); assert TM.capture_slot == 0
+other = QWidget(); other.show(); activate(other)
+assert TM.capture_slot is None, "okno w tle (gra) - touchpad wraca do myszy"
+other.close(); activate(win)
+S.mouse_mode[0] = False; panel.refresh(); pump()
+assert not panel.tp_box.isVisible()
+S.mouse_mode[0] = True; panel.refresh()                              # slot 0 jest domyślnie myszą - dalsze sekcje to zakładają
+ok("Test: blok touchpada tylko w trybie myszy, przycisk włącza / wyłącza przechwyt, kończy go też PS, zmiana pada i utrata fokusu")
+
 # ---------- na żywo: dotyk, spusty, ruch, gałki ----------
 state(0, mask=BIT[304], lt=120, rt=255, sticks=(131, 126, 128, 128), gyro=(2048, -1024, 0))
 feed(T_TOUCH, 0, 1, 1, 960, 470, 1, 2, 300, 100)

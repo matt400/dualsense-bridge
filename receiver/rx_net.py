@@ -558,6 +558,7 @@ def _on_touch(i: int, data: bytes) -> None:
     if v == S.last_touch[i]:
         return
     S.last_touch[i] = v
+    testmode.touched(i)                 # a touchpad capture of the Test view ends after a while without a touch
     touch = ((v[0] & 1, v[1], min(v[2], TOUCH_MAX_X), min(v[3], TOUCH_MAX_Y)),
              (v[4] & 1, v[5], min(v[6], TOUCH_MAX_X), min(v[7], TOUCH_MAX_Y)))
     with S.lock:
@@ -576,9 +577,13 @@ def _on_click(i: int, data: bytes) -> None:
         return
     S.tp_down[i] = down
     S.states[i]["rtp"] = down          # the Test view: the click is visible in the mouse mode and under the lock too
+    testmode.touched(i)
     if S.states[i]["blocked"]:
         S.swallow[i] = False
-        if not S.mouse_mode[i]:
+        if S.mouse_mode[i]:
+            if not testmode.capturing(i):      # the Test view: the touchpad mouse still operates the window,
+                mouse.mouse_button(i, down)    # only the "Test touchpad" capture freezes it
+        else:
             # the live state also under the lock (the game gets a neutral report anyway): a click held before the test
             # and released during it stayed "pressed" in the state - after the test the game saw a pressed touchpad
             # until it was clicked once more (the sender's repeats are rejected by the comparison with tp_down)
@@ -601,7 +606,8 @@ def _on_click(i: int, data: bytes) -> None:
         S.swallow[i] = False
         return
     if S.mouse_mode[i]:
-        mouse.mouse_button(i, down)
+        if not testmode.capturing(i):          # the Test view (lock off): a captured touchpad does not click
+            mouse.mouse_button(i, down)
     else:
         with S.lock:
             S.states[i]["tp"] = bool(down)
@@ -610,8 +616,15 @@ def _on_click(i: int, data: bytes) -> None:
 
 
 def _on_mouse(i: int, data: bytes) -> None:
-    """Relative pointer movement from the touchpad (only meaningful in the mouse mode, never during the Test view)."""
-    if S.mouse_mode[i] and not S.states[i]["blocked"]:
+    """Relative pointer movement from the touchpad (only meaningful in the mouse mode).
+
+    It works in the Test view too, so the window can be operated with the master's touchpad; only the Test panel's
+    "Test touchpad" capture freezes the cursor (the activity still keeps that capture alive).
+    """
+    if S.mouse_mode[i]:
+        if testmode.capturing(i):
+            testmode.touched(i)
+            return
         dx, dy, fl = ST_MOUSE.unpack_from(data, 4)
         mouse.mouse_rel(i, dx, dy, fl)
 

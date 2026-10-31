@@ -94,10 +94,53 @@ store.set_live(A, {"gyro": {"mode": "mouse"}}); S.reload_profile(0)
 state(0, gyro=(0, 9000, 0))
 assert S.states[0]["gyro_vel"] is None and not S.states[0]["gyro_on"], "gyro-mysz nie rusza kursorem"
 S.mouse_mode[0] = True
-calls.clear()
+import rxenv; mcalls = rxenv.calls                                  # `calls` testu to inna lista (linia 27)
+mcalls.clear()
+mv = lambda: [c for c in mcalls if c[0] == "m"]                     # (m, flagi SendInput, dx, dy, data): 1 = ruch, 2 = LDOWN, 4 = LUP
 feed(T_MOUSE, 0, 30, 5, 0); feed(T_CLICK, 0, 1)
-assert not [c for c in calls if c[0] in ("m", "c")] and S.states[0]["rtp"] == 1, "mysz touchpada stoi, klik widać"
+assert any(c[1] == 1 and c[2] > 0 for c in mv()) and any(c[1] == 2 for c in mv()), "test: mysz touchpada dalej steruje oknem"
+assert S.states[0]["rtp"] == 1, "klik widać też w trybie myszy"
 feed(T_CLICK, 0, 0)
+assert any(c[1] == 4 for c in mv()), "klik puszczony"
+ok("blokada: touchpad jako mysz dalej steruje oknem (ruch, klik), klik widać na rysunku")
+
+# ---------- "Testuj touchpad": przechwyt zamraża mysz, kończy go PS / bezczynność / wyjście z Test ----------
+import rx_testmode as TM
+assert not TM.start_capture(0) and TM.capture_slot is None, "przechwyt tylko w widoku Test"
+TM.set_active(True)
+assert S.alive[0] and TM.start_capture(0) and TM.capturing(0) and not TM.capturing(1)
+S.mouse_mode[0] = False
+TM.stop_capture()
+assert not TM.start_capture(0), "dotyk DS4 (bez myszy) nie wymaga przechwytu"
+S.mouse_mode[0] = True
+feed(T_CLICK, 0, 1)                                                  # klik trzymany w chwili startu
+mcalls.clear()
+assert TM.start_capture(0) and any(c[1] == 4 for c in mv()), "trzymany klik puszczony na starcie przechwytu"
+mcalls.clear()
+feed(T_MOUSE, 0, 30, 5, 0); feed(T_CLICK, 0, 0); feed(T_CLICK, 0, 1)
+assert not mv() and S.states[0]["rtp"] == 1, "przechwycony touchpad: kursor i klik stoją, klik widać"
+feed(T_CLICK, 0, 0)
+assert P.block(0, False)                                             # przełącznik blokady wyłączony: to samo bez blokady
+feed(T_MOUSE, 0, 30, 5, 0); feed(T_CLICK, 0, 1); feed(T_CLICK, 0, 0)
+assert not mv(), "przechwyt działa też bez blokady wyjścia do gry"
+assert P.block(0, True)
+TM._capture_t -= 5
+feed(T_TOUCH, 0, 1, 3, 901, 400, 0, 0, 0, 0)
+assert TM.capture_left(0) > TM.CAPTURE_IDLE_S - 1, "dotyk odnawia czas bezczynności"
+TM._capture_t -= 5
+feed(T_MOUSE, 0, 1, 1, 0)
+assert TM.capture_left(0) > TM.CAPTURE_IDLE_S - 1, "ruch palca też"
+TM._capture_t -= TM.CAPTURE_IDLE_S + 1
+assert not TM.capturing(0) and TM.capture_slot is None and TM.capture_left(0) == 0.0, "bez dotyku przechwyt sam się kończy"
+mcalls.clear(); feed(T_MOUSE, 0, 30, 5, 0)
+assert any(c[1] == 1 for c in mv()), "po przechwycie kursor znowu rusza"
+assert TM.start_capture(0)
+state(0, mask=BIT[316]); state(0)
+assert TM.capture_slot is None, "PS na pada kończy przechwyt"
+assert TM.start_capture(0)
+TM.set_active(False)
+assert TM.capture_slot is None and not TM.start_capture(0), "wyjście z widoku Test kończy przechwyt"
+ok("przechwyt touchpada: mysz i klik stoją (z blokadą i bez), dotyk / ruch odnawiają czas, koniec: bezczynność, PS, wyjście z Test")
 def ps_right():                                                     # PS + d-pad → = następny profil (skrót)
     state(0, mask=BIT[316]); state(0, mask=BIT[316], hat=(1, 0)); state(0, mask=BIT[316]); state(0)
     time.sleep(0.1)                                                  # skróty działają w osobnym wątku
@@ -114,7 +157,7 @@ state(0)
 ps_right()
 assert S.override[0] == A, "bez blokady ten sam skrót działa (test nie jest pusty)"
 S.override[0] = None; S.reload_profile(0)
-ok("blokada: DS4 / DSU neutralne (bateria prawdziwa), mysz, gyro-mysz i skróty stoją, okno widzi stan fizyczny")
+ok("blokada: DS4 / DSU neutralne (bateria prawdziwa), gyro-mysz i skróty stoją, okno widzi stan fizyczny")
 
 # ---------- kalibracja żyroskopu: polecenia i wynik ----------
 sent.clear()

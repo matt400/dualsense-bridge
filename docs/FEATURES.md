@@ -127,10 +127,14 @@
       pad (`sender/gyro_cal.json`); a calibrated pad no longer calibrates when the sender starts (no need to put it
       down then), autobias still fine-tunes the offset in memory. Requires sender v9;
     - during the test the game gets a neutral state of the tested pad (the "Block output to games" switch, on by
-      default): buttons, sticks, motion and touch don't reach the game, touchpad mouse, gyro mouse, PS shortcuts and
+      default): buttons, sticks, motion and touch don't reach the game, gyro mouse, PS shortcuts and
       console mode don't react. The block works only while the receiver window is active: it goes away when you
       switch to the game (another window in the foreground), leave the Test view, minimise / hide the window or close
       the receiver;
+    - **touchpad as a mouse (the master pad):** it keeps moving the cursor in the Test view, so the window can be
+      operated with it. The "Test touchpad" button captures it: the cursor stands, taps and clicks are not executed,
+      and the fingers and the click show on the pad drawing. The capture ends with the PS button on the pad, after 8 s
+      without a touch, with the same button (mouse), on leaving the Test view, or when the window loses focus;
     - in TV mode the tested pad doesn't control the window; holding ○ for 1 s leaves the test;
     - with the Test view open **no pad triggers shortcuts** (PS + button, master actions and takeover, console mode,
       PS + touchpad click) - testing buttons won't toggle anything;

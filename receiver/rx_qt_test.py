@@ -9,6 +9,8 @@ state. Refresh: tick() from the window clock (30 Hz) only while the view is visi
   Accessibility: range, dead zone, curve and tremor damping of the sticks per pad + the "adjust to the hand" wizard
              (rx_qt_access, rx_access, rx_reach); the stick scope shows the range ring.
   Gyroscope: "Calibrate" - the sender computes the offset of the pad lying still and stores it per pad (proto CMD_GYRO_CAL).
+  Touchpad:  shown for a pad whose touchpad is the mouse (the master); it keeps operating the window, "Test touchpad" captures
+             it (rx_testmode): the cursor stands, fingers and click show on the pad drawing, the button counts down to the end.
 """
 import functools
 import math
@@ -24,6 +26,7 @@ from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QSizePolicy, QVBoxLayout, 
 import rx_drift as D
 import rx_profiles as P
 import rx_state as S
+import rx_testmode as testmode
 from proto import CAL_FEW, CAL_MOVED, CAL_OK, CAL_RUNNING, CAL_STATUS, CALF_STORED
 from rx_config import C
 from rx_i18n import _
@@ -293,12 +296,13 @@ class TestPanel(QWidget):
         _vbox(self).addWidget(scrolled(body))
 
         self._build_lock(lay, block_on)
+        self._build_touchpad(lay)
         self._build_motion(lay)
         self._build_drift(lay)
         self._build_access(lay)
         self._build_gyro(lay)
         lay.addStretch(1)
-        self._buttons = (self.measure, self.apply, self.cal_btn)
+        self._buttons = (self.measure, self.apply, self.cal_btn, self.tp_btn)
         self.reset_view()
 
     def _build_lock(self, lay: QVBoxLayout, block_on: bool) -> None:
@@ -308,12 +312,26 @@ class TestPanel(QWidget):
         row.addWidget(icon_label("shield", px(18)))
         self.block = QCheckBox(_("Blokuj wyjście do gry"))
         self.block.setToolTip(_("Na czas testu gra dostaje puszczone przyciski i gałki w środku tego pada; skróty pada, "
-                                "mysz touchpada i tryb konsoli też nie reagują. Działa tylko przy aktywnym oknie - po "
-                                "przejściu do gry albo wyjściu z testu pad od razu do niej wraca."))
+                                "gyro-mysz i tryb konsoli też nie reagują. Touchpad jako mysz dalej steruje oknem "
+                                "(przycisk „Testuj touchpad” przechwytuje go na chwilę). Działa tylko przy aktywnym oknie - "
+                                "po przejściu do gry albo wyjściu z testu pad od razu do niej wraca."))
         self.block.setChecked(block_on)
         self.block.toggled.connect(self.block_changed.emit)
         row.addWidget(self.block, 1)
         lay.addLayout(row)
+
+    def _build_touchpad(self, lay: QVBoxLayout) -> None:
+        """The touchpad capture: a hint and the button; the whole block is visible only for a pad whose touchpad is the mouse."""
+        self.tp_box = QWidget()
+        box = _vbox(self.tp_box, 6)
+        box.addLayout(_head("touchpad", _("TOUCHPAD")))
+        self.tp_hint = label("", "dim", wrap=True)
+        box.addWidget(self.tp_hint)
+        self.tp_btn = button(_("Testuj touchpad"))
+        self.tp_btn.setIcon(icon("touchpad"))
+        self.tp_btn.clicked.connect(self.toggle_touchpad)
+        box.addWidget(self.tp_btn)
+        lay.addWidget(self.tp_box)
 
     def _build_motion(self, lay: QVBoxLayout) -> None:
         """The gyro and accelerometer charts."""
@@ -407,6 +425,7 @@ class TestPanel(QWidget):
         """Abort a running drift measurement and wizard, save a pending accessibility edit, hide the progress bars."""
         self.access.cancel()
         self.access.flush()
+        testmode.stop_capture()
         if self.run is not None:
             self.run.cancel()
             self.run = None
@@ -448,6 +467,19 @@ class TestPanel(QWidget):
         self.drift_bar.setFixedHeight(px(5))
         self.cal_bar.setFixedHeight(px(5))
         self.access.rescale()
+
+    # ---------- touchpad ----------
+    def toggle_touchpad(self) -> None:
+        """Capture the touchpad of the selected pad for the test (the cursor stands), or end the capture."""
+        if testmode.capture_slot == self.slot:
+            testmode.stop_capture()
+        else:
+            testmode.start_capture(self.slot)
+        self.refresh()
+
+    def _capture_secs(self) -> int:
+        """Whole seconds left of the selected pad's touchpad capture, 0 when it is not running."""
+        return math.ceil(testmode.capture_left(self.slot))
 
     # ---------- drift ----------
     def start_drift(self) -> None:
@@ -575,7 +607,8 @@ class TestPanel(QWidget):
         """Everything refresh() shows, as a comparable tuple: when it is unchanged there is nothing to redraw."""
         i = self.slot
         return (i, bool(S.alive[i]), self.run is not None, id(self.result), self.cal_t0, self.cal_note, S.gyro_cal[i],
-                P.sender_calib(i), tuple(sorted(P.drift(i).items())))
+                P.sender_calib(i), tuple(sorted(P.drift(i).items())), bool(S.mouse_mode[i]), testmode.active,
+                self._capture_secs())
 
     def refresh(self) -> None:
         """Buttons and descriptions (on a state change, not every frame)."""
@@ -598,6 +631,21 @@ class TestPanel(QWidget):
         if text != self.cal_text.text():
             self.cal_text.setText(text)
         set_prop(self.cal_text, "level", level)
+        self._refresh_touchpad(alive)
+
+    def _refresh_touchpad(self, alive: bool) -> None:
+        """The touchpad block: shown in the mouse mode; the button starts the capture or (with a countdown) ends it."""
+        secs = self._capture_secs()
+        self.tp_box.setVisible(bool(S.mouse_mode[self.slot]))
+        if secs:
+            self.tp_btn.setText(_("Zakończ test touchpada ({s} s)").format(s=secs))
+            self.tp_hint.setText(_("Kursor stoi - dotykaj touchpada, palce i klik widać na rysunku pada. Koniec: przycisk PS "
+                                   "na padzie, {s} s bez dotyku albo ten przycisk (myszą).").format(s=int(testmode.CAPTURE_IDLE_S)))
+        else:
+            self.tp_btn.setText(_("Testuj touchpad"))
+            self.tp_hint.setText(_("Touchpad steruje teraz kursorem. Po kliknięciu kursor stanie, a palce i klik pokażą się "
+                                   "na rysunku pada."))
+        self.tp_btn.setEnabled(bool(secs) or (alive and testmode.active))
 
     def tick(self, now: float, live: Mapping[str, Any]) -> dict[str, Any]:
         """From the window clock (30 Hz).
