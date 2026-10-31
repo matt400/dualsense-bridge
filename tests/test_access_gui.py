@@ -50,7 +50,7 @@ win = rx_qt.create_window(os.path.join(TMP, "ui.ini")); win.resize(1180, 900); w
 win.activateWindow(); win.tabs.setCurrentWidget(win.access_scroll); pump()
 panel = win.test_panel
 ap = win.access_page
-assert win.tabs.tabPosition() == QTabWidget.TabPosition.East, "zakładki edytora pionowo po prawej"
+assert win.tabs.tabPosition() == QTabWidget.TabPosition.West, "zakładki edytora pionowo po lewej"
 assert [win.tabs.tabText(i) for i in range(win.tabs.count())] == ["Wybrane", "Wibracje", "Gyro", "Dostępność", "Zmiany"]
 assert not hasattr(panel, "access") and ap.isVisible(), "panel dostępności jest w zakładce, nie w widoku Test"
 

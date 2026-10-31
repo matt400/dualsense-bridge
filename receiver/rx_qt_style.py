@@ -138,7 +138,7 @@ QTabWidget::pane {{ border: none; }}
 QTabBar {{ background: transparent; }}
 QTabBar::tab {{ background: transparent; color: {DIM}; padding: {p(6)} {p(12)}; margin-right: {p(4)}; border-radius: {p(8)};
                border: 1px solid transparent; }}
-QTabBar::tab:right {{ margin: 0 0 {p(2)} {p(10)}; padding: {p(8)} {p(4)}; font-size: {p(12)}; }}
+QTabBar::tab:left {{ margin: 0 {p(10)} {p(2)} 0; padding: {p(8)} {p(4)}; font-size: {p(12)}; }}
 QTabBar::tab:hover {{ color: {FG}; background: {TRACK}; }}
 QTabBar::tab:selected {{ background: {TRACK}; color: {FG}; border-color: {LINE}; font-weight: 600; }}
 
