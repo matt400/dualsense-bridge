@@ -68,6 +68,18 @@ Nadajnik zapisuje stały przydział pad → slot w `sender/slots.json` (`slots_f
 Kalibracja żyroskopu z okna (widok Test) jest w `sender/gyro_cal.json` (`gyro_cal_file = ""` - bez zapisu),
 korekcja dryfu gałek i tryb dostępności w `receiver/padcal.json` (obok `remap.json`, w kopiach ustawień przy aktualizacji).
 
+### Ustawienia nadajnika z okna odbiornika
+
+Ustawienia → Nadajnik zmienia większość kluczy `sender.toml` bez ruszania pliku: odbiornik wysyła podpisany pakiet `cfgset`,
+nadajnik sprawdza wartość (typ i zakres, `common/cfgspec.py`), stosuje ją od razu i zapisuje w `remote_cfg_file`
+(domyślnie `remote_cfg.json`; `""` wyłącza zmiany z odbiornika). Gdy klucz jest w obu plikach, wygrywa `remote_cfg.json`;
+„Z pliku konfiguracji” (albo usunięcie wpisu) przywraca wartość z `sender.toml`. Część wartości jest czytana przy starcie
+czegoś: bufory haptyki i głośnika, głośność i Opus - przy następnym strumieniu dźwięku; `grab_*`, `calibrate_*`, `rumble`
+i `haptics_motors` - przy następnym połączeniu pada. `rt_priority`, `low_latency` i `cpu_latency_us` wymagają roota na nadajniku.
+Nie da się zmienić z okna: `host`, `port`, `key`, ścieżek `*_file`, `bt_adapter`, `stats`. Odbiornik trzyma wybór w
+`settings.json` (`sender.values`: tylko to, co różni się od `sender.toml`) i wysyła go ponownie, gdy nadajnik wraca online.
+Zmiany wymagają klucza HMAC po obu stronach i protokołu v3; bez nich nadajnik odmawia, a okno podaje powód.
+
 ## Aktualizacja
 
 Aktualizacja: przycisk **Aktualizuj** w oknie (albo w menu ikony w zasobniku) aktualizuje **obie strony**:

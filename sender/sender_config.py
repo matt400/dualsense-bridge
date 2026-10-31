@@ -5,6 +5,7 @@ before anything else starts.
 """
 import argparse
 import ipaddress
+import json
 import os
 import socket
 from collections.abc import Sequence
@@ -13,6 +14,7 @@ from typing import Any, Final
 
 from evdev import ecodes as ec
 
+import cfgspec
 import sender_migrate
 from proto import PERMISSION_BITS, clamp, load_config
 from sender_opus import DEFAULT_MODE as DEFAULT_OPUS_MODE
@@ -33,6 +35,7 @@ DEFAULTS: dict[str, Any] = {
     "bt_adapter": "auto",          # Bluetooth controller: auto (USB dongle before the built-in one) | builtin | manual (leave as is)
     "bt_file": "bt.json",          # controller chosen in the receiver window (takes precedence over bt_adapter); "" = do not save
     "auth_file": "auth.json",      # with a key: remembered switch to protocol v3 (replay protection); "" = do not save
+    "remote_cfg_file": "remote_cfg.json",   # settings changed in the receiver window (Sender tab, needs the key); "" = no remote changes
     "grab_pad": True,
     "grab_touch": True,
     "tap_click": True,
@@ -104,6 +107,8 @@ SECONDS_PER_MINUTE: Final = 60
 MS_PER_S: Final = 1000.0
 
 C = SimpleNamespace()
+BASE: dict[str, Any] = {}       # the settings as DEFAULTS, the --config file and the CLI flags give them (what "reset" goes back to)
+CHANGES: dict[str, Any] = {}    # what the receiver window changed (remote_cfg_file); wins over BASE, only keys of cfgspec.SPECS
 
 
 def _beside(name: object) -> str:
@@ -218,6 +223,7 @@ def _apply_files(cfg: dict[str, Any]) -> None:
     C.GYRO_CAL_FILE = _beside(cfg["gyro_cal_file"])
     C.BT_ADAPTER, C.BT_FILE = str(cfg["bt_adapter"]), _beside(cfg["bt_file"])
     C.AUTH_FILE = _beside(cfg["auth_file"])
+    C.REMOTE_CFG_FILE = _beside(cfg["remote_cfg_file"])
 
 
 def _apply_pad_tuning(cfg: dict[str, Any]) -> None:
@@ -264,6 +270,62 @@ def _apply_runtime(cfg: dict[str, Any]) -> None:
     C.STATS = bool(cfg["stats"])
 
 
+def load_changes(path: str) -> dict[str, Any]:
+    """Read the settings changed from the receiver window (remote_cfg_file) and keep the ones that are still allowed.
+
+    The file is {"version": 1, "values": {"haptics_buffer_ms": 40, ...}}. A missing file is nothing changed; a damaged file, an
+    unknown key or a value outside the limits of cfgspec is skipped with a message, so a hand-edited file can never stop the
+    sender from starting.
+
+    Args:
+        path: The file ("" = remote changes are off).
+
+    Returns:
+        The checked values by setting name.
+    """
+    if not path:
+        return {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            raw = json.load(f)
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError) as e:
+        print(f"Remote config: {path} ignored ({e!r})")
+        return {}
+    values = raw.get("values") if isinstance(raw, dict) else None
+    if not isinstance(values, dict):
+        print(f"Remote config: {path} ignored (expected {{\"values\": {{...}}}})")
+        return {}
+    out: dict[str, Any] = {}
+    for key, value in values.items():
+        index = cfgspec.BY_KEY.get(key)
+        if index is None:
+            print(f"Remote config: {key!r} is not a setting that can be changed from the receiver - skipped")
+            continue
+        try:
+            out[key] = cfgspec.check(cfgspec.SPECS[index], value)
+        except ValueError as e:
+            print(f"Remote config: {key} = {value!r} skipped ({e})")
+    if out:
+        print(f"Remote config: {len(out)} setting(s) from {os.path.basename(path)} replace the config file's: {', '.join(sorted(out))}")
+    return out
+
+
+def refresh() -> None:
+    """Recompute the run-time values (C.*) from BASE + CHANGES after a change from the receiver window.
+
+    The same functions as at startup do it, so a value is coerced and clamped in one place only. The modules read C.* when they
+    need a value; the ones that copy it at the start of a pad or an audio stream take the new value the next time (cfgspec.WHEN_*).
+    The network settings (host, port, key) are not touched: they are not on the list of settings that can be changed.
+    """
+    cfg = {**BASE, **CHANGES}
+    _apply_pad_tuning(cfg)
+    _apply_touch(cfg)
+    _apply_runtime(cfg)
+    C.MAX_PADS = max(1, int(cfg["max_pads"]))
+
+
 def init(argv: Sequence[str] | None = None) -> SimpleNamespace:
     """Build the global configuration object C from DEFAULTS, the config file and the CLI flags (later wins).
 
@@ -280,6 +342,11 @@ def init(argv: Sequence[str] | None = None) -> SimpleNamespace:
         SystemExit: The host is missing or cannot be resolved.
     """
     cfg = _merge_settings(_parse_args(argv))
+    BASE.clear()
+    BASE.update(cfg)
+    CHANGES.clear()
+    CHANGES.update(load_changes(_beside(cfg["remote_cfg_file"])))
+    cfg = {**cfg, **CHANGES}
     _apply_network(cfg)
     _apply_files(cfg)
     _apply_pad_tuning(cfg)

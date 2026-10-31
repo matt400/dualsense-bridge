@@ -610,6 +610,11 @@ class Ctrl:
             if loop is not None:
                 self.request_send()
 
+    def refresh_deadzone(self) -> None:
+        """Take a changed stick_deadzone (the receiver window); not while the drift measurement runs, it holds the deadzone at 0."""
+        if self._raw_timer is None:
+            self.stick_dz = C.STICK_DZ
+
     def cancel_timers(self) -> None:
         """Cancel every pending timer of this pad (state / touch flush, Wake-on-LAN hold, flash, raw-stick window)."""
         for name in ("_state_timer", "_touch_timer", "wol_timer", "_pulse_timer", "_raw_timer"):

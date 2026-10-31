@@ -49,7 +49,7 @@ def crc_ok(rep):
 # ---------- the packet ----------
 assert proto.WIRE[T_LEDS] == T_FB and proto.BODY[T_LEDS].size == 3 and proto.BODY[proto.T_FB].size == 5
 assert proto.BY_SIZE[(T_FB, 3)] == T_LEDS and proto.BY_SIZE[(T_FB, 5)] == T_FB, "the leds packet is told apart from fb by its length"
-assert proto.SENDER_VERSION == proto.LEDS_SENDER == 15 and MUTE_BIT == 1 << len(proto.PAD_KEYS) and MUTE_BIT not in proto.KEY_BIT.values()
+assert proto.SENDER_VERSION >= proto.LEDS_SENDER == 15 and MUTE_BIT == 1 << len(proto.PAD_KEYS) and MUTE_BIT not in proto.KEY_BIT.values()
 plain = Codec().pack(T_LEDS, 2, LEDS_MUTE | LEDS_PLAYER, MUTE_PULSE, 0x15)
 assert len(plain) == 4 + 3 and plain[0] == (2 << 4) | T_FB and plain[4:] == bytes([3, 2, 0x15])
 assert Codec().parse(plain)[0] == T_LEDS

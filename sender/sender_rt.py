@@ -22,13 +22,17 @@ import struct
 from typing import BinaryIO, Final
 
 SWITCH_INTERVAL_S: Final = 0.0005     # default is 0.005
+DEFAULT_SWITCH_INTERVAL_S: Final = 0.005    # what the interpreter starts with (restored when low_latency is switched off)
+SWITCH_EPSILON_S: Final = 1e-9    # the switch interval is a float: compare with a tolerance
 CPU_DMA_LATENCY: Final = "/dev/cpu_dma_latency"   # PM QoS interface: the request lives as long as the file stays open
 RUNTIME_NICE: Final = -10         # a little above normal priority; works without the real-time policy as well
 MIN_DISTINCT_CAPACITIES: Final = 2    # fewer distinct cpu_capacity values = identical cores, nothing to pin to
 CPU_DIR_PREFIX_LEN: Final = len("cpu")   # "cpu7" -> "7"
 ENOSYS_FALLBACK_NR: Final = 119   # sched_setscheduler in the asm-generic syscall table (aarch64, riscv64)
 
-_qos: BinaryIO | None = None      # the open /dev/cpu_dma_latency - kept open until the process ends
+_qos: BinaryIO | None = None      # the open /dev/cpu_dma_latency - kept open until the process ends (or low_latency is switched off)
+_affinity: set[int] | None = None     # the CPUs this process was allowed to use before pin_fast_cpus (restored by unpin_cpus)
+_realtime_on = False              # SCHED_FIFO was set by realtime(): apply() switches back to the normal scheduler when it is turned off
 
 
 def hold_cpu_latency(us: int, path: str = CPU_DMA_LATENCY) -> str | None:
@@ -56,6 +60,16 @@ def hold_cpu_latency(us: int, path: str = CPU_DMA_LATENCY) -> str | None:
     return f"CPU wake-up latency <= {us} us"
 
 
+def release_cpu_latency() -> str | None:
+    """Close the PM QoS request, so the CPU may sleep deeply again; returns a description or None (there was no request)."""
+    global _qos
+    if _qos is None:
+        return None
+    _qos.close()
+    _qos = None
+    return "CPU sleep allowed"
+
+
 def fast_cpus(sys_root: str = "/sys") -> set[int]:
     """Return the set of CPUs with the highest capacity (sysfs cpu_capacity).
 
@@ -81,7 +95,9 @@ def pin_fast_cpus(sys_root: str = "/sys") -> str | None:
     The fast set is intersected with the current affinity mask, so cgroup/cpuset limits are respected. Nothing is
     changed when there is no distinction between cores or the affinity call fails.
     """
-    cpus = fast_cpus(sys_root) & os.sched_getaffinity(0)
+    global _affinity
+    allowed = os.sched_getaffinity(0)
+    cpus = fast_cpus(sys_root) & allowed
     if not cpus:
         return None
     try:
@@ -89,7 +105,23 @@ def pin_fast_cpus(sys_root: str = "/sys") -> str | None:
     except OSError as e:
         print(f"Low latency: cannot pin to fast cores ({e.strerror})")
         return None
+    if _affinity is None:                 # a second call must not overwrite the original set with the pinned one
+        _affinity = set(allowed)
     return "fast cores " + ",".join(map(str, sorted(cpus)))
+
+
+def unpin_cpus() -> str | None:
+    """Give the process back the CPUs it could use before pin_fast_cpus; returns a description or None (nothing was pinned)."""
+    global _affinity
+    if _affinity is None:
+        return None
+    try:
+        os.sched_setaffinity(0, _affinity)
+    except OSError as e:
+        print(f"Low latency: cannot release the fast cores ({e.strerror})")
+        return None
+    _affinity = None
+    return "all cores"
 
 
 # system call number of sched_setscheduler (asm-generic: aarch64, riscv64; other architectures listed separately)
@@ -120,6 +152,7 @@ def realtime(priority: int) -> str | None:
     syscall is used instead. SCHED_RESET_ON_FORK makes child processes (bluetoothctl) fall back to a normal
     priority. Failures (typically a missing root privilege) are logged and are not fatal.
     """
+    global _realtime_on
     if not priority:
         return None
     policy = os.SCHED_FIFO | getattr(os, "SCHED_RESET_ON_FORK", 0)
@@ -134,7 +167,25 @@ def realtime(priority: int) -> str | None:
         hint = " - run with doas" if getattr(e, "errno", None) in (errno.EPERM, errno.EACCES) else ""
         print(f"Low latency: realtime scheduling unavailable ({e}){hint}")
         return None
+    _realtime_on = True
     return f"SCHED_FIFO {priority}"
+
+
+def normal_scheduler() -> str | None:
+    """Switch this thread back from the real-time policy to the normal scheduler; returns a description or None (it failed)."""
+    global _realtime_on
+    try:
+        try:
+            os.sched_setscheduler(0, os.SCHED_OTHER, os.sched_param(0))
+        except OSError as e:
+            if e.errno != errno.ENOSYS:
+                raise
+            _sched_syscall(os.SCHED_OTHER, 0)    # musl, as in realtime()
+    except (OSError, AttributeError) as e:
+        print(f"Low latency: cannot go back to the normal scheduler ({e})")
+        return None
+    _realtime_on = False
+    return "normal scheduler"
 
 
 def short_switch_interval() -> str:
@@ -163,3 +214,40 @@ def setup(low_latency: bool, cpu_latency_us: int, rt_priority: int) -> None:
     done = [r for r in results if r]
     if done:
         print("Low latency: " + ", ".join(done))
+
+
+def default_switch_interval() -> str:
+    """Put the GIL switch interval back to the interpreter's default."""
+    sys.setswitchinterval(DEFAULT_SWITCH_INTERVAL_S)
+    return f"GIL switch interval {DEFAULT_SWITCH_INTERVAL_S * 1000:g} ms"
+
+
+def apply(low_latency: bool, cpu_latency_us: int, rt_priority: int) -> list[str]:
+    """Change the latency tweaks while the sender runs (a setting changed in the receiver window); each one is switched on or off.
+
+    ``setup`` only switches things on, once at the start. Here a tweak that is no longer wanted is undone: the real-time policy
+    goes back to the normal scheduler, the PM QoS request is closed, the process may use every CPU again and the GIL switch
+    interval returns to the default. Real-time scheduling and the CPU latency request need root, as at the start; a step that
+    is refused is logged and does not stop the others. It runs in the thread that handles the packet (the event loop - the
+    thread ``setup`` ran in; the scheduling policy and the CPU set belong to a thread).
+
+    Args:
+        low_latency: Hold the CPU awake, pin to the fast cores, short GIL switch interval.
+        cpu_latency_us: The longest CPU wake-up time [µs] for low_latency.
+        rt_priority: SCHED_FIFO priority 1-99; 0 = the normal scheduler.
+
+    Returns:
+        What was changed, for the log (empty = nothing).
+    """
+    results: list[str | None] = []
+    if rt_priority:
+        results.append(realtime(rt_priority))
+    elif _realtime_on:
+        results.append(normal_scheduler())
+    if low_latency:
+        results += [hold_cpu_latency(cpu_latency_us), pin_fast_cpus(), short_switch_interval()]
+    else:
+        results += [release_cpu_latency(), unpin_cpus()]
+        if abs(sys.getswitchinterval() - DEFAULT_SWITCH_INTERVAL_S) > SWITCH_EPSILON_S:
+            results.append(default_switch_interval())
+    return [r for r in results if r]

@@ -56,6 +56,7 @@ from rx_display import DPI_VALUES
 from rx_i18n import LANGS
 from rx_qt_icons import icon
 from rx_qt_screens import parse_size
+from rx_qt_sendercfg import SenderCfgPanel
 from rx_qt_style import set_prop
 from rx_qt_widgets import (Combo, ConfirmButton, SideTabs, SliderRow, button, field, group, icon_button, icon_label, input_items,
                            label, left, pair, spinbox)
@@ -111,6 +112,8 @@ class ConsoleSettings(QDialog):
         self.wol_page = _page(self._wol_tab())
         self.tabs.addTab(self.wol_page, icon("wake"), _("Wake-on-LAN"))
         self.tabs.addTab(_page(self._vpad_tab()), icon("ps"), _("Pady"))
+        self.sender_cfg = SenderCfgPanel()
+        self.tabs.addTab(_page(self.sender_cfg.sections()), icon("phone"), _("Nadajnik"))
         self.tabs.addTab(_page(self._window_tab()), icon("window"), _("Okno"))
         self.tabs.addTab(_page(self._backup_tab()), icon("backup"), _("Kopie"))
         self.tabs.addTab(_page(self._security_tab()), icon("shield"), _("Bezpieczeństwo"))
@@ -388,6 +391,7 @@ class ConsoleSettings(QDialog):
         self.vpad_net.setEnabled(not self._net_busy)
         if not busy and not self._net_busy:
             self._hm_timer.stop()
+        self.sender_cfg.stop()
         self.vpad_check.setEnabled(not busy and backend != "vigem")
         self.vpad_skip.setEnabled(not busy)
         if backend != "vigem" and rx_ds4.hm_note:
@@ -922,6 +926,7 @@ class ConsoleSettings(QDialog):
         self._load_haptics(rx_settings.cur.haptics, rx_settings.cur.speaker)
         self._load_wol(rx_settings.cur.wol)
         self._load_vpad(rx_settings.cur.vpad)
+        self.sender_cfg.load(rx_settings.cur.sender)
         cfg = rx_console.ctl.cfg if rx_console.ctl else ConsoleConfig()
         self.set_button(cfg.toggle_button)
         self.dbl.setValue(cfg.double_click_ms)
@@ -1045,7 +1050,8 @@ class ConsoleSettings(QDialog):
         return rx_settings.Settings(mouse, master, ui,
                                     LightbarConfig(low_pct=self.low_pct.value(), pads=dict(self._lights)),
                                     self._collect_wol(), rx_settings.cur.log, self._collect_vpad(),
-                                    HapticsConfig(pads=dict(self._haptics)), SpeakerConfig(pads=dict(self._speaker)))
+                                    HapticsConfig(pads=dict(self._haptics)), SpeakerConfig(pads=dict(self._speaker)),
+                                    self.sender_cfg.collect())
 
     def collect(self) -> ConsoleConfig:
         """-> the ConsoleConfig described by the Console mode tab."""

@@ -297,6 +297,12 @@
   placeholder without replugging, and the placeholder goes away together with the last pad from a higher slot.
   Disabling: Settings → Pads → "Fixed player order". HIDMaestro also creates pads with a fixed slot identity (the same
   device paths after every plug-in).
+- **Sender settings from the window:** Settings → Sender changes the settings of `sender.toml` (pad limit, deadzones,
+  packet rate, touchpad, rumble, haptics and speaker buffers, Opus, latency tweaks) with a description of each one. The
+  sender applies a change at once, without a restart, keeps it in `remote_cfg.json` (`sender.toml` is never written) and
+  says whether it counts now, from the next sound stream or after the pad reconnects. The choice is also kept in the
+  receiver's `settings.json` (`sender`) and pushed again when the sender comes online. Needs the HMAC key and protocol v3;
+  host, port, key, file paths and the Bluetooth adapter are not changeable from here. "Back to the config file" drops a change.
 - **Low latency:**
   - buttons sent immediately, with repeats in case a packet is lost,
   - sticks, motion and touch without delay up to 1000 Hz (faster bursts of reports are merged, the latest state

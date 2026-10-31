@@ -193,7 +193,7 @@ pump(400)
 win.open_settings()
 pump(150)
 dlg = win.settings_dlg
-for tab, name in ((0, "settings_console"), (2, "settings_master")):
+for tab, name in ((0, "settings_console"), (2, "settings_master"), (7, "settings_sender")):
     dlg.tabs.setCurrentIndex(tab)
     pump()
     save(dlg, name)

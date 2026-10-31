@@ -20,14 +20,15 @@ import rx_hotkeys as hotkeys
 import rx_latency
 import rx_master as master
 import rx_mouse as mouse
+import rx_sender_cfg
 import rx_settings
 import rx_state as S
 import rx_swap
 import rx_testmode as testmode
-from proto import (BATT_CHARGING, BATT_UNKNOWN, BODY, CAL_MOVED, CAL_OK, CLICK_PRESSED, CLICK_TWO_FINGERS, LAT_NONE, MUTE_BIT, NO_PAD,
-                   PAD_KEYS, RTT_NONE, SCFG_BATT, SCFG_EVENTS, SCFG_WOL, STATE_CHARGING, STATE_FIELDS, UINT32_MASK, WIRE, Codec,
-                   EpochClock, T_BTCTRL, T_BTDEV, T_BTLINK, T_BTSTATE, T_BUILD, T_BUILD2, T_BUILD3, T_BYE, T_CALRES, T_CLICK, T_CMD,
-                   T_EVENT, T_FB, T_HAPT, T_IDENT, T_INFO, T_LEDS,
+from proto import (BATT_CHARGING, BATT_UNKNOWN, BODY, CAL_MOVED, CAL_OK, CLICK_PRESSED, CLICK_TWO_FINGERS, HEADER_LEN, LAT_NONE, MUTE_BIT,
+                   NO_PAD, PAD_KEYS, RTT_NONE, SCFG_BATT, SCFG_EVENTS, SCFG_WOL, STATE_CHARGING, STATE_FIELDS, UINT32_MASK, WIRE, Codec,
+                   EpochClock, T_BTCTRL, T_BTDEV, T_BTLINK, T_BTSTATE, T_BUILD, T_BUILD2, T_BUILD3, T_BYE, T_CALRES, T_CFGVAL, T_CLICK,
+                   T_CMD, T_EVENT, T_FB, T_HAPT, T_IDENT, T_INFO, T_LEDS,
                    T_MOUSE, T_PING, T_PONG, T_PONG2, T_SCFG, T_SPK, T_STATE, T_STATE2, T_TOUCH, T_TRIG, T_TRIG2, T_TRIG3, T_UPDMSG,
                    T_VERSION, TRIG2_OFF, clamp, cstr, mac_bytes, mac_text)
 from rx_buttons import BUTTON_CODES, MASK_ALL, PS_BIT, TRIG_ON
@@ -361,6 +362,8 @@ def _settings_changed(old: rx_settings.Settings, new: rx_settings.Settings) -> N
     """A settings listener: when the Wake-on-LAN or sender-event settings change, push them to the sender."""
     if (old.wol, old.log.sender) != (new.wol, new.log.sender):
         send_scfg(3)
+    if old.sender != new.sender:
+        rx_sender_cfg.sync(old.sender, new.sender)
 
 
 rx_settings.on_change(_settings_changed)
@@ -760,6 +763,7 @@ class SenderWatch:
     def __init__(self) -> None:
         """Start as offline with no settings sent yet."""
         self.online, self.t_scfg = False, 0.0
+        self.cfg = rx_sender_cfg.Watch()
 
     def tick(self, now: float) -> None:
         """Log a change of the sender's online state and, while online, send the settings every SCFG_S."""
@@ -768,13 +772,16 @@ class SenderWatch:
             self.online = online
             if online:
                 ev.info(_("Nadajnik online ({ip})").format(ip=S.peer[0] if S.peer else "?"))
+                self.cfg.online()
             else:
+                self.cfg.offline()
                 ev.warn(_("Nadajnik offline - brak pakietów od {s} s").format(s=f"{S.SENDER_TIMEOUT:g}"))
                 S.sender_wol = None
                 S.sender_batt = None
         if online and now - self.t_scfg >= SCFG_S:
             self.t_scfg = now
             send_scfg()
+        self.cfg.tick(now)
 
 
 def _recv_failed(e: OSError) -> bool:
@@ -833,6 +840,10 @@ def _on_control(t: int, i: int, sq: int, data: bytes, addr: tuple[str, int], now
         _adopt_peer(addr, now)
         if S.seen.fresh((WIRE[t], NO_PAD), sq, now):
             rx_diag.on_btlink(data, now)
+    elif t == T_CFGVAL:  # a sender setting (idx 255): the value in use, the one from sender.toml, the result of a change
+        _adopt_peer(addr, now)
+        if S.seen.fresh((WIRE[t], NO_PAD, data[HEADER_LEN]), sq, now):
+            rx_sender_cfg.on_packet(data, now)
     elif t == T_EVENT:  # a sender event for the log (idx = the pad's slot or 255)
         on_event(i, data)
     elif t == T_PING:   # ping -> pong2 (the PC clock for latency measurement) and pong (RTT; an older sender knows only this)
