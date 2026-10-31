@@ -196,8 +196,8 @@
   - **Mysz:** czułość i stabilizacja kliknięcia touchpada;
   - **Master:** pad master, co wolno tylko jemu, przyciski akcji. Mysz i master działają od razu, bez restartu
     (`settings.json`);
-  - **Lightbar:** kolor per pad / domyślny, tryb, miganie, próg niskiej baterii (od razu);
-  - **Haptyka i głośnik:** haptyka gry i głośnik pada per pad - włączenie, siła / głośność, test (siła od razu, włączenie po ponownym połączeniu pada);
+  - **Lightbar:** kolor per pad / domyślny, tryb, miganie, próg niskiej baterii (od razu). Lista padów jest na samej górze zakładki z checkboxem **Ustawienia domyślne**: włączony = edytujesz to, co dostają pady bez własnego ustawienia, wyłączony = edytujesz wybrany pad (pierwsza zmiana robi kopię domyślnych; przycisk obok listy kasuje własne ustawienie pada);
+  - **Haptyka i głośnik:** haptyka gry i głośnik pada per pad (ten sam pasek wyboru pada na górze) - włączenie, siła / głośność, test (siła od razu, włączenie po ponownym połączeniu pada);
   - **Wake-on-LAN:** włączenie, przycisk do pary z PS, czas przytrzymania, MAC i broadcast (puste = automatycznie);
   - **Pady:** które karty padów pokazuje okno - dynamicznie (tylko podłączone) albo stała liczba slotów (1-4, działa
     od razu; same sloty ustawia `pads` w `receiver.toml`, domyślnie 4) - oraz backend wirtualnych padów, HIDMaestro i
