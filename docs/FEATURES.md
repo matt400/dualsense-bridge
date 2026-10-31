@@ -35,8 +35,8 @@
     a wave runs along its top edge while the device charges. A Raspberry Pi or another device without a battery shows
     no percentage; an older sender simply doesn't send it;
   - in the middle, a live pad drawing: click a button, trigger or stick to remap or tune it;
-  - on the right, the profile (default / per game), the **Selected**, **Rumble**, **Gyro**, **Changes** tabs and the **Save**
-    button (Ctrl+S);
+  - on the right, the profile (default / per game), the **Selected**, **Rumble**, **Gyro**, **Accessibility**, **Changes**
+    tabs (vertical, on the right edge) and the **Save** button (Ctrl+S);
   - remapping buttons and sticks, gyro aiming (right stick / mouse); deadzones, curves and anti-deadzone in the
     collapsible "Advanced" section (it opens by itself when something in it was changed). While the **Gyro aiming**
     section is expanded, a live preview floats over the top-right corner of the pad drawing (like the tilt one; with
@@ -105,6 +105,16 @@
     **Manual** - the sender changes nothing. Unselected ones are turned off (rfkill), the selected one runs without
     SNIFF mode (the pad doesn't put the link to sleep); plugging in / removing a dongle without a restart. Default
     mode: `bt_adapter` in `sender.toml`;
+  - **accessibility mode** (the **Accessibility** tab on the right, per pad, for a player who cannot push a stick all
+    the way, e.g. with a hardware overlay): a switch plus sliders for a chosen stick - **range** (the game gets full deflection at e.g. 70 % of the travel,
+    scaled radially), inner deadzone, response curve and **tremor damping** (a movement below the threshold is
+    ignored; a threshold rather than a filter, so no added latency). It works on the physical stick before the
+    profile, so it follows the stick through swaps and applies in every profile, game profiles too; the values stay
+    saved when the switch is off (`receiver/padcal.json`). "Adjust to the hand" is a wizard: drift at rest, then the
+    player circles the stick as far as is comfortable (6 s) - the range is the weakest direction, so every direction
+    can reach 100 %. The result goes into the sliders (still editable, "Restore recommended"); all controls can be
+    driven from another pad through TV mode. The green ring in the Test view's stick scope shows the range. While the
+    wizard runs, the game gets a neutral pad;
   - **Test view** (the third switch under the pad: Result / Physical / Test) for the selected pad:
     - on the drawing, live buttons, trigger values (0-255), sticks, fingers and the touchpad click (also in mouse mode);
     - on the right, gyro [°/s] and accelerometer [g] charts (3 axes, last 5 s, auto-scaling) and the position of both
@@ -114,15 +124,6 @@
       (×1.25, rounded up to 1 %, min. 3 %); "Apply" saves it immediately as the **pad drift correction**
       (`receiver/padcal.json`, per MAC). It works in all profiles of this pad, game profiles too, as the minimum
       deadzone (a larger one from the profile stays) and follows the physical stick when sticks are swapped;
-    - **accessibility mode** (per pad, for a player who cannot push a stick all the way, e.g. with a hardware overlay):
-      a switch plus sliders for a chosen stick - **range** (the game gets full deflection at e.g. 70 % of the travel,
-      scaled radially), inner deadzone, response curve and **tremor damping** (a movement below the threshold is
-      ignored; a threshold rather than a filter, so no added latency). It works on the physical stick before the
-      profile, so it follows the stick through swaps and applies in every profile, game profiles too; the values stay
-      saved when the switch is off (`receiver/padcal.json`). "Adjust to the hand" is a wizard: drift at rest, then the
-      player circles the stick as far as is comfortable (6 s) - the range is the weakest direction, so every direction
-      can reach 100 %. The result goes into the sliders (still editable, "Restore recommended"); all controls can be
-      driven from another pad through TV mode;
     - **gyro calibration:** the pad lies still for 3 s, the sender computes the offset and saves it on the sender per
       pad (`sender/gyro_cal.json`); a calibrated pad no longer calibrates when the sender starts (no need to put it
       down then), autobias still fine-tunes the offset in memory. Requires sender v9;

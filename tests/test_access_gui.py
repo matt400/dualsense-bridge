@@ -1,4 +1,4 @@
-"""Okno: panel trybu dostępności w widoku Test - przełącznik per pad, suwaki z zapisem, pierścień zasięgu na podglądzie gałek,
+"""Okno: panel trybu dostępności (zakładka Dostępność edytora profilu) - przełącznik per pad, suwaki z zapisem, pierścień zasięgu na podglądzie gałek,
 kreator "Dostosuj do ręki" (propozycje trafiają do suwaków i włączają tryb), "Przywróć zalecane", komunikaty o porażce,
 czyszczenie i przełączanie padów."""
 import math, os, sys
@@ -7,6 +7,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from rxenv import *                                              # noqa
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QTabWidget
 
 C.cfg["tray"] = False
 import rx_drift as D
@@ -46,9 +47,12 @@ feed(T_IDENT, 0, PAD.encode()); state(0)
 S.sender_info[0] = (9, RUMBLE_HIDRAW | CAP_CALIB, 0)
 rx_padcal.reload()
 win = rx_qt.create_window(os.path.join(TMP, "ui.ini")); win.resize(1180, 900); win.show(); pump(150)
-win.seg.buttons["test"].click(); pump()
+win.activateWindow(); win.tabs.setCurrentWidget(win.access_scroll); pump()
 panel = win.test_panel
-ap = panel.access
+ap = win.access_page
+assert win.tabs.tabPosition() == QTabWidget.TabPosition.East, "zakładki edytora pionowo po prawej"
+assert [win.tabs.tabText(i) for i in range(win.tabs.count())] == ["Wybrane", "Wibracje", "Gyro", "Dostępność", "Zmiany"]
+assert not hasattr(panel, "access") and ap.isVisible(), "panel dostępności jest w zakładce, nie w widoku Test"
 
 # ---------- przełącznik i suwaki ----------
 assert not ap.on.isChecked() and ap.sl["outer"].value() == 100 and not ap.restore.isEnabled() and not ap.clear_btn.isVisible()
@@ -76,7 +80,9 @@ ap.choice.set_data("right")
 QTest.mouseClick(ap.start, Qt.MouseButton.LeftButton); pump()
 assert ap.wiz is not None and cmds() == [(CMD_RAW_STICKS, D.RAW_S)] * 3 and ap.bar.isVisible() and ap.start.text() == "Przerwij"
 assert "mierzę dryf" in ap.msg.text()
+assert S.states[0]["blocked"], "kreator blokuje wyjście do gry (kręcenie gałką nie rusza gry)"
 run_wizard(ap, 0.62)
+assert not S.states[0]["blocked"], "po kreatorze gra dostaje pad z powrotem"
 assert ap.wiz is None and not ap.bar.isVisible() and ap.start.text() == "Dostosuj do ręki"
 cfg = P.access(0)
 assert cfg["on"] is True and 0.55 <= cfg["right"]["outer"] <= 0.6 and cfg["right"]["dz"] >= D.MIN_DZ, cfg
@@ -105,6 +111,19 @@ ap.tick(0.0)
 assert ap.wiz is None and "niepodłączony" in ap.msg.text() and S.probe[0] is None, "pad zniknął - kreator przerwany"
 S.alive[0] = True
 ok("kreator: porażka zostawia ustawienia, Przerwij sprząta, obie gałki = 5 kroków, zniknięcie pada przerywa")
+
+# zmiana zakładki przerywa kreator i oddaje pad grze; zaległa zmiana suwaka zostaje zapisana
+QTest.mouseClick(ap.start, Qt.MouseButton.LeftButton); pump()
+assert ap.wiz is not None and S.states[0]["blocked"]
+win.tabs.setCurrentWidget(win.gyro_page); pump()
+assert ap.wiz is None and not S.states[0]["blocked"] and S.probe[0] is None, "inna zakładka przerywa kreator"
+win.tabs.setCurrentWidget(win.access_scroll); pump()
+ap.sl["outer"].slider.setValue(45)
+win.tabs.setCurrentWidget(win.gyro_page); pump(10)
+assert round(P.access(0)["right"]["outer"] * 100) == 40 + 45, "zmiana zakładki zapisuje zaległą zmianę suwaka"
+win.tabs.setCurrentWidget(win.access_scroll); pump()
+proposal = ap.sl["outer"].value()
+ok("zakładki: wyjście z Dostępności przerywa kreator, zdejmuje blokadę i zapisuje suwak")
 
 # ---------- czyszczenie i przełączanie padów ----------
 win.select_pad(1); pump()

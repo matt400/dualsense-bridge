@@ -1,10 +1,12 @@
-"""Receiver: the accessibility panel of the Test view - range, deadzone, curve and tremor damping of the sticks, per pad.
+"""Receiver: the accessibility panel (the "Dostępność" tab) - range, deadzone, curve and tremor damping of the sticks, per pad.
 
-Works on the pad the Test view shows. A switch turns the mode on for that pad (rx_padcal / rx_access: it applies in every
+Works on the pad the editor shows. A switch turns the mode on for that pad (rx_padcal / rx_access: it applies in every
 profile and the stored values stay when it is off), the sliders edit the chosen stick, and "Dostosuj do ręki" runs the wizard
 (rx_reach.Wizard): rest -> drift dead zone, then the player circles each chosen stick -> range. A finished wizard writes its
 proposal into the sliders and switches the mode on; the sliders stay editable and "Przywróć zalecane" goes back to the proposal.
 All controls are ordinary focusable widgets, so another pad (the master) can drive the wizard through the window's TV mode.
+The wizard needs the pad's raw sticks without the game reacting to the circling, so the window locks the output to the game while
+`wiz` is set (`busy_changed`).
 """
 from __future__ import annotations
 
@@ -33,9 +35,13 @@ def _pct(v: float) -> str:
 
 
 class AccessPanel(QWidget):
-    """The panel body (the heading is added by the Test view). reach_changed({stick: outer}) - the ring for the stick scope."""
+    """The panel body (the tab is added by the window).
+
+    reach_changed({stick: outer}) - the ring for the stick scope in the Test view; busy_changed(bool) - the wizard started / ended.
+    """
 
     reach_changed = Signal(dict)
+    busy_changed = Signal(bool)
 
     def __init__(self) -> None:
         """Build the switch, the stick choice with the four sliders, and the wizard controls."""
@@ -112,7 +118,7 @@ class AccessPanel(QWidget):
             self._load()
 
     def refresh(self) -> None:
-        """Entering the Test view: show what is stored now (unless an edit is still waiting to be saved)."""
+        """Entering the tab: show what is stored now (unless an edit is still waiting to be saved)."""
         if self._pending is None:
             self._load()
 
@@ -212,13 +218,17 @@ class AccessPanel(QWidget):
         self.wiz = R.Wizard(self.slot, sticks, time.monotonic(), P.raw_sticks if P.sender_calib(self.slot) else None)
         self._note("", "")
         self._show_progress(time.monotonic())
+        self.busy_changed.emit(True)
 
     def cancel(self) -> None:
         """Abort a running wizard and hide its bar (it must not reappear on the next visit)."""
+        was = self.wiz is not None
         if self.wiz is not None:
             self.wiz.cancel()
             self.wiz = None
         self._show_progress(None)
+        if was:
+            self.busy_changed.emit(False)
 
     def _show_progress(self, now: float | None) -> None:
         """The progress bar, the step text and the button caption for the running wizard (all hidden / idle without one)."""
@@ -250,6 +260,7 @@ class AccessPanel(QWidget):
             return
         self.wiz = None
         self._show_progress(None)
+        self.busy_changed.emit(False)
         if w.failure is not None:
             self._note(self._failure_text(w.failure), "bad")
             return

@@ -45,6 +45,7 @@ from proto import CMD_UPDATE, UPD_RUNNING
 from rx_config import C
 from rx_editor import Editor
 from rx_icon import ICON_LOW, ICON_OK, icon_png, render_icon
+from rx_qt_access import AccessPanel
 from rx_qt_bt import BtDrawer, indicator_button
 from rx_qt_diag import DiagPage, age_text
 from rx_qt_keys import KeysDrawer
@@ -54,7 +55,7 @@ from rx_qt_log import LogPanel
 from rx_qt_gstick import TiltPreview
 from rx_qt_gyro import PREVIEW_GAP, GyroPreview
 from rx_qt_pad import PadView
-from rx_qt_panels import ChangesPage, GyroPage, PartPage, ProfileBar, RumblePage
+from rx_qt_panels import ChangesPage, GyroPage, PartPage, ProfileBar, RumblePage, scrolled
 from rx_qt_screens import ScreenPlacement, parse_size
 from rx_qt_sidebar import SideMenu
 from rx_qt_style import DIM, LEVEL, SEGMENT, TV_SCALE, apply_theme, px, set_prop
@@ -726,6 +727,27 @@ class MainWindow(ScreenPlacement):
         lay.addLayout(row)
         return lay
 
+    def _build_tabs(self) -> None:
+        """The profile editor's tabs (Selected, Rumble, Gyro, Accessibility, Changes), vertical on the right edge of the column."""
+        self.part_page, self.rumble_page, self.gyro_page = PartPage(self.ed), RumblePage(self.ed), GyroPage(self.ed)
+        self.changes_page = ChangesPage(self.ed)
+        self.access_page = AccessPanel()        # per pad, not per profile; its range ring is drawn in the Test view's stick scope
+        self.access_page.reach_changed.connect(self.test_panel.scope.set_reach)
+        self.access_page.busy_changed.connect(lambda _busy: self.sync_block())     # the wizard locks the output to the game
+        self.access_scroll = scrolled(self.access_page)
+        self.tabs = QTabWidget()
+        self.tabs.setTabPosition(QTabWidget.TabPosition.East)       # vertical tabs on the right edge of the column
+        self.tabs.tabBar().setExpanding(True)
+        self.tabs.tabBar().setDrawBase(False)
+        for page, name in ((self.part_page, _("Wybrane")), (self.rumble_page, _("Wibracje")), (self.gyro_page, _("Gyro")),
+                           (self.access_scroll, _("Dostępność")), (self.changes_page, _("Zmiany"))):
+            self.tabs.addTab(page, name)
+        self.tabs.currentChanged.connect(self.on_tab)
+        for page in (self.part_page, self.rumble_page, self.gyro_page):
+            page.edited.connect(self.on_edit)
+        self.changes_page.undone.connect(self.on_undone)
+        self.changes_page.reset.confirmed.connect(self.reset)       # "Delete all" - on the list of changes, not in the footer
+
     def _right(self) -> QFrame:
         """The right column: the profile editor (profile bar, tabs, status, Save / Revert) stacked with the Test panel."""
         panel = QFrame()
@@ -749,18 +771,7 @@ class MainWindow(ScreenPlacement):
         self.profile_bar.create.connect(self.on_create)
         self.profile_bar.delete.connect(self.on_delete)
         lay.addWidget(self.profile_bar)
-        self.part_page, self.rumble_page, self.gyro_page = PartPage(self.ed), RumblePage(self.ed), GyroPage(self.ed)
-        self.changes_page = ChangesPage(self.ed)
-        self.tabs = QTabWidget()
-        self.tabs.tabBar().setExpanding(True)
-        self.tabs.tabBar().setDrawBase(False)
-        for page, name in ((self.part_page, _("Wybrane")), (self.rumble_page, _("Wibracje")), (self.gyro_page, _("Gyro")),
-                           (self.changes_page, _("Zmiany"))):
-            self.tabs.addTab(page, name)
-        for page in (self.part_page, self.rumble_page, self.gyro_page):
-            page.edited.connect(self.on_edit)
-        self.changes_page.undone.connect(self.on_undone)
-        self.changes_page.reset.confirmed.connect(self.reset)       # "Delete all" - on the list of changes, not in the footer
+        self._build_tabs()
         lay.addWidget(self.tabs, 1)
         self.status = label("", wrap=True)
         lay.addWidget(self.status)
@@ -815,6 +826,7 @@ class MainWindow(ScreenPlacement):
             c.crown.setIconSize(QSize(px(18), px(18)))
             c._key = None
         self.test_panel.rescale()
+        self.access_page.rescale()
         for d in self.drawers:
             d.rescale()
         self._apply_view()
@@ -876,6 +888,7 @@ class MainWindow(ScreenPlacement):
         self.live_timer.stop()                 # a hidden window does not repaint the pad
         self.tilt_preview.idle()               # ... and the tilt preview does not keep the engine busy
         self.test_panel.cancel()               # a drift measurement does not run in the background
+        self.leave_access()                    # ... nor the accessibility wizard; a pending slider edit is saved
         self.sync_block()                      # a hidden window (the tray) - the game gets the pad again
 
     def toggle_bt(self) -> None:
@@ -1088,6 +1101,7 @@ class MainWindow(ScreenPlacement):
         """Shut the window down: flush edits, release the Test lock and shortcuts, save the state and leave the application."""
         self.flush()
         self.test_panel.cancel()
+        self.leave_access()
         rx_testmode.set_active(False)          # the pad shortcuts return
         for i in range(C.NUM_PADS):            # closing from the Test view: the output to the game returns before cleanup
             P.block(i, False)
@@ -1111,6 +1125,18 @@ class MainWindow(ScreenPlacement):
                                  _("Diagnostyka") + " - " + _("Opóźnienie, jitter i straty pakietów w sieci oraz jakość "
                                                               "łącza Bluetooth każdego pada na żywo"))
 
+    def on_tab(self, i: int) -> None:
+        """Another editor tab: entering Dostępność reloads the stored values, leaving it saves an edit and stops the wizard."""
+        if self.tabs.widget(i) is self.access_scroll:
+            self.access_page.refresh()
+        else:
+            self.leave_access()
+
+    def leave_access(self) -> None:
+        """Stop the accessibility wizard and save a slider edit that is still waiting (a tab change, hiding, quitting)."""
+        self.access_page.cancel()
+        self.access_page.flush()
+
     def select_pad(self, slot: int) -> None:
         """Edit another pad: apply pending changes, switch the editor and the Test panel, then refresh everything."""
         self.flush()
@@ -1122,6 +1148,7 @@ class MainWindow(ScreenPlacement):
         for i, b in self.minis.items():
             set_prop(b, "primary", i == slot)
         self.test_panel.set_slot(slot)
+        self.access_page.set_slot(slot)
         self.sync_block()
         self.refresh_all()
 
@@ -1165,6 +1192,8 @@ class MainWindow(ScreenPlacement):
                 and self.isActiveWindow())
         rx_testmode.set_active(test)           # all pads' shortcuts stand still, the master's Options + Create leaves
         on = test and self.test_panel.block.isChecked()
+        if self.access_page.wiz is not None and self.isVisible() and not self.isMinimized() and self.isActiveWindow():
+            on = True                          # the accessibility wizard: circling the sticks must not move the game
         for i in range(C.NUM_PADS):
             P.block(i, on and i == self.ed.slot)
 
@@ -1321,6 +1350,7 @@ class MainWindow(ScreenPlacement):
             self._exit_hold(now, "circle" in live["pressed"])
         else:
             self.gyro_page.set_live(self.ed.key == live["active"], live["gyro_on"])
+        self.access_page.tick(now)             # the wizard runs on the window clock, in whichever view
         on_gyro = self.view != "test" and self.tabs.currentWidget() is self.gyro_page
         if on_gyro:
             self.gyro_page.tilt.tick()
