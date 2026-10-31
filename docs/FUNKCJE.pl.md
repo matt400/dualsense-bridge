@@ -34,7 +34,7 @@
     przy niskim); podczas ładowania po jej górnej krawędzi płynie fala. Raspberry Pi i inne urządzenia bez baterii
     nie pokazują procentów; starszy nadajnik po prostu ich nie wysyła;
   - na środku rysunek pada na żywo: kliknij przycisk, spust albo gałkę, żeby ją zremapować lub dostroić;
-  - po prawej profil (domyślny / per gra), zakładki **Selected**, **Rumble**, **Gyro**, **Changes** i przycisk **Save** (Ctrl+S);
+  - po prawej profil (domyślny / per gra), zakładki **Selected**, **Rumble**, **Gyro**, **Accessibility**, **Changes** i przycisk **Save** (Ctrl+S);
   - remapowanie przycisków i gałek, celowanie żyroskopem (prawa gałka / mysz); strefy martwe, krzywe i
     anti-deadzone w zwijanej sekcji „Zaawansowane” (otwiera się sama, gdy coś w niej zmieniono). Gdy sekcja
     **Celowanie żyroskopem** jest rozwinięta, w prawym górnym rogu rysunku pada pojawia się podgląd na żywo (jak przy
@@ -99,6 +99,16 @@
     moduł na stałe (zapamiętany po urządzeniu, nie po numerze). **Auto** - dongle USB przed wbudowanym; **Ręcznie** -
     nadajnik nic nie zmienia. Niewybrane są wyłączone (rfkill), wybrany działa bez trybu SNIFF (pad nie usypia
     łącza); wpięcie / wyjęcie dongla bez restartu. Domyślny tryb: `bt_adapter` w `sender.toml`;
+  - **tryb dostępności** (zakładka **Dostępność** po prawej, per pad, dla gracza, który nie dociąga gałki do końca,
+    np. z nakładką na pada): przełącznik i suwaki dla wybranej gałki - **zasięg** (gra dostaje pełne wychylenie np. przy 70 % drogi gałki, skalowane
+    promieniowo), wewnętrzna strefa martwa, krzywa odpowiedzi i **tłumienie drżenia** (ruch poniżej progu jest
+    ignorowany; próg, nie filtr, więc bez dodatkowego opóźnienia). Działa na gałce fizycznej przed profilem, więc
+    idzie za gałką przy zamianie i obowiązuje we wszystkich profilach, także w profilach gier; wartości zostają
+    zapisane po wyłączeniu przełącznika (`receiver/padcal.json`). „Dostosuj do ręki” to kreator: dryf w spoczynku,
+    potem gracz obraca gałką dookoła, tak daleko, jak jest wygodnie (6 s) - zasięg to najsłabszy kierunek, więc
+    każdy kierunek sięga 100 %. Wynik trafia do suwaków (dalej do zmiany, „Przywróć zalecane”); całość da się
+    obsłużyć innym padem przez tryb TV. Zielony pierścień na podglądzie gałek w widoku Test pokazuje zasięg. Gdy
+    kreator działa, gra dostaje neutralny pad;
   - **widok Test** (trzeci przełącznik pod padem: Wynik / Fizycznie / Test) dla wybranego pada:
     - na rysunku na żywo przyciski, wartości spustów (0-255), gałki, palce i klik touchpada (także w trybie myszy);
     - po prawej wykresy gyro [°/s] i akcelerometru [g] (3 osie, ostatnie 5 s, skala sama się dopasowuje) i
@@ -108,15 +118,6 @@
       (×1,25, w górę do 1 %, min. 3 %); „Zastosuj” zapisuje ją od razu jako **korekcję dryfu pada**
       (`receiver/padcal.json`, per MAC). Działa we wszystkich profilach tego pada, także w profilach gier, jako
       minimum strefy martwej (większa z profilu zostaje) i idzie za gałką fizyczną przy zamianie gałek;
-    - **tryb dostępności** (per pad, dla gracza, który nie dociąga gałki do końca, np. z nakładką na pada): przełącznik i
-      suwaki dla wybranej gałki - **zasięg** (gra dostaje pełne wychylenie np. przy 70 % drogi gałki, skalowane
-      promieniowo), wewnętrzna strefa martwa, krzywa odpowiedzi i **tłumienie drżenia** (ruch poniżej progu jest
-      ignorowany; próg, nie filtr, więc bez dodatkowego opóźnienia). Działa na gałce fizycznej przed profilem, więc
-      idzie za gałką przy zamianie i obowiązuje we wszystkich profilach, także w profilach gier; wartości zostają
-      zapisane po wyłączeniu przełącznika (`receiver/padcal.json`). „Dostosuj do ręki” to kreator: dryf w spoczynku,
-      potem gracz obraca gałką dookoła, tak daleko, jak jest wygodnie (6 s) - zasięg to najsłabszy kierunek, więc
-      każdy kierunek sięga 100 %. Wynik trafia do suwaków (dalej do zmiany, „Przywróć zalecane”); całość da się
-      obsłużyć innym padem przez tryb TV;
     - **kalibracja żyroskopu:** pad leży nieruchomo 3 s, nadajnik liczy offset i zapisuje go na nadajniku per pad
       (`sender/gyro_cal.json`); skalibrowany pad nie kalibruje się już przy starcie nadajnika (nie trzeba go wtedy
       odkładać), autobias dalej dostraja offset w pamięci. Wymaga nadajnika v9;

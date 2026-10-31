@@ -11,7 +11,7 @@
 | Gyro turns the wrong way | editor → Gyro aim → "Invert horizontal / vertical" |
 | Crosshair / camera slowly drifts by itself | Test view → gyro chart with the pad lying still; if it isn't flat - "Calibrate gyro" |
 | Character walks by itself / camera spins (stick) | Test view → "Measure drift" → "Apply" (drift correction for this pad) |
-| Can't push a stick all the way (overlay, weak hand) | Test view → Accessibility → "Adjust to the hand", or set the range slider by hand |
+| Can't push a stick all the way (overlay, weak hand) | Accessibility tab (right column) → "Adjust to the hand", or set the range slider by hand |
 | Motion inverted in an emulator (DSU) | `acc_sign` / `gyro_sign` in the receiver config |
 | Emulator on another device doesn't see the DSU server | since the security review it listens only on this PC: `dsu_bind = "0.0.0.0"` in `receiver.toml` |
 | Pads stop working after going back to an older version (with `key`) | delete `auth.json` next to the newer side (protocol v3 is remembered there) |

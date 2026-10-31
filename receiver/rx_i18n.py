@@ -182,6 +182,7 @@ EN: Final[dict[str, str]] = {
         "Result = what the game gets after your remaps. Physical = what the pad itself is doing.",
     "Wybrane": "Selected",
     "Gyro": "Gyro",
+    "Dostępność": "Accessibility",
     "Zmiany": "Changes",
     "Zmiany ({n})": "Changes ({n})",
     "Zapisz": "Save",
@@ -845,7 +846,6 @@ EN: Final[dict[str, str]] = {
     "martwa z korekcji dryfu; żółty: szczyt ostatniego pomiaru; zielony: zasięg z trybu dostępności.":
         "Square-root scale: small deviations are magnified. Dotted circles: 5% and 25% deflection; blue: deadzone from "
         "the drift correction; yellow: peak of the last measurement; green: range from the accessibility mode.",
-    "DOSTĘPNOŚĆ - GAŁKI": "ACCESSIBILITY - STICKS",
     "Tryb dostępności tego pada": "Accessibility mode for this pad",
     "Zasięg, strefa martwa, krzywa i tłumienie drżenia gałek tego pada - działa od razu we wszystkich jego profilach "
     "(także profilach gier). Po wyłączeniu ustawienia zostają zapisane.":

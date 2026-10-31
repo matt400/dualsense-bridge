@@ -124,7 +124,7 @@ ok("efekt spustu: tryby i ich suwaki, wibracja z gry, profil, plakietki, ostrze�
 click_part("cross"); assert not win.part_page.trig.isVisible()
 win.part_page.dst.changed.emit("circle"); pump(300)
 assert store.get(base)["buttons"] == {"cross": "circle"} and S.remap_maps[0]["buttons"] == {"cross": "circle"}
-assert "Applied live" in win.status.text() and win.tabs.tabText(3) == "Changes (1)"
+assert "Applied live" in win.status.text() and win.tabs.tabText(4) == "Changes (1)"
 click_part("r2")
 win.part_page.trig_adv.set_open(True)
 win.part_page.tdz.slider.setValue(30); pump(300)
@@ -158,13 +158,13 @@ assert "Gyro idle — hold L2" in win.gyro_page.live.text(), win.gyro_page.live.
 ok("gyro: tryb, aktywacja, czułość, wiersz stanu na żywo")
 
 # ---------- lista zmian, cofanie, zapis ----------
-win.tabs.setCurrentIndex(3)
-assert win.tabs.tabText(3) == "Changes (6)", win.tabs.tabText(3)
+win.tabs.setCurrentIndex(4)
+assert win.tabs.tabText(4) == "Changes (6)", win.tabs.tabText(4)
 texts = [lb.text() for lb in win.changes_page.box.findChildren(QLabel)]
 assert any("Gyro: right stick, hold L2" in t for t in texts) and any("Left stick response" in t for t in texts), texts
 first = win.changes_page.box.findChildren(QFrame, "row")[0]
 first.findChild(QToolButton).click(); pump(300)          # × przy pierwszej pozycji (Cross → Circle)
-assert "cross" not in store.get(base)["buttons"] and win.tabs.tabText(3) == "Changes (5)"
+assert "cross" not in store.get(base)["buttons"] and win.tabs.tabText(4) == "Changes (5)"
 win.save_btn.click(); pump(100)
 saved = json.load(open(C.REMAP_PATH))["profiles"][base]
 assert saved["gyro"]["hold"] == "l2" and saved["buttons"] == {"l3": None} and "Saved" in win.status.text() and win.status.property("level") == "ok"
@@ -185,7 +185,7 @@ assert bar.combo.currentText().startswith("eldenring.exe") and bar.remove.isVisi
 win.part_page.l3.changed.emit("l3"); win.save_btn.click(); pump(50)
 assert store.in_file(key) and key in json.load(open(C.REMAP_PATH))["profiles"]
 bar.combo.changed.emit(base); pump(20)
-assert win.ed.key == base and not bar.remove.isVisible() and win.tabs.tabText(3) == "Changes (5)"
+assert win.ed.key == base and not bar.remove.isVisible() and win.tabs.tabText(4) == "Changes (5)"
 bar.combo.changed.emit(key); pump(20); assert S.active[0] == key
 bar.remove.click(); assert bar.remove.text() == "Sure?" and store.has(key)
 bar.remove.click(); pump(20)
@@ -214,7 +214,7 @@ rst = win.changes_page.reset
 assert rst.isVisibleTo(win.changes_page) and win.revert_btn.isEnabled()
 rst.click(); assert win.ed.prof["buttons"] == {"cross": "circle"}, "pierwsze kliknięcie tylko uzbraja"
 rst.click(); pump(20)
-assert win.ed.prof == rx_editor.empty() and win.tabs.tabText(3) == "Changes" and not rst.isVisibleTo(win.changes_page)
+assert win.ed.prof == rx_editor.empty() and win.tabs.tabText(4) == "Changes" and not rst.isVisibleTo(win.changes_page)
 ok("Usuń wszystkie: na liście zmian, po drugim kliknięciu, znika przy pustym profilu")
 win.hide(); assert not win.live_timer.isActive() and win.slow_timer.isActive(), "ukryte okno nie odrysowuje pada, ale odświeża zasobnik"
 win.show(); pump(50); assert win.live_timer.isActive()
