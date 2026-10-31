@@ -49,7 +49,7 @@ class TickTimer:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._fd = -1
         self._handle: asyncio.TimerHandle | None = None         # the call_at fallback
-        self._count = bytearray(8)                              # the expiration counter that has to be read from a timerfd
+        self._count = [bytearray(8)]                            # readv's buffer list for the expiration counter (made once, not per tick)
         self.precise = False
 
     def arm(self, due: float) -> TickTimer:
@@ -127,7 +127,7 @@ class TickTimer:
         if self._fd < 0:
             return
         try:
-            os.readv(self._fd, [self._count])
+            os.readv(self._fd, self._count)
         except (BlockingIOError, InterruptedError):
             return
         except OSError:

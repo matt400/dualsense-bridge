@@ -20,7 +20,11 @@ The receiver sends 10 ms frames of 48 kHz mono sound (see the spk packet in prot
   (``due += period``). While a
   haptics stream writes, the haptics tick writes the 0x36 reports and the speaker timer only follows its clock (it re-arms one period
   after the last audio report), so there is one clock and exactly one report per period; when the haptics stream ends, the speaker
-  timer is already in phase.
+  timer writes the report the haptics tick leaves at its end (``take_clock``), on the same clock. Whichever stream starts second puts
+  its first deadline on the other one's clock (``clock_due``, sender_haptics.on_clock), and the speaker hands over at the haptics
+  stream's first deadline: the report clock never moves, so no frame is added or lost on the way. While it follows, the timer never
+  re-arms for a moment that has passed (a haptics write that did not go through leaves ``t_audio`` behind): it looks again
+  ``FOLLOW_S`` later.
 * Lifecycle. The first frame puts the pad into audio mode and sets the volume (Rumble.speaker_begin). SPK_END (or 0.2 s without
   a packet) ends the stream: what is buffered plays, then ~100 ms of silence, then Rumble.speaker_end sets the volume to 0 and leaves
   audio mode (P3a: that removes the pop at the end). While no stream runs, nothing is sent.
@@ -37,7 +41,8 @@ from dataclasses import dataclass, fields
 from typing import Final
 
 from proto import HAPT_CHUNK, HAPT_FRAMES, HAPT_RATE, SPK_BYTES, SPK_END, SPK_FRAME, SPK_START, UINT32_MASK
-from sender_haptics import BUFFER_AT, BUFFER_BYTES, COUNTER_AT, CRC_AT, DATA_AT, HEADER, PAD_BUFFER_DEFAULT, REPORT_LEN, SEQ_AT, U32_HALF
+from sender_haptics import (BUFFER_AT, BUFFER_BYTES, COUNTER_AT, CRC_AT, DATA_AT, HEADER, PAD_BUFFER_DEFAULT, REPORT_LEN, SEQ_AT, U32_HALF,
+                            on_clock)
 from sender_opus import COMPLEXITY_AUTO, DEFAULT_MODE, OpusEncoder
 from sender_rumble import BT_SEQ_MASK, BT_SEQ_SHIFT, BYTE_MASK, CRC_LEN, CRC_SEED, Rumble
 from sender_tick import TickTimer
@@ -253,10 +258,13 @@ class SpeakerStream:
         active: A stream is running (the pad is in audio mode and the timer runs).
         stats: The counters of the current (or last) stream.
         target: The wanted depth of the ring [frames].
+        settings: The settings the stream was made with (buffer, volume, Opus size, mode, complexity): the pad rebuilds an idle
+            stream when they change.
     """
 
     def __init__(self, idx: int, rumble: Rumble, report: Report3x, drives: Callable[[], bool], buffer_ms: float,
-                 volume: int, opus_bytes: int, opus_mode: str = DEFAULT_MODE, opus_complexity: int = COMPLEXITY_AUTO) -> None:
+                 volume: int, opus_bytes: int, opus_mode: str = DEFAULT_MODE, opus_complexity: int = COMPLEXITY_AUTO,
+                 clock: Callable[[], float | None] | None = None) -> None:
         """Create an idle stream.
 
         Args:
@@ -269,12 +277,15 @@ class SpeakerStream:
             opus_bytes: Bytes per 10 ms Opus packet (64 kbit/s = 80).
             opus_mode: "hybrid" (default) or "celt" (see sender_opus).
             opus_complexity: The encoder's effort, 0..10; COMPLEXITY_AUTO picks the usual one for the mode (see sender_opus).
+            clock: Returns the next deadline of a haptics stream that already runs on the pad, or None; a stream that starts then
+                ticks on that clock.
 
         Raises:
             OSError: libopus is missing or the encoder cannot be created.
         """
-        self.idx, self.rumble, self.report, self.drives = idx, rumble, report, drives
+        self.idx, self.rumble, self.report, self.drives, self.clock = idx, rumble, report, drives, clock
         self.volume = volume
+        self.settings = (buffer_ms, volume, opus_bytes, opus_mode, opus_complexity)
         self.encoder = OpusEncoder(opus_bytes, opus_mode, opus_complexity)
         self.encoder.bind(report.buf, OPUS_AT)
         self.target = max(2, round(buffer_ms / (FRAME_S * 1000)))
@@ -288,6 +299,8 @@ class SpeakerStream:
         self._due = 0.0                                         # when the next tick is due (absolute)
         self._prime_ticks = 0
         self._tail = 0                                          # silent reports still to send after the last frame
+        self._following = False                                 # the haptics tick writes the reports, the timer only follows it
+        self._follow_since = 0.0                                # when the following began
         self._retry = 0.0
         self._ticker: TickTimer | None = None                   # the tick timer of the running stream (one descriptor, closed at its end)
         self._timer: TickTimer | None = None                    # the same object while a tick is pending, None otherwise
@@ -357,13 +370,17 @@ class SpeakerStream:
             self._retry = now + RETRY_S
             print(f"Controller {self.idx}: speaker frame ignored - this pad cannot play audio (USB or no HID report)")
             return False
-        self.active, self.ending, self.priming, self._prime_ticks, self._tail = True, False, False, 0, TAIL_TICKS
+        # a haptics stream that already writes takes our first frame with its next report, not after the playout delay below: prime the
+        # buffer then, as after an underrun (without it the first frame or two played and the empty buffer ran into an underrun)
+        self.active, self.ending, self.priming, self._prime_ticks, self._tail = True, False, self.drives(), 0, TAIL_TICKS
+        self._following = False
         self.ring.clear()
         self.stats = Counters()
         self._expected = frame
         self._why = "end of stream"
         self.report.attach(self.fill, self.encoder.size, PAD_BUFFER)
-        self._due = now + self.target * FRAME_S                 # the playout delay: the first tick finds `target` frames
+        # the playout delay (the first tick finds `target` frames), on the haptics clock if a haptics stream already runs
+        self._due = on_clock(now + self.target * FRAME_S, self.clock() if self.clock is not None else None, PERIOD_S)
         self._ticker = TickTimer(self._tick)
         self._arm()
         enc = self.encoder
@@ -388,11 +405,41 @@ class SpeakerStream:
                 self._finish(self._why)
                 return
             self._tail -= 1
-        if self.drives() and now - self.rumble.t_audio < 2 * PERIOD_S:
-            self._due = self.rumble.t_audio + PERIOD_S + FOLLOW_S   # the haptics tick writes and consumes our frames
+        if self._follows(now):
+            # the haptics tick writes and consumes our frames; never a deadline that has passed (a busy loop until it writes)
+            self._due = max(self.rumble.t_audio + PERIOD_S, now) + FOLLOW_S
         else:
             self._write(now)
         self._arm()
+
+    def _follows(self, now: float) -> bool:
+        """Whether this tick leaves the report to the haptics tick: it drives the clock and has written lately (or is just taking over).
+
+        When its reports stop going out for two periods (write errors), the speaker writes again by itself.
+        """
+        if not self.drives():
+            self._following = False
+            return False
+        if not self._following:
+            self._following, self._follow_since = True, now     # a haptics stream whose first tick is due now has not written yet
+        if now - max(self.rumble.t_audio, self._follow_since) < 2 * PERIOD_S:
+            return True
+        self._following = False
+        return False
+
+    def take_clock(self, due: float) -> None:
+        """The haptics stream ended and will not write the report due at ``due``: write it then, and go on from there on its clock.
+
+        Also when the speaker has not ticked yet (it started during the haptics and still waits for its buffer): its own first deadline
+        would start a clock of its own a fraction of a period away from the one the pad was just fed with.
+        """
+        if self.active and self._ticker is not None:
+            self._due = due
+            self._arm()
+
+    def clock_due(self) -> float | None:
+        """The deadline of the next report the speaker writes on its own clock, or None (idle, or following the haptics tick)."""
+        return self._due if self.active and not self._following else None
 
     def _arm(self) -> None:
         """Arm the tick timer for the next deadline (``_due``)."""
@@ -444,7 +491,7 @@ class SpeakerStream:
             self._ticker.close()
             self._ticker = None
         self._timer = None
-        self.active = self.ending = False
+        self.active = self.ending = self._following = False
         self.report.detach()
         self.rumble.speaker_end()
         self.ring.clear()

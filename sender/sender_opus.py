@@ -162,8 +162,11 @@ class OpusEncoder:
 
         Returns:
             True when the packet has exactly ``size`` bytes (always, with CBR); False on an encoder error or another length -
-            the caller then sends silence rather than a packet of the wrong size.
+            the caller then sends silence rather than a packet of the wrong size. Also False after ``close`` or before ``bind``:
+            libopus does not check for a freed state or a null output, either would crash the whole sender instead of raising.
         """
+        if not self._state or not self._out_addr:
+            return False
         n = self._lib.opus_encode(self._state, self._pcm_addr, SPK_FRAME, self._out_addr, self.size)
         return n == self.size
 

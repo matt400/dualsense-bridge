@@ -17,6 +17,12 @@ proto. This module plays them to the pad:
 * Lifecycle. The first chunk puts the pad into audio mode (Rumble.haptics_begin); the stream ends with HAPT_END (what is still
   buffered is played) or after TIMEOUT_S without a packet; then Rumble.haptics_end brings the normal mode (rumble) back. While no
   stream runs, nothing is sent: every report costs the pad some input rate (measured: ~15-19 % fewer input reports while streaming).
+* Joining a running speaker. When the speaker already plays on its own clock, the first tick is put on that clock (whole periods
+  from the speaker's next deadline, ``on_clock``), and from that deadline on the speaker leaves the writing to this tick (``drives``);
+  at the end the deadline this tick will not use goes back to the speaker (``on_end``). Started at its own phase, the first haptics
+  report came a fraction of a period after the speaker's last one, and the speaker took over a couple of ms late: every haptics burst
+  (the receiver starts haptics anew after every pause) moved the pad's clock, so the speaker's buffer drained into an underrun or
+  grew into drops.
 * Fewer, larger reports. The input cost follows the report rate (94/s). A report that carries several chunks is one more
   ChunkReport (``chunks`` = how many it holds): the tick, the thresholds and the buffer follow ``frames`` - nothing else changes.
   The layout of such reports (0x33..0x36) has not been checked on a pad yet, so only 0x32 (``Report32``) exists.
@@ -25,9 +31,11 @@ Rumble owns the HID file descriptor and the sequence counter; this module only b
 """
 from __future__ import annotations
 
+import math
 import struct
 import time
 import zlib
+from collections.abc import Callable
 from dataclasses import dataclass, fields
 from typing import Final, Protocol
 
@@ -58,7 +66,24 @@ LATE_S: Final = 0.004                       # a tick later than this is counted 
 RESYNC_S: Final = 0.05                      # a tick later than this (a stalled loop): no burst of catch-up reports, restart the timeline
 PRIME_MAX_TICKS: Final = 8                  # after an underrun wait at most this many ticks (85 ms) for the buffer to refill
 U32_HALF: Final = 1 << 31                  # a frame-counter step below this is "ahead", above it "behind" (modulo 2**32)
+HANDOVER_S: Final = 0.0005                  # float slack when the speaker asks whether this stream's first tick is due at its deadline
 _SILENCE: Final = memoryview(bytes(HAPT_CHUNK * 8))
+
+
+def on_clock(earliest: float, ref: float | None, period: float) -> float:
+    """The first deadline of a stream that starts while the other audio stream of the pad has its clock: ``ref`` +/- whole periods.
+
+    Args:
+        earliest: The deadline the stream wants on its own (its playout delay).
+        ref: A deadline of the running clock (it may lie after ``earliest``), or None (nothing runs: ``earliest`` is the answer).
+        period: The report period.
+
+    Returns:
+        The first deadline of the running clock at or after ``earliest``.
+    """
+    if ref is None:
+        return earliest
+    return ref + math.ceil((earliest - ref) / period - 1e-9) * period
 
 
 class ChunkReport(HapticsReport, Protocol):
@@ -224,9 +249,11 @@ class HapticsStream:
         writing: The tick has written reports in this stream (the speaker stream follows this clock, see sender_speaker).
         stats: The counters of the current (or last) stream.
         target: The wanted depth of the buffer [frames].
+        buffer_ms: The jitter buffer this stream was made with (the pad rebuilds an idle stream when the setting changes).
     """
 
-    def __init__(self, idx: int, rumble: Rumble, buffer_ms: float, report: ChunkReport | None = None) -> None:
+    def __init__(self, idx: int, rumble: Rumble, buffer_ms: float, report: ChunkReport | None = None,
+                 clock: Callable[[], float | None] | None = None, on_end: Callable[[float], None] | None = None) -> None:
         """Create an idle stream.
 
         Args:
@@ -235,8 +262,12 @@ class HapticsStream:
             buffer_ms: The jitter buffer [ms]: the playout starts this long after the first chunk, and an underrun is refilled to
                 this depth. At least one report.
             report: The report builder; the default is ``Report32``.
+            clock: Returns the deadline of the next report of an audio clock that already runs on the pad (the speaker's own), or
+                None; a stream that starts then ticks on that clock (see the module docstring).
+            on_end: Called with the deadline of the report this stream will not write when a stream that wrote ends, so the speaker
+                can write it on the same clock.
         """
-        self.idx, self.rumble = idx, rumble
+        self.idx, self.rumble, self.buffer_ms, self.clock, self.on_end = idx, rumble, buffer_ms, clock, on_end
         self.report: ChunkReport = report if report is not None else Report32()
         self.frames = HAPT_FRAMES * self.report.chunks          # frames one report plays
         self.period = self.frames / HAPT_RATE                   # seconds between reports
@@ -316,12 +347,25 @@ class HapticsStream:
         self.stats = Counters()
         self._expected = frame
         self._why = "end of stream"
-        self._due = now + self.target / HAPT_RATE               # the playout delay: the first tick finds a buffer of `target` frames
+        # the playout delay (the first tick finds `target` frames), on the speaker's clock if it already plays
+        self._due = on_clock(now + self.target / HAPT_RATE, self.clock() if self.clock is not None else None, self.period)
         self._ticker = TickTimer(self._tick)
         self._arm()
         print(f"Controller {self.idx}: haptics start (buffer {self.target * 1000 / HAPT_RATE:.0f} ms, "
               f"{self.report.chunks} chunk(s) per report)")
         return True
+
+    def drives(self) -> bool:
+        """Whether this tick writes the pad's audio reports: it has written in this stream, or its first tick is due now.
+
+        The speaker asks at its own deadline: True there means "leave this report to the haptics tick" (both are on one clock, see
+        ``on_clock``).
+        """
+        return self.writing or (self.active and self._due <= time.monotonic() + HANDOVER_S)
+
+    def clock_due(self) -> float | None:
+        """The deadline of this stream's next tick (a speaker stream that starts joins this clock), or None while idle."""
+        return self._due if self.active else None
 
     # ---------- the pad's clock ----------
     def _tick(self) -> None:
@@ -398,10 +442,13 @@ class HapticsStream:
             self._ticker.close()
             self._ticker = None
         self._timer = None
+        wrote = self.writing
         self.active = self.ending = self.writing = False
         self.rumble.haptics_end()
         self.ring.clear()
         print(f"Controller {self.idx}: haptics end ({why}): {self.stats.text()}")
+        if wrote and self.on_end is not None:
+            self.on_end(self._due)                              # the report due now goes out from the speaker, on this clock
 
     def close(self) -> None:
         """Stop for good (the pad is going away or the sender is closing); safe to call when idle."""
