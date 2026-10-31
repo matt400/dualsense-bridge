@@ -38,7 +38,6 @@ ABS_RANGE: Final = 1 << 60                              # larger than any sample
 MOTION_AXES: Final = 6
 GYRO_AT: Final = 3
 GYRO_AXES: Final = 3
-_ZERO_MOTION: Final = (0,) * MOTION_AXES               # copied over the sums after every packet (a slice assignment, no new list)
 AUTOBIAS_MIN_SAMPLES: Final = 20                        # a window with fewer samples says nothing about the bias
 AUTOBIAS_STEP: Final = 0.5                              # the bias moves this far towards the window mean at once
 PAD_TIMESTAMP_BITS: Final = 32                          # the pad's MSC_TIMESTAMP counter is 32-bit (wraps every ~71 min)
@@ -418,7 +417,7 @@ class _MotionStream:
         self.autobias = _AutobiasWindow(time.monotonic())
         self.sums = [0] * MOTION_AXES       # the sum of the samples since the last packet: we send the AVERAGE
         self.count = 0
-        self._next = [0] * MOTION_AXES      # the next packet's values; swapped with c.motion when sent, so nothing is allocated per packet
+        self._new = [0] * MOTION_AXES       # scratch for _send_average: the averaged packet is built here, not in a new list
         self.meter = c.meters.setdefault("motion", RateMeter()) if C.STATS else None
         self.bt = BtDelay()
         self.dropping = False
@@ -497,28 +496,27 @@ class _MotionStream:
     def _send_average(self, e: InputEvent) -> None:
         """Send the average of the samples since the last packet (bias-corrected) if it moved past the deadband.
 
-        Runs for every packet (up to 1000 per second), so it works in place: the sums are zeroed, the values go into a spare list,
-        and that list and ``c.motion`` change places when the packet is sent (``send_state`` copies the values, nobody keeps the list).
+        Runs for every packet (up to 1000 Hz), so it works in place: the sums are zeroed and the result goes to a scratch list
+        that is copied into ``c.motion`` only when it is sent - no list or generator is built per call.
         """
         c = self.c
-        sums, new, n, bias = self.sums, self._next, self.count, c.gyro_bias
-        for k in range(GYRO_AT):
-            new[k] = round(sums[k] / n)
-        for k in range(GYRO_AXES):
-            new[GYRO_AT + k] = round(sums[GYRO_AT + k] / n - bias[k])
-        sums[:] = _ZERO_MOTION
+        sums, new, old, bias, n = self.sums, self._new, c.motion, c.gyro_bias, self.count
+        moved = c.pending
+        for k in range(MOTION_AXES):
+            mean = sums[k] / n
+            sums[k] = 0
+            if k < GYRO_AT:                       # the accelerometer first, then the gyro (bias-corrected)
+                v, deadband = round(mean), C.DB_ACC
+            else:
+                v, deadband = round(mean - bias[k - GYRO_AT]), C.DB_GYRO
+            new[k] = v
+            if abs(v - old[k]) > deadband:
+                moved = True
         self.count = 0
-        if c.pending or self._moved(new, c.motion):
-            self._next, c.motion = c.motion, new
+        if moved:
+            old[:] = new
             c.mark_event(e)
             c.request_send()
-
-    @staticmethod
-    def _moved(new: list[int], old: list[int]) -> bool:
-        """Whether an axis moved past its deadband (motion_deadband_acc / _gyro, read every time: the window can change them)."""
-        acc, gyro = C.DB_ACC, C.DB_GYRO        # written out, not any(<generator>): this runs per packet and a generator is an allocation
-        return (abs(new[0] - old[0]) > acc or abs(new[1] - old[1]) > acc or abs(new[2] - old[2]) > acc
-                or abs(new[3] - old[3]) > gyro or abs(new[4] - old[4]) > gyro or abs(new[5] - old[5]) > gyro)
 
 
 async def stream_motion(c: Ctrl) -> None:

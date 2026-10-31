@@ -35,6 +35,16 @@ R.os.sched_getaffinity = lambda pid: set(range(8))
 R.os.sched_setaffinity = lambda pid, cpus: calls.append(("affinity", cpus))
 assert R.pin_fast_cpus(root) == "fast cores 4,5,6,7" and calls == [("affinity", {4, 5, 6, 7})]
 ok("przypięcie do najszybszych rdzeni (cpu_capacity), bez zmian przy równych rdzeniach")
+reads = []
+real_read = R._read_fast_cpus
+R._read_fast_cpus = lambda r: reads.append(r) or real_read(r)
+R._fast_cached = None
+first = R.fast_cpus()                               # the real /sys: read once...
+first.add(99)                                       # ...and the caller cannot spoil the remembered set
+assert R.fast_cpus() == first - {99} and reads == ["/sys"], reads
+assert R.fast_cpus(root) == {4, 5, 6, 7} and reads == ["/sys", root], "another root is always read"
+R._read_fast_cpus = real_read
+ok("fast_cpus(): the real /sys is read once (apply() on the loop does no sysfs reads)")
 
 # ---------- SCHED_FIFO ----------
 R.os.sched_setscheduler = lambda pid, pol, prm: calls.append(("fifo", pol, prm.sched_priority))

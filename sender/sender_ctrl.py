@@ -125,14 +125,14 @@ class Ctrl:
         self.rumble: Rumble | None = None
         self.haptics: HapticsStream | None = None
         self.speaker: SpeakerStream | None = None
+        self._stream_cfg: dict[str, tuple[object, ...]] = {}    # the settings each stream was built with (see on_haptics / on_speaker)
         self._speaker_failed: Rumble | None = None    # the rumble backend whose encoder could not be created (logged once, not retried)
         self.audio_report: Report3x | None = None     # the report both streams write (0x32 / 0x36), shared so one tick plays both
         self.led: str | None = None
         self.led_color: tuple[int, int, int] | None = None
         self._led_max: str | None = None          # max_brightness of the LED, read once (it never changes)
-        self._led_fails = 0                       # lightbar writes that failed in a row
         self._led_want: tuple[int, int, int] | None = None   # the newest colour asked for while a write is running
-        self._led_busy = False                    # a sysfs write runs in a worker thread
+        self._led_fails, self._led_busy = 0, False   # lightbar writes that failed in a row; a sysfs write runs in a worker thread
         self.reports = {"pad": 0, "motion": 0}   # device report counters (Hz in the info packet)
         self.last_input = time.monotonic()        # the last deliberate use of the pad (for idle power-off)
         self.powering_off = float("-inf")
@@ -547,12 +547,13 @@ class Ctrl:
         r = self.rumble
         if r is None or not r.bits & CAP_HAPTICS or self.closing:
             return
-        h = self.haptics
-        # a new backend, or a buffer setting changed from the receiver window since this (idle) stream was made: build it again,
-        # so the setting counts from the next stream as the window says (cfgspec WHEN_STREAM), not from the next reconnect
-        if h is None or h.rumble is not r or (not h.active and h.buffer_ms != C.HAPTICS_BUFFER_MS):
+        h, cfg = self.haptics, (C.HAPTICS_BUFFER_MS,)
+        # the settings are read when the stream is built: an idle stream is built again if they changed since (the window or
+        # remote_cfg.json), so a new value applies to the next stream and not only after the pad reconnects
+        if h is None or h.rumble is not r or (not h.active and self._stream_cfg.get("haptics", cfg) != cfg):
             if h is not None:
                 h.close()
+            self._stream_cfg["haptics"] = cfg
             h = self.haptics = HapticsStream(self.idx, r, C.HAPTICS_BUFFER_MS, self._report(), self._speaker_clock,
                                              self._haptics_ended)
         h.feed(frame, flags, data)
@@ -580,11 +581,6 @@ class Ctrl:
         if self.speaker is not None:
             self.speaker.take_clock(due)
 
-    @staticmethod
-    def _speaker_settings() -> tuple[float, int, int, str, int]:
-        """The speaker settings a stream is made with, in the order of SpeakerStream.settings."""
-        return (C.SPEAKER_BUFFER_MS, C.SPEAKER_VOLUME, C.SPEAKER_OPUS_BYTES, C.SPEAKER_OPUS_MODE, C.SPEAKER_OPUS_COMPLEXITY)
-
     def on_speaker(self, frame: int, flags: int, data: memoryview) -> None:
         """Take 10 ms of the game's sound from the PC; the first one starts the pad's speaker stream.
 
@@ -599,14 +595,15 @@ class Ctrl:
         r = self.rumble
         if r is None or not r.bits & CAP_SPEAKER or self.closing or self._speaker_failed is r:
             return
-        sp, wanted = self.speaker, self._speaker_settings()
-        # as for haptics: settings changed in the receiver window count from the next stream, so an idle stream is built again
-        if sp is None or sp.rumble is not r or (not sp.active and sp.settings != wanted):
+        cfg = (C.SPEAKER_BUFFER_MS, C.SPEAKER_VOLUME, C.SPEAKER_OPUS_BYTES, C.SPEAKER_OPUS_MODE, C.SPEAKER_OPUS_COMPLEXITY)
+        sp = self.speaker
+        if sp is None or sp.rumble is not r or (not sp.active and self._stream_cfg.get("speaker", cfg) != cfg):    # see on_haptics
             if sp is not None:
                 sp.close()
                 self.speaker = None
+            self._stream_cfg["speaker"] = cfg
             try:
-                sp = self.speaker = SpeakerStream(self.idx, r, self._report(), self._haptics_drives, *wanted, clock=self._haptics_clock)
+                sp = self.speaker = SpeakerStream(self.idx, r, self._report(), self._haptics_drives, *cfg, clock=self._haptics_clock)
             except OSError as e:
                 print(f"Controller {self.idx}: speaker unavailable ({e})")
                 self.speaker, self._speaker_failed = None, r

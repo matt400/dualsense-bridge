@@ -258,8 +258,6 @@ class SpeakerStream:
         active: A stream is running (the pad is in audio mode and the timer runs).
         stats: The counters of the current (or last) stream.
         target: The wanted depth of the ring [frames].
-        settings: The settings the stream was made with (buffer, volume, Opus size, mode, complexity): the pad rebuilds an idle
-            stream when they change.
     """
 
     def __init__(self, idx: int, rumble: Rumble, report: Report3x, drives: Callable[[], bool], buffer_ms: float,
@@ -285,7 +283,6 @@ class SpeakerStream:
         """
         self.idx, self.rumble, self.report, self.drives, self.clock = idx, rumble, report, drives, clock
         self.volume = volume
-        self.settings = (buffer_ms, volume, opus_bytes, opus_mode, opus_complexity)
         self.encoder = OpusEncoder(opus_bytes, opus_mode, opus_complexity)
         self.encoder.bind(report.buf, OPUS_AT)
         self.target = max(2, round(buffer_ms / (FRAME_S * 1000)))

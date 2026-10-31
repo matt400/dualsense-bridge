@@ -249,7 +249,6 @@ class HapticsStream:
         writing: The tick has written reports in this stream (the speaker stream follows this clock, see sender_speaker).
         stats: The counters of the current (or last) stream.
         target: The wanted depth of the buffer [frames].
-        buffer_ms: The jitter buffer this stream was made with (the pad rebuilds an idle stream when the setting changes).
     """
 
     def __init__(self, idx: int, rumble: Rumble, buffer_ms: float, report: ChunkReport | None = None,
@@ -267,7 +266,7 @@ class HapticsStream:
             on_end: Called with the deadline of the report this stream will not write when a stream that wrote ends, so the speaker
                 can write it on the same clock.
         """
-        self.idx, self.rumble, self.buffer_ms, self.clock, self.on_end = idx, rumble, buffer_ms, clock, on_end
+        self.idx, self.rumble, self.clock, self.on_end = idx, rumble, clock, on_end
         self.report: ChunkReport = report if report is not None else Report32()
         self.frames = HAPT_FRAMES * self.report.chunks          # frames one report plays
         self.period = self.frames / HAPT_RATE                   # seconds between reports
