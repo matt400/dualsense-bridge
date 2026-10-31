@@ -134,6 +134,38 @@ assert dlg.hap_scope.key() == A and not dlg.hap_scope.use_default.isChecked() an
     "po ponownym otwarciu okna zostaje ostatnio wybrany pad z własnym ustawieniem"
 ok("Ustawienia -> Haptyka: domyślne + per pad, siła, notka o starym nadajniku, test, zapis bez restartu")
 
+# ---------- Ustawienia: korektor głośnika ----------
+import rx_eq
+dlg.close(); win.open_settings(); pump()
+dlg.tabs.setCurrentIndex(4); pump()
+hs = dlg.hap_scope
+hs.use_default.setChecked(True); pump()
+assert dlg._haptics_key == "*" and dlg.eq_preset.currentData() == "flat" and dlg._eq_values() == rx_eq.FLAT and len(dlg.eq_rows) == 5, \
+    "domyślnie płaski"
+dlg.eq_preset.set_data("voice"); dlg.eq_preset.changed.emit("voice"); pump()
+assert dlg._eq_values() == rx_eq.PRESETS["voice"] and dlg.eq_rows[3].val.text() == "+5 dB", "preset ustawia suwaki"
+dlg.eq_rows[0].slider.setValue(3 - rx_eq.GAIN_DB[0]); pump()                 # niski pas na +3 dB: to już nie preset
+assert dlg._eq_values() == (3, -2, 3, 5, 1) and dlg.eq_preset.currentData() == "custom", "ruch suwaka = własny"
+dlg.eq_rows[0].slider.setValue(rx_eq.PRESETS["voice"][0] - rx_eq.GAIN_DB[0]); pump()
+assert dlg.eq_preset.currentData() == "voice", "wartości jak w presecie = ten preset"
+dlg.eq_rows[0].slider.setValue(3 - rx_eq.GAIN_DB[0]); pump()
+dlg.grab().save(os.path.join(SHOTS, "gui_speaker_eq.png"))
+dlg.save_btn.click(); pump()
+assert R.cur.speaker.get("*").eq == (3, -2, 3, 5, 1), "zapis domyślnego korektora bez restartu"
+assert json.load(open(C.SETTINGS_PATH))["speaker"]["pads"]["*"]["eq"] == [3, -2, 3, 5, 1], "korektor w settings.json"
+hs.use_default.setChecked(False); pump()
+assert dlg._haptics_key == A and A in dlg._speaker and dlg._eq_values() == rx_eq.FLAT, "pad z własnym wpisem ma własny (płaski) korektor"
+dlg.eq_preset.set_data("bass"); dlg.eq_preset.changed.emit("bass"); pump()
+dlg.save_btn.click(); pump()
+assert R.cur.speaker.get(A).eq == rx_eq.PRESETS["bass"] and R.cur.speaker.get("*").eq == (3, -2, 3, 5, 1), \
+    "własny korektor pada, domyślny bez zmian"
+hs.drop.click(); pump()
+assert A not in dlg._speaker and dlg._eq_values() == (3, -2, 3, 5, 1), "reset pada: znów domyślny korektor"
+dlg.save_btn.click(); pump()
+assert R.cur.speaker.get(A).eq == (3, -2, 3, 5, 1) and A not in R.cur.speaker.pads, "po zapisie pad nie ma własnego wpisu"
+dlg.close()
+ok("Ustawienia -> Głośnik: korektor 5 pasm, presety i Własny, domyślny + per pad, reset pada, zapis bez restartu")
+
 # ---------- Ustawienia: Wake-on-LAN ----------
 S.sender_wol = ("11:22:33:44:55:66", "192.168.1.255")
 dlg.close(); win.open_settings(); pump()

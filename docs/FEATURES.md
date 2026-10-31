@@ -205,7 +205,7 @@
   - **Master:** the master pad, what only it is allowed, action buttons. Mouse and master take effect immediately,
     without a restart (`settings.json`);
   - **Lightbar:** colour per pad / default, mode, blinking, low battery threshold (immediately). The pad list sits at the top of the tab with a **Default settings** checkbox: on = you edit what pads without their own setting get, off = you edit the chosen pad (its first change makes a copy of the defaults; the reset button next to the list drops the pad's own setting);
-  - **Haptics and speaker:** game HD haptics and the pad's speaker per pad (same pad bar at the top) - enable, strength / volume, test (strength immediately, enable on the pad's reconnect);
+  - **Haptics and speaker:** game HD haptics and the pad's speaker per pad (same pad bar at the top) - enable, strength / volume, speaker equalizer, test (strength, volume and equalizer immediately, enable on the pad's reconnect);
   - **Wake-on-LAN:** enable, the button paired with PS, hold time, MAC and broadcast (empty = automatic);
   - **Pads:** which pad cards the window shows - dynamic (only connected) or a fixed number of slots (1-4, takes effect
     immediately; the slots themselves are set by `pads` in `receiver.toml`, 4 by default) - plus the virtual pad
@@ -253,6 +253,10 @@
     In silence nothing is sent (the stream ends with an end mark after ~150 ms, then the pad's volume goes to 0);
   - **Volume** 0-200 % (applies at once), **Test speaker** plays a short jingle (a few notes, about 1.3 s) on the chosen pad and says why when it
     cannot (old sender, not the master pad, setting off);
+  - **Equalizer** with five bands (100 Hz and 8 kHz shelves, 300 Hz, 1 kHz and 3 kHz peaks), -12 .. +12 dB each, and the presets Flat /
+    Voice / Bass (moving a slider switches the list to Custom). It shapes the mono sound before the soft clip, applies at once and is
+    saved in `settings.json` like the volume: one default for all pads, or an own setting per pad (MAC). Flat costs nothing; five active
+    bands take a few percent of one PC core. **Test speaker** plays the jingle with the equalizer shown in the window;
   - it uses the same composite pad and audio device as haptics, so the notes above apply (driver, default output,
     applies on reconnect). Without libopus the sender does not announce the speaker and haptics work as before;
   - "Speaker" is a master-only feature. Headphone jack and microphone are not supported.

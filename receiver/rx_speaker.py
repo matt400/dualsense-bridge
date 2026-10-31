@@ -5,7 +5,8 @@ Controller)" output: 4 channels, 48 kHz, 16-bit; channels 1 / 2 are the speaker 
 rx_haptics.Link already copies the whole window into a ring on HIDMaestro's audio thread; this module is a second consumer of that
 ring (its own read position, no second copy of the audio and no second .NET callback):
 
-  mix         left + right -> mono, the pad's gain, a soft clip above 75 % of the full scale (never wrap-around), 48 kHz s16
+  mix         left + right -> mono, the pad's gain, the equalizer (rx_eq, skipped when flat), a soft clip above 75 % of the full scale
+              (never wrap-around), 48 kHz s16
   resample    48 kHz -> 45 kHz (16 : 15, cubic): 512 source samples (10.667 ms) -> one frame of 480 samples
   SpeakerLink one per slot: ring -> mix -> resample -> 480-sample frames -> a short paced queue -> spk packets (one per 10.667 ms).
               One thread per link, started on first use, asleep while nothing plays (rx_net.send_speaker)
@@ -40,6 +41,7 @@ from collections.abc import Callable, Sequence
 from typing import Final, TypeAlias
 
 import rx_events as ev
+import rx_eq
 import rx_haptics as H
 import rx_settings
 import rx_state as S
@@ -91,6 +93,16 @@ def mix(left: Sequence[int], right: Sequence[int], gain: float) -> array[int]:
     """Left and right channel (int16) -> mono int16: the average times `gain` (1.0 = 100 %), a soft clip instead of wrap-around."""
     k = gain / 2
     return array("h", [int(v) if -KNEE <= (v := (a + b) * k) <= KNEE else _bend(v) for a, b in zip(left, right, strict=True)])
+
+
+def mix_eq(left: Sequence[int], right: Sequence[int], gain: float, eq: rx_eq.Equalizer) -> array[int]:
+    """Like mix(), with the equalizer between the gain and the soft clip (so a boost bends into the clip instead of wrapping).
+
+    The filters work on floats and may go far over the int16 range on a boost: the soft clip takes any size.
+    """
+    k = gain / 2
+    x = eq.process([(a + b) * k for a, b in zip(left, right, strict=True)])
+    return array("h", [int(v) if -KNEE <= v <= KNEE else _bend(v) for v in x])
 
 
 def pcm_bytes(samples: array[int]) -> bytes:
@@ -200,6 +212,7 @@ class SpeakerLink:
         self._lock = threading.Lock()               # the link's thread vs detach() / stop() from other threads
         self._inject: deque[array[int]] = deque()   # source frames (512 samples) from test(): the same way out as the game's
         self._rs = Resampler()                      # mixed mono samples that do not make a whole frame yet
+        self._eq = rx_eq.Equalizer()                # this pad's equalizer (only the link's thread touches it)
         self._queue: deque[bytes | None] = deque()  # frames to send; None = "end the stream here"
         self._pacer = H.Pacer(FRAME_S)
         self._counter = 0                           # the number of the next frame (wraps at 2**32)
@@ -250,22 +263,23 @@ class SpeakerLink:
     def step(self, now: float) -> float:
         """One pass: take new audio, make frames, send what is due. -> how long the thread may sleep (a write wakes it)."""
         with self._lock:
-            gain = self._gain()
+            cfg = self._settings()
             data = self._read() if self.link is not None else None
-            if gain is None:                        # off, master only, no capable sender: the audio is dropped, any stream ends
+            if cfg is None:                         # off, master only, no capable sender: the audio is dropped, any stream ends
                 self._inject.clear()                # a test tone must not wait for the pad to be allowed later and play then
                 self._rs.clear()
                 self._end()
             else:
+                self._eq.set_gains(cfg.eq)          # a change from the window applies at once (equal gains: nothing happens)
                 if data:
-                    self._feed(data, gain)
+                    self._feed(data, cfg.gain / 100)
                 self._take_injected()
                 if self._active and self._from_pcm and self.link is not None and now - self.link.pcm_at > STALL_S:
                     self._end()                     # the game stopped rendering: Windows parks the endpoint, no more callbacks
             return self._pace(now)
 
-    def _gain(self) -> float | None:
-        """The volume (1.0 = 100 %) when this link may play, None when it must stay quiet."""
+    def _settings(self) -> rx_settings.PadSpeaker | None:
+        """The pad's speaker settings (volume, equalizer) when this link may play, None when it must stay quiet."""
         t = rx_swap.route(self.idx)
         cfg = rx_settings.cur.speaker.get(S.profile_key(t))
         if not cfg.enabled and not self._inject:
@@ -277,7 +291,7 @@ class SpeakerLink:
         if not rx_master.allowed(t, "speaker"):
             self._note("master", _("{pad}: gra daje dźwięk - pominięty (głośnik pada tylko dla pada master)"))
             return None
-        return cfg.gain / 100
+        return cfg
 
     def _note(self, why: str, text: str) -> None:
         """One event log line per reason and pad connection (the audio keeps arriving; the line must not repeat)."""
@@ -305,9 +319,10 @@ class SpeakerLink:
         samples = memoryview(data).cast("h")
         left, right = samples[left_at::stride].tolist(), samples[right_at::stride].tolist()
         if any(left) or any(right):
-            self._rs.push(mix(left, right, gain))
+            self._rs.push(mix(left, right, gain) if self._eq.flat else mix_eq(left, right, gain, self._eq))
         else:
-            self._rs.push_zeros(len(left))                          # digital silence: no work
+            self._rs.push_zeros(len(left))                          # digital silence: no work, and the filters forget the old sound
+            self._eq.reset()
         self._drain(from_pcm=True)
 
     def _drain(self, from_pcm: bool) -> None:
@@ -384,10 +399,16 @@ class SpeakerLink:
         self.sent += 1
 
     # ----- from other threads -----
-    def test(self, gain: float) -> None:
-        """The jingle through the same path ("Test speaker"): its frames plus the silence that ends the stream."""
+    def test(self, gain: float, eq: Sequence[int] = rx_eq.FLAT) -> None:
+        """The jingle through the same path ("Test speaker"): its frames plus the silence that ends the stream.
+
+        `eq` are the equalizer gains to use; the jingle goes through a filter of its own (not the link's, which belongs to its thread),
+        so the test plays what the window shows even when the pad's real sound is not running.
+        """
         tune = jingle()
-        mono = mix(tune, tune, gain)
+        tester = rx_eq.Equalizer()
+        tester.set_gains(eq)
+        mono = mix(tune, tune, gain) if tester.flat else mix_eq(tune, tune, gain, tester)
         self._inject.extend(mono[k * SRC_FRAME:(k + 1) * SRC_FRAME] for k in range(TEST_FRAMES))
         silence = array("h", bytes(SRC_FRAME * BYTES_PER_SAMPLE))      # +2 frames: one waits for 1 sample ahead
         self._inject.extend([silence] * (math.ceil(SILENCE_END_S / FRAME_S) + 2))
@@ -488,11 +509,11 @@ def wanted(idx: int, t: int) -> bool:
     return rx_master.allowed(t, "speaker")
 
 
-def test(i: int, gain: float | None = None) -> str | None:
+def test(i: int, gain: float | None = None, eq: Sequence[int] | None = None) -> str | None:
     """The "Test speaker" button for physical pad i. -> None when the tone was sent, else why not (for the window).
 
-    gain (1.0 = 100 %) defaults to the saved volume of the pad; the window passes the value it shows. The same gates as the real
-    path: the pad must be connected, its sender must know the speaker and the pad may use it (master only).
+    gain (1.0 = 100 %) and eq (dB per band) default to the saved ones of the pad; the window passes the values it shows.
+    The same gates as the real path: the pad must be connected, its sender must know the speaker and the pad may use it (master only).
     """
     if not (0 <= i < C.NUM_PADS) or not S.alive[i]:
         return _("Pad nie jest podłączony.")
@@ -501,7 +522,7 @@ def test(i: int, gain: float | None = None) -> str | None:
     import rx_master
     if not rx_master.allowed(i, "speaker"):     # the link would drop the tone: say so instead of "sent"
         return _("Głośnik pada jest tylko dla pada master (Ustawienia → Master).")
-    if gain is None:
-        gain = rx_settings.cur.speaker.get(S.profile_key(i)).gain / 100
-    speaker(rx_swap.route(i)).test(gain)        # the virtual slot whose packets go to physical pad i
+    saved = rx_settings.cur.speaker.get(S.profile_key(i))
+    # the virtual slot whose packets go to physical pad i
+    speaker(rx_swap.route(i)).test(saved.gain / 100 if gain is None else gain, saved.eq if eq is None else eq)
     return None

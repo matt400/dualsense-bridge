@@ -67,6 +67,15 @@ EN: Final[dict[str, str]] = {
     "Głośnik pada (dźwięk gry) na tym padzie": "Pad speaker (game sound) on this pad",
     "Głośność": "Volume",
     "Test głośnika": "Test speaker",
+    "Korektor (equalizer)": "Equalizer",
+    "Płaski": "Flat",
+    "Głos": "Voice",
+    "Bas": "Bass",
+    "Własny": "Custom",
+    "Korektor działa na dźwięk gry przed wysłaniem na głośnik pada i ma to samo ustawienie własne / domyślne co pad. "
+    "Test głośnika gra z pokazanymi ustawieniami.":
+        "The equalizer shapes the game's sound before it goes to the pad's speaker and uses the same own / default setting as the pad. "
+        "Test speaker plays with the settings shown.",
     "Dźwięk gry z wyjścia „Wireless Controller” (kanały 1-2) gra na głośniku pada przez nadajnik (Bluetooth, kodek Opus). "
     "Potrzebuje tego samego wirtualnego pada USB co haptyka, nadajnika w wersji z głośnikiem i biblioteki libopus na nadajniku. "
     "Jest wyłączony domyślnie. Ustawienia pada wyżej (własne lub domyślne) dotyczą też głośnika.":
