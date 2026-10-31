@@ -737,7 +737,7 @@ class MainWindow(ScreenPlacement):
         self.access_scroll = scrolled(self.access_page)
         self.tabs = QTabWidget()
         self.tabs.setTabPosition(QTabWidget.TabPosition.East)       # vertical tabs on the right edge of the column
-        self.tabs.tabBar().setExpanding(True)
+        self.tabs.tabBar().setExpanding(False)                       # packed at the top, not stretched over the whole height
         self.tabs.tabBar().setDrawBase(False)
         for page, name in ((self.part_page, _("Wybrane")), (self.rumble_page, _("Wibracje")), (self.gyro_page, _("Gyro")),
                            (self.access_scroll, _("Dostępność")), (self.changes_page, _("Zmiany"))):
