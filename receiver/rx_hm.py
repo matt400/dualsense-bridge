@@ -535,6 +535,7 @@ class Pad:
         self.ctrl, self.on_fb = ctrl, on_fb
         self._backend = backend
         self._audio_handler: Callable[[Any, Any], None] | None = None
+        self._ctl_handler: Callable[[Any, Any], None] | None = None
         self.composite = getattr(ctrl, "UsbAudio", None) is not None
         # an all-zero buffer is not neutral: sticks 0/0 and the D-pad nibble 0 (= up). A game that polls the new pad
         # before the first real report would see that as input, so the first submit() sends centred sticks, no buttons.
@@ -592,7 +593,7 @@ class Pad:
         audio = getattr(self.ctrl, "UsbAudio", None)
         if audio is None:
             raise HMError("this virtual pad has no USB audio (not a composite profile)")
-        self.detach_audio()
+        self._detach_frames()
         out = audio.Output
         fmt = (int(out.Channels), int(out.SampleRateHz), int(out.BitsPerSample), tuple(str(r) for r in out.ChannelRoles))
         copy = self._backend.mem_copy()
@@ -614,8 +615,54 @@ class Pad:
         out.FramesReceived += on_frames
         return fmt
 
+    def attach_audio_controls(self, sink: Callable[[str, bool, bool, float], None]) -> bool:
+        """Deliver the volume and mute the host sets on the pad's audio endpoint: sink(function, is_mute, muted, volume_db).
+
+        Windows does not scale the PCM of an endpoint with a hardware volume control: the mixer slider, the tray icon and the mute
+        button become UAC feature unit writes (HMUsbAudio.ControlChanged), and the stream keeps arriving at full level. `function`
+        is "speaker" or "microphone" (the unit), is_mute tells which control was written (muted is valid for a mute write, volume_db
+        for a volume write: the UAC1 value / 256, 0 dB = full). The event runs on HIDMaestro's audio event thread, not on the audio
+        pump, so reading four properties here is fine. Call it right after the pad is created: a write that comes before the
+        subscription is not replayed.
+
+        Returns:
+            True when subscribed, False when this HIDMaestro has no ControlChanged (an old version) or the pad has no USB audio.
+        """
+        audio = getattr(self.ctrl, "UsbAudio", None)
+        if audio is None:
+            return False
+        self._detach_controls()
+
+        def on_control(_audio: Any, args: Any) -> None:
+            try:
+                sink(str(args.Function), bool(args.IsMute), bool(args.MuteValue), float(args.VolumeDb))
+            except Exception:  # noqa: BLE001, S110 - the HIDMaestro event thread: a failing sink must not stall the audio events
+                pass
+
+        try:
+            audio.ControlChanged += on_control
+        except Exception:  # noqa: BLE001 - no such event (HIDMaestro older than the audio controls): the speaker stays at full level
+            return False
+        self._ctl_handler = on_control                       # a reference: the .NET delegate must not vanish through the GC
+        return True
+
+    def _detach_controls(self) -> None:
+        """Unsubscribe from the volume / mute writes (no-op when not subscribed)."""
+        handler, self._ctl_handler = self._ctl_handler, None
+        if handler is None:
+            return
+        try:
+            self.ctrl.UsbAudio.ControlChanged -= handler
+        except Exception:  # noqa: BLE001, S110 - best effort: the controller may already be disposed
+            pass
+
     def detach_audio(self) -> None:
-        """Stop the audio callback (no-op when none is attached)."""
+        """Stop the audio callbacks (no-op when none is attached)."""
+        self._detach_controls()
+        self._detach_frames()
+
+    def _detach_frames(self) -> None:
+        """Unsubscribe from the PCM stream only (the volume / mute subscription is made earlier and stays)."""
         handler, self._audio_handler = self._audio_handler, None
         if handler is None:
             return

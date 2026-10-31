@@ -258,6 +258,7 @@ rx_settings.apply(replace(rx_settings.cur, master=replace(mst, pad="")))
 
 
 class Pad:
+    def attach_audio_controls(self, sink): return True
     def attach_audio(self, sink):
         return 4, 48000, 16, ROLES
     def close(self):

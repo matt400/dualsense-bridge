@@ -588,12 +588,16 @@ def create_composite(backend: Any, idx: int, on_fb: Callable[..., None]) -> Any 
     (a refused driver install is not worth repeating at every reconnect).
     """
     global _composite_off_until
+    import rx_speaker
     t = rx_swap.route(idx)
     lk = link(idx)
     before = _clean_defaults()
     pad = None
     try:
         pad = backend.create(idx, on_fb, composite=True)
+        # first of all: Windows writes the endpoint's stored volume while it enumerates the pad, and HIDMaestro does not replay it
+        if not pad.attach_audio_controls(rx_speaker.speaker(idx).set_host_volume):
+            print(f"Controller {t}: this HIDMaestro has no audio controls - the Windows volume of the pad's speaker has no effect")
         why = lk.configure(*pad.attach_audio(lk.write))
         if why:
             raise ValueError(why)
@@ -609,7 +613,6 @@ def create_composite(backend: Any, idx: int, on_fb: Callable[..., None]) -> Any 
             pad=ev.pad_name(t), err=_describe(e)))
         return None
     lk.ensure_thread()
-    import rx_speaker
     rx_speaker.attach(idx, lk)
     if rx_settings.cur.haptics.get(S.profile_key(t)).enabled:
         ev.info(_("{pad}: pad z haptyką gry (HD haptics przez nadajnik)").format(pad=ev.pad_name(t)))
