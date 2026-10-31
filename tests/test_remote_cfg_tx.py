@@ -91,7 +91,7 @@ def saved():
 
 
 # ---------- specyfikacja: spójna z tym, co nadajnik sam przycina ----------
-check(len(set(s.key for s in cfgspec.SPECS)) == N and N < CFG_ALL, "identyfikatory ustawień unikalne i mieszczą się w bajcie (255 = wszystkie)")
+check(len({s.key for s in cfgspec.SPECS}) == N and N < CFG_ALL, "identyfikatory ustawień unikalne i mieszczą się w bajcie (255 = wszystkie)")
 check(all(s.key in sender_config.DEFAULTS for s in cfgspec.SPECS), "każde ustawienie z cfgspec istnieje w DEFAULTS nadajnika")
 for name in ("host", "port", "key", "stats", "bt_adapter", "slots_file", "wol_file", "gyro_cal_file", "bt_file", "auth_file", "remote_cfg_file"):
     check(name not in ID, f"{name} nie do zmiany z receivera")
@@ -287,7 +287,7 @@ with open(C.REMOTE_CFG_FILE, "w") as f:
     json.dump(good, f)
 cfg_path = os.path.join(TMP, "sender.toml")
 with open(cfg_path, "w") as f:
-    f.write('host = "127.0.0.1"\nhaptics_buffer_ms = 30\nremote_cfg_file = "%s"\n' % C.REMOTE_CFG_FILE.replace("\\", "/"))
+    f.write('host = "127.0.0.1"\nhaptics_buffer_ms = 30\nremote_cfg_file = "{}"\n'.format(C.REMOTE_CFG_FILE.replace("\\", "/")))
 sender_config.init(["--config", cfg_path])
 check(sender_config.CHANGES == {"haptics_buffer_ms": 60, "tap_click": False, "rumble": "evdev", "speaker_opus_mode": "celt"},
       f"po restarcie wczytane tylko dozwolone wartości w granicach (host, key, nieznane, poza zakresem, zły typ pominięte): {sender_config.CHANGES}")
