@@ -121,9 +121,13 @@
       (`sender/gyro_cal.json`); skalibrowany pad nie kalibruje się już przy starcie nadajnika (nie trzeba go wtedy
       odkładać), autobias dalej dostraja offset w pamięci. Wymaga nadajnika v9;
     - na czas testu gra dostaje neutralny stan testowanego pada (przełącznik „Blokuj wyjście do gry”, domyślnie
-      włączony): przyciski, gałki, ruch i dotyk nie idą do gry, mysz touchpada, gyro-mysz, skróty PS i tryb
+      włączony): przyciski, gałki, ruch i dotyk nie idą do gry, gyro-mysz, skróty PS i tryb
       konsoli nie reagują. Blokada działa tylko przy aktywnym oknie receivera: znika po przejściu do gry (inne okno
       na pierwszym planie), wyjściu z widoku Test, minimalizacji / schowaniu okna i zamknięciu receivera;
+    - **touchpad jako mysz (pad master):** w widoku Test dalej rusza kursorem, więc można nim obsługiwać okno. Przycisk
+      „Testuj touchpad” go przechwytuje: kursor stoi, tapnięcia i kliknięcia nie są wykonywane, a palce i klik widać na
+      rysunku pada. Przechwyt kończy przycisk PS na padzie, 8 s bez dotyku, ten sam przycisk (myszą), wyjście z widoku
+      Test albo utrata fokusu okna;
     - w trybie TV testowany pad nie steruje oknem; przytrzymanie ○ przez 1 s wychodzi z testu;
     - przy otwartym widoku Test **żaden pad nie uruchamia skrótów** (PS + przycisk, akcje i przejęcie mastera, tryb
       konsoli, PS + klik touchpada) - testowanie przycisków niczego nie przełączy;

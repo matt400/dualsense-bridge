@@ -820,12 +820,22 @@ EN: Final[dict[str, str]] = {
     "Przytrzymaj ○, aby wyjść z testu.": "Hold ○ to leave the test.",
     "Blokuj wyjście do gry": "Block output to games",
     "Blokada wyjścia do gry": "Output to games blocked",
-    "Na czas testu gra dostaje puszczone przyciski i gałki w środku tego pada; skróty pada, mysz touchpada i tryb "
-    "konsoli też nie reagują. Działa tylko przy aktywnym oknie - po przejściu do gry albo wyjściu z testu pad od razu "
-    "do niej wraca.":
-        "During the test, games get this pad with released buttons and centred sticks; pad shortcuts, touchpad mouse "
-        "and console mode don't react either. Only while this window is active - switching to the game or leaving the "
+    "Na czas testu gra dostaje puszczone przyciski i gałki w środku tego pada; skróty pada, gyro-mysz i tryb konsoli "
+    "też nie reagują. Touchpad jako mysz dalej steruje oknem (przycisk „Testuj touchpad” przechwytuje go na chwilę). "
+    "Działa tylko przy aktywnym oknie - po przejściu do gry albo wyjściu z testu pad od razu do niej wraca.":
+        "During the test, games get this pad with released buttons and centred sticks; pad shortcuts, gyro mouse "
+        "and console mode don't react either. The touchpad mouse still operates the window (the \"Test touchpad\" "
+        "button captures it for a moment). Only while this window is active - switching to the game or leaving the "
         "test gives the pad back right away.",
+    "Testuj touchpad": "Test touchpad",
+    "Zakończ test touchpada ({s} s)": "End touchpad test ({s} s)",
+    "Touchpad steruje teraz kursorem. Po kliknięciu kursor stanie, a palce i klik pokażą się na rysunku pada.":
+        "The touchpad moves the cursor now. After you click, the cursor stands and the fingers and the click show on "
+        "the pad drawing.",
+    "Kursor stoi - dotykaj touchpada, palce i klik widać na rysunku pada. Koniec: przycisk PS na padzie, {s} s bez "
+    "dotyku albo ten przycisk (myszą).":
+        "The cursor stands - touch the touchpad, the fingers and the click show on the pad drawing. To finish: the PS "
+        "button on the pad, {s} s without a touch, or this button (with a mouse).",
     "RUCH": "MOTION",
     "Ruch pada": "Pad motion",
     "Akcelerometr": "Accelerometer",

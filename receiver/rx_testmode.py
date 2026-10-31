@@ -13,33 +13,46 @@ carry the combination; sticks and triggers go on analogously, live. The window g
 
 Without PS and without a hold: a long PS + triangle used to switch the pad off (Bluetooth). It is the edge that counts - a combination
 already held on entering Test or across the test boundary has to be released and pressed again.
+
+Touchpad in the mouse mode (the master pad): the touchpad keeps driving the cursor in the Test view - it is the only way
+to operate the window from the couch - and only the "Test touchpad" button of the panel captures it. While a capture runs
+(start_capture) the cursor stands, taps and clicks are not executed, and the fingers and the click are only drawn. It ends by
+itself: PS on that pad, CAPTURE_IDLE_S without a touch or a click, leaving the Test view (or the window losing focus), the exit
+from the pad, the button once more, a disconnected pad. Nothing here blocks the game output - that is the Test lock (S.set_blocked).
 """
+import time
 from collections.abc import Callable
+from typing import Final
 
 import rx_events as ev
 import rx_feedback as F
 import rx_hotkeys as hotkeys
 import rx_master as master
+import rx_mouse as mouse
 import rx_settings
 import rx_state as S
-from rx_buttons import BIT, BUTTON_CODES, TRIGGERS, pressed_inputs
+from rx_buttons import BIT, BUTTON_CODES, PS_BIT, TRIGGERS, pressed_inputs
 from rx_i18n import _
 
 ESCAPE_KEYS = ("options", "share")              # Options + Create (Share)
 ESCAPE_MASK = BIT[BUTTON_CODES["options"]] | BIT[BUTTON_CODES["share"]]
+CAPTURE_IDLE_S: Final = 8.0                     # a touchpad capture ends after this long without a touch or a click
 
 active = False                                  # the Test view is open - pad shortcuts are disabled
 escaped = False                                 # the test was ended from a pad; rearm() on the next entry into Test
 on_escape: Callable[[], None] | None = None     # window: leave the Test view (called from the network thread)
+capture_slot: int | None = None                 # the pad whose touchpad is captured by the test (the cursor stands), or None
+_capture_t = 0.0                                # monotonic time of the last touch / click of the captured pad
 _gen = 0                                        # changes of `active` - the shortcut slots start afresh (sync)
 _seen: list[int] = []
 _held: list[bool] = []                          # the slot holds the combination in the last known state
 
 
 def init(n: int) -> None:
-    """Start with the test closed and no combination held for `n` pads."""
-    global active, escaped
+    """Start with the test closed, no touchpad captured and no combination held for `n` pads."""
+    global active, escaped, capture_slot
     active = escaped = False
+    capture_slot = None
     _seen[:] = [_gen] * n
     _held[:] = [False] * n
 
@@ -66,6 +79,8 @@ def set_active(on: bool) -> bool:
     if on == active:
         return False
     active = on
+    if not on:
+        stop_capture()                                 # a captured touchpad returns to the mouse with the Test view
     _gen += 1
     _held[:] = map(_now_held, range(len(_held)))   # held across the test boundary - only a new press exits
     return True
@@ -97,6 +112,56 @@ def shortcuts_on() -> bool:
     return not active
 
 
+def start_capture(i: int) -> bool:
+    """Window thread: capture the touchpad of pad i for the test - the cursor stands, the fingers and the click are only drawn.
+
+    Only in the Test view, for a connected pad whose touchpad is the mouse (in the DS4 touch mode the touch is visible anyway).
+    A click held at that moment is released, so the button does not stay down while the cursor is frozen.
+
+    Returns:
+        True when the capture runs.
+    """
+    global capture_slot, _capture_t
+    if not active or not S.alive[i] or not S.mouse_mode[i]:
+        return False
+    capture_slot, _capture_t = i, time.monotonic()
+    mouse.reset(i)
+    return True
+
+
+def stop_capture() -> None:
+    """End the touchpad capture (any thread): the touchpad drives the cursor again."""
+    global capture_slot
+    capture_slot = None
+
+
+def capturing(i: int) -> bool:
+    """Network thread (every mouse packet): whether the test holds the touchpad of pad i.
+
+    A capture that saw no touch for CAPTURE_IDLE_S ends here, so it also ends with the window hidden.
+    """
+    if capture_slot != i:
+        return False
+    if time.monotonic() - _capture_t > CAPTURE_IDLE_S:
+        stop_capture()
+        return False
+    return True
+
+
+def touched(i: int) -> None:
+    """Network thread: a finger moved or the click changed on pad i - the capture idle timer starts again."""
+    global _capture_t
+    if capture_slot == i:
+        _capture_t = time.monotonic()
+
+
+def capture_left(i: int) -> float:
+    """Seconds until the capture of pad i ends by itself, 0.0 when it is not running (window: the countdown on the button)."""
+    if not capturing(i):
+        return 0.0
+    return max(0.0, CAPTURE_IDLE_S - (time.monotonic() - _capture_t))
+
+
 def may_escape(i: int) -> bool:
     """The master pad; with no master in the settings any pad; master not connected - according to when_absent (like rx_master)."""
     m = rx_settings.cur.master
@@ -110,9 +175,12 @@ def on_state(i: int, raw: tuple) -> bool:
     """Raw buttons of slot i changed (network thread), raw = (mask, hx, hy, lt, rt) before they are stored in the state.
 
     Detects the rising edge of Options + Create on a pad that may escape. -> True when the exit has just been performed.
+    A new PS press on the captured pad only ends the touchpad capture (the previous state is still in S.states[i]["raw"]).
     """
     if not active:
         return False
+    if capture_slot == i and raw[0] & PS_BIT and not S.states[i]["raw"][0] & PS_BIT:
+        stop_capture()
     _slot(i)
     held = raw[0] & ESCAPE_MASK == ESCAPE_MASK
     pressed, _held[i] = held and not _held[i], held
@@ -133,6 +201,7 @@ def escape(i: int, raw: tuple | None = None) -> None:
     if raw is not None:
         with S.lock:
             S.states[i]["raw"] = raw
+    stop_capture()
     active, escaped = False, True
     _gen += 1                           # _held: rebuilt in set_active() on the next entry into Test
     for s in range(len(S.states)):
