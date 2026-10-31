@@ -183,6 +183,7 @@ rx_settings.apply(replace(rx_settings.cur, master=replace(m, pad="")))
 # ---------- fallback przy błędzie utworzenia ----------
 class Pad:
     def __init__(self, fail=False): self.fail, self.closed = fail, False
+    def attach_audio_controls(self, sink): return True
     def attach_audio(self, sink):
         if self.fail: raise RuntimeError("no endpoint")
         return 4, 48000, 16, ["speakerLeft", "speakerRight", "hapticLeft", "hapticRight"]

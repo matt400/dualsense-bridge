@@ -61,6 +61,7 @@ SILENCE_END_S: Final = 0.15                 # digital silence this long ends the
 STALL_S: Final = 0.12                       # no audio from HIDMaestro this long while streaming = the game stopped rendering
 IDLE_WAIT_S: Final = 1.0                    # the thread's longest sleep (a write wakes it at once)
 WAKE_BYTES: Final = 1536                    # an idle link is woken once this much audio (4 ms) waits: windows of silence stay cheap
+HOST_FLOOR_DB: Final = -90.0                # the Windows slider at or below this is silence (a full-scale sample would shrink to 1 LSB)
 KNEE: Final = 24576                         # the soft clip is linear up to 75 % of the int16 full scale ...
 S16_MAX: Final = 32767
 SPAN: Final = S16_MAX - KNEE                # ... then bends towards 32767 (tanh)
@@ -222,6 +223,9 @@ class SpeakerLink:
         self._quiet = 0                             # consecutive silent frames while active
         self._noted: set[str] = set()               # event log notes written since the pad was created
         self._thread: threading.Thread | None = None
+        self.host_gain = 1.0                        # the Windows volume / mute of the pad's speaker endpoint as a factor (set_host_volume)
+        self._host_muted = False
+        self._host_db = 0.0
         self.sent = self.dropped = self.overruns = 0
 
     # ----- the audio thread -----
@@ -245,6 +249,24 @@ class SpeakerLink:
     def wake(self) -> None:
         """Make the thread look at the settings and the audio now."""
         self._wake.set()
+
+    def set_host_volume(self, function: str, is_mute: bool, muted: bool, volume_db: float) -> None:
+        """The host wrote a volume or mute control of the pad's audio endpoint (HIDMaestro's ControlChanged, its audio event thread).
+
+        Windows leaves the PCM of an endpoint that has a hardware volume untouched and sends the slider as a UAC write instead, so
+        the speaker applies it itself: a device attenuates by the dB it is told (0 dB = full, the profile's range is -100 .. 0 dB),
+        mute is silence. Only the speaker unit counts, and only the speaker: the haptics are the game's own signal and keep
+        their strength setting. Until the first write the level is full (the endpoint reports -100 dB as its initial value, which
+        must not make the speaker silent before anybody touched a slider). The next frame uses the new factor; the state is
+        two plain attributes, so the event thread and the link's thread need no lock.
+        """
+        if function != "speaker":
+            return
+        if is_mute:
+            self._host_muted = muted
+        else:
+            self._host_db = volume_db
+        self.host_gain = 0.0 if self._host_muted or self._host_db <= HOST_FLOOR_DB else 10 ** (self._host_db / 20)
 
     def ensure_thread(self) -> None:
         """Start the link's thread (once; the thread sleeps while nothing plays)."""
@@ -272,7 +294,7 @@ class SpeakerLink:
             else:
                 self._eq.set_gains(cfg.eq)          # a change from the window applies at once (equal gains: nothing happens)
                 if data:
-                    self._feed(data, cfg.gain / 100)
+                    self._feed(data, cfg.gain / 100 * self.host_gain)
                 self._take_injected()
                 if self._active and self._from_pcm and self.link is not None and now - self.link.pcm_at > STALL_S:
                     self._end()                     # the game stopped rendering: Windows parks the endpoint, no more callbacks
@@ -318,10 +340,10 @@ class SpeakerLink:
         left_at, right_at = self.link.speaker_channels
         samples = memoryview(data).cast("h")
         left, right = samples[left_at::stride].tolist(), samples[right_at::stride].tolist()
-        if any(left) or any(right):
+        if gain > 0.0 and (any(left) or any(right)):
             self._rs.push(mix(left, right, gain) if self._eq.flat else mix_eq(left, right, gain, self._eq))
         else:
-            self._rs.push_zeros(len(left))                          # digital silence: no work, and the filters forget the old sound
+            self._rs.push_zeros(len(left))                          # silence or muted: no work, and the filters forget the old sound
             self._eq.reset()
         self._drain(from_pcm=True)
 
@@ -428,6 +450,7 @@ class SpeakerLink:
             self._active = False
             self._quiet = 0
             self._queue.clear()
+            self.host_gain, self._host_muted, self._host_db = 1.0, False, 0.0     # the next pad starts at full level again
             if self._sent_started:
                 self._emit(None)
 
