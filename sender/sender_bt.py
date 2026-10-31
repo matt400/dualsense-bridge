@@ -53,6 +53,7 @@ PARSE_OFFLOAD_BYTES: Final = 32 * 1024   # a GetManagedObjects answer longer tha
 CALL_S, CONNECT_S, PAIR_S = 5.0, 25.0, 40.0   # limits of D-Bus calls [s] (pairing waits for the pad)
 IDLE_S = 5.0                 # the adapter state with no panel open
 TICK_S = 1.0                 # the state and the list with the panel open / during a scan
+REPORT_GAP_S = 0.4           # reports (and their busctl refresh) are at least this far apart: BT_LIST arrives 3x (UDP)
 LINK_S = 1.0                 # the pads' RSSI / link quality is read at most this often (the Diagnostics tab keeps the panel "open")
 DUP_S = 0.5                  # btcmd arrives 3x (UDP) - repeats of the same operation within this time are skipped
 NAME_MAX = BODY[T_BTDEV].size - 12
@@ -824,7 +825,8 @@ class Bluetooth:
                 self.wake.clear()
                 now = time.monotonic()
                 active = self.active(now)
-                if net.new_receiver(now) and (active or now - t_sent >= IDLE_S):
+                gap = REPORT_GAP_S - (now - t_sent)       # > 0: a report went out a moment ago (the 3 copies of one BT_LIST)
+                if net.new_receiver(now) and (active or now - t_sent >= IDLE_S) and gap <= 0:
                     t_sent = t_adapter = now
                     if not self.running:
                         await self.refresh()          # during an operation it refreshes itself (BlueZ is busy)
@@ -837,8 +839,9 @@ class Bluetooth:
                     # the PC
                     t_adapter = now
                     await self.check_adapters()
+                wait = TICK_S if active else IDLE_S / 5
                 with contextlib.suppress(TimeoutError):
-                    await asyncio.wait_for(self.wake.wait(), TICK_S if active else IDLE_S / 5)
+                    await asyncio.wait_for(self.wake.wait(), min(wait, gap) if gap > 0 and net.new_receiver(now) else wait)
         finally:
             self.kill_scan()
 

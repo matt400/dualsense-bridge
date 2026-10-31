@@ -417,6 +417,7 @@ class _MotionStream:
         self.autobias = _AutobiasWindow(time.monotonic())
         self.sums = [0] * MOTION_AXES       # the sum of the samples since the last packet: we send the AVERAGE
         self.count = 0
+        self._new = [0] * MOTION_AXES       # scratch for _send_average: the averaged packet is built here, not in a new list
         self.meter = c.meters.setdefault("motion", RateMeter()) if C.STATS else None
         self.bt = BtDelay()
         self.dropping = False
@@ -493,15 +494,27 @@ class _MotionStream:
         self._send_average(e)
 
     def _send_average(self, e: InputEvent) -> None:
-        """Send the average of the samples since the last packet (bias-corrected) if it moved past the deadband."""
+        """Send the average of the samples since the last packet (bias-corrected) if it moved past the deadband.
+
+        Runs for every packet (up to 1000 Hz), so it works in place: the sums are zeroed and the result goes to a scratch list
+        that is copied into ``c.motion`` only when it is sent - no list or generator is built per call.
+        """
         c = self.c
-        mean = [total / self.count for total in self.sums]
-        self.sums, self.count = [0] * MOTION_AXES, 0
-        bias = c.gyro_bias
-        new = [round(mean[k]) for k in range(GYRO_AT)] + [round(mean[GYRO_AT + k] - bias[k]) for k in range(GYRO_AXES)]
-        old = c.motion
-        if c.pending or any(abs(new[k] - old[k]) > (C.DB_ACC if k < GYRO_AT else C.DB_GYRO) for k in range(MOTION_AXES)):
-            c.motion = new
+        sums, new, old, bias, n = self.sums, self._new, c.motion, c.gyro_bias, self.count
+        moved = c.pending
+        for k in range(MOTION_AXES):
+            mean = sums[k] / n
+            sums[k] = 0
+            if k < GYRO_AT:                       # the accelerometer first, then the gyro (bias-corrected)
+                v, deadband = round(mean), C.DB_ACC
+            else:
+                v, deadband = round(mean - bias[k - GYRO_AT]), C.DB_GYRO
+            new[k] = v
+            if abs(v - old[k]) > deadband:
+                moved = True
+        self.count = 0
+        if moved:
+            old[:] = new
             c.mark_event(e)
             c.request_send()
 
