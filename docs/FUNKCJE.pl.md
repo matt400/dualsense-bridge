@@ -197,7 +197,7 @@
   - **Master:** pad master, co wolno tylko jemu, przyciski akcji. Mysz i master działają od razu, bez restartu
     (`settings.json`);
   - **Lightbar:** kolor per pad / domyślny, tryb, miganie, próg niskiej baterii (od razu). Lista padów jest na samej górze zakładki z checkboxem **Ustawienia domyślne**: włączony = edytujesz to, co dostają pady bez własnego ustawienia, wyłączony = edytujesz wybrany pad (pierwsza zmiana robi kopię domyślnych; przycisk obok listy kasuje własne ustawienie pada);
-  - **Haptyka i głośnik:** haptyka gry i głośnik pada per pad (ten sam pasek wyboru pada na górze) - włączenie, siła / głośność, test (siła od razu, włączenie po ponownym połączeniu pada);
+  - **Haptyka i głośnik:** haptyka gry i głośnik pada per pad (ten sam pasek wyboru pada na górze) - włączenie, siła / głośność, korektor głośnika, test (siła, głośność i korektor od razu, włączenie po ponownym połączeniu pada);
   - **Wake-on-LAN:** włączenie, przycisk do pary z PS, czas przytrzymania, MAC i broadcast (puste = automatycznie);
   - **Pady:** które karty padów pokazuje okno - dynamicznie (tylko podłączone) albo stała liczba slotów (1-4, działa
     od razu; same sloty ustawia `pads` w `receiver.toml`, domyślnie 4) - oraz backend wirtualnych padów, HIDMaestro i
@@ -244,6 +244,10 @@
     (strumień kończy znacznik końca po ok. 150 ms, potem głośność pada spada do 0);
   - **Głośność** 0-200 % (od razu), **Test głośnika** gra krótki jingiel (melodia z kilku nut, ok. 1,3 s) na wybranym padzie, a gdy się nie da, podaje
     powód (stary nadajnik, pad nie jest masterem, ustawienie wyłączone);
+  - **Korektor (equalizer)** z pięcioma pasmami (półki 100 Hz i 8 kHz, piki 300 Hz, 1 kHz i 3 kHz), po -12 .. +12 dB, oraz presety Płaski /
+    Głos / Bas (ruch suwaka przełącza listę na Własny). Kształtuje dźwięk mono przed miękkim obcinaniem, działa od razu i zapisuje się
+    w `settings.json` jak głośność: jedno ustawienie domyślne dla wszystkich padów albo własne dla pada (MAC). Płaski nic nie kosztuje;
+    pięć aktywnych pasm to kilka procent jednego rdzenia PC. **Test głośnika** gra jingiel z korektorem pokazanym w oknie;
   - używa tego samego pada composite i urządzenia audio co haptyka, więc obowiązują te same uwagi (sterownik, domyślne
     wyjście, działa po ponownym połączeniu pada). Bez libopus nadajnik nie ogłasza głośnika, a haptyka działa jak dotąd;
   - „Głośnik” jest funkcją tylko dla mastera. Gniazdo słuchawkowe i mikrofon nie są obsługiwane.

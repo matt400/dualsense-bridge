@@ -39,6 +39,7 @@ import rx_audio
 import rx_backup
 import rx_console
 import rx_ds4
+import rx_eq
 import rx_haptics
 import rx_speaker
 import rx_hm
@@ -601,6 +602,11 @@ class ConsoleSettings(QDialog):
         self.spk_test = button(_("Test głośnika"))
         self.spk_test.clicked.connect(self._test_speaker)
         self.spk_note = label("", "dim", wrap=True)
+        self.eq_preset = Combo([("flat", _("Płaski")), ("voice", _("Głos")), ("bass", _("Bas")), ("custom", _("Własny"))])
+        self.eq_preset.changed.connect(self._eq_preset_picked)
+        self.eq_rows = [SliderRow(rx_eq.band_name(hz), *rx_eq.GAIN_DB, 1, fmt=rx_eq.db_text) for hz, _kind in rx_eq.BANDS]
+        for row in self.eq_rows:
+            row.changed.connect(self._eq_moved)
         box = group(_("HAPTYKA GRY"),
                     label(_("Gry z haptyką DualSense (dźwięk z kanałów 3-4) wysyłają ją do pada przez nadajnik. Wymaga "
                             "wirtualnego pada USB (profil composite) i nadajnika w wersji z haptyką. Jest wyłączona domyślnie: "
@@ -618,6 +624,10 @@ class ConsoleSettings(QDialog):
                         self.spk_on,
                         pair(field(_("Głośność"), self.spk_gain), field(_("Próba"), self.spk_test)),
                         self.spk_note,
+                        field(_("Korektor (equalizer)"), self.eq_preset),
+                        *self.eq_rows,
+                        label(_("Korektor działa na dźwięk gry przed wysłaniem na głośnik pada i ma to samo ustawienie "
+                                "własne / domyślne co pad. Test głośnika gra z pokazanymi ustawieniami."), "dim", wrap=True),
                         label(_("Zmiana włączenia działa po ponownym połączeniu pada; głośność - od razu."), "dim", wrap=True))
         return [group("", self.hap_scope), box, speaker]
 
@@ -652,6 +662,7 @@ class ConsoleSettings(QDialog):
         self.hap_gain.setValue(cfg.gain)
         self.spk_on.setChecked(spk.enabled)
         self.spk_gain.setValue(spk.gain)
+        self._show_eq(spk.eq)
         self._haptics_loading = False
         self.hap_scope.show_state(key in self._haptics or key in self._speaker)
         self._haptics_enable()
@@ -688,9 +699,30 @@ class ConsoleSettings(QDialog):
             return
         key = self._haptics_key
         self._haptics[key] = PadHaptics(enabled=self.hap_on.isChecked(), gain=self.hap_gain.value())
-        self._speaker[key] = PadSpeaker(enabled=self.spk_on.isChecked(), gain=self.spk_gain.value())
+        self._speaker[key] = PadSpeaker(enabled=self.spk_on.isChecked(), gain=self.spk_gain.value(), eq=self._eq_values())
         self.hap_scope.show_state(True)
         self._haptics_enable()
+
+    def _eq_values(self) -> tuple[int, ...]:
+        """The equalizer gains (dB per band) the sliders show."""
+        return tuple(round(row.value()) for row in self.eq_rows)
+
+    def _show_eq(self, gains: tuple[int, ...]) -> None:
+        """Put gains on the sliders and the matching preset name in the list (no signals: loading is not an edit)."""
+        for row, db in zip(self.eq_rows, gains, strict=True):
+            row.set(db)
+        self.eq_preset.set_data(rx_eq.preset_of(gains))
+
+    def _eq_preset_picked(self, name: str) -> None:
+        """A preset was chosen: its gains go to the sliders ("custom" keeps what the sliders show)."""
+        if name in rx_eq.PRESETS:
+            self._show_eq(rx_eq.PRESETS[name])
+        self._haptics_edited()
+
+    def _eq_moved(self, _value: float) -> None:
+        """A slider was moved: the preset list follows (a preset whose numbers match, else "custom")."""
+        self.eq_preset.set_data(rx_eq.preset_of(self._eq_values()))
+        self._haptics_edited()
 
     def _test_haptics(self) -> None:
         """Send a short tone through the haptics path to the chosen pad (with the strength shown, not the saved one)."""
@@ -705,7 +737,7 @@ class ConsoleSettings(QDialog):
         slot = self._haptics_pad_slot()
         if slot is None:
             return
-        why = rx_speaker.test(slot, self.spk_gain.value() / 100)
+        why = rx_speaker.test(slot, self.spk_gain.value() / 100, self._eq_values())
         self._status(why or _("Jingiel wysłany do pada."), "warn" if why else "ok")
 
     def _light_tab(self) -> list[QWidget | QLayout]:

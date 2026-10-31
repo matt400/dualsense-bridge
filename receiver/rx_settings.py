@@ -9,7 +9,7 @@
   log       the event log in the window: level, line limit, events from the sender
   vpad      virtual pads: the backend (HIDMaestro DualSense / ViGEmBus DS4), fixed player order (rx_ds4, rx_hm)
   haptics   game HD haptics per pad (by MAC): on / off and the strength - rx_haptics
-  speaker   the game's sound on the pad's speaker per pad (by MAC): on / off and the volume - rx_speaker
+  speaker   the game's sound on the pad's speaker per pad (by MAC): on / off, the volume and the equalizer - rx_speaker, rx_eq
   sender    the sender's own settings chosen in the Sender tab (only what differs from its sender.toml) - rx_sender_cfg
 
 A missing file / a bad value -> the default (a message in the log, the file is repaired on save). A change from the window
@@ -27,6 +27,7 @@ from dataclasses import asdict, dataclass, field, fields, replace
 from typing import Any, ClassVar, Final, TypeAlias
 
 import cfgspec
+import rx_eq
 from proto import mac_bytes, mac_text, write_json
 from rx_buttons import BUTTON_CODES
 from rx_i18n import _
@@ -395,6 +396,7 @@ class PadSpeaker:
 
     enabled: bool = False         # opt-in, like haptics: the virtual pad becomes a USB composite on its next connect
     gain: int = 100               # volume [%] before the pad's own speaker volume (the sender's speaker_volume)
+    eq: tuple[int, ...] = rx_eq.FLAT    # the equalizer: dB per band (rx_eq.BANDS), all zeros = off
 
 
 @dataclass(frozen=True, slots=True)
@@ -410,7 +412,28 @@ class SpeakerConfig:
         return self.pads.get(key) or self.pads.get(DEFAULT_PAD) or PadSpeaker()
 
 
-SpeakerConfig.V = {"pads": _pad_table(lambda enabled, gain: PadSpeaker(enabled=enabled, gain=gain), SPEAKER_GAIN, "speaker")}
+
+
+_speaker_base = _pad_table(lambda enabled, gain: PadSpeaker(enabled=enabled, gain=gain), SPEAKER_GAIN, "speaker")
+
+
+def _speaker_pads(v: Any) -> dict[str, PadSpeaker]:
+    """A validator for {"*" | MAC: {"enabled", "gain", "eq"}}: bad entries are skipped, a bad "eq" alone falls back to flat."""
+    if not isinstance(v, dict):
+        raise ValueError("expected {pad: {enabled, gain, eq}}")
+    out: dict[str, PadSpeaker] = {}
+    for k, raw in v.items():
+        for key, pad in _speaker_base({k: raw}).items():        # one entry at a time: the key is normalised the same way as before
+            eq = raw.get("eq")
+            try:
+                out[key] = pad if eq is None else replace(pad, eq=rx_eq.clamp(eq))
+            except (ValueError, TypeError) as e:
+                print(f"Settings: speaker equalizer for {k!r} ignored ({e})")
+                out[key] = pad
+    return out
+
+
+SpeakerConfig.V = {"pads": _speaker_pads}
 
 
 @dataclass(frozen=True, slots=True)
