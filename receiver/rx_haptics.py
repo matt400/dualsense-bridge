@@ -266,8 +266,9 @@ class Link:
         self._pcm_at = self._clock()
         if (self._active or w + n - self._r >= WAKE_BYTES) and not self._wake.is_set():
             self._wake.set()
-        if self.on_write is not None:
-            self.on_write(w + n)
+        on_write = self.on_write                    # read once: rx_speaker.detach() sets it to None from another thread
+        if on_write is not None:
+            on_write(w + n)
 
     # ----- setup -----
     def configure(self, channels: int, rate: int, bits: int, roles: Sequence[str]) -> str | None:
@@ -315,6 +316,7 @@ class Link:
         first = RING_BYTES - i
         data = bytes(self._ring[i:i + n]) if n <= first else bytes(self._ring[i:]) + bytes(self._ring[:n - first])
         return data, r + n
+
     def wake(self) -> None:
         """Make the thread look at the settings and the audio now."""
         self._wake.set()

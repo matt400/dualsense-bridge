@@ -268,7 +268,7 @@ def _on_setting(t: int, idx: int, sq: int, data: bytes, now: float) -> None:
     if t == T_LEDS:
         if fb_filter.fresh(("leds", idx), sq, now) and on_leds is not None:
             on_leds(idx, BODY[T_LEDS].unpack_from(data, HEADER_LEN))
-    elif fb_filter.fresh(("cfg",), sq, now) and on_cfg is not None:
+    elif fb_filter.fresh(("cfg", data[HEADER_LEN + 1]), sq, now) and on_cfg is not None:   # one stream per setting id (see _on_control)
         # authenticated = v3 (HMAC + freshness token, so no replay) AND a key: v3 cannot be parsed without one, the check is explicit
         on_cfg(bool(codec.key) and data[0] >> VER_SHIFT == VER3, *BODY[T_CFGSET].unpack_from(data, HEADER_LEN))
 
@@ -277,21 +277,24 @@ def _on_control(t: int, idx: int, sq: int, data: bytes) -> None:
     """Handle feedback, commands, trigger settings, haptics chunks, speaker frames, settings and Bluetooth requests.
 
     Each stream passes through its own SeqFilter key, so UDP duplicates (the receiver repeats important packets) and
-    old reordered packets are dropped without blocking the other streams.
+    old reordered packets are dropped without blocking the other streams. A packet that asks for something different each
+    time (a command, a setting, a Bluetooth operation) has the thing it asks for in its key: the receiver sends such a request
+    three times with one number, and with a single key per type the repeats of an earlier request were dropped as old as soon as a
+    later request (another command, another setting) had arrived - when the first copy was lost, the request never ran.
     """
     now = time.monotonic()
     if t == T_FB:
         if fb_filter.fresh(idx, sq, now) and on_feedback is not None:
             on_feedback(idx, BODY[T_FB].unpack_from(data, HEADER_LEN))
     elif t == T_CMD:
-        if fb_filter.fresh(("cmd", idx), sq, now) and on_command is not None:
+        if fb_filter.fresh(("cmd", idx, data[HEADER_LEN]), sq, now) and on_command is not None:
             on_command(idx, *BODY[T_CMD].unpack_from(data, HEADER_LEN))
     elif t in (T_TRIG, T_TRIG2, T_TRIG3):   # trig3: + game effects (v11+), trig2: profile (v8+), trig: resistance only
         if fb_filter.fresh(("trig", idx), sq, now) and on_triggers is not None:
             on_triggers(idx, BODY[t].unpack_from(data, HEADER_LEN))
     elif t in (T_LEDS, T_CFGSET):           # the mute LED / player LEDs from the game (v15+), a setting from the window (v16+)
         _on_setting(t, idx, sq, data, now)
-    elif t == T_BTCMD and fb_filter.fresh(("bt",), sq, now) and on_bt is not None:   # phone Bluetooth from the window (v10+)
+    elif t == T_BTCMD and fb_filter.fresh(("bt", data[HEADER_LEN]), sq, now) and on_bt is not None:   # phone Bluetooth (window, v10+)
         on_bt(*BODY[T_BTCMD].unpack_from(data, HEADER_LEN))
     elif t == T_HAPT and fb_filter.fresh(("hapt", idx), sq, now) and on_haptics is not None:   # HD haptics (v13+): no copy of the samples
         frame, flags = HAPT_HEAD.unpack_from(data, HEADER_LEN)
