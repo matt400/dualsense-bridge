@@ -15,8 +15,8 @@ import sender_config
 import sender_events as events
 import sender_state as state
 from proto import (BODY, E_NET_DOWN, E_NO_RECEIVER, HAPT_CHUNK, HAPT_DATA_AT, NS_PER_MS, RTT_NONE, SCFG_BATT, SPK_BYTES, SPK_DATA_AT,
-                   UINT32_MASK, Codec, EpochClock, SeqFilter, T_BTCMD, T_CMD, T_FB, T_HAPT, T_PING, T_PONG, T_PONG2, T_SCFG, T_SPK, T_TRIG,
-                   T_TRIG2, T_TRIG3)
+                   UINT32_MASK, Codec, EpochClock, SeqFilter, T_BTCMD, T_CMD, T_FB, T_HAPT, T_LEDS, T_PING, T_PONG, T_PONG2, T_SCFG,
+                   T_SPK, T_TRIG, T_TRIG2, T_TRIG3)
 from sender_config import C
 
 # the packet header is 4 bytes (see proto.HDR); the body of every received packet is unpacked right after it
@@ -58,6 +58,7 @@ fb_filter = SeqFilter(1.0)            # with a time window: a receiver restart (
 on_feedback: Callable[[int, tuple[int, int, int, int, int]], None] | None = None   # (idx, (small, large, r, g, b)); set in main
 on_command: Callable[..., None] | None = None       # callback(idx, cmd, arg) set in main
 on_triggers: Callable[[int, tuple[Any, ...]], None] | None = None   # callback(idx, trig2 values (12) or trig (4)) set in main
+on_leds: Callable[[int, tuple[int, int, int]], None] | None = None   # callback(idx, (LEDS_* flags, mute LED, player LEDs)) set in main
 on_haptics: Callable[[int, int, int, memoryview], None] | None = None   # callback(idx, first frame, HAPT_* flags, samples) set in main
 on_speaker: Callable[[int, int, int, memoryview], None] | None = None   # callback(idx, frame, SPK_* flags, samples) set in main
 on_scfg: Callable[..., None] | None = None          # callback(flags, mac, broadcast, button, hold ms) set in main
@@ -277,6 +278,9 @@ def _on_control(t: int, idx: int, sq: int, data: bytes) -> None:
     elif t in (T_TRIG, T_TRIG2, T_TRIG3):   # trig3: + game effects (v11+), trig2: profile (v8+), trig: resistance only
         if fb_filter.fresh(("trig", idx), sq, now) and on_triggers is not None:
             on_triggers(idx, BODY[t].unpack_from(data, HEADER_LEN))
+    elif t == T_LEDS:                       # the mute LED / player LEDs from the game (v15+)
+        if fb_filter.fresh(("leds", idx), sq, now) and on_leds is not None:
+            on_leds(idx, BODY[T_LEDS].unpack_from(data, HEADER_LEN))
     elif t == T_BTCMD and fb_filter.fresh(("bt",), sq, now) and on_bt is not None:   # phone Bluetooth from the window (v10+)
         on_bt(*BODY[T_BTCMD].unpack_from(data, HEADER_LEN))
     elif t == T_HAPT and fb_filter.fresh(("hapt", idx), sq, now) and on_haptics is not None:   # HD haptics (v13+): no copy of the samples

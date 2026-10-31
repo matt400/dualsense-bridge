@@ -52,10 +52,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 
 import sender_opus
 from sender_ioctl import IOC_READ, IOC_WRITE, ioc
-from proto import (CAP_HAPTICS, CAP_SPEAKER, CAP_TRIG_FX, CAP_TRIG_RAW, CAP_TRIGGERS, RFX_GAIN_MAX, RFX_HOLD_S, RFX_ON, RUMBLE_EVDEV,
-                   RUMBLE_HIDRAW, TFX_CLICK, TFX_OFF, TFX_RES, TFX_VIB, TRG3_L2, TRG3_R2, TRIG2_OFF, TRIG_AMP_MAX, TRIG_CLICK_MAX,
-                   TRIG_CLICK_MIN, TRIG_FORCE_MAX, TRIG_FREQ_MAX, TRIG_START_MAX, WHY_ACCESS, WHY_NO_HIDRAW,
-                   WHY_NOT_FOUND, WHY_OFF, WHY_OK, WHY_OPEN, trig2_from_legacy)
+from proto import (CAP_HAPTICS, CAP_SPEAKER, CAP_TRIG_FX, CAP_TRIG_RAW, CAP_TRIGGERS, PLAYER_LEDS_MASK, RFX_GAIN_MAX, RFX_HOLD_S,
+                   RFX_ON, RUMBLE_EVDEV, RUMBLE_HIDRAW, TFX_CLICK, TFX_OFF, TFX_RES, TFX_VIB, TRG3_L2, TRG3_R2, TRIG2_OFF,
+                   TRIG_AMP_MAX, TRIG_CLICK_MAX, TRIG_CLICK_MIN, TRIG_FORCE_MAX, TRIG_FREQ_MAX, TRIG_START_MAX, WHY_ACCESS,
+                   WHY_NO_HIDRAW, WHY_NOT_FOUND, WHY_OFF, WHY_OK, WHY_OPEN, trig2_from_legacy)
 
 # Rumble modes (sender.toml) and the ways a rumble can actually be delivered.
 MODE_AUTO: Final = "auto"
@@ -84,6 +84,8 @@ LIGHTBAR_AT, RGB_LEN = 44, 3                # lightbar_red / green / blue in the
 FLAG0_COMPAT_VIBRATION, FLAG0_HAPTICS_SELECT = 0x01, 0x02
 FLAG0_RIGHT_TRIGGER, FLAG0_LEFT_TRIGGER = 0x04, 0x08    # valid_flag0: the right / left trigger effect from this report
 FLAG1_LIGHTBAR: Final = 0x04                # valid_flag1: the lightbar colour from this report
+FLAG1_MUTE_LED, FLAG1_PLAYER_LEDS = 0x01, 0x10   # valid_flag1: the mute button LED / the player LEDs from this report
+MUTE_LED_AT, PLAYER_LEDS_AT = 8, 43         # mute_button_led (0 off, 1 on, 2 pulse) and player_leds (5 bits) in the common part
 FLAG2_COMPAT_VIBRATION2: Final = 0x04       # newer pad firmware (like use_vibration_v2 in the kernel)
 
 # ---- audio haptics: the 0x31 report that switches the actuators to audio, and the policy for a game's motors ----
@@ -348,8 +350,8 @@ def haptics_setup_report(seq: int) -> bytes:
 
 def output_report(bt: bool, seq: int, small: int, large: int, v2: bool | None = None,
                   rgb: Sequence[int] | None = None, triggers: tuple[bytes, bytes] | None = None,
-                  haptics: bool = False) -> bytes:
-    """Build the DualSense output report: rumble and (optionally) the lightbar colour and the trigger effects.
+                  haptics: bool = False, leds: tuple[int | None, int | None] = (None, None)) -> bytes:
+    """Build the DualSense output report: rumble and (optionally) the lightbar colour, trigger effects and the LEDs.
 
     Layout: a 47-byte "common" part (valid flags, motors, trigger effects, lightbar) is wrapped differently per bus. USB:
     report id 0x02 + common + padding. Bluetooth: report id 0x31, sequence number in the high nibble, tag 0x10,
@@ -367,6 +369,8 @@ def output_report(bt: bool, seq: int, small: int, large: int, v2: bool | None = 
         haptics: A haptics stream is running (Bluetooth): the report carries no rumble at all - valid_flag0 keeps only the
             trigger bits and valid_flag2 stays 0, so the motor values are ignored (and sent as 0). Lightbar and trigger
             reports do not take the actuators out of audio mode, any rumble bit does.
+        leds: ``(mute button LED, player LEDs)`` set by the game; None = that LED is left to the kernel driver (its valid flag
+            stays clear). Neither flag is a rumble bit, so they are safe in audio mode too.
 
     Returns:
         The report bytes.
@@ -383,8 +387,15 @@ def output_report(bt: bool, seq: int, small: int, large: int, v2: bool | None = 
         common[RIGHT_TRIGGER_AT:RIGHT_TRIGGER_AT + TRIGGER_LEN] = triggers[1]
     common[MOTOR_RIGHT_AT], common[MOTOR_LEFT_AT] = small & BYTE_MASK, large & BYTE_MASK
     if rgb is not None:
-        common[VALID_FLAG1_AT] = FLAG1_LIGHTBAR
+        common[VALID_FLAG1_AT] |= FLAG1_LIGHTBAR
         common[LIGHTBAR_AT:LIGHTBAR_AT + RGB_LEN] = bytes(channel & BYTE_MASK for channel in rgb)
+    mute, player = leds
+    if mute is not None:
+        common[VALID_FLAG1_AT] |= FLAG1_MUTE_LED
+        common[MUTE_LED_AT] = mute & BYTE_MASK
+    if player is not None:
+        common[VALID_FLAG1_AT] |= FLAG1_PLAYER_LEDS
+        common[PLAYER_LEDS_AT] = player & PLAYER_LEDS_MASK
     if not bt:
         return bytes([USB_REPORT_ID]) + bytes(common) + bytes(USB_PADDING)
     return _bt_report(common, seq)
@@ -569,6 +580,7 @@ class Rumble:
         self._haptics_fails = 0                   # haptics writes that failed in a row (HAPTICS_FAIL_MAX)
         self._haptics_timer: asyncio.TimerHandle | None = None   # the second setup report (HAPTICS_RESEND_S)
         self.rgb: Sequence[int] | None = None   # the lightbar colour sent together with rumble (HID report only)
+        self.leds: tuple[int | None, int | None] = (None, None)   # (mute LED, player LEDs) set by the game; None = the kernel's own
         self.trig: tuple[bytes, bytes] | None = None       # trigger effects sent to the pad, or None = never touched
         self.fx: tuple[int, ...] | None = None             # trigger settings from the PC (trig2 values) or None = nothing arrived
         self.game_fx: tuple[bytes | None, bytes | None] = (None, None)   # L2 / R2 trigger effects set by the game (raw 11 B)
@@ -723,7 +735,7 @@ class Rumble:
         trig = self._want_triggers(*self.cur)
         try:
             self.seq = (self.seq + 1) & BT_SEQ_MASK
-            os.write(self.fd, output_report(self.bt, self.seq, *self.cur, self.v2, self.rgb, trig, self.audio))
+            os.write(self.fd, output_report(self.bt, self.seq, *self.cur, self.v2, self.rgb, trig, self.audio, self.leds))
         except (BlockingIOError, InterruptedError):
             return False                    # a full queue - the next refresh from the PC will deliver the effect
         except OSError as e:
@@ -731,6 +743,36 @@ class Rumble:
             return False
         self.fails[WAY_HIDRAW] = 0
         self.trig = trig
+        return True
+
+    def set_leds(self, mute: int | None, player: int | None) -> bool:
+        """Apply the mute button LED and / or the player LEDs the game set (HID report only, the kernel has no such write).
+
+        The values are remembered and go out with every later report too (like the lightbar colour), so a rumble or trigger
+        refresh does not hand the LEDs back to the kernel driver. Triggers are not part of this report (their flags stay
+        clear) and neither are rumble bits while audio mode is on.
+
+        Args:
+            mute: The mute LED (MUTE_OFF / MUTE_ON / MUTE_PULSE), or None = unchanged.
+            player: The player LEDs (5 bits), or None = unchanged.
+
+        Returns:
+            True when the report was written.
+        """
+        new = (self.leds[0] if mute is None else mute, self.leds[1] if player is None else player & PLAYER_LEDS_MASK)
+        changed = new != self.leds
+        self.leds = new
+        if not changed or WAY_HIDRAW not in self.methods or self.fd is None:
+            return False
+        try:
+            self.seq = (self.seq + 1) & BT_SEQ_MASK
+            os.write(self.fd, output_report(self.bt, self.seq, *self.cur, self.v2, self.rgb, None, self.audio, self.leds))
+        except (BlockingIOError, InterruptedError):
+            return False                    # a full queue - the receiver repeats the packet and refreshes it every few seconds
+        except OSError as e:
+            self._failed(WAY_HIDRAW, e)
+            return False
+        self.fails[WAY_HIDRAW] = 0
         return True
 
     def _arm_trig_watch(self, on: bool) -> None:
@@ -943,7 +985,7 @@ class Rumble:
         if trig == self.trig:
             trig = None
         self.seq = (self.seq + 1) & BT_SEQ_MASK
-        os.write(self.fd, output_report(self.bt, self.seq, small, large, self.v2, self.rgb, trig, audio))
+        os.write(self.fd, output_report(self.bt, self.seq, small, large, self.v2, self.rgb, trig, audio, self.leds))
         if trig is not None:
             self.trig = trig
 

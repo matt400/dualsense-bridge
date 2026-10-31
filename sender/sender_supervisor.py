@@ -21,6 +21,7 @@ import sender_streams as streams
 from proto import CAL_FEW, E_ERROR, E_NO_SLOT, E_PAD_OFF, E_PAD_ON, LAT_NONE, T_BYE, TRIG2_OFF
 from sender_config import C, IDLE_TP, SETTLE_S
 from sender_ctrl import Ctrl
+from sender_mute import stream_mute
 from sender_net import emit_repeat
 from sender_rumble import Rumble
 
@@ -201,6 +202,12 @@ def dispatch_triggers(idx: int, vals: Sequence[Any]) -> None:
         c.set_triggers(vals)
 
 
+def dispatch_leds(idx: int, vals: tuple[int, int, int]) -> None:
+    """Route the mute button LED / player LEDs the game set from the PC to the pad in slot idx (ignored if no pad is there)."""
+    if (c := state.ctrl_by_idx(idx)) is not None:
+        c.apply_leds(*vals)
+
+
 def dispatch_haptics(idx: int, frame: int, flags: int, data: memoryview) -> None:
     """Route a chunk of the game's HD haptics from the PC to the pad in slot idx (ignored if no pad is there)."""
     if (c := state.ctrl_by_idx(idx)) is not None:
@@ -356,10 +363,15 @@ async def _start_pad(c: Ctrl) -> list[asyncio.Task[None]]:
         c.rumble.set_triggers(c.triggers)
     if c.fb is not None:                  # rumble / colour from the PC that arrived while the backend was opening
         c.apply_feedback(*c.fb, remember=False)
+    if c.leds != (None, None):            # the same for the LEDs the game set
+        c.rumble.set_leds(*c.leds)
     c.send_ident()                        # the receiver knows right away which pad this is (remap profile)
     events.info(E_PAD_ON, c.idx, c.key or "")
     c.starting = False                    # ready: from now on the heartbeat may resend its state
     tasks = [asyncio.create_task(streams.stream_pad(c)), asyncio.create_task(streams.stream_battery(c))]
+    mute = asyncio.create_task(stream_mute(c))   # an extra task: without the kernel's mute LED it just ends, the pad stays
+    c.extra.add(mute)
+    mute.add_done_callback(c.extra.discard)
     for kind in LATE_KINDS:
         dev = getattr(c, KIND_ATTR[kind])
         if dev is not None:

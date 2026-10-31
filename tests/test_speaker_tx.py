@@ -91,7 +91,7 @@ assert plain[0] == (2 << 4) | 0x0A and plain[1] == 1 and len(plain) == 4 + 965, 
 assert plain[4:] == struct.pack(">IB", frame_no, SPK_START) + data, "body: counter (big endian), flags, 960 B of samples"
 assert Codec().parse(plain) == (T_SPK, 1, int.from_bytes(plain[2:4], "big"))
 assert proto.BODY[T_SPK].unpack_from(plain, 4) == (frame_no, SPK_START, data)
-assert (proto.WIRE[T_SPK], proto.CAP_SPEAKER, proto.SENDER_VERSION) == (proto.T_CMD, 128, 14) and CAP_SPEAKER not in (CAP_HAPTICS, 1, 2, 4, 8, 16, 32)
+assert (proto.WIRE[T_SPK], proto.CAP_SPEAKER, proto.SENDER_VERSION) == (proto.T_CMD, 128, 15) and CAP_SPEAKER not in (CAP_HAPTICS, 1, 2, 4, 8, 16, 32)
 v2 = Codec(KEY).pack(T_SPK, 1, frame_no, 0, data, v3=False)
 assert len(v2) == 4 + 965 + 8 and Codec(KEY).parse(v2)[0] == T_SPK
 v3 = Codec(KEY, token=lambda: 1234).pack(T_SPK, 1, frame_no, 0, data, v3=True)

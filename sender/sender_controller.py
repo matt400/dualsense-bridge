@@ -150,6 +150,7 @@ if __name__ == "__main__":
     net.on_feedback = sup.dispatch_feedback
     net.on_command = control.on_command
     net.on_triggers = sup.dispatch_triggers
+    net.on_leds = sup.dispatch_leds            # the mute LED and player LEDs the game set
     net.on_haptics = sup.dispatch_haptics      # HD haptics for a Bluetooth pad (sender_haptics)
     net.on_speaker = sup.dispatch_speaker      # the game's sound on the pad's speaker (sender_speaker)
     net.on_scfg = wol.apply_scfg
