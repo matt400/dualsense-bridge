@@ -34,7 +34,7 @@
     przy niskim); podczas ładowania po jej górnej krawędzi płynie fala. Raspberry Pi i inne urządzenia bez baterii
     nie pokazują procentów; starszy nadajnik po prostu ich nie wysyła;
   - na środku rysunek pada na żywo: kliknij przycisk, spust albo gałkę, żeby ją zremapować lub dostroić;
-  - po prawej profil (domyślny / per gra), zakładki **Selected**, **Rumble**, **Gyro**, **Accessibility**, **Changes** i przycisk **Save** (Ctrl+S);
+  - po prawej profil (domyślny / per gra), pionowe zakładki po lewej: **Selected**, **Rumble**, **Gyro**, **Accessibility**, **Changes** i przycisk **Save** (Ctrl+S);
   - remapowanie przycisków i gałek, celowanie żyroskopem (prawa gałka / mysz); strefy martwe, krzywe i
     anti-deadzone w zwijanej sekcji „Zaawansowane” (otwiera się sama, gdy coś w niej zmieniono). Gdy sekcja
     **Celowanie żyroskopem** jest rozwinięta, w prawym górnym rogu rysunku pada pojawia się podgląd na żywo (jak przy
@@ -99,7 +99,7 @@
     moduł na stałe (zapamiętany po urządzeniu, nie po numerze). **Auto** - dongle USB przed wbudowanym; **Ręcznie** -
     nadajnik nic nie zmienia. Niewybrane są wyłączone (rfkill), wybrany działa bez trybu SNIFF (pad nie usypia
     łącza); wpięcie / wyjęcie dongla bez restartu. Domyślny tryb: `bt_adapter` w `sender.toml`;
-  - **tryb dostępności** (zakładka **Dostępność** po prawej, per pad, dla gracza, który nie dociąga gałki do końca,
+  - **tryb dostępności** (zakładka **Dostępność**, per pad, dla gracza, który nie dociąga gałki do końca,
     np. z nakładką na pada): przełącznik i suwaki dla wybranej gałki - **zasięg** (gra dostaje pełne wychylenie np. przy 70 % drogi gałki, skalowane
     promieniowo), wewnętrzna strefa martwa, krzywa odpowiedzi i **tłumienie drżenia** (ruch poniżej progu jest
     ignorowany; próg, nie filtr, więc bez dodatkowego opóźnienia). Działa na gałce fizycznej przed profilem, więc

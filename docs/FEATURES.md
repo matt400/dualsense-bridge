@@ -36,7 +36,7 @@
     no percentage; an older sender simply doesn't send it;
   - in the middle, a live pad drawing: click a button, trigger or stick to remap or tune it;
   - on the right, the profile (default / per game), the **Selected**, **Rumble**, **Gyro**, **Accessibility**, **Changes**
-    tabs (vertical, on the right edge) and the **Save** button (Ctrl+S);
+    tabs (vertical, on the left edge) and the **Save** button (Ctrl+S);
   - remapping buttons and sticks, gyro aiming (right stick / mouse); deadzones, curves and anti-deadzone in the
     collapsible "Advanced" section (it opens by itself when something in it was changed). While the **Gyro aiming**
     section is expanded, a live preview floats over the top-right corner of the pad drawing (like the tilt one; with
@@ -105,7 +105,7 @@
     **Manual** - the sender changes nothing. Unselected ones are turned off (rfkill), the selected one runs without
     SNIFF mode (the pad doesn't put the link to sleep); plugging in / removing a dongle without a restart. Default
     mode: `bt_adapter` in `sender.toml`;
-  - **accessibility mode** (the **Accessibility** tab on the right, per pad, for a player who cannot push a stick all
+  - **accessibility mode** (the **Accessibility** tab, per pad, for a player who cannot push a stick all
     the way, e.g. with a hardware overlay): a switch plus sliders for a chosen stick - **range** (the game gets full deflection at e.g. 70 % of the travel,
     scaled radially), inner deadzone, response curve and **tremor damping** (a movement below the threshold is
     ignored; a threshold rather than a filter, so no added latency). It works on the physical stick before the

@@ -728,7 +728,7 @@ class MainWindow(ScreenPlacement):
         return lay
 
     def _build_tabs(self) -> None:
-        """The profile editor's tabs (Selected, Rumble, Gyro, Accessibility, Changes), vertical on the right edge of the column."""
+        """The profile editor's tabs (Selected, Rumble, Gyro, Accessibility, Changes), vertical on the left edge of the column."""
         self.part_page, self.rumble_page, self.gyro_page = PartPage(self.ed), RumblePage(self.ed), GyroPage(self.ed)
         self.changes_page = ChangesPage(self.ed)
         self.access_page = AccessPanel()        # per pad, not per profile; its range ring is drawn in the Test view's stick scope
@@ -736,7 +736,7 @@ class MainWindow(ScreenPlacement):
         self.access_page.busy_changed.connect(lambda _busy: self.sync_block())     # the wizard locks the output to the game
         self.access_scroll = scrolled(self.access_page)
         self.tabs = QTabWidget()
-        self.tabs.setTabPosition(QTabWidget.TabPosition.East)       # vertical tabs on the right edge of the column
+        self.tabs.setTabPosition(QTabWidget.TabPosition.West)       # vertical tabs on the left edge of the column
         self.tabs.tabBar().setExpanding(False)                       # packed at the top, not stretched over the whole height
         self.tabs.tabBar().setDrawBase(False)
         for page, name in ((self.part_page, _("Wybrane")), (self.rumble_page, _("Wibracje")), (self.gyro_page, _("Gyro")),
