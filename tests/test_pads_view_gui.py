@@ -88,7 +88,7 @@ ok("zwijanie: pasek z numerami padów, klik wybiera pad, stan zapamiętany")
 win.show(); pump(100)
 win.open_settings(); dlg = win.settings_dlg; pump()
 tabs = dlg.tabs
-assert tabs.count() == 10 and tabs.tabText(6) == "Pady"
+assert tabs.count() == 11 and tabs.tabText(6) == "Pady"
 btns = tabs._buttons
 assert len({b.x() for b in btns}) == 1 and all(a.y() < b.y() for a, b in zip(btns, btns[1:])), "zakładki jedna pod drugą po lewej"
 assert btns[0].x() < tabs._stack.x(), "zakładki po lewej stronie treści"
