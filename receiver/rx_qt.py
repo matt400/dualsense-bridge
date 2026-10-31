@@ -70,6 +70,22 @@ UPDATE_RESTART_MS = 2500   # after a successful update: the message is visible t
 UPDATE_STUCK_S = 150.0     # no progress for this long (git hung despite its limits) -> the button returns, the result still works
 UPDATE_PIP_GRACE_S = 30.0  # added to pip's own time limit before the libraries stage counts as stuck
 NOTE_S = 6.0           # for this many seconds a message (e.g. "Saved") covers the profile status
+TAB_EDGE = 5            # [px] the editor tabs sit this close to the left edge of the right column; the rest is indented by the difference
+TAB_INDENT = 14 - TAB_EDGE
+
+
+def _indent(host: QWidget | QVBoxLayout) -> QVBoxLayout:
+    """A vertical box with the left indent that keeps the column's content where the 14 px margin put it (the tabs go further left).
+
+    `host` is a widget (the box becomes its layout) or a layout (the box is added to it).
+    """
+    box = QVBoxLayout(host) if isinstance(host, QWidget) else QVBoxLayout()
+    box.setContentsMargins(px(TAB_INDENT), 0, 0, 0)
+    if not isinstance(host, QWidget):
+        host.addLayout(box)
+    return box
+
+
 VIEWS = (("out", "Wynik"), ("in", "Fizycznie"), ("test", "Test"))
 EXIT_HOLD_S = 1.0      # the Test view in TV mode: how long ○ of the pad under test must be held to leave the test
 DEFAULT_SIZE = QSize(1160, 720)
@@ -755,7 +771,7 @@ class MainWindow(ScreenPlacement):
         panel.setFixedWidth(px(340))
         self.right_col = panel
         outer = QVBoxLayout(panel)
-        outer.setContentsMargins(px(14), px(14), px(14), px(14))
+        outer.setContentsMargins(px(TAB_EDGE), px(14), px(14), px(14))      # the tabs nearly touch the left edge, the rest is indented
         self.right_stack = QStackedWidget()      # profile editing or the test panel (the Test view)
         outer.addWidget(self.right_stack)
         edit = QWidget()
@@ -765,16 +781,18 @@ class MainWindow(ScreenPlacement):
         self.right_stack.addWidget(edit)
         self.test_panel = TestPanel(str(self.settings.value("test_block", "true")).lower() == "true")
         self.test_panel.block_changed.connect(self.on_block_toggled)
-        self.right_stack.addWidget(self.test_panel)
+        test_box = QWidget()
+        _indent(test_box).addWidget(self.test_panel)
+        self.right_stack.addWidget(test_box)
         self.profile_bar = ProfileBar()
         self.profile_bar.selected.connect(self.on_profile)
         self.profile_bar.create.connect(self.on_create)
         self.profile_bar.delete.connect(self.on_delete)
-        lay.addWidget(self.profile_bar)
+        _indent(lay).addWidget(self.profile_bar)
         self._build_tabs()
         lay.addWidget(self.tabs, 1)
         self.status = label("", wrap=True)
-        lay.addWidget(self.status)
+        _indent(lay).addWidget(self.status)
         row = QHBoxLayout()
         row.setSpacing(px(8))
         self.save_btn = button(_("Zapisz"), primary=True)
@@ -785,7 +803,7 @@ class MainWindow(ScreenPlacement):
         self.revert_btn.clicked.connect(self.revert)
         row.addWidget(self.save_btn, 1)
         row.addWidget(self.revert_btn)
-        lay.addLayout(row)
+        _indent(lay).addLayout(row)
         return panel
 
     def _make_tray(self) -> QSystemTrayIcon | None:
