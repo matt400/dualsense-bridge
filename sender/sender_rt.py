@@ -32,6 +32,7 @@ ENOSYS_FALLBACK_NR: Final = 119   # sched_setscheduler in the asm-generic syscal
 
 _qos: BinaryIO | None = None      # the open /dev/cpu_dma_latency - kept open until the process ends (or low_latency is switched off)
 _affinity: set[int] | None = None     # the CPUs this process was allowed to use before pin_fast_cpus (restored by unpin_cpus)
+_fast_cached: set[int] | None = None  # fast_cpus("/sys"): capacities never change - read once
 _realtime_on = False              # SCHED_FIFO was set by realtime(): apply() switches back to the normal scheduler when it is turned off
 
 
@@ -75,7 +76,19 @@ def fast_cpus(sys_root: str = "/sys") -> set[int]:
 
     On big.LITTLE SoCs every core reports a relative capacity; the cores sharing the maximum value are the "big" ones.
     The result is empty when all cores are identical or the data is unavailable, because then pinning would be pointless.
+    The real /sys is read once and remembered: apply() runs on the event loop when a setting is changed from the receiver window,
+    and a dozen sysfs reads there are avoidable (the capacities are fixed for the life of the process).
     """
+    global _fast_cached
+    if sys_root == "/sys":
+        if _fast_cached is None:
+            _fast_cached = _read_fast_cpus(sys_root)
+        return set(_fast_cached)
+    return _read_fast_cpus(sys_root)
+
+
+def _read_fast_cpus(sys_root: str) -> set[int]:
+    """Read cpu_capacity of every core under ``sys_root`` and return the cores with the largest value (see fast_cpus)."""
     cap: dict[int, int] = {}
     for path in glob.glob(f"{sys_root}/devices/system/cpu/cpu[0-9]*/cpu_capacity"):
         try:
@@ -208,6 +221,7 @@ def setup(low_latency: bool, cpu_latency_us: int, rt_priority: int) -> None:
         os.nice(RUNTIME_NICE)
     except OSError:
         pass                  # without privileges the priority simply stays normal
+    fast_cpus()                                  # reads sysfs now, before the loop runs: a later apply() does not have to
     results = [realtime(rt_priority)]            # each step returns a description of what it set, or None
     if low_latency:
         results += [hold_cpu_latency(cpu_latency_us), pin_fast_cpus(), short_switch_interval()]
