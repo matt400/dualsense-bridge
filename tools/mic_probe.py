@@ -4,6 +4,7 @@
   doas python3 mic_probe.py listen            # 1) passive: which input reports arrive, ids / sizes / rates
   doas python3 mic_probe.py enable [variant]  # 2) turn the mic on with a 0x31 output report, then capture reports
   doas python3 mic_probe.py matrix            # 3) every variant in turn, asks y/n whether the mic seems to deliver data
+  doas python3 mic_probe.py ab                # 6) tone test: does feeding 0x36 continuously gate the mic? (needs libopus)
   doas python3 mic_probe.py live              # 5) mic on (0x36 cfg FF) + mic unmuted via 0x31, 15 s: payload size of the 0xD4 packets
   doas python3 mic_probe.py mic36             # 4) report 0x36 (the speaker's report) with config / extra sub-packet variants;
                                               #    talk CONTINUOUSLY until it ends (~1.5 min), judged automatically
@@ -162,6 +163,56 @@ def run_live(fd: int) -> None:
     save("live", {"seconds": [{"n": len(r), "max_payload": max(r)} for r in stats], "non_silent": len(keep)})
 
 
+def decode_peaks(pkts: list[bytes]) -> list[int]:
+    """Decode mic packets (Opus = bytes 3..73, stereo, 24 kHz) with libopus through ctypes; returns the peak of every 10 ms frame."""
+    import array
+    import ctypes
+    import ctypes.util
+    lib = ctypes.CDLL(ctypes.util.find_library("opus") or "libopus.so.0")
+    lib.opus_decoder_create.restype = ctypes.c_void_p
+    lib.opus_decoder_create.argtypes = [ctypes.c_int32, ctypes.c_int, ctypes.POINTER(ctypes.c_int)]
+    lib.opus_decode.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int32, ctypes.c_void_p, ctypes.c_int, ctypes.c_int]
+    dec = lib.opus_decoder_create(24000, 2, ctypes.byref(ctypes.c_int(0)))
+    peaks = []
+    for p in pkts:
+        buf = (ctypes.c_int16 * 11520)()
+        n = lib.opus_decode(dec, p[3:74], 71, buf, 5760, 0)
+        peaks.append(max((abs(v) for v in array.array("h", bytes(buf)[:n * 4])), default=0))
+    return peaks
+
+
+def run_ab(fd: int) -> None:
+    """Same tone, three ways of feeding the pad: 0x36 every 10.667 ms, only 3 reports at the start, one every 100 ms."""
+    os.write(fd, output_31({1: 0x03, 8: 0x00, 9: 0x00, 0: 0x40, 6: 0x40}, 0))
+    input("Hold a steady 1 kHz tone next to the mic hole, press Enter, keep it going ~25 s (do not press Mute) ...")
+    cfg = bytes([0xFF, 0x10, 0x10, 0x10, 0x10, 0x10])
+    out: dict[str, object] = {}
+    for mode, period in (("continuous", 0.010667), ("once", None), ("slow100ms", 0.1)):
+        pkts: list[bytes] = []
+        t0 = time.monotonic()
+        nxt = t0
+        seq = 0
+        sent = 0
+        while (now := time.monotonic()) - t0 < 7.0:
+            if now >= nxt and (period is not None or sent < 3):
+                seq += 1
+                sent += 1
+                os.write(fd, report_36(cfg + bytes([seq & 0xFF]), b"", seq))
+                nxt += period if period else 0.01
+            if select.select([fd], [], [], 0.002)[0]:
+                r = os.read(fd, 4096)
+                if len(r) == 78 and r[3] == 0xD4 and now - t0 > 1.0:       # skip the first second after a change
+                    pkts.append(r)
+        peaks = decode_peaks(pkts)
+        low = sum(1 for v in peaks if v < 500)
+        print(f"{mode:11s} frames={len(peaks)} low(<500)={low} ({100 * low // max(1, len(peaks))}%)")
+        out[mode] = {"frames": len(peaks), "low": low}
+        with open(f"mic_probe_ab_{mode}.bin", "wb") as f:
+            for r in pkts:
+                f.write(struct.pack("<H", len(r)) + r)
+    save("ab", out)
+
+
 def capture(fd: int, seconds: float) -> list[tuple[float, bytes]]:
     """Read raw reports for `seconds`; returns (time, report) pairs."""
     out: list[tuple[float, bytes]] = []
@@ -226,6 +277,8 @@ def main() -> None:
         elif cmd == "enable":
             name = sys.argv[2] if len(sys.argv) > 2 else "internal_mic_path"
             save(name, run_variant(fd, name, VARIANTS[name]))
+        elif cmd == "ab":
+            run_ab(fd)
         elif cmd == "live":
             run_live(fd)
         elif cmd == "mic36":
