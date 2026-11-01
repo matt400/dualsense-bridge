@@ -4,6 +4,8 @@
   doas python3 mic_probe.py listen            # 1) passive: which input reports arrive, ids / sizes / rates
   doas python3 mic_probe.py enable [variant]  # 2) turn the mic on with a 0x31 output report, then capture reports
   doas python3 mic_probe.py matrix            # 3) every variant in turn, asks y/n whether the mic seems to deliver data
+  doas python3 mic_probe.py mic36             # 4) report 0x36 (the speaker's report) with config / extra sub-packet variants;
+                                              #    talk CONTINUOUSLY until it ends (~1.5 min), judged automatically
 
 Each capture is saved to mic_probe_<name>.bin (length-prefixed raw reports) and a summary goes to
 mic_probe_results.json - paste that file back. During a capture TALK or TAP the pad's mic hole for the full time,
@@ -63,6 +65,67 @@ def output_31(variant: dict[int, int], seq: int) -> bytes:
         buf[3 + off] = val
     buf[74:78] = struct.pack("<I", zlib.crc32(bytes([0xA2]) + bytes(buf[:74])))
     return bytes(buf)
+
+
+def report_36(cfg: bytes, extra: bytes, seq: int) -> bytes:
+    """Build a 398-byte BT output report 0x36: config (0x91, 7 B), zero haptics (0x92, 64 B), optional extra sub-packets."""
+    buf = bytearray(398)
+    buf[0] = 0x36
+    buf[1] = (seq & 0x0F) << 4
+    body = b"\x91\x07" + cfg + b"\x92\x40" + bytes(64) + extra
+    buf[2:2 + len(body)] = body
+    buf[394:398] = struct.pack("<I", zlib.crc32(bytes([0xA2]) + bytes(buf[:394])))
+    return bytes(buf)
+
+
+def mic36_variants() -> dict[str, tuple[bytes, bytes]]:
+    """Name -> (7 config bytes, extra sub-packets). The known-good config is FE 10 10 10 10 10 <counter>."""
+    base = [0xFE, 0x10, 0x10, 0x10, 0x10, 0x10]
+    out: dict[str, tuple[bytes, bytes]] = {"baseline": (bytes(base) + b"\x00", b"")}
+    out["cfg0=FF"] = (bytes([0xFF, *base[1:]]) + b"\x00", b"")
+    for pos in range(1, 6):
+        for val in (0x11, 0x12, 0x14, 0x30):
+            cfg = list(base)
+            cfg[pos] = val
+            out[f"cfg{pos}={val:02X}"] = (bytes(cfg) + b"\x00", b"")
+    for pid in range(0x14, 0x19):                    # unknown sub-packet ids, sized, 4 payload bytes
+        out[f"extra_{pid:02X}"] = (bytes(base) + b"\x00", bytes([0x80 | pid, 4, 1, 0, 0, 0]))
+    out["state_10"] = (bytes(base) + b"\x00", b"\x90\x2f" + bytes(47))
+    return out
+
+
+def run_mic36(fd: int) -> None:
+    """Stream each 0x36 variant at 10.667 ms for 3 s while the user talks; flag new report ids / sizes / busy offsets."""
+    variants = mic36_variants()
+    input(f"{len(variants)} variants x 3 s. Press Enter, then TALK / tap the mic hole non-stop until it says done ...")
+    base_busy: set[int] = set()
+    results: dict[str, object] = {}
+    seq = 0
+    for name, (cfg, extra) in variants.items():
+        rows: list[bytes] = []
+        t0 = time.monotonic()
+        nxt = t0
+        while (now := time.monotonic()) - t0 < 3.0:
+            if now >= nxt:
+                seq += 1
+                os.write(fd, report_36(cfg[:6] + bytes([seq & 0xFF]), extra, seq))
+                nxt += 0.010667
+            if select.select([fd], [], [], max(0.0, min(0.002, nxt - time.monotonic())))[0]:
+                rows.append(os.read(fd, 4096))
+        ids = sorted({(r[0], len(r)) for r in rows})
+        r31 = [r for r in rows if r[0] == 0x31 and len(r) == 78]
+        busy = {o for o in range(78) if len({r[o] for r in r31}) > 12} if r31 else set()
+        if name == "baseline":
+            base_busy = busy
+        new_ids = [f"0x{i:02x}/{n}" for i, n in ids if (i, n) != (0x31, 78)]
+        new_off = sorted(busy - base_busy)
+        flag = bool(new_ids or new_off)
+        print(f"{name:12s} reports={len(rows):4d} new_ids={new_ids} new_busy_offsets={new_off}{'   <-- !!' if flag else ''}")
+        results[name] = {"new_ids": new_ids, "new_busy": new_off, "count": len(rows)}
+        if flag:
+            summarize("mic36_" + name.replace("=", "_"), [(0.0, r) for r in rows])
+    save("mic36", {"variants": results})
+    print("done - you can stop talking")
 
 
 def capture(fd: int, seconds: float) -> list[tuple[float, bytes]]:
@@ -129,6 +192,8 @@ def main() -> None:
         elif cmd == "enable":
             name = sys.argv[2] if len(sys.argv) > 2 else "internal_mic_path"
             save(name, run_variant(fd, name, VARIANTS[name]))
+        elif cmd == "mic36":
+            run_mic36(fd)
         elif cmd == "matrix":
             save("listen", run_variant(fd, "listen", None))
             for name, v in VARIANTS.items():
