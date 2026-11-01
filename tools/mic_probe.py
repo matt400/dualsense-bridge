@@ -119,10 +119,11 @@ def run_mic36(fd: int) -> None:
             base_busy = busy
         new_ids = [f"0x{i:02x}/{n}" for i, n in ids if (i, n) != (0x31, 78)]
         new_off = sorted(busy - base_busy)
-        flag = bool(new_ids or new_off)
-        print(f"{name:12s} reports={len(rows):4d} new_ids={new_ids} new_busy_offsets={new_off}{'   <-- !!' if flag else ''}")
-        results[name] = {"new_ids": new_ids, "new_busy": new_off, "count": len(rows)}
-        if flag:
+        d4 = {o: sum(1 for r in rows if len(r) > o and r[o] == 0xD4) for o in range(1, 4)}   # mic marker 0xD4 per the community notes
+        flag = bool(new_ids or new_off or any(d4.values()))
+        print(f"{name:12s} reports={len(rows):4d} new_ids={new_ids} new_busy_offsets={new_off} D4@1-3={list(d4.values())}{'   <-- !!' if flag else ''}")
+        results[name] = {"new_ids": new_ids, "new_busy": new_off, "count": len(rows), "d4": d4}
+        if flag or name == "cfg0=FF":
             summarize("mic36_" + name.replace("=", "_"), [(0.0, r) for r in rows])
     save("mic36", {"variants": results})
     print("done - you can stop talking")
