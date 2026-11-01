@@ -4,6 +4,7 @@
   doas python3 mic_probe.py listen            # 1) passive: which input reports arrive, ids / sizes / rates
   doas python3 mic_probe.py enable [variant]  # 2) turn the mic on with a 0x31 output report, then capture reports
   doas python3 mic_probe.py matrix            # 3) every variant in turn, asks y/n whether the mic seems to deliver data
+  doas python3 mic_probe.py live              # 5) mic on (0x36 cfg FF) + mic unmuted via 0x31, 15 s: payload size of the 0xD4 packets
   doas python3 mic_probe.py mic36             # 4) report 0x36 (the speaker's report) with config / extra sub-packet variants;
                                               #    talk CONTINUOUSLY until it ends (~1.5 min), judged automatically
 
@@ -129,6 +130,38 @@ def run_mic36(fd: int) -> None:
     print("done - you can stop talking")
 
 
+def run_live(fd: int) -> None:
+    """Unmute the mic (0x31: valid_flag1 0x02, power_save_control 0), stream 0x36 with cfg0=FF and print the 0xD4 packets per second."""
+    os.write(fd, output_31({1: 0x02 | 0x01, 8: 0x00, 9: 0x00, 0: 0x40, 6: 0x40}, 0))
+    input("Press Enter, then TALK loudly / tap the mic hole for 15 s (press the pad's Mute button halfway: LED on = muted) ...")
+    cfg = bytes([0xFF, 0x10, 0x10, 0x10, 0x10, 0x10])
+    t0 = time.monotonic()
+    nxt = t0
+    seq = 0
+    sec = -1
+    stats: list[list[int]] = []
+    keep: list[bytes] = []
+    while (now := time.monotonic()) - t0 < 15.0:
+        if now >= nxt:
+            seq += 1
+            os.write(fd, report_36(cfg + bytes([seq & 0xFF]), b"", seq))
+            nxt += 0.010667
+        if select.select([fd], [], [], max(0.0, min(0.002, nxt - time.monotonic())))[0]:
+            r = os.read(fd, 4096)
+            if len(r) > 3 and r[3] == 0xD4:
+                if int(now - t0) != sec:
+                    sec = int(now - t0)
+                    stats.append([])
+                last = max((i for i in range(4, 74) if r[i]), default=3)
+                stats[-1].append(last - 3)
+                if last > 5 and len(keep) < 400:
+                    keep.append(r)
+    for i, row in enumerate(stats):
+        print(f"t={i:2d}s  mic packets={len(row):3d}  payload bytes min/max={min(row)}/{max(row)}")
+    summarize("live", [(0.0, r) for r in keep])
+    save("live", {"seconds": [{"n": len(r), "max_payload": max(r)} for r in stats], "non_silent": len(keep)})
+
+
 def capture(fd: int, seconds: float) -> list[tuple[float, bytes]]:
     """Read raw reports for `seconds`; returns (time, report) pairs."""
     out: list[tuple[float, bytes]] = []
@@ -193,6 +226,8 @@ def main() -> None:
         elif cmd == "enable":
             name = sys.argv[2] if len(sys.argv) > 2 else "internal_mic_path"
             save(name, run_variant(fd, name, VARIANTS[name]))
+        elif cmd == "live":
+            run_live(fd)
         elif cmd == "mic36":
             run_mic36(fd)
         elif cmd == "matrix":
