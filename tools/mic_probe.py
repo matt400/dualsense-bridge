@@ -133,7 +133,7 @@ def run_mic36(fd: int) -> None:
 def run_live(fd: int) -> None:
     """Unmute the mic (0x31: valid_flag1 0x02, power_save_control 0), stream 0x36 with cfg0=FF and print the 0xD4 packets per second."""
     os.write(fd, output_31({1: 0x02 | 0x01, 8: 0x00, 9: 0x00, 0: 0x40, 6: 0x40}, 0))
-    input("Press Enter, then TALK loudly / tap the mic hole for 15 s (press the pad's Mute button halfway: LED on = muted) ...")
+    input("Press Enter, then for 15 s hold a phone/speaker playing a steady 1 kHz tone right next to the pad's mic hole (mute LED must be off) ...")
     cfg = bytes([0xFF, 0x10, 0x10, 0x10, 0x10, 0x10])
     t0 = time.monotonic()
     nxt = t0
@@ -154,7 +154,7 @@ def run_live(fd: int) -> None:
                     stats.append([])
                 last = max((i for i in range(4, 74) if r[i]), default=3)
                 stats[-1].append(last - 3)
-                if last > 5 and len(keep) < 400:
+                if len(keep) < 1600:             # keep EVERYTHING (silence too): gaps would break the decoder state
                     keep.append(r)
     for i, row in enumerate(stats):
         print(f"t={i:2d}s  mic packets={len(row):3d}  payload bytes min/max={min(row)}/{max(row)}")
