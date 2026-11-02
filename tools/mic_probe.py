@@ -184,10 +184,10 @@ def decode_peaks(pkts: list[bytes]) -> list[int]:
 def run_ab(fd: int) -> None:
     """Same tone, three ways of feeding the pad: 0x36 every 10.667 ms, only 3 reports at the start, one every 100 ms."""
     os.write(fd, output_31({1: 0x03, 8: 0x00, 9: 0x00, 0: 0x40, 6: 0x40}, 0))
-    input("Hold a steady 1 kHz tone next to the mic hole, press Enter, keep it going ~25 s (do not press Mute) ...")
+    input("Hold a steady 1 kHz tone next to the mic hole, press Enter, keep it going ~40 s (do not press Mute) ...")
     cfg = bytes([0xFF, 0x10, 0x10, 0x10, 0x10, 0x10])
     out: dict[str, object] = {}
-    for mode, period in (("continuous", 0.010667), ("once", None), ("slow100ms", 0.1)):
+    for mode, period in (("p10.667ms", 0.010667), ("p10.0ms", 0.010), ("p21.333ms", 0.021333), ("p100ms", 0.1), ("once", None)):
         pkts: list[bytes] = []
         t0 = time.monotonic()
         nxt = t0
