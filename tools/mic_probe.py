@@ -1,0 +1,300 @@
+#!/usr/bin/env python3
+"""Throwaway probe: how does a Bluetooth DualSense deliver its microphone? (Linux, stdlib only, run with doas.)
+
+  doas python3 mic_probe.py listen            # 1) passive: which input reports arrive, ids / sizes / rates
+  doas python3 mic_probe.py enable [variant]  # 2) turn the mic on with a 0x31 output report, then capture reports
+  doas python3 mic_probe.py matrix            # 3) every variant in turn, asks y/n whether the mic seems to deliver data
+  doas python3 mic_probe.py ab                # 6) tone test: does feeding 0x36 continuously gate the mic? (needs libopus)
+  doas python3 mic_probe.py live              # 5) mic on (0x36 cfg FF) + mic unmuted via 0x31, 15 s: payload size of the 0xD4 packets
+  doas python3 mic_probe.py mic36             # 4) report 0x36 (the speaker's report) with config / extra sub-packet variants;
+                                              #    talk CONTINUOUSLY until it ends (~1.5 min), judged automatically
+
+Each capture is saved to mic_probe_<name>.bin (length-prefixed raw reports) and a summary goes to
+mic_probe_results.json - paste that file back. During a capture TALK or TAP the pad's mic hole for the full time,
+the script then compares busy and quiet bytes to find where audio could live. No imports from the repo on purpose.
+"""
+from __future__ import annotations
+
+import collections
+import glob
+import json
+import os
+import select
+import struct
+import sys
+import time
+import zlib
+
+DUALSENSE = (0x054C, (0x0CE6, 0x0DF2))
+CAPTURE_S = 6.0
+RESULTS = "mic_probe_results.json"
+
+# 0x31 common part offsets (hid-playstation): valid_flag0=0, valid_flag1=1, headphone=4, speaker=5, mic volume=6,
+# audio_flags=7. valid_flag0: 0x10 headphone vol, 0x20 speaker vol, 0x40 mic vol, 0x80 audio control.
+# audio_flags: bits 0-1 = input path (0 = auto, 1 = headset mic, 2 = internal mic), bits 4-5 = output path.
+VARIANTS: dict[str, dict[int, int]] = {
+    "mic_vol_only": {0: 0x40, 6: 0x40},
+    "mic_vol_max": {0: 0x40, 6: 0xFF},
+    "internal_mic_path": {0: 0xC0, 6: 0x40, 7: 0x02},
+    "internal_mic_path_speaker": {0: 0xF0, 4: 0x40, 5: 0x70, 6: 0x40, 7: 0x32},
+    "headset_mic_path": {0: 0xC0, 6: 0x40, 7: 0x01},
+    "audio_auto": {0: 0xC0, 6: 0x40, 7: 0x00},
+}
+
+
+def find_hidraw() -> str:
+    """Return the hidraw node of the first Bluetooth DualSense."""
+    for node in sorted(glob.glob("/sys/class/hidraw/hidraw*")):
+        try:
+            uevent = open(os.path.join(node, "device", "uevent")).read()
+        except OSError:
+            continue
+        for line in uevent.splitlines():
+            if line.startswith("HID_ID=0005:"):          # bus 5 = Bluetooth
+                _, vid, pid = line.split("=")[1].split(":")
+                if int(vid, 16) == DUALSENSE[0] and int(pid, 16) in DUALSENSE[1]:
+                    return "/dev/" + os.path.basename(node)
+    raise SystemExit("No Bluetooth DualSense hidraw found (is the pad connected? run with doas)")
+
+
+def output_31(variant: dict[int, int], seq: int) -> bytes:
+    """Build a 78-byte BT output report 0x31 with the given common-part bytes set."""
+    buf = bytearray(78)
+    buf[0] = 0x31
+    buf[1] = (seq & 0x0F) << 4
+    buf[2] = 0x10
+    for off, val in variant.items():
+        buf[3 + off] = val
+    buf[74:78] = struct.pack("<I", zlib.crc32(bytes([0xA2]) + bytes(buf[:74])))
+    return bytes(buf)
+
+
+def report_36(cfg: bytes, extra: bytes, seq: int) -> bytes:
+    """Build a 398-byte BT output report 0x36: config (0x91, 7 B), zero haptics (0x92, 64 B), optional extra sub-packets."""
+    buf = bytearray(398)
+    buf[0] = 0x36
+    buf[1] = (seq & 0x0F) << 4
+    body = b"\x91\x07" + cfg + b"\x92\x40" + bytes(64) + extra
+    buf[2:2 + len(body)] = body
+    buf[394:398] = struct.pack("<I", zlib.crc32(bytes([0xA2]) + bytes(buf[:394])))
+    return bytes(buf)
+
+
+def mic36_variants() -> dict[str, tuple[bytes, bytes]]:
+    """Name -> (7 config bytes, extra sub-packets). The known-good config is FE 10 10 10 10 10 <counter>."""
+    base = [0xFE, 0x10, 0x10, 0x10, 0x10, 0x10]
+    out: dict[str, tuple[bytes, bytes]] = {"baseline": (bytes(base) + b"\x00", b"")}
+    out["cfg0=FF"] = (bytes([0xFF, *base[1:]]) + b"\x00", b"")
+    for pos in range(1, 6):
+        for val in (0x11, 0x12, 0x14, 0x30):
+            cfg = list(base)
+            cfg[pos] = val
+            out[f"cfg{pos}={val:02X}"] = (bytes(cfg) + b"\x00", b"")
+    for pid in range(0x14, 0x19):                    # unknown sub-packet ids, sized, 4 payload bytes
+        out[f"extra_{pid:02X}"] = (bytes(base) + b"\x00", bytes([0x80 | pid, 4, 1, 0, 0, 0]))
+    out["state_10"] = (bytes(base) + b"\x00", b"\x90\x2f" + bytes(47))
+    return out
+
+
+def run_mic36(fd: int) -> None:
+    """Stream each 0x36 variant at 10.667 ms for 3 s while the user talks; flag new report ids / sizes / busy offsets."""
+    variants = mic36_variants()
+    input(f"{len(variants)} variants x 3 s. Press Enter, then TALK / tap the mic hole non-stop until it says done ...")
+    base_busy: set[int] = set()
+    results: dict[str, object] = {}
+    seq = 0
+    for name, (cfg, extra) in variants.items():
+        rows: list[bytes] = []
+        t0 = time.monotonic()
+        nxt = t0
+        while (now := time.monotonic()) - t0 < 3.0:
+            if now >= nxt:
+                seq += 1
+                os.write(fd, report_36(cfg[:6] + bytes([seq & 0xFF]), extra, seq))
+                nxt += 0.010667
+            if select.select([fd], [], [], max(0.0, min(0.002, nxt - time.monotonic())))[0]:
+                rows.append(os.read(fd, 4096))
+        ids = sorted({(r[0], len(r)) for r in rows})
+        r31 = [r for r in rows if r[0] == 0x31 and len(r) == 78]
+        busy = {o for o in range(78) if len({r[o] for r in r31}) > 12} if r31 else set()
+        if name == "baseline":
+            base_busy = busy
+        new_ids = [f"0x{i:02x}/{n}" for i, n in ids if (i, n) != (0x31, 78)]
+        new_off = sorted(busy - base_busy)
+        d4 = {o: sum(1 for r in rows if len(r) > o and r[o] == 0xD4) for o in range(1, 4)}   # mic marker 0xD4 per the community notes
+        flag = bool(new_ids or new_off or any(d4.values()))
+        print(f"{name:12s} reports={len(rows):4d} new_ids={new_ids} new_busy_offsets={new_off} D4@1-3={list(d4.values())}{'   <-- !!' if flag else ''}")
+        results[name] = {"new_ids": new_ids, "new_busy": new_off, "count": len(rows), "d4": d4}
+        if flag or name == "cfg0=FF":
+            summarize("mic36_" + name.replace("=", "_"), [(0.0, r) for r in rows])
+    save("mic36", {"variants": results})
+    print("done - you can stop talking")
+
+
+def run_live(fd: int) -> None:
+    """Unmute the mic (0x31: valid_flag1 0x02, power_save_control 0), stream 0x36 with cfg0=FF and print the 0xD4 packets per second."""
+    os.write(fd, output_31({1: 0x02 | 0x01, 8: 0x00, 9: 0x00, 0: 0x40, 6: 0x40}, 0))
+    input("Press Enter, then for 15 s hold a phone/speaker playing a steady 1 kHz tone right next to the pad's mic hole (ignore the mute LED; press the Mute button once after ~7 s) ...")
+    cfg = bytes([0xFF, 0x10, 0x10, 0x10, 0x10, 0x10])
+    t0 = time.monotonic()
+    nxt = t0
+    seq = 0
+    sec = -1
+    stats: list[list[int]] = []
+    keep: list[bytes] = []
+    while (now := time.monotonic()) - t0 < 15.0:
+        if now >= nxt:
+            seq += 1
+            os.write(fd, report_36(cfg + bytes([seq & 0xFF]), b"", seq))
+            nxt += 0.010667
+        if select.select([fd], [], [], max(0.0, min(0.002, nxt - time.monotonic())))[0]:
+            r = os.read(fd, 4096)
+            if len(r) > 3 and r[3] == 0xD4:
+                if int(now - t0) != sec:
+                    sec = int(now - t0)
+                    stats.append([])
+                last = max((i for i in range(4, 74) if r[i]), default=3)
+                stats[-1].append(last - 3)
+                if len(keep) < 1600:             # keep EVERYTHING (silence too): gaps would break the decoder state
+                    keep.append(r)
+    for i, row in enumerate(stats):
+        print(f"t={i:2d}s  mic packets={len(row):3d}  payload bytes min/max={min(row)}/{max(row)}")
+    summarize("live", [(0.0, r) for r in keep])
+    save("live", {"seconds": [{"n": len(r), "max_payload": max(r)} for r in stats], "non_silent": len(keep)})
+
+
+def decode_peaks(pkts: list[bytes]) -> list[int]:
+    """Decode mic packets (Opus = bytes 3..73, stereo, 24 kHz) with libopus through ctypes; returns the peak of every 10 ms frame."""
+    import array
+    import ctypes
+    import ctypes.util
+    lib = ctypes.CDLL(ctypes.util.find_library("opus") or "libopus.so.0")
+    lib.opus_decoder_create.restype = ctypes.c_void_p
+    lib.opus_decoder_create.argtypes = [ctypes.c_int32, ctypes.c_int, ctypes.POINTER(ctypes.c_int)]
+    lib.opus_decode.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int32, ctypes.c_void_p, ctypes.c_int, ctypes.c_int]
+    dec = lib.opus_decoder_create(24000, 2, ctypes.byref(ctypes.c_int(0)))
+    peaks = []
+    for p in pkts:
+        buf = (ctypes.c_int16 * 11520)()
+        n = lib.opus_decode(dec, p[3:74], 71, buf, 5760, 0)
+        peaks.append(max((abs(v) for v in array.array("h", bytes(buf)[:n * 4])), default=0))
+    return peaks
+
+
+def run_ab(fd: int) -> None:
+    """Same tone, three ways of feeding the pad: 0x36 every 10.667 ms, only 3 reports at the start, one every 100 ms."""
+    os.write(fd, output_31({1: 0x03, 8: 0x00, 9: 0x00, 0: 0x40, 6: 0x40}, 0))
+    input("Hold a steady 1 kHz tone next to the mic hole, press Enter, keep it going ~40 s (do not press Mute) ...")
+    cfg = bytes([0xFF, 0x10, 0x10, 0x10, 0x10, 0x10])
+    out: dict[str, object] = {}
+    for mode, period in (("p10.667ms", 0.010667), ("p10.0ms", 0.010), ("p21.333ms", 0.021333), ("p100ms", 0.1), ("once", None)):
+        pkts: list[bytes] = []
+        t0 = time.monotonic()
+        nxt = t0
+        seq = 0
+        sent = 0
+        while (now := time.monotonic()) - t0 < 7.0:
+            if now >= nxt and (period is not None or sent < 3):
+                seq += 1
+                sent += 1
+                os.write(fd, report_36(cfg + bytes([seq & 0xFF]), b"", seq))
+                nxt += period if period else 0.01
+            if select.select([fd], [], [], 0.002)[0]:
+                r = os.read(fd, 4096)
+                if len(r) == 78 and r[3] == 0xD4 and now - t0 > 1.0:       # skip the first second after a change
+                    pkts.append(r)
+        peaks = decode_peaks(pkts)
+        low = sum(1 for v in peaks if v < 500)
+        print(f"{mode:11s} frames={len(peaks)} low(<500)={low} ({100 * low // max(1, len(peaks))}%)")
+        out[mode] = {"frames": len(peaks), "low": low}
+        with open(f"mic_probe_ab_{mode}.bin", "wb") as f:
+            for r in pkts:
+                f.write(struct.pack("<H", len(r)) + r)
+    save("ab", out)
+
+
+def capture(fd: int, seconds: float) -> list[tuple[float, bytes]]:
+    """Read raw reports for `seconds`; returns (time, report) pairs."""
+    out: list[tuple[float, bytes]] = []
+    t0 = time.monotonic()
+    while (now := time.monotonic()) - t0 < seconds:
+        if select.select([fd], [], [], 0.1)[0]:
+            out.append((now - t0, os.read(fd, 4096)))
+    return out
+
+
+def summarize(name: str, reports: list[tuple[float, bytes]]) -> dict[str, object]:
+    """Per report id: count, sizes, rate; per byte offset of the busiest id: how many distinct values were seen."""
+    ids: dict[int, list[int]] = collections.defaultdict(list)
+    for _, r in reports:
+        ids[r[0]].append(len(r))
+    info = {f"0x{i:02x}": {"count": len(s), "sizes": sorted(set(s)), "hz": round(len(s) / CAPTURE_S, 1)} for i, s in ids.items()}
+    with open(f"mic_probe_{name}.bin", "wb") as f:
+        for _, r in reports:
+            f.write(struct.pack("<H", len(r)) + r)
+    varying: dict[str, list[int]] = {}
+    for i, s in ids.items():
+        rows = [r for _, r in reports if r[0] == i]
+        width = min(len(r) for r in rows)
+        # offsets whose value takes many different values are the interesting ones (sticks sit still, audio does not)
+        varying[f"0x{i:02x}"] = [o for o in range(width) if len({r[o] for r in rows}) > 12][:60]
+    print(f"[{name}] {len(reports)} reports")
+    for k, v in info.items():
+        print(f"   id {k}: {v}   busy offsets: {varying.get(k)}")
+    return {"reports": info, "busy_offsets": varying}
+
+
+def save(name: str, data: dict[str, object]) -> None:
+    """Merge one result into the JSON file."""
+    try:
+        old = json.load(open(RESULTS))
+    except (OSError, ValueError):
+        old = {}
+    old[name] = data
+    with open(RESULTS, "w") as f:
+        json.dump(old, f, indent=1)
+
+
+def run_variant(fd: int, name: str, variant: dict[int, int] | None) -> dict[str, object]:
+    """Send the variant (if any), then capture while the user talks."""
+    if variant is not None:
+        for i in range(3):
+            os.write(fd, output_31(variant, i))
+            time.sleep(0.05)
+    input(f"[{name}] press Enter, then TALK / tap the mic hole for {CAPTURE_S:.0f} s ...")
+    res = summarize(name, capture(fd, CAPTURE_S))
+    res["variant"] = None if variant is None else {str(k): v for k, v in variant.items()}
+    return res
+
+
+def main() -> None:
+    """Dispatch the subcommand."""
+    cmd = sys.argv[1] if len(sys.argv) > 1 else "listen"
+    fd = os.open(find_hidraw(), os.O_RDWR)
+    try:
+        if cmd == "listen":
+            save("listen", run_variant(fd, "listen", None))
+        elif cmd == "enable":
+            name = sys.argv[2] if len(sys.argv) > 2 else "internal_mic_path"
+            save(name, run_variant(fd, name, VARIANTS[name]))
+        elif cmd == "ab":
+            run_ab(fd)
+        elif cmd == "live":
+            run_live(fd)
+        elif cmd == "mic36":
+            run_mic36(fd)
+        elif cmd == "matrix":
+            save("listen", run_variant(fd, "listen", None))
+            for name, v in VARIANTS.items():
+                res = run_variant(fd, name, v)
+                res["user_saw_new_data"] = input("   did anything new show up (new id / bigger size)? y/n: ").strip()
+                save(name, res)
+        else:
+            raise SystemExit(__doc__)
+    finally:
+        os.close(fd)
+    print(f"\nSaved {RESULTS} (+ mic_probe_*.bin) - paste the JSON back.")
+
+
+if __name__ == "__main__":
+    main()
