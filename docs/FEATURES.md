@@ -5,7 +5,7 @@
 - **Virtual DualSense** (HIDMaestro) or **DS4** (ViGEmBus) with buttons, sticks, triggers, touchpad, gyro, rumble
   and the lightbar colour from the game. Settings → Pads: `auto` (HIDMaestro when the DLL is present and the receiver
   runs as administrator, otherwise ViGEmBus), `hidmaestro` (the same, but a missing HIDMaestro is a warning in the
-  event log) or `vigem`. HIDMaestro downloads itself from GitHub - a pinned version (currently v2.1.0, a fixed link, SHA-256 checked), so a release the
+  event log) or `vigem`. HIDMaestro downloads itself from GitHub - a pinned version (`PINNED_TAG`, a fixed link, SHA-256 checked), so a release the
   author publishes later is never installed on its own; the pin moves with a receiver update (only the DLL from the release zip, via
   HTTP Range), and the receiver starts as administrator (UAC; autostart task with highest privileges). The change takes
   effect immediately (pads are recreated). A HIDMaestro error while creating a pad = that pad goes through ViGEmBus
@@ -142,7 +142,7 @@
     - **emergency exit from the pad: Options + Create** (pressed together) on the master pad (without a master in
       the settings - on any pad) ends the test without a mouse, also with the window hidden and when the master itself
       is being tested: the block goes away immediately, and buttons held at that moment are sent to the game as
-      released until you let go of them. Without PS - long PS + △ used to turn the pad off.
+      released until you let go of them. Without PS, so a long PS + △ (which turns the pad off) cannot trigger it.
 - **PS shortcuts:**
 
   | Shortcut | Action |

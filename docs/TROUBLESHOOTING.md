@@ -13,7 +13,7 @@
 | Character walks by itself / camera spins (stick) | Test view → "Measure drift" → "Apply" (drift correction for this pad) |
 | Can't push a stick all the way (overlay, weak hand) | Accessibility tab (editor column) → "Adjust to the hand", or set the range slider by hand |
 | Motion inverted in an emulator (DSU) | `acc_sign` / `gyro_sign` in the receiver config |
-| Emulator on another device doesn't see the DSU server | since the security review it listens only on this PC: `dsu_bind = "0.0.0.0"` in `receiver.toml` |
+| Emulator on another device doesn't see the DSU server | by default it listens only on this PC: `dsu_bind = "0.0.0.0"` in `receiver.toml` |
 | Pads stop working after going back to an older version (with `key`) | delete `auth.json` next to the newer side (protocol v3 is remembered there) |
 | A game profile doesn't activate | games with anti-cheat may block reading the process name; switch manually with PS + d-pad |
 | `virtual pad error ... ViGEmBus` | install the ViGEmBus driver or HIDMaestro (README) |
@@ -29,5 +29,5 @@
 | Bluetooth panel: grey dot / "no data" | sender offline or older than v10 - Update |
 | Bluetooth panel: red dot | description in the tooltip: "no permission" = the sender isn't running as root, "bluetooth service not running" = `sudo systemctl enable --now bluetooth`, "no busctl" = system without systemd, "blocked (rfkill)" = `sudo rfkill unblock bluetooth` |
 | Pair: "pairing rejected" / "no answer from the device" | the pad is not in pairing mode (Create + PS until the lightbar blinks fast) - turn it on and run the scan again; pad previously paired with a console: Forget, then Pair |
-| Pad paired, but it isn't P2, and when turned on with PS it blinks for a few seconds and goes dark | BlueZ didn't store the key (adapter without `Pairable`) or the pad wasn't trusted. The sender now sets trust by itself; a pad without a key is forgotten - put it in pairing mode (Create + PS), run the scan and Pair again |
+| Pad paired, but it isn't P2, and when turned on with PS it blinks for a few seconds and goes dark | BlueZ didn't store the key (adapter without `Pairable`) or the pad wasn't trusted. The sender sets trust by itself; a pad without a key is forgotten - put it in pairing mode (Create + PS), run the scan and Pair again |
 | A co-op game sees the pads oddly (Steam) | Steam → library → game → Properties → Controller: try "Disable Steam Input" (the game reads two DS4s itself) or the other way round; player order in Big Picture → Settings → Controller |
