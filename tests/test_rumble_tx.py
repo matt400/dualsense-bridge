@@ -59,6 +59,7 @@ ok("hidraw pada i Bluetooth / USB z sysfs, zapas po MAC, brak węzła /dev -> mk
 
 # ---------- evdev FF ----------
 class FFDev:
+    path = "/dev/input/event-test"
     def __init__(self, ff=True, fail=False):
         self.ff, self.fail, self.log = ff, fail, []
     def capabilities(self):

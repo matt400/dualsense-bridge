@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
-import json
 import re
 import socket
 import subprocess
@@ -26,7 +25,8 @@ from typing import TYPE_CHECKING, Final
 import sender_events as events
 import sender_net as net
 import sender_state as state
-from proto import E_WOL, E_WOL_FAIL, KEY_BIT, PAD_KEYS, SCFG_EVENTS, SCFG_WOL, WOL_PORTS, mac_bytes, mac_text, magic_packet
+from proto import (E_WOL, E_WOL_FAIL, KEY_BIT, PAD_KEYS, SCFG_EVENTS, SCFG_WOL, WOL_PORTS, mac_bytes, mac_text, magic_packet,
+                   read_json_object)
 from sender_config import C
 
 if TYPE_CHECKING:
@@ -81,10 +81,7 @@ def load(path: str | None = None) -> None:
     if not path:
         return
     try:
-        with open(path, encoding="utf-8") as f:
-            raw = json.load(f)
-        if not isinstance(raw, dict):             # e.g. a hand-typed number / list - must not crash the service startup
-            raise ValueError("expected a JSON object")
+        raw = read_json_object(path)
         learned = mac_text(mac_bytes(raw.pop("learned_mac", "")))
         cfg = _valid(replace(WolCfg(), **{k: v for k, v in raw.items() if k in WolCfg.__dataclass_fields__}))
     except FileNotFoundError:

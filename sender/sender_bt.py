@@ -646,11 +646,13 @@ class Bluetooth:
         """
         try:
             out = await self.busctl("call", BLUEZ, "/", "org.freedesktop.DBus.ObjectManager", "GetManagedObjects")
-            objects: dict[str, dict[str, Any]] = json.loads(out)["data"][0]
-        except (BtError, ValueError, KeyError, IndexError, TypeError, AttributeError):
+            objects = json.loads(out)["data"][0]
+            if not isinstance(objects, dict):
+                raise ValueError("GetManagedObjects: expected an object")
+        except (BtError, ValueError, KeyError, IndexError, TypeError):
             return False
         want = mac.upper()
-        found = [(p, d) for p, ifaces in objects.items() if isinstance(d := ifaces.get(DEVICE), dict)
+        found = [(p, d) for p, ifaces in objects.items() if isinstance(ifaces, dict) and isinstance(d := ifaces.get(DEVICE), dict)
                  and str(_val(d, "Address", "")).upper() == want]
         path = next((p for p, d in found if _val(d, "Connected", False)), None)
         if path is None:

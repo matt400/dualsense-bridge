@@ -8,7 +8,6 @@
 The thread knows nothing about Qt: the window polls snapshot() with a timer and passes setting changes via set_config() (signal -> slot).
 Force release: disabling the feature, a profile / foreground game change, losing the pad, stopping.
 """
-import json
 import os
 import threading
 import time
@@ -18,7 +17,7 @@ from typing import Any
 
 import rx_feedback as F
 import rx_state as S
-from proto import write_json
+from proto import read_json_object, write_json
 from rx_buttons import pressed_inputs
 from rx_config import C
 from rx_gstick import (EV_DEAD_IN, EV_NONE, EV_OUTER_IN, FORCE, ST_OFF, Config, Engine, Sink, Snapshot, normalize, sprint_mask,
@@ -52,14 +51,16 @@ class Store:
         if self._cfgs is None:
             self._cfgs = {}
             try:
-                with open(self._path(), encoding="utf-8") as f:
-                    pads = json.load(f).get("pads", {})
-                for k, v in pads.items():
-                    self._cfgs[str(k).lower()] = normalize(v)
+                pads = read_json_object(self._path()).get("pads", {})
+                if not isinstance(pads, dict):
+                    raise ValueError("'pads' is not an object")
             except FileNotFoundError:
-                pass
-            except (OSError, ValueError, AttributeError) as e:
+                pads = {}
+            except (OSError, ValueError) as e:
                 print(f"Gyro stick file {self._path()}: cannot read ({e}) - default settings")
+                pads = {}
+            for k, v in pads.items():
+                self._cfgs[str(k).lower()] = normalize(v)
         return self._cfgs
 
     def get(self, key: str) -> Config:

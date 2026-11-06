@@ -17,6 +17,7 @@ from chk import check, fails                                  # noqa: E402  (sha
 
 # ---------- 9: the HID fallback only in "auto" ----------
 class Dev:
+    path = "/dev/input/event-test"
     def capabilities(self):
         return {ec.EV_FF: [ec.FF_RUMBLE]}
     def upload_effect(self, eff):

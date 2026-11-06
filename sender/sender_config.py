@@ -5,7 +5,6 @@ before anything else starts.
 """
 import argparse
 import ipaddress
-import json
 import os
 import socket
 from collections.abc import Sequence
@@ -16,7 +15,7 @@ from evdev import ecodes as ec
 
 import cfgspec
 import sender_migrate
-from proto import PERMISSION_BITS, clamp, load_config
+from proto import PERMISSION_BITS, clamp, load_config, read_json_object
 from sender_opus import DEFAULT_MODE as DEFAULT_OPUS_MODE
 from sender_opus import MODES as OPUS_MODES
 from sender_opus import COMPLEXITY_AUTO as OPUS_COMPLEXITY_AUTO
@@ -286,14 +285,13 @@ def load_changes(path: str) -> dict[str, Any]:
     if not path:
         return {}
     try:
-        with open(path, encoding="utf-8") as f:
-            raw = json.load(f)
+        raw = read_json_object(path)
     except FileNotFoundError:
         return {}
     except (OSError, ValueError) as e:
         print(f"Remote config: {path} ignored ({e!r})")
         return {}
-    values = raw.get("values") if isinstance(raw, dict) else None
+    values = raw.get("values")
     if not isinstance(values, dict):
         print(f"Remote config: {path} ignored (expected {{\"values\": {{...}}}})")
         return {}

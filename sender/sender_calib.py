@@ -9,7 +9,6 @@ to the receiver.
 from __future__ import annotations
 
 import asyncio
-import json
 import re
 import time
 from collections.abc import Iterable
@@ -17,7 +16,7 @@ from typing import TYPE_CHECKING, Any, Final, TypeAlias
 
 import sender_net as net
 import sender_state as state
-from proto import CAL_FEW, CAL_MAX_S, CAL_MOVED, CAL_OK, CALF_STORED, T_CALRES, clamp
+from proto import CAL_FEW, CAL_MAX_S, CAL_MOVED, CAL_OK, CALF_STORED, T_CALRES, clamp, read_json_object
 from sender_config import BURST_DELAYS, C
 
 if TYPE_CHECKING:
@@ -35,6 +34,16 @@ _MAC = re.compile(r"[0-9a-f]{2}(?::[0-9a-f]{2}){5}", re.IGNORECASE)
 _saved: dict[str, dict[str, Any]] | None = None     # MAC -> {"bias": [x, y, z], "t": save time (unix)}
 
 
+def _entry(v: Any) -> dict[str, Any] | None:
+    """One pad's entry from the file as {"bias": [x, y, z], "t": time}, or None when it is malformed."""
+    if not isinstance(v, dict) or not isinstance(bias := v.get("bias"), list) or len(bias) != AXES:
+        return None
+    try:
+        return {"bias": [float(x) for x in bias], "t": int(v.get("t", 0))}
+    except (TypeError, ValueError):
+        return None
+
+
 def _load() -> dict[str, dict[str, Any]]:
     """Return the saved-calibration table, reading gyro_cal_file lazily on first use and caching it.
 
@@ -46,14 +55,17 @@ def _load() -> dict[str, dict[str, Any]]:
         _saved = {}
         if C.GYRO_CAL_FILE:
             try:
-                with open(C.GYRO_CAL_FILE, encoding="utf-8") as f:
-                    raw = json.load(f)
-                _saved = {str(k).lower(): {"bias": [float(x) for x in v["bias"]][:AXES], "t": int(v.get("t", 0))}
-                          for k, v in raw.items() if len(v["bias"]) == AXES}
+                raw = read_json_object(C.GYRO_CAL_FILE)
             except FileNotFoundError:
-                pass
-            except (OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+                raw = {}
+            except (OSError, ValueError) as e:
                 print(f"Gyro calibration file {C.GYRO_CAL_FILE} ignored: {e!r}")
+                raw = {}
+            for k, v in raw.items():
+                if (entry := _entry(v)) is not None:
+                    _saved[str(k).lower()] = entry
+                else:
+                    print(f"Gyro calibration file {C.GYRO_CAL_FILE}: entry {k!r} ignored (malformed)")
     return _saved
 
 

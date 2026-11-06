@@ -13,6 +13,7 @@ from chk import check, fails                                  # noqa: E402  (sha
 
 class Dev:
     """Pad bez evdev FF (albo z FF, który się psuje)."""
+    path = "/dev/input/event-test"
     def __init__(self, ff=False):
         self.ff = ff
     def capabilities(self):

@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import ctypes
-import json
 import os
 import re
 import time
@@ -18,7 +17,7 @@ import sender_calib as calib
 import sender_events as events
 import sender_state as state
 import sender_streams as streams
-from proto import CAL_FEW, E_ERROR, E_NO_SLOT, E_PAD_OFF, E_PAD_ON, LAT_NONE, T_BYE, TRIG2_OFF
+from proto import CAL_FEW, E_ERROR, E_NO_SLOT, E_PAD_OFF, E_PAD_ON, LAT_NONE, T_BYE, TRIG2_OFF, read_json_object
 from sender_config import C, IDLE_TP, SETTLE_S
 from sender_ctrl import Ctrl
 from sender_mute import stream_mute
@@ -133,13 +132,13 @@ def _load_slots() -> dict[str, int]:
         state.saved_slots = {}
         if C.SLOTS_FILE:
             try:
-                with open(C.SLOTS_FILE, encoding="utf-8") as f:
-                    raw = json.load(f)
-                state.saved_slots = {str(k): int(v) for k, v in raw.items() if 0 <= int(v) < C.MAX_PADS}
+                raw = read_json_object(C.SLOTS_FILE)
             except FileNotFoundError:
-                pass
-            except (OSError, ValueError, TypeError, AttributeError) as e:
+                raw = {}
+            except (OSError, ValueError) as e:
                 print(f"Slots file {C.SLOTS_FILE} ignored: {e!r}")
+                raw = {}
+            state.saved_slots = {str(k): v for k, v in raw.items() if type(v) is int and 0 <= v < C.MAX_PADS}
     return state.saved_slots
 
 

@@ -692,7 +692,7 @@ def _kernel_slots(dev: InputDevice | None, n: int) -> Sequence[tuple[int, int | 
         return [(-1, None, None)] * n
     try:
         return read_mt(dev, n)
-    except (OSError, AttributeError, TypeError, ValueError):
+    except (OSError, ValueError):     # ValueError: a closed device (evdev sets fd = -1 on close)
         return [(-1, None, None)] * n
 
 
@@ -711,9 +711,11 @@ def _resync_touch(c: Ctrl, fingers: list[_Finger], prev: list[tuple[int, int] | 
         if tracking_id >= 0:
             finger.id = tracking_id & TOUCH_ID_MASK
         prev[k] = None                # no delta in the first frame - the cursor will not jump
+    if c.touch_dev is None:
+        return
     try:
         pressed = ec.BTN_LEFT in c.touch_dev.active_keys()
-    except (OSError, AttributeError):
+    except OSError:
         return
     if bool(c.tp) != pressed:
         c.tp = _click_state(fingers, pressed)
