@@ -21,7 +21,6 @@ from collections.abc import Collection, Sequence
 from typing import Any, Final, TypeAlias
 
 Profile: TypeAlias = dict[str, Any]       # one remap profile (see rx_buttons): buttons, sticks, tuning, gyro, triggers...
-Tuning: TypeAlias = dict[str, dict[str, float]]
 Triggers: TypeAlias = dict[str, dict[str, Any]]
 Trig2: TypeAlias = tuple[int, ...]         # the 12 values of a trig2 packet
 

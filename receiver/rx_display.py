@@ -17,9 +17,8 @@ from __future__ import annotations
 import ctypes
 import time
 from collections.abc import Callable, Iterable, Sequence
-from typing import Any, Final, TypeAlias
+from typing import Any, Final
 
-Mode: TypeAlias = tuple[int, ...]       # (w, h, bpp, Hz[, flags])
 
 DPI_VALUES: Final = (100, 125, 150, 175, 200, 225, 250, 300, 350, 400, 450, 500)   # consecutive Windows scaling steps
 QDC_ONLY_ACTIVE_PATHS: Final = 2
