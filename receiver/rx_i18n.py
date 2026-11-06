@@ -169,7 +169,6 @@ EN: Final[dict[str, str]] = {
     "b/d": "n/a",
     "Wirtualny pad: {pad}  ·  touchpad: {tp}": "Virtual pad: {pad}  ·  touchpad: {tp}",
     "dotyk w grze": "game touch",
-    "wł.": "on",
     "wył.": "off",
     "mysz": "mouse",
     "profil: {name}": "profile: {name}",
@@ -186,9 +185,6 @@ EN: Final[dict[str, str]] = {
     "Pełny ekran (F11)": "Full screen (F11)",
     "Wyjdź z pełnego ekranu (F11)": "Exit full screen (F11)",
     "Kliknij część pada, aby ją zremapować.": "Click any part of the pad to remap it.",
-    "Rysunek pokazuje:": "Drawing shows:",
-    "Wynik = to, co dostaje gra po remapowaniu. Fizycznie = to, co robi sam pad.":
-        "Result = what the game gets after your remaps. Physical = what the pad itself is doing.",
     "Wybrane": "Selected",
     "Gyro": "Gyro",
     "Dostępność": "Accessibility",
@@ -198,8 +194,6 @@ EN: Final[dict[str, str]] = {
     "Zapisz profil do remap.json (Ctrl+S)": "Write the profile to remap.json (Ctrl+S)",
     "Cofnij": "Revert",
     "Wróć do zapisanej wersji tego profilu": "Go back to the saved version of this profile",
-    "Resetuj": "Reset all",
-    "Zresetować?": "Reset?",
     "Usuń wszystkie zmiany w tym profilu": "Clear every change in this profile",
     "Pokaż okno": "Show window",
     "●  Nadajnik online": "●  Sender online",
@@ -211,7 +205,6 @@ EN: Final[dict[str, str]] = {
     "Nadajnik": "Sender",
     "Brak podłączonych padów": "No pads connected",
     # ---------- panels ----------
-    "+ Gra": "+ Game",
     "Nowy profil dla gry": "New profile for a game",
     "Usuń": "Delete",
     "Usunąć?": "Sure?",
@@ -221,7 +214,6 @@ EN: Final[dict[str, str]] = {
     "Anuluj": "Cancel",
     "Program gry (jak w Menedżerze zadań → Szczegóły)": "Game program (as in Task Manager → Details)",
     "— wyłączony —": "— disabled —",
-    "WYBRANE": "SELECTED",
     "Kliknij przycisk, spust albo gałkę na rysunku pada, aby ją zremapować lub dostroić.":
         "Click a button, trigger or stick on the controller to remap or tune it.",
     "Działa jak": "Acts as",
@@ -232,13 +224,11 @@ EN: Final[dict[str, str]] = {
     "Gra widzi dane tej gałki z": "The game sees this stick's data from",
     "Odwróć X": "Invert X",
     "Odwróć Y": "Invert Y",
-    "REAKCJA": "RESPONSE",
     "Strefa martwa": "Deadzone",
     "Pełne wychylenie od": "Full tilt at",
     "Krzywa (powyżej 1 = dokładniejsze małe ruchy)": "Curve (above 1 = finer small moves)",
     "Anty-strefa martwa (pokonuje strefę martwą gry)": "Anti-deadzone (beats the game's own deadzone)",
     "Klik gałki ({b}) działa jak": "Stick click ({b}) acts as",
-    "REAKCJA {b} (TO, CO DOSTAJE GRA)": "{b} RESPONSE (WHAT THE GAME GETS)",
     "CELOWANIE ŻYROSKOPEM": "GYRO AIM",
     "Tryb": "Mode",
     "Obracaj padem, aby celować: jako prawa gałka (każda gra) albo jako mysz.":
@@ -348,8 +338,6 @@ EN: Final[dict[str, str]] = {
     "Ekran przy starcie receivera": "Screen when the receiver starts",
     "Rozszerz: oba ekrany aktywne": "Extend: both screens active",
     "Tylko monitor": "Monitor only",
-    "Włącz tryb konsoli po połączeniu pada master (wyłączasz go tym samym podwójnym kliknięciem)":
-        "Turn console mode on when the master pad connects (turn it off with the same double press)",
     "Przełączanie działa tylko, gdy na pierwszym planie jest jeden z tych programów (jeden w linii) - "
     "w grze podwójne kliknięcie nic nie robi, a włączenie po połączeniu mastera czeka na wyjście z gry. "
     "Pusta lista = bez blokady.":
@@ -380,7 +368,6 @@ EN: Final[dict[str, str]] = {
         "The master is one pad with extra rights (e.g. when kids play). Quick change: the crown on the pad card "
         "in the main window or holding PS + R3 on the pad.",
     "Pad master": "Master pad",
-    "PS + R3 przytrzymane {s} s na padzie = ten pad zostaje masterem": "PS + R3 held for {s} s on a pad = it becomes the master",
     "TYLKO MASTER MOŻE": "ONLY THE MASTER CAN",
     "Gdy master nie jest podłączony": "When the master is not connected",
     "AKCJE: PS + PRZYCISK": "ACTIONS: PS + BUTTON",
@@ -529,7 +516,6 @@ EN: Final[dict[str, str]] = {
     "Nie znaleziono git - zainstaluj Git for Windows (git-scm.com)": "git not found - install Git for Windows (git-scm.com)",
     "git pull nie powiódł się: {msg}": "git pull failed: {msg}",
     "Masz najnowszą wersję": "You have the latest version",
-    "git nie odpowiada: {msg}": "git does not respond: {msg}",
     "Zaktualizowano ({n} zmian): {old} → {new}": "Updated ({n} changes): {old} → {new}",
     "pip nie zadziałał ({msg}) - uruchom: pip install -r receiver\\requirements.txt":
         "pip failed ({msg}) - run: pip install -r receiver\\requirements.txt",
@@ -1113,7 +1099,6 @@ EN: Final[dict[str, str]] = {
     "Bieżące położenie pada staje się środkiem (0, 0) - trzymaj pada nieruchomo":
         "The current pad position becomes the center (0, 0) - hold the pad still",
     "Zeruj środek": "Reset center",
-    "Podgląd": "Preview",
     "Raw: pitch {p:+.1f}°  roll {r:+.1f}°\nFiltered output: X {x:+.0f}%  Y {y:+.0f}%{s}":
         "Raw: pitch {p:+.1f}°  roll {r:+.1f}°\nFiltered output: X {x:+.0f}%  Y {y:+.0f}%{s}",
     "D-pad": "D-pad",
