@@ -34,6 +34,7 @@ sender_batt = None  # (percent, charging) of the sender device's own battery (bu
 sender_cfg: dict[str, Any] = {}  # name -> rx_sender_cfg.Row: the sender's settings as it last reported them (cfgval)
 sender_cfg_result: int | None = None  # None = no answer yet, CFGR_OK, or why the sender refuses (no key / not v3 / switched off)
 sender_cfg_gen = 0                    # grows with every cfgval - the Sender tab refreshes when it changes
+sender_cfg_count: int | None = None   # how many settings the sender knows (CFGF_LAST, or a read that stopped growing); None = not known
 sender_wol = None  # (the PC's MAC, broadcast) - what the sender's Wake-on-LAN will use (the build2 packet); "" = it does not know
 last_pkt = 0.0     # when the last valid packet arrived - for the online indicator
 store: RemapStore = None   # the remap profiles (set by init)

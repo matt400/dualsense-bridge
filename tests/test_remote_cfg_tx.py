@@ -13,7 +13,7 @@ import sender_net as net
 import sender_remotecfg as R
 import sender_rt
 import sender_state as state
-from proto import (BODY, CFG_ALL, CFG_GET, CFG_RESET, CFG_SET, CFGF_REMOTE, CFGR_INVALID, CFGR_LATER, CFGR_NO_KEY, CFGR_NO_V3, CFGR_OFF,
+from proto import (BODY, CFG_ALL, CFG_GET, CFG_RESET, CFG_SET, CFGF_LAST, CFGF_REMOTE, CFGR_INVALID, CFGR_LATER, CFGR_NO_KEY, CFGR_NO_V3, CFGR_OFF,
                    CFGR_OK, CFGR_UNKNOWN, T_CFGSET, T_CFGVAL, T_PING, T_PONG, T_PONG2, Codec, EpochClock)
 from sender_ctrl import Ctrl
 
@@ -131,7 +131,8 @@ check(cfgspec.from_wire(cfgspec.SPECS[ID["rumble"]], 3.0) == "off", "wybór = in
 
 # ---------- odczyt: wszystkie ustawienia, wartości = to, co działa ----------
 r = ask(pc.pack(T_CFGSET, 255, CFG_GET, CFG_ALL, 9, 0.0))
-check([x[0] for x in r] == list(range(N)) and all(x[1] == CFGR_OK and x[2] == 9 and x[3] == 0 for x in r), "odczyt: cfgval dla każdego ustawienia, bez zmian, z tym samym ref")
+check([x[0] for x in r] == list(range(N)) and all(x[1] == CFGR_OK and x[2] == 9 and x[3] & ~CFGF_LAST == 0 for x in r), "odczyt: cfgval dla każdego ustawienia, bez zmian, z tym samym ref")
+check([x[0] for x in r if x[3] & CFGF_LAST] == [N - 1], "odczyt: tylko ostatnie ustawienie ma CFGF_LAST (odbiornik wie, ile ich zna nadajnik)")
 vals = {cfgspec.SPECS[x[0]].key: x[4] for x in r}
 check(vals["haptics_buffer_ms"] == 20 and vals["rumble"] == 0.0 and vals["tap_click"] == 1.0 and all(x[4] == x[5] for x in r),
       "wartości = domyślne, wartość z pliku = wartość w użyciu")

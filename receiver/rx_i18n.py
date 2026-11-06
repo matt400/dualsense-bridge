@@ -1389,6 +1389,8 @@ EN: Final[dict[str, str]] = {
         ("No answer from the sender - an older version does not know these packets, or the answer has not "
          "arrived yet."),
     "Nadajnik zgłosił {n} z {total} ustawień.": "The sender reported {n} of {total} settings.",
+    "Nadajnik zna {n} z {total} ustawień - pozostałe wymagają nowszej wersji nadajnika (kliknij Aktualizuj).":
+        "The sender knows {n} of {total} settings - the others need a newer sender version (click Update).",
     "Nadajnik odrzucił wartość ustawienia {name}": "The sender rejected the value of the setting {name}",
     "Ustawienia nadajnika z tego komputera wysłane ponownie ({n})": "Sender settings from this computer sent again ({n})",
 }

@@ -310,8 +310,7 @@ class SenderCfgPanel:
 
     def _reread(self) -> None:
         """Ask the sender for its values again."""
-        S.sender_cfg.clear()
-        S.sender_cfg_result = None
+        rx_sender_cfg.clear()
         rx_sender_cfg.request_all()
         self._gen = -1
         self.refresh()
@@ -370,6 +369,9 @@ class SenderCfgPanel:
         if not S.sender_cfg:
             return _("Brak odpowiedzi nadajnika - starsza wersja nie zna tych pakietów, albo odpowiedź jeszcze nie dotarła."), ""
         total = len(cfgspec.SPECS)
+        if rx_sender_cfg.complete() and rx_sender_cfg.expected() < total:
+            return _("Nadajnik zna {n} z {total} ustawień - pozostałe wymagają nowszej wersji nadajnika (kliknij Aktualizuj).").format(
+                n=rx_sender_cfg.expected(), total=total), "warn"
         return _("Nadajnik zgłosił {n} z {total} ustawień.").format(n=len(S.sender_cfg), total=total), ""
 
     def refresh(self) -> None:
