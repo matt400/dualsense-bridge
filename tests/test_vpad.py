@@ -1,5 +1,5 @@
-"""Receiver: wirtualne pady - backend HIDMaestro (DualSense) / ViGEmBus (DS4), stała kolejność graczy (pad zastępczy),
-raport DualSense, feedback z raportu wyjściowego, zmiana backendu w ustawieniach.
+"""Receiver: virtual pads - HIDMaestro (DualSense) / ViGEmBus (DS4) backend, fixed player order (placeholder pad),
+the DualSense report, feedback from the output report, backend change in the settings.
     python3 tests/test_vpad.py receiver"""
 import os, sys, threading, time, types
 from dataclasses import replace
@@ -22,15 +22,15 @@ def wait(cond, t=3.0):
     return cond()
 
 
-# ---------- ViGEm (zaślepka): kolejność tworzenia ----------
-created = []                                       # (numer pada, slot) w kolejności tworzenia
+# ---------- ViGEm (stub): creation order ----------
+created = []                                       # (pad number, slot) in creation order
 alive_pads = set()
 class VPad:
     n = 0
     def __init__(self):
         VPad.n += 1
         self.id = VPad.n
-        time.sleep(0.05)                           # tworzenie trwa - wyższy slot musiałby poczekać
+        time.sleep(0.05)                           # creation takes time - a higher slot would have to wait
         created.append(self.id)
         alive_pads.add(self.id)
     def register_notification(self, cb): pass
@@ -50,42 +50,42 @@ def pad_id(i):
     return o.pad.id if o is not None and o.pad is not None else None
 
 
-# pad 2 włączony pierwszy: slot 0 dostaje pad zastępczy PRZED padem slotu 1
+# pad 2 turned on first: slot 0 gets a placeholder pad BEFORE the slot 1 pad
 S.want[1].set(); S.wake[1].set()
-check(wait(lambda: S.plugged[0] and S.plugged[1]), "pad 2 sam: oba sloty mają wirtualny pad (0 zastępczy)")
+check(wait(lambda: S.plugged[0] and S.plugged[1]), "pad 2 alone: both slots have a virtual pad (0 the placeholder)")
 first0, first1 = pad_id(0), pad_id(1)
-check(created.index(first0) < created.index(first1), f"zastępczy slot 0 powstał przed slotem 1: {created}")
-check(rx_ds4.kinds[0] == rx_ds4.kinds[1] == "vigem", "rodzaj pada w kinds (okno)")
-# pad 1 dołącza: slot 0 to ten sam wirtualny pad (gracz 1 bez ponownego podłączania)
+check(created.index(first0) < created.index(first1), f"the placeholder slot 0 was created before slot 1: {created}")
+check(rx_ds4.kinds[0] == rx_ds4.kinds[1] == "vigem", "pad kind in kinds (window)")
+# pad 1 joins: slot 0 is the same virtual pad (player 1 without reconnecting)
 S.want[0].set(); S.wake[0].set()
 time.sleep(0.3)
-check(pad_id(0) == first0 and pad_id(1) == first1, "pad 1 dołącza do istniejącego zastępczego - bez przełączania")
+check(pad_id(0) == first0 and pad_id(1) == first1, "pad 1 joins the existing placeholder - no switching")
 # pad 2 wychodzi: slot 1 znika, slot 0 zostaje (to pad 1)
 S.want[1].clear(); S.wake[1].set()
-check(wait(lambda: not S.plugged[1]) and S.plugged[0] and pad_id(0) == first0, "pad 2 rozłączony: slot 0 zostaje")
-# pad 2 wraca, pad 1 wychodzi: slot 0 staje się zastępczym, nie znika (pad 2 zostaje graczem 2)
+check(wait(lambda: not S.plugged[1]) and S.plugged[0] and pad_id(0) == first0, "pad 2 disconnected: slot 0 stays")
+# pad 2 comes back, pad 1 leaves: slot 0 becomes the placeholder, does not vanish (pad 2 stays player 2)
 S.want[1].set(); S.wake[1].set()
-check(wait(lambda: S.plugged[1]), "pad 2 wraca")
+check(wait(lambda: S.plugged[1]), "pad 2 comes back")
 S.want[0].clear(); S.wake[0].set()
 time.sleep(0.3)
-check(S.plugged[0] and pad_id(0) == first0, "pad 1 rozłączony przy podłączonym 2: slot 0 trzyma miejsce")
-# pad 2 też wychodzi: nic nie zostaje
+check(S.plugged[0] and pad_id(0) == first0, "pad 1 disconnected with 2 connected: slot 0 holds the place")
+# pad 2 leaves too: nothing stays
 S.want[1].clear(); S.wake[1].set()
-check(wait(lambda: not S.plugged[0] and not S.plugged[1]), "oba rozłączone: brak wirtualnych padów")
-check(wait(lambda: not alive_pads), f"wszystkie pady odłączone od ViGEm: {alive_pads}")
+check(wait(lambda: not S.plugged[0] and not S.plugged[1]), "both disconnected: no virtual pads")
+check(wait(lambda: not alive_pads), f"all pads detached from ViGEm: {alive_pads}")
 
-# bez stałej kolejności: pad 2 sam = jeden wirtualny pad
+# without the fixed order: pad 2 alone = one virtual pad
 vpad(backend="vigem", fixed_slots=False)
 S.want[1].set(); S.wake[1].set()
-check(wait(lambda: S.plugged[1]) and not S.plugged[0], "fixed_slots=false: tylko slot 1 (stare zachowanie)")
-# włączenie stałej kolejności w trakcie: slot 0 dostaje pad zastępczy od razu (wątek slotu sprawdza needed)
+check(wait(lambda: S.plugged[1]) and not S.plugged[0], "fixed_slots=false: only slot 1 (the old behaviour)")
+# turning the fixed order on midway: slot 0 gets the placeholder at once (the slot thread checks needed)
 vpad(backend="vigem", fixed_slots=True)
-check(wait(lambda: S.plugged[0]), "fixed_slots włączone w trakcie: zastępczy slot 0")
+check(wait(lambda: S.plugged[0]), "fixed_slots turned on midway: placeholder slot 0")
 S.want[1].clear(); S.wake[1].set()
-check(wait(lambda: not S.plugged[0] and not S.plugged[1]), "sprzątanie")
+check(wait(lambda: not S.plugged[0] and not S.plugged[1]), "cleanup")
 
 
-# ---------- HIDMaestro (zaślepka backendu): raport DualSense, feedback, zmiana backendu ----------
+# ---------- HIDMaestro (backend stub): DualSense report, feedback, backend change ----------
 class HMPad:
     kind = "hm"
     build = staticmethod(R.build_ds5_report)
@@ -112,32 +112,32 @@ real_get = rx_hm.get
 rx_hm.get = lambda path="": hm
 vpad(backend="auto")
 S.want[0].set(); S.wake[0].set()
-check(wait(lambda: S.plugged[0]) and rx_ds4.kinds[0] == "hm", "auto + HIDMaestro dostępny: DualSense")
+check(wait(lambda: S.plugged[0]) and rx_ds4.kinds[0] == "hm", "auto + HIDMaestro available: DualSense")
 with S.lock:
     S.states[0].update(lx=10, ly=20, rx=30, ry=40, lt=200, rt=0, mask=BIT[304])
 S.notify(0)
 p = hm.pads[-1]
-check(wait(lambda: p.sent and p.sent[-1][0] == 10), "raport idzie przez submit() pada (bufor pada, bez kopii)")
+check(wait(lambda: p.sent and p.sent[-1][0] == 10), "the report goes through the pad's submit() (pad buffer, no copy)")
 r = p.sent[-1]
-check(r[:6] == bytes((10, 20, 30, 40, 200, 0)) and r[7] & 0x20 and r[8] & 0x04, f"układ raportu DualSense: {r[:10].hex()}")
+check(r[:6] == bytes((10, 20, 30, 40, 200, 0)) and r[7] & 0x20 and r[8] & 0x04, f"DualSense report layout: {r[:10].hex()}")
 
-# feedback z gry: raport wyjściowy 0x02 (silniki + lightbar z flagami ważności)
+# game feedback: output report 0x02 (motors + lightbar with validity flags)
 data = bytearray(47)
 data[0], data[1], data[2], data[3] = 0x03, 0x04, 40, 200
 data[44:47] = bytes((1, 2, 3))
 motors, rgb, trig = rx_hm.parse_output(0x02, data)
-check(motors == (200, 40) and rgb == (1, 2, 3) and trig is None, f"parse_output: lewy = duży, prawy = mały, kolor: {motors} {rgb}")
-check(rx_hm.parse_output(0x02, bytearray(47)) == (None, None, None), "bez flag ważności nic nie zmienia")
-check(rx_hm.parse_output(0x05, data) == (None, None, None), "inny raport ignorowany")
+check(motors == (200, 40) and rgb == (1, 2, 3) and trig is None, f"parse_output: left = big, right = small, colour: {motors} {rgb}")
+check(rx_hm.parse_output(0x02, bytearray(47)) == (None, None, None), "without validity flags nothing changes")
+check(rx_hm.parse_output(0x05, data) == (None, None, None), "another report ignored")
 tdata = bytearray(47)
-tdata[0] = 0x08                                     # tylko lewy spust (L2)
+tdata[0] = 0x08                                     # only the left trigger (L2)
 tdata[21:32] = bytes([0x25, 0x30, 0, 5] + [0] * 7)
-tdata[10:21] = bytes([0x21] + [9] * 10)             # bez flagi prawego - nie czytany
+tdata[10:21] = bytes([0x21] + [9] * 10)             # no right flag - not read
 check(rx_hm.parse_output(0x02, tdata) == (None, None, (bytes(tdata[21:32]), None)),
-      "parse_output: efekt L2 z flagą 0x08, R2 bez flagi = None")
+      "parse_output: L2 effect with the 0x08 flag, R2 without the flag = None")
 tdata[0] = 0x0C
-check(rx_hm.parse_output(0x02, tdata)[2] == (bytes(tdata[21:32]), bytes(tdata[10:21])), "oba spusty (0x04 = R2, 0x08 = L2)")
-class NetArray(list):              # tablica .NET: każdy odczyt elementu to wywołanie przez pythonnet
+check(rx_hm.parse_output(0x02, tdata)[2] == (bytes(tdata[21:32]), bytes(tdata[10:21])), "both triggers (0x04 = R2, 0x08 = L2)")
+class NetArray(list):              # .NET array: every element read is a call through pythonnet
     reads = 0
     def __getitem__(self, k):
         NetArray.reads += 1
@@ -150,61 +150,61 @@ hm_pad, got_fb = object.__new__(rx_hm.Pad), []
 hm_pad.on_fb = lambda m, c, t: got_fb.append((m, c, t))
 hm_pad._on_output(None, OutPkt(list(data) + [0] * 16))
 check(got_fb == [((200, 40), (1, 2, 3), None)] and NetArray.reads <= len(rx_hm.OUT_BASE) + len(rx_hm.OUT_RGB),
-      f"wyjście HIDMaestro: tylko potrzebne bajty ({NetArray.reads} odczytów) - {got_fb}")
+      f"HIDMaestro output: only the needed bytes ({NetArray.reads} reads) - {got_fb}")
 got_fb.clear()
 NetArray.reads = 0
 hm_pad._on_output(None, OutPkt(list(tdata) + [0] * 16))
 check(got_fb == [(None, None, (bytes(tdata[21:32]), bytes(tdata[10:21])))] and NetArray.reads == 4 + 22,
-      f"wyjście HIDMaestro: bajty spustów czytane tylko z flagą ({NetArray.reads} odczytów)")
+      f"HIDMaestro output: trigger bytes read only with the flag ({NetArray.reads} reads)")
 got_fb.clear()
 hm_pad._on_output(None, OutPkt(list(data[:10])))
-check(got_fb == [], "za krótki raport wyjściowy - bez feedbacku i bez wyjątku")
+check(got_fb == [], "too short an output report - no feedback and no exception")
 p.on_fb(motors, rgb)
 f = F.fb[0]
 check((f["large"], f["small"], f["r"], f["g"], f["b"], f["rgb"], f["set"]) == (200, 40, 1, 2, 3, True, True), f"F.game: {f}")
 p.on_fb(None, (9, 9, 9))
-check((f["large"], f["small"], f["r"]) == (200, 40, 9), "sam kolor nie zeruje wibracji")
+check((f["large"], f["small"], f["r"]) == (200, 40, 9), "the colour alone does not zero the rumble")
 
-# zmiana backendu w oknie: pady odtwarzane w nowym (bez restartu)
+# backend change in the window: pads recreated in the new one (no restart)
 vpad(backend="vigem")
-check(wait(lambda: p.closed and S.plugged[0] and rx_ds4.kinds[0] == "vigem"), "zmiana na ViGEm: DualSense zamknięty, DS4 podłączony")
+check(wait(lambda: p.closed and S.plugged[0] and rx_ds4.kinds[0] == "vigem"), "change to ViGEm: DualSense closed, DS4 attached")
 vpad(backend="auto")
 check(wait(lambda: rx_ds4.kinds[0] == "hm" and len(hm.pads) == 2), "i z powrotem na HIDMaestro")
 
-# błąd tworzenia w HIDMaestro: ten pad przez ViGEm, ostrzeżenie w dzienniku
+# HIDMaestro create error: this pad through ViGEm, a warning in the log
 S.want[0].clear(); S.wake[0].set()
-check(wait(lambda: not S.plugged[0]), "odłączony")
+check(wait(lambda: not S.plugged[0]), "detached")
 class BadHM:
     def create(self, slot, on_fb):
         raise OSError("PnP timeout")
 rx_hm.get = lambda path="": BadHM()
 seq = ev.since(0)[-1].seq if ev.since(0) else 0
 S.want[0].set(); S.wake[0].set()
-check(wait(lambda: S.plugged[0]) and rx_ds4.kinds[0] == "vigem", "błąd HIDMaestro przy tworzeniu: zapas ViGEm")
-check(any(e.level == "warn" and "HIDMaestro" in e.text for e in ev.since(seq)), "ostrzeżenie w dzienniku")
+check(wait(lambda: S.plugged[0]) and rx_ds4.kinds[0] == "vigem", "HIDMaestro create error: ViGEm fallback")
+check(any(e.level == "warn" and "HIDMaestro" in e.text for e in ev.since(seq)), "a warning in the log")
 S.want[0].clear(); S.wake[0].set()
-check(wait(lambda: not S.plugged[0]), "odłączony")
+check(wait(lambda: not S.plugged[0]), "detached")
 rx_hm.get = real_get
 
-# brak DLL: auto = tylko informacja, hidmaestro = ostrzeżenie
+# no DLL: auto = info only, hidmaestro = a warning
 rx_ds4._hm_warned = None
 seq = ev.since(0)[-1].seq if ev.since(0) else 0
 vpad(backend="auto", hm_dll="/nie/ma/tego")
-check(rx_ds4.hm_backend() is None and rx_ds4.hm_note, "auto bez DLL: ViGEm, powód w hm_note")
-check([e.level for e in ev.since(seq) if "HIDMaestro" in e.text] == ["info"], "auto bez DLL: informacja, nie ostrzeżenie")
+check(rx_ds4.hm_backend() is None and rx_ds4.hm_note, "auto without the DLL: ViGEm, the reason in hm_note")
+check([e.level for e in ev.since(seq) if "HIDMaestro" in e.text] == ["info"], "auto without the DLL: info, not a warning")
 seq = ev.since(0)[-1].seq if ev.since(0) else 0
 vpad(backend="hidmaestro", hm_dll="/nie/ma/tego")
 rx_ds4.hm_backend()
 rx_ds4.hm_backend()
-check([e.level for e in ev.since(seq) if "HIDMaestro" in e.text] == ["warn"], "wybrany HIDMaestro bez DLL: jedno ostrzeżenie")
+check([e.level for e in ev.since(seq) if "HIDMaestro" in e.text] == ["warn"], "HIDMaestro chosen without the DLL: one warning")
 vpad(backend="vigem")
-check(rx_ds4.hm_backend() is None and rx_ds4.hm_note is None, "vigem: bez powodu w oknie")
+check(rx_ds4.hm_backend() is None and rx_ds4.hm_note is None, "vigem: no reason in the window")
 
-# folder w hm_dll = DLL w tym folderze
+# a folder in hm_dll = the DLL in that folder
 import tempfile
 d = tempfile.mkdtemp()
 open(os.path.join(d, rx_hm.DLL), "wb").close()
-check(rx_hm.find_dll(d) == os.path.join(d, rx_hm.DLL), "hm_dll może wskazywać folder")
+check(rx_hm.find_dll(d) == os.path.join(d, rx_hm.DLL), "hm_dll may point to a folder")
 
 
 # ---------- raport DualSense ----------
@@ -212,36 +212,36 @@ s = S.new_state()
 s.update(lx=1, ly=2, rx=3, ry=4, lt=5, rt=255, hx=1, hy=0, mask=BIT[304] | BIT[310] | R.PS_BIT,
          gyro=(0, 0, 0), acc=(1, 2, 3), touch=((1, 7, 1919, 942), (0, 0, 0, 0)), tp=True, batt_ds5=0x10 | 5)
 b = R.build_ds5_report(s, 300, False)
-check(len(b) == 63 and b[:7] == bytes((1, 2, 3, 4, 5, 255, 300 & 0xFF)), f"gałki, spusty, licznik: {b[:7].hex()}")
-check(b[7] == (2 | 0x20) and b[8] == (0x01 | 0x04 | 0x08) and b[9] == 0x03, f"D-pad + krzyżyk, L1 + L2 i R2 cyfrowe, PS + klik: {b[7:10].hex()}")
+check(len(b) == 63 and b[:7] == bytes((1, 2, 3, 4, 5, 255, 300 & 0xFF)), f"sticks, triggers, counter: {b[:7].hex()}")
+check(b[7] == (2 | 0x20) and b[8] == (0x01 | 0x04 | 0x08) and b[9] == 0x03, f"D-pad + cross, L1 + L2 and R2 digital, PS + click: {b[7:10].hex()}")
 check(b[21:27] == bytes((1, 0, 2, 0, 3, 0)), "akcelerometr w bajtach 21..26")
 check(b[32] == 7 and b[33] == 0x7F and (b[34] & 0x0F) == 0x07 and ((b[34] >> 4) | (b[35] << 4)) == 1079,
       "dotyk w skali DualSense (1920x1080)")
-check(b[36] & 0x80, "drugi palec nieaktywny")
-check(b[52] == 0x15, f"bateria: poziom 5, ładowanie: {b[52]:#x}")
+check(b[36] & 0x80, "second finger inactive")
+check(b[52] == 0x15, f"battery: level 5, charging: {b[52]:#x}")
 import rx_net as N
-check(N.ds5_batt_byte(100, 1) == 0x2A, "pełna przy kablu")
-# bateria pada w krokach co 10 % (jądro: poziom * 10 + 5) wraca w grze bez zmian: 35 % nie spada do 25 %, 75 % nie rośnie do 85 %
-check([N.ds5_batt_byte(p, 0) & 0x0F for p in range(5, 100, 10)] == list(range(10)), "poziom = pct // 10 dla każdego kroku pada")
-check([N.ds5_batt_byte(p, 0) * 10 + 5 for p in (35, 75)] == [35, 75], "35 % i 75 % bez przekłamania")
+check(N.ds5_batt_byte(100, 1) == 0x2A, "full on the cable")
+# the pad battery in 10 % steps (kernel: level * 10 + 5) comes back unchanged in the game: 35 % does not drop to 25 %, 75 % does not rise to 85 %
+check([N.ds5_batt_byte(p, 0) & 0x0F for p in range(5, 100, 10)] == list(range(10)), "level = pct // 10 for every pad step")
+check([N.ds5_batt_byte(p, 0) * 10 + 5 for p in (35, 75)] == [35, 75], "35 % and 75 % without distortion")
 check(N.ds5_batt_byte(100, 0) == 10 and N.ds5_batt_byte(0, 0) == 0, "100 % = poziom 10, 0 % = poziom 0")
-check(N.ds5_batt_byte(55, 1) == 0x15 and N.ds5_batt_byte(255, 0) == 0x2A, "ładowanie; nieznany poziom (pad na USB) = pełny")
+check(N.ds5_batt_byte(55, 1) == 0x15 and N.ds5_batt_byte(255, 0) == 0x2A, "charging; unknown level (pad on USB) = full")
 b = R.build_ds5_report(s, 1, True)
-check(b[9] == 0x01 and b[32] & 0x80, "tryb myszy: bez kliku touchpada i dotyku w grze")
+check(b[9] == 0x01 and b[32] & 0x80, "mouse mode: no touchpad click and no touch in the game")
 
 
 # ---------- settings.json ----------
 path = os.path.join(TMP, "s_vpad.json")
 cur = replace(rx_settings.defaults(), vpad=rx_settings.VpadConfig(backend="hidmaestro", fixed_slots=False, hm_dll="C:\\HM"))
 rx_settings.save(cur, path)
-check(rx_settings.load(path).vpad == cur.vpad, "vpad zapis / odczyt (ścieżka bez zmiany wielkości liter)")
+check(rx_settings.load(path).vpad == cur.vpad, "vpad write / read (path without case change)")
 import json
 json.dump({"vpad": {"backend": "xinput", "fixed_slots": "tak"}}, open(path, "w"))
-check(rx_settings.load(path).vpad == rx_settings.VpadConfig(), "złe wartości -> domyślne")
+check(rx_settings.load(path).vpad == rx_settings.VpadConfig(), "bad values -> defaults")
 
 S.stop.set()
 for t in threads:
     t.join(3)
-print("VPAD", "OK" if not fails else f"BŁĘDY: {len(fails)}")
+print("VPAD", "OK" if not fails else f"FAILURES: {len(fails)}")
 if fails:
     sys.exit(1)

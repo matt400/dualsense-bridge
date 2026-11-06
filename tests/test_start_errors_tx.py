@@ -21,7 +21,7 @@ net.emit = sender_ctrl.net.emit = lambda t, i, *v: out.append((t, v))
 TMP = tempfile.mkdtemp()
 
 
-# ---------- 7. start errors are reported; a finished teardown asks for a scan ----------
+# ---------- start errors are reported; a finished teardown asks for a scan ----------
 async def t_start():
     c = sender_ctrl.Ctrl(0, "aa:bb:cc:dd:ee:06", None, None, None)
     async def boom(c_): raise ValueError("boom")

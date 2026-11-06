@@ -1,4 +1,4 @@
-"""Restart z ustawień: main() zamyka sloty (wirtualne DS4), gniazda UDP i blokadę instancji, a dopiero potem uruchamia nowy proces."""
+"""Restart from the settings: main() closes the slots (virtual DS4), the UDP sockets and the instance lock, and only then starts the new process."""
 import ctypes, sys, types, threading, time, socket, tempfile, os
 RX = sys.argv[1]; sys.path.insert(0, RX)
 sys.path.insert(1, RX + "/../common")
@@ -47,17 +47,17 @@ c = Codec(); s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 for k in range(10):
     s.sendto(c.pack(T_STATE, 0, 200, 128, 0, 128, 128, 0, 0, 0, 1, 77, 0, 0, 0, 8192, 0, 0, 0), ("127.0.0.1", 25105)); time.sleep(0.02)
 time.sleep(0.3)
-assert S.plugged[0], "wirtualny DS4 powinien być podłączony"
-for _ in range(100):                     # bez mastera pierwszy pad włącza tryb konsoli (rx_console.auto_pad)
+assert S.plugged[0], "the virtual DS4 should be attached"
+for _ in range(100):                     # without a master the first pad turns console mode on (rx_console.auto_pad)
     if rx_console.is_on():
         break
     time.sleep(0.02)
-assert rx_console.is_on(), "pierwszy połączony pad (bez mastera) włącza tryb konsoli"
+assert rx_console.is_on(), "the first connected pad (no master) turns console mode on"
 S.restart = True; S.stop.set()
 t.join(5)
-assert not t.is_alive(), "main() nie zakończył się"
+assert not t.is_alive(), "main() did not finish"
 assert "relaunch" in EVENTS, EVENTS
 assert state_at_relaunch == {"in": True, "dsu": True, "plugged": [False, False], "env": {"DSB_CONSOLE_ON": "1"}}, state_at_relaunch
 assert EVENTS.index("unplug") < EVENTS.index("release_mutex") < EVENTS.index("relaunch"), EVENTS
 assert not errors, errors
-print("RESTART OK - kolejność:", [e for e in EVENTS if e != "plug"], "| porty wolne, wirtualny DS4 odłączony")
+print("RESTART OK - order:", [e for e in EVENTS if e != "plug"], "| ports free, virtual DS4 detached")

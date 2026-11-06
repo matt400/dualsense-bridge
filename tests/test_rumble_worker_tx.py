@@ -22,7 +22,7 @@ net.emit = sender_ctrl.net.emit = lambda t, i, *v: out.append((t, v))
 TMP = tempfile.mkdtemp()
 
 
-# ---------- 5. rumble: the hidraw fallback is opened in a worker thread ----------
+# ---------- rumble: the hidraw fallback is opened in a worker thread ----------
 class FFBad:
     path = "/dev/input/event0"
     def upload_effect(self, e): raise OSError(5, "EIO")

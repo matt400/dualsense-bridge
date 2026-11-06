@@ -25,7 +25,7 @@ async def ticker(counter):
         counter[0] += 1
 
 
-# ---------- 1. rumble backend ----------
+# ---------- rumble backend ----------
 class SlowRumble:
     made, closed, thread = [], [], None
     def __init__(self, idx, dev, mode, **kw):
@@ -62,7 +62,7 @@ async def rumble_cases():
 asyncio.run(rumble_cases())
 
 
-# ---------- 2. the /dev/input scan ----------
+# ---------- the /dev/input scan ----------
 seen = {}
 def slow_discover():
     seen["discover_thread"] = threading.get_ident()
@@ -85,7 +85,7 @@ async def scan_case():
 asyncio.run(scan_case())
 
 
-# ---------- 3. BlueZ answer ----------
+# ---------- BlueZ answer ----------
 def var(t, v):
     return {"type": t, "data": v}
 
@@ -122,7 +122,7 @@ async def bt_cases():
 
 asyncio.run(bt_cases())
 
-# ---------- 4. adapter scan ----------
+# ---------- adapter scan ----------
 async def adapter_case():
     btadapter = SB.btadapter
     seen = {}

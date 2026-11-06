@@ -11,7 +11,7 @@ orig = st.heartbeat
 async def flaky():
     beats["n"] += 1
     if beats["n"] == 1:
-        raise KeyError("nieoczekiwany błąd")
+        raise KeyError("unexpected error")
     await orig()
 M.streams.heartbeat = flaky
 async def run():
@@ -21,6 +21,6 @@ async def run():
     task.cancel()
     try: await task
     except (asyncio.CancelledError, Exception): pass
-    check(alive and beats["n"] >= 2, f"nadajnik działa dalej po błędzie w pętli heartbeat {beats}")
+    check(alive and beats["n"] >= 2, f"the sender keeps running after an error in the heartbeat loop {beats}")
 asyncio.run(run())
 sys.exit(1 if fails else 0)

@@ -9,7 +9,7 @@ from proto import BODY, T_INFO
 net.init()
 out = []
 def emit(t, i, *v):
-    BODY[t].pack(*v)                    # jak prawdziwy emit: pakowanie rzuci wyjątek dla złych wartości
+    BODY[t].pack(*v)                    # like the real emit: packing raises for bad values
     out.append((t, i, v))
 net.emit = sender_ctrl.net.emit = emit
 async def main():
@@ -23,7 +23,7 @@ async def main():
     alive = not task.done()
     exc = task.exception() if task.done() else None
     task.cancel()
-    check(alive, f"pętla info przeżywa reconnect pada (wyjątek: {exc!r})")
+    check(alive, f"the info loop survives a pad reconnect (exception: {exc!r})")
     infos = [v for t, i, v in out if t == T_INFO]
     check(all(x >= 0 for v in infos for x in v), f"Hz nieujemne: {infos}")
 asyncio.run(main())

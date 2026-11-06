@@ -1,4 +1,4 @@
-"""Okno: menu boczne nie wymusza wysokiego okna - przy skali TV okno mieści się na ekranie 1280x720 (TV 2560x1440 przy 200 %)."""
+"""Window: the side menu does not force a tall window - at the TV scale the window fits on a 1280x720 screen (TV 2560x1440 at 200 %)."""
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -19,24 +19,24 @@ rx_console.ctl = Console(ConsoleConfig())
 F.pulse = lambda i, kind: None
 win = rx_qt.create_window(os.path.join(TMP, "ui.ini")); win.resize(1180, 760); win.show(); pump(120)
 
-# ---------- skala TV: minimalna wysokość okna zostawia miejsce na pasek zadań, ramkę i margines ----------
+# ---------- TV scale: the minimum window height leaves room for the taskbar, the frame and a margin ----------
 SCREEN_H, TASKBAR, FRAME, MARGIN = 720, 48, 40, 24                # TV 1280x720 po skalowaniu 200 %
 for k in (1.0, TV_SCALE):
     win.apply_scale(k); pump(120)
     assert win.minimumSizeHint().height() <= SCREEN_H - TASKBAR - FRAME - MARGIN, \
-        f"skala {k}: minimalna wysokość okna {win.minimumSizeHint().height()} px nie mieści się na ekranie TV"
-ok("skala TV: minimalna wysokość okna mieści się na ekranie 1280x720")
+        f"scale {k}: minimum window height {win.minimumSizeHint().height()} px does not fit on the TV screen"
+ok("TV scale: the minimum window height fits on a 1280x720 screen")
 
-# ---------- przyciski kurczą się przy niskim oknie i wracają przy wysokim ----------
+# ---------- buttons shrink with a low window and come back with a tall one ----------
 win.resize(1180, 900); pump(120)
 full = win.side.buttons[0].height()
-assert full == px(40), f"wysokie okno: pełne przyciski ({full} px)"
+assert full == px(40), f"tall window: full buttons ({full} px)"
 win.resize(win.width(), win.minimumSizeHint().height()); pump(120)
 small = win.side.buttons[0].height()
-assert px(MIN_BUTTON) <= small < full, f"niskie okno: przyciski się zmniejszają ({small} < {full} px)"
-assert win.side.buttons[-1].geometry().bottom() <= win.side.height(), "ostatnia ikona (zamknij) mieści się w menu"
+assert px(MIN_BUTTON) <= small < full, f"low window: the buttons shrink ({small} < {full} px)"
+assert win.side.buttons[-1].geometry().bottom() <= win.side.height(), "the last icon (close) fits in the menu"
 win.resize(1180, 900); pump(120)
-assert win.side.buttons[0].height() == full, "po powiększeniu okna przyciski wracają do pełnego rozmiaru"
-ok("menu boczne: przyciski kurczą się i rosną razem z oknem")
+assert win.side.buttons[0].height() == full, "after the window grows the buttons go back to full size"
+ok("side menu: the buttons shrink and grow with the window")
 
 print("SIDEBAR FIT GUI OK")

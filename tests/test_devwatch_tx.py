@@ -1,4 +1,4 @@
-"""Nadajnik: nowy węzeł w /dev/input budzi supervisora od razu (inotify), a nie po rescan_s."""
+"""Sender: a new node in /dev/input wakes the supervisor at once (inotify), not after rescan_s."""
 import asyncio, os, sys, tempfile, time
 sys.path.insert(0, sys.argv[1])
 sys.path.insert(1, sys.argv[1] + "/../common")
@@ -17,14 +17,14 @@ async def main():
     asyncio.get_running_loop().call_later(0.1, lambda: open(os.path.join(TMP, "event7"), "w").close())
     await w.wait(5.0)
     dt = time.monotonic() - t0
-    assert dt < 1.0, f"nowy węzeł budzi od razu, a nie po timeout ({dt:.2f} s)"
+    assert dt < 1.0, f"a new node wakes at once, not after the timeout ({dt:.2f} s)"
     assert not w.event.is_set(), "po obudzeniu zdarzenie skasowane"
     t0 = time.monotonic()
     await w.wait(0.2)
-    assert 0.15 < time.monotonic() - t0 < 1.0, "bez zmian: czeka do timeout"
+    assert 0.15 < time.monotonic() - t0 < 1.0, "no change: waits until the timeout"
     w.close()
     assert w.fd is None
-    ok("inotify: nowy węzeł eventN budzi supervisora od razu; bez zmian - timeout")
+    ok("inotify: a new eventN node wakes the supervisor at once; no change - timeout")
 
     bad = sup.DevWatch()
     assert not bad.start(os.path.join(TMP, "nie-ma").encode()) and bad.fd is None
@@ -32,7 +32,7 @@ async def main():
     await bad.wait(0.1)
     assert time.monotonic() - t0 >= 0.09
     bad.close()
-    ok("brak katalogu: zwykłe skanowanie co rescan_s, bez wyjątku")
+    ok("no directory: plain scan every rescan_s, no exception")
 
     C.RESCAN_S = 2.0
     sup._first_seen.clear()
@@ -41,11 +41,11 @@ async def main():
     assert abs(sup.next_scan_s(100.1) - (SETTLE_S - 0.1 + 0.02)) < 1e-9, "niekompletny pad: skan zaraz po SETTLE_S"
     assert sup.next_scan_s(105.0) == 0.05
     sup._first_seen.clear()
-    ok("niekompletny pad: następny skan po SETTLE_S, a nie po rescan_s")
+    ok("incomplete pad: the next scan after SETTLE_S, not after rescan_s")
 
 asyncio.run(main())
 
-# ---------- bye: ten sam pakiet powtórzony w czasie (jeden numer - odbiorca obsłuży go raz) ----------
+# ---------- bye: the same packet repeated over time (one number - the receiver handles it once) ----------
 import socket
 import sender_net as net
 from proto import T_BYE
@@ -65,7 +65,7 @@ async def bye():
 
 rx.setblocking(False)
 got = asyncio.run(bye())
-assert len({d for d, _ in got}) == 1, "trzy kopie tego samego pakietu (ten sam numer)"
-assert got[-1][1] >= net.REPEAT_DELAYS[-1] - 0.005, f"powtórki rozłożone w czasie: {[round(t, 3) for _, t in got]}"
-print("OK   bye: jeden pakiet, powtórki po", net.REPEAT_DELAYS, "s")
+assert len({d for d, _ in got}) == 1, "three copies of the same packet (same number)"
+assert got[-1][1] >= net.REPEAT_DELAYS[-1] - 0.005, f"repeats spread over time: {[round(t, 3) for _, t in got]}"
+print("OK   bye: one packet, repeats after", net.REPEAT_DELAYS, "s")
 print("DEVWATCH OK")

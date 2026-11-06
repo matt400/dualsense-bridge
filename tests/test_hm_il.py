@@ -1,5 +1,5 @@
-"""Receiver: pomocnik IL z rx_hm (ReadOnlyMemory<byte> -> bufor natywny jedną kopią) na prawdziwym CoreCLR.
-Bez pythonnet / .NET test sam się pomija (CI go nie ma). Bez zaślepek Windows - potrzebny jest prawdziwy clr.
+"""Receiver: the IL helper from rx_hm (ReadOnlyMemory<byte> -> native buffer with one copy) on a real CoreCLR.
+Without pythonnet / .NET the test skips itself (CI does not have it). No Windows stubs - a real clr is needed.
     python3 tests/test_hm_il.py receiver"""
 import ctypes, os, sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "receiver"))
@@ -22,15 +22,15 @@ data = bytes(range(1, 41))
 mem = ReadOnlyMemory[Byte](Array[Byte](data), 4, 24)
 n = copy(mem, ptr, CAP)
 assert n == 24 and bytes(scratch[:24]) == data[4:28] and not any(scratch[24:]), (n, bytes(scratch[:30]))
-print("OK  kopia wycinka")
+print("OK  copy of a slice")
 scratch[:] = bytes(CAP)
 n = copy(ReadOnlyMemory[Byte](Array[Byte](bytes([7]) * 200)), ptr, CAP)
 assert n == CAP and bytes(scratch) == bytes([7]) * CAP, n
-print("OK  obcięcie do pojemności bufora")
+print("OK  cut to the buffer capacity")
 got = []
 act = Action[Object, ReadOnlyMemory[Byte]](lambda s, m: got.append(copy(m, ptr, CAP)))
 scratch[:] = bytes(CAP)
 act.Invoke(None, mem)
 assert got == [24] and bytes(scratch[:24]) == data[4:28], got
-print("OK  wywołanie z .NET jako delegat zdarzenia")
+print("OK  called from .NET as an event delegate")
 print("HM IL OK")

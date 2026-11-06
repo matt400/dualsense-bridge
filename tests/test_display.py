@@ -1,4 +1,4 @@
-"""Rozdzielczość TV przez CCD (rx_display), ciche linki Game Bar (rx_gamebar), kolor przycisku "na pewno?"."""
+"""TV resolution through CCD (rx_display), silent Game Bar links (rx_gamebar), colour of the "are you sure?" button."""
 import sys
 import types
 
@@ -14,19 +14,19 @@ from chk import check, fails, raises
 
 # ---------- czysta logika ----------
 check(D.pick_mode([(2560, 1440, 32, 120, D.DM_INTERLACED), (2560, 1440, 32, 60, 0)], 2560, 1440)[3] == 60,
-      "tryb z przeplotem pomijany")
+      "interlaced mode skipped")
 check(D.refresh_rational(59) == (60000, 1001) and D.refresh_rational(120) == (120, 1) and D.refresh_rational(0) == (0, 0),
-      "Hz z GDI -> ułamek CCD (59 = 59,94)")
+      "Hz from GDI -> CCD fraction (59 = 59.94)")
 
 paths = (D.PATH_INFO * 1)()
 paths[0].sourceInfo.modeInfoIdx, paths[0].targetInfo.modeInfoIdx = 2, D.MODE_IDX_INVALID
 modes = (D.MODE_INFO * 3)()
 modes[2].infoType, modes[2].id = D.MODE_SOURCE, 7
 used = D.compact_modes(paths, modes)
-check(len(used) == 1 and used[0].id == 7 and paths[0].sourceInfo.modeInfoIdx == 0, "nieużywane tryby wypadają, indeksy przepisane")
+check(len(used) == 1 and used[0].id == 7 and paths[0].sourceInfo.modeInfoIdx == 0, "unused modes drop out, indexes rewritten")
 
 
-# ---------- set_resolution na zaślepce user32 ----------
+# ---------- set_resolution on the user32 stub ----------
 class FakeUser32:
     def __init__(self, ccd_ok=True, cur=(3840, 2160, 60)):
         self.cur, self.ccd_ok, self.sdc, self.gdi = list(cur), ccd_ok, [], []
@@ -79,17 +79,17 @@ applied = [c for c in u.sdc if c[0] & D.SDC_APPLY]
 check(len(applied) == 1 and applied[0][2:4] == (2560, 1440) and applied[0][4] == D.MODE_IDX_INVALID
       and applied[0][5:7] == (120, 1) and applied[0][7] == D.SCALING_PREFERRED and applied[0][1] == 1
       and applied[0][0] & D.SDC_SAVE_TO_DATABASE and not u.gdi and "CCD" in out,
-      f"1440p przez CCD (jak Ustawienia Windows), 120 Hz, zapis w bazie: {out}")
-check(D.set_resolution("x", 2560, 1440) == "2560x1440 already set", "obowiązujący tryb nie jest zmieniany")
+      f"1440p through CCD (like Windows Settings), 120 Hz, stored in the database: {out}")
+check(D.set_resolution("x", 2560, 1440) == "2560x1440 already set", "the current mode is not changed")
 
 u = FakeUser32(ccd_ok=False)
 D._user32 = lambda: u
 out = D.set_resolution("x", 2560, 1440)
-check(u.gdi == [(2560, 1440, 120)] and "GDI" in out, f"CCD odmawia -> zapas GDI z pełnym trybem sterownika: {out}")
-raises(ValueError, lambda: D.set_resolution("x", 1234, 567), "brak trybu -> wyjątek")
+check(u.gdi == [(2560, 1440, 120)] and "GDI" in out, f"CCD refuses -> GDI fallback with the full driver mode: {out}")
+raises(ValueError, lambda: D.set_resolution("x", 1234, 567), "no mode -> exception")
 
 
-# ---------- rx_gamebar na zaślepce winreg ----------
+# ---------- rx_gamebar on the winreg stub ----------
 class Key:
     def __init__(self, reg, path):
         self.reg, self.path = reg, path
@@ -112,7 +112,7 @@ class FakeReg:
         for k in keys:
             self._add(k)
 
-    def _add(self, full):              # jak w rejestrze: klucz powstaje razem z kluczami nadrzędnymi
+    def _add(self, full):              # as in the registry: the key is created together with its parent keys
         parts = full.split("\\")
         for n in range(2, len(parts) + 1):
             self.data.setdefault("\\".join(parts[:n]), {})
@@ -158,20 +158,20 @@ class FakeReg:
 reg = FakeReg()
 done = G.suppress(reg)
 cls = "HKCU\\" + G.CLASSES
-check(reg.data["HKCU\\" + G.GAMEBAR_KEY][G.NEXUS] == 0, "przycisk pada nie otwiera Game Bar")
+check(reg.data["HKCU\\" + G.GAMEBAR_KEY][G.NEXUS] == 0, "the pad button does not open Game Bar")
 check(all(reg.data[f"{cls}\\{s}\\shell\\open\\command"][""].endswith('systray.exe"') for s in G.SCHEMES),
-      "bez Game Bar: ms-gamebar* -> cichy program (bez okna wyboru aplikacji)")
-check(len(done) == 2 and G.suppress(reg) == [], "drugie uruchomienie niczego nie zmienia")
+      "no Game Bar: ms-gamebar* -> a silent program (no app picker window)")
+check(len(done) == 2 and G.suppress(reg) == [], "a second run changes nothing")
 
 reg._add("HKCU\\" + G.PACKAGES + "\\Microsoft.XboxGamingOverlay_7.1_x64__8wekyb3d8bbwe")
 done = G.suppress(reg)
 check(not any(k.startswith((f"{cls}\\ms-gaming", f"{cls}\\ms-gamebar")) for k in reg.data) and len(done) == 1,
-      "Game Bar zainstalowany ponownie -> nasze klucze usunięte")
+      "Game Bar installed again -> our keys removed")
 
-reg = FakeReg([f"{cls}\\ms-gamebar"])        # link obsługuje inny program - nie ruszamy
+reg = FakeReg([f"{cls}\\ms-gamebar"])        # the link is handled by another program - leave it alone
 G.suppress(reg)
 check(f"{cls}\\ms-gamebar\\shell\\open\\command" not in reg.data and f"{cls}\\ms-gamingoverlay\\shell\\open\\command" in reg.data,
-      "cudzy handler zostaje nietknięty")
+      "a foreign handler stays untouched")
 
 
 # ---------- styl ----------
@@ -183,7 +183,7 @@ except ImportError:
 css = ST.qss() if ST else ""
 armed = [ln for ln in css.split("}") if 'armed="true"' in ln and "background" in ln and ":hover" not in ln]
 check(not ST or armed and all("color: #ffffff" in ln for ln in armed) and all(ST.BG not in ln for ln in armed),
-      "przycisk 'na pewno?' (Aktualizować?) - biały napis, nie czarny")
+      "the 'are you sure?' button (Aktualizować?) - white text, not black")
 
-print("WYNIK:", "OK" if not fails else f"{len(fails)} błędów")
+print("RESULT:", "OK" if not fails else f"{len(fails)} failures")
 sys.exit(1 if fails else 0)

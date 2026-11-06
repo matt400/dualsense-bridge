@@ -10,7 +10,7 @@ TMP = tempfile.mkdtemp()
 from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 
-# jeden raport pada (gałka + ruch, dwa urządzenia evdev naraz) -> jeden pakiet od razu, nie dwa (drugi po limiterze)
+# one pad report (stick + motion, two evdev devices at once) -> one packet at once, not two (the second after the limiter)
 import types
 import sender_ctrl, sender_net, sender_supervisor as sup
 from proto import T_STATE
@@ -26,8 +26,8 @@ import sender_streams
 
 
 class ReportDev:
-    """Jak jądro: jeden raport HID pada trafia naraz do urządzeń przycisków / gałek i ruchu (oba gotowe do odczytu
-    w tej samej iteracji pętli)."""
+    """Like the kernel: one HID report of the pad reaches the button / stick and motion devices at once (both ready to read
+    in the same loop iteration)."""
     path = "/dev/input/event98"
     report = None
     def __init__(self, events):
@@ -51,7 +51,7 @@ async def same_report():
     tasks = [asyncio.create_task(sender_streams.stream_pad(c)), asyncio.create_task(sender_streams.stream_motion(c))]
     await asyncio.sleep(0.01)
     t0 = _time.monotonic()
-    ReportDev.report.set_result(None)                      # raport pada przyszedł
+    ReportDev.report.set_result(None)                      # a pad report arrived
     while not any(t == T_STATE for t, v in sent) and _time.monotonic() - t0 < 1:
         await asyncio.sleep(0)
     first = _time.monotonic() - t0
@@ -62,8 +62,8 @@ async def same_report():
     await asyncio.gather(*tasks, return_exceptions=True)
     c.cancel_timers()
     check(len(states) == 1 and states[0][0] == 10 and states[0][15] == 9000,
-          f"gałka i ruch z jednego raportu w jednym pakiecie: {[(v[0], v[15]) for v in states]}")
-    check(first < 0.002, f"pakiet od razu (bez czekania na okno limitera): {first * 1000:.2f} ms")
+          f"stick and motion from one report in one packet: {[(v[0], v[15]) for v in states]}")
+    check(first < 0.002, f"a packet at once (no wait for the limiter window): {first * 1000:.2f} ms")
 
 asyncio.run(same_report())
 

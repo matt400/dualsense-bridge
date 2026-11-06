@@ -1,6 +1,6 @@
-"""Nadajnik: wybór kontrolera Bluetooth (sender_btadapter) - sztuczny /sys z dowiązaniami jak w jądrze: nazwy
-urządzeń, tryby auto / pick / manual, wpięcie i wyjęcie dongla w trakcie pracy, polecenia z okna (BT_ADAPTER,
-BT_ADAPTER_USE), lista kontrolerów (btctrl) i bity btstate."""
+"""Sender: Bluetooth controller choice (sender_btadapter) - a fake /sys with symlinks as in the kernel: device
+names, auto / pick / manual modes, plugging and unplugging a dongle while running, window commands (BT_ADAPTER,
+BT_ADAPTER_USE), the controller list (btctrl) and btstate bits."""
 import asyncio, json, os, sys, tempfile
 from pathlib import Path
 TX = os.path.abspath(sys.argv[1])
@@ -15,12 +15,12 @@ from proto import (BT_ADAPTER, BT_ADAPTER_USE, BTA_AUTO, BTA_MANUAL, BTA_PICK, B
                    T_BTCTRL, T_BTSTATE, cstr)
 from chk import ok
 TMP = Path(tempfile.mkdtemp())
-C.BT_FILE = str(TMP / "bt.json")                # nie w folderze nadajnika
+C.BT_FILE = str(TMP / "bt.json")                # not in the sender folder
 DONGLE = {"vid": "2357", "pid": "0604", "product": "TP-Link UB5A Adapter", "maker": "Realtek"}
 
 
 class Sys:
-    """/sys/class/bluetooth: kontrolery na UART (wbudowany, device tree), USB wymiennym i USB stałym (laptop)."""
+    """/sys/class/bluetooth: controllers on UART (built-in, device tree), removable USB and fixed USB (laptop)."""
 
     def __init__(s):
         s.root = Path(tempfile.mkdtemp())
@@ -48,7 +48,7 @@ class Sys:
         (dev / f"rfkill{s.n}").mkdir(parents=True)
         (dev / f"rfkill{s.n}/soft").write_text("0\n")
         (s.cls / name).symlink_to(dev)
-        (s.cls / f"{name}:256").symlink_to(dev)       # połączenie - nie kontroler
+        (s.cls / f"{name}:256").symlink_to(dev)       # a connection - not a controller
 
     def drop(s, name):
         (s.cls / name).unlink()
@@ -71,46 +71,46 @@ fs2 = Sys(); fs2.add("hci0", "usb", vid="0a12", pid="0001"); fs2.add("hci1", "ua
 fs2.add("hci2", "usb", product="Bluetooth Radio", maker="Realtek", serial="00E04C239987")
 c = A.scan(fs2.cls)
 assert [x.label for x in c] == ["USB 0a12:0001", "Bluetooth", "Realtek Bluetooth Radio"], [x.label for x in c]
-assert c[2].key == "usb:0bda:8771:00E04C239987", "numer seryjny odróżnia dwa takie same dongle"
-ok("nazwy: device tree (Qualcomm WCN3990), deskryptor USB (producent + produkt), bez nazwy - vid:pid / ogólna")
+assert c[2].key == "usb:0bda:8771:00E04C239987", "the serial number tells two identical dongles apart"
+ok("names: device tree (Qualcomm WCN3990), USB descriptor (manufacturer + product), no name - vid:pid / generic")
 
-# ---------- wybór ----------
+# ---------- choice ----------
 assert A.choose(ctrls, BTA_AUTO).name == "hci1" and A.choose(ctrls, BTA_MANUAL) is None and A.choose((), BTA_AUTO) is None
 assert A.choose(ctrls, BTA_PICK, "builtin:qcom,wcn3990-bt").name == "hci0"
 assert A.choose(ctrls, BTA_PICK, A.RULE_BUILTIN).name == "hci0", "sender.toml: builtin"
-assert A.choose(ctrls, BTA_PICK, "usb:dead:beef").name == "hci1", "wybranego nie ma - jak auto"
+assert A.choose(ctrls, BTA_PICK, "usb:dead:beef").name == "hci1", "the selected one is missing - like auto"
 assert A.apply(ctrls, BTA_AUTO, "", fs.cls, sniff).name == "hci1"
 assert fs.blocked("hci0") and not fs.blocked("hci1") and sniffed == ["hci1"]
-ok("auto: dongle przed wbudowanym, reszta zablokowana, wybrany bez SNIFF; pick po kluczu urządzenia")
+ok("auto: dongle before the built-in one, the rest blocked, the selected one without SNIFF; pick by device key")
 
-fs = Sys(); fs.add("hci0", "usb"); fs.add("hci1", "uart")        # inna kolejność wykrywania - decyduje szyna
+fs = Sys(); fs.add("hci0", "usb"); fs.add("hci1", "uart")        # a different detection order - the bus decides
 assert A.apply(A.scan(fs.cls), BTA_AUTO, "", fs.cls, sniff).name == "hci0" and fs.blocked("hci1")
 fs = Sys(); fs.add("hci0", "fixed", product="Intel Wireless"); fs.add("hci1", "usb")   # laptop
 assert A.choose(A.scan(fs.cls), BTA_AUTO).name == "hci1" and A.scan(fs.cls)[0].rank == A.USB_FIXED
-ok("numery hciN zamienione: nadal dongle; laptop: wbudowany na stałym porcie USB odróżniony od dongla")
+ok("hciN numbers swapped: still the dongle; laptop: built-in on a fixed USB port told apart from a dongle")
 
 fs = Sys(); fs.add("hci0", "uart")
-(next((fs.cls / "hci0").glob("rfkill*/soft"))).write_text("1\n")  # blokada z poprzedniego startu (rfkill ją pamięta)
+(next((fs.cls / "hci0").glob("rfkill*/soft"))).write_text("1\n")  # block left from the previous start (rfkill remembers it)
 assert A.apply(A.scan(fs.cls), BTA_AUTO, "", fs.cls, sniff).name == "hci0" and not fs.blocked("hci0")
 fs = Sys(); fs.add("hci0", "uart"); fs.add("hci1", "usb")
 A.set_blocked("hci1", True, fs.cls)
 assert A.apply(A.scan(fs.cls), BTA_MANUAL, "", fs.cls, sniff) is None and fs.blocked("hci1")
 A.unblock_all(A.scan(fs.cls), fs.cls)
 assert not fs.blocked("hci1")
-ok("jeden kontroler: odblokowany; ręcznie: nic nie zmienia, przejście na ręczny odblokowuje wszystko")
+ok("one controller: unblocked; manual: changes nothing, switching to manual unblocks everything")
 
 assert A.mode_from("BUILTIN") == (BTA_PICK, A.RULE_BUILTIN) and A.mode_from("cokolwiek") == (BTA_AUTO, "")
 assert A.load_mode(str(TMP / "brak.json"), (BTA_MANUAL, "")) == (BTA_MANUAL, "")
 (TMP / "zly.json").write_text("[1]")
 assert A.load_mode(str(TMP / "zly.json"), (BTA_AUTO, "")) == (BTA_AUTO, "")
 (TMP / "bez.json").write_text('{"mode": "pick"}')
-assert A.load_mode(str(TMP / "bez.json"), (BTA_AUTO, "")) == (BTA_AUTO, ""), "pick bez urządzenia = domyślny"
+assert A.load_mode(str(TMP / "bez.json"), (BTA_AUTO, "")) == (BTA_AUTO, ""), "pick without a device = default"
 A.save_mode(str(TMP / "m.json"), BTA_PICK, "usb:2357:0604")
 assert json.loads((TMP / "m.json").read_text()) == {"mode": "pick", "device": "usb:2357:0604"}
 assert A.load_mode(str(TMP / "m.json"), (BTA_AUTO, "")) == (BTA_PICK, "usb:2357:0604")
-ok("tryb: sender.toml domyślnie, bt.json (z okna, z urządzeniem) ma pierwszeństwo, zły plik = domyślny")
+ok("mode: sender.toml by default, bt.json (from the window, with the device) wins, a bad file = default")
 
-# ---------- nadajnik: panel Bluetooth ----------
+# ---------- sender: Bluetooth panel ----------
 out = []
 emit = lambda t, i, *v: out.append((t, v))
 calls = []
@@ -147,8 +147,8 @@ async def main():
         b.send(full=False)
         flags = out[-1][1][1]
         assert flags & BTF_HAS_BUILTIN and not flags & (BTF_HAS_USB | BTF_ON_USB) and flags >> BTF_MODE_SHIFT == BTA_AUTO
-        assert not [t for t, _v in out if t == T_BTCTRL], "lista kontrolerów tylko przy otwartym panelu"
-        fs.add("hci1", "usb", **DONGLE)                           # dongle wpięty w trakcie pracy
+        assert not [t for t, _v in out if t == T_BTCTRL], "controller list only while the panel is open"
+        fs.add("hci1", "usb", **DONGLE)                           # dongle plugged in while running
         calls.clear()
         await b.refresh()
         assert b.pick.name == "hci1" and b.adapter == "/org/bluez/hci1" and fs.blocked("hci0")
@@ -158,9 +158,9 @@ async def main():
                                (BTC_USB | BTC_ACTIVE, 1, "Realtek TP-Link UB5A Adapter")], ctrl_rows()
         st = [v for t, v in out if t == T_BTSTATE][-1]
         assert st[1] & (BTF_HAS_USB | BTF_ON_USB) == BTF_HAS_USB | BTF_ON_USB
-        ok("wpięty dongle przejmuje panel bez restartu; lista kontrolerów z nazwami i stanem (btctrl), bity btstate")
+        ok("a plugged-in dongle takes over the panel without a restart; controller list with names and state (btctrl), btstate bits")
 
-        b.on_command(BT_ADAPTER_USE, 0, bytes(6))                # "Użyj" przy wbudowanym
+        b.on_command(BT_ADAPTER_USE, 0, bytes(6))                # "Use" on the built-in one
         await b.busy
         assert b.last[:2] == (BT_ADAPTER_USE, BTR_OK) and b.pick.name == "hci0" and fs.blocked("hci1")
         assert A.load_mode(C.BT_FILE, (BTA_AUTO, "")) == (BTA_PICK, "builtin:qcom,wcn3990-bt"), "zapisany po kluczu"
@@ -169,21 +169,21 @@ async def main():
         b.dups.clear()
         b.on_command(BT_ADAPTER_USE, 7, bytes(6))
         await b.busy
-        assert b.last[1] == BTR_NOT_FOUND and b.pick.name == "hci0", "nieistniejący hci7"
-        ok("Użyj: konkretny kontroler, zapamiętany po identyfikatorze urządzenia; nieznany numer = NOT_FOUND")
+        assert b.last[1] == BTR_NOT_FOUND and b.pick.name == "hci0", "non-existent hci7"
+        ok("Use: a specific controller, remembered by device id; unknown number = NOT_FOUND")
 
         fs.drop("hci0"); fs.drop("hci1")                         # restart telefonu: numery zamienione
         fs.add("hci0", "usb", **DONGLE); fs.add("hci1", "uart")
         await b.refresh()
         assert b.pick.name == "hci1" and b.pick.label == "Qualcomm WCN3990" and fs.blocked("hci0")
-        ok("wybór przetrwa zamianę numerów hciN (klucz urządzenia, nie numer)")
+        ok("the choice survives swapped hciN numbers (device key, not the number)")
 
         b.dups.clear()
         b.on_command(BT_ADAPTER, BTA_MANUAL, bytes(6))
         await b.busy
         assert not fs.blocked("hci0") and not fs.blocked("hci1") and b.pick is None
         b.dups.clear()
-        for bad in (99, BTA_PICK):                                # BTA_PICK tylko przez BT_ADAPTER_USE
+        for bad in (99, BTA_PICK):                                # BTA_PICK only through BT_ADAPTER_USE
             b.on_command(BT_ADAPTER, bad, bytes(6))
             await b.busy
             b.dups.clear()
@@ -191,18 +191,18 @@ async def main():
         b.on_command(BT_ADAPTER, BTA_AUTO, bytes(6))
         await b.busy
         assert b.pick.name == "hci0"
-        fs.drop("hci0")                                           # dongle wyjęty
+        fs.drop("hci0")                                           # dongle unplugged
         await b.refresh()
         assert b.pick.name == "hci1" and not fs.blocked("hci1")
-        ok("ręcznie odblokowuje wszystko, zły tryb odrzucony, auto wraca do dongla, wyjęty dongle - wbudowany sam")
+        ok("manual unblocks everything, a bad mode rejected, auto goes back to the dongle, dongle unplugged - built-in alone")
 
-        # błąd zapisu rfkill: wybrany odblokowany PRZED blokowaniem reszty, a nieudana zmiana jest ponawiana
+        # rfkill write error: the selected one unblocked BEFORE blocking the rest, and a failed change is retried
         fs = Sys(); fs.add("hci0", "uart"); fs.add("hci1", "usb", **DONGLE)
         A.set_blocked("hci1", True, fs.cls)                       # dongle zablokowany (np. po trybie wbudowanym)
         real_set, fail = A.set_blocked, [True]
 
         def flaky(name, block, sysfs=A.SYSFS):
-            if fail[0] and name == "hci0" and block:              # zablokowanie wbudowanego się nie udaje
+            if fail[0] and name == "hci0" and block:              # blocking the built-in one fails
                 raise OSError(5, "Input/output error")
             real_set(name, block, sysfs)
         A.set_blocked = flaky
@@ -210,22 +210,22 @@ async def main():
             b = SB.Bluetooth(run=run, emit=emit, sysfs=fs.cls)
             calls.clear()
             await b.refresh()
-            assert not fs.blocked("hci1") and not fs.blocked("hci0"), "nigdy oba radia zablokowane"
+            assert not fs.blocked("hci1") and not fs.blocked("hci0"), "never both radios blocked"
             assert b.adapter_err and b.pick.name == "hci1"
             fail[0] = False
-            await b.refresh()                                     # ten sam zestaw kontrolerów - ponowienie
+            await b.refresh()                                     # the same set of controllers - retry
             assert fs.blocked("hci0") and not fs.blocked("hci1") and not b.adapter_err
             assert ["set-property", "org.bluez", "/org/bluez/hci1", "org.bluez.Adapter1", "Powered", "b", "true"] in calls
         finally:
             A.set_blocked = real_set
-        ok("błąd rfkill w połowie: wybrany już odblokowany; nieudana zmiana ponawiana przy następnym odświeżeniu")
+        ok("rfkill error halfway: the selected one already unblocked; a failed change retried on the next refresh")
 
-        plain = SB.Bluetooth(run=run, emit=emit)                   # bez /sys (testy, starszy układ) - bez wyboru
+        plain = SB.Bluetooth(run=run, emit=emit)                   # no /sys (tests, an older layout) - no choice
         await plain.refresh()
         n = len(out)
         plain.send(full=True)
         assert out[-1][1][1] >> BTF_MODE_SHIFT == 0 and not [t for t, _v in out[n:] if t == T_BTCTRL], \
-            "tryb 0 = okno chowa wybór, bez listy kontrolerów"
+            "mode 0 = the window hides the choice, no controller list"
     finally:
         A.no_sniff = A_no_sniff
 
@@ -233,4 +233,4 @@ asyncio.run(main())
 assert SB.parse_objects(objects("hci0", "hci1"), "/org/bluez/hci1")[1] == "/org/bluez/hci1"
 assert SB.parse_objects(objects("hci0"), "/org/bluez/hci1")[1] == "/org/bluez/hci0", "brak wybranego w BlueZ - pierwszy"
 assert BTC_FIXED == 2
-ok("BlueZ: panel na wybranym kontrolerze, gdy BlueZ go zna")
+ok("BlueZ: panel on the selected controller when BlueZ knows it")

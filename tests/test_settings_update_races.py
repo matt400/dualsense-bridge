@@ -9,7 +9,7 @@ from dataclasses import replace
 from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 
-# 3. concurrent rx_settings.update() calls do not lose changes
+# concurrent rx_settings.update() calls do not lose changes
 rx_settings.cur = rx_settings.Settings()
 def upd(name):
     for k in range(50):

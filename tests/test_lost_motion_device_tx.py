@@ -10,7 +10,7 @@ TMP = tempfile.mkdtemp()
 from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 
-# utrata samego urządzenia ruchu / touchpada: odbiornik nie może zostać z ostatnim gyro ani przyłożonym palcem
+# losing only the motion / touchpad device: the receiver must not stay with the last gyro or a resting finger
 import types
 import sender_ctrl, sender_net, sender_state, sender_supervisor as sup
 from proto import T_STATE, T_TOUCH
@@ -23,7 +23,7 @@ E = lambda t, c, v: types.SimpleNamespace(type=t, code=c, value=v)
 
 
 class LostDev:
-    """Urządzenie, które po kilku zdarzeniach znika (OSError jak przy odłączeniu)."""
+    """A device that disappears after a few events (OSError as on disconnect)."""
     path = "/dev/input/event99"
     fd = -1
     def __init__(self, events):
@@ -50,10 +50,10 @@ async def lost():
     await asyncio.sleep(0.2)
     states = [v for t, v in sent if t == T_STATE]
     touches = [v for t, v in sent if t == T_TOUCH]
-    check(any(v[15] == 50000 for v in states), "gyro z urządzenia ruchu doszło do odbiornika")
-    check(states[-1][11:17] == (0, 0, 0, 0, 0, 0), f"utrata urządzenia ruchu -> wysłane zerowe gyro: {states[-1][11:17]}")
-    check(any(v[0] for v in touches), "dotyk palca doszedł do odbiornika")
-    check(touches[-1] == (0, 0, 0, 0, 0, 0, 0, 0), f"utrata touchpada -> wysłany brak palców: {touches[-1]}")
+    check(any(v[15] == 50000 for v in states), "gyro from the motion device reached the receiver")
+    check(states[-1][11:17] == (0, 0, 0, 0, 0, 0), f"losing the motion device -> zero gyro sent: {states[-1][11:17]}")
+    check(any(v[0] for v in touches), "a finger touch reached the receiver")
+    check(touches[-1] == (0, 0, 0, 0, 0, 0, 0, 0), f"losing the touchpad -> no fingers sent: {touches[-1]}")
     sender_state.active.pop(c.key)
 
 asyncio.run(lost())

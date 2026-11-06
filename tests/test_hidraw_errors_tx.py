@@ -1,5 +1,5 @@
-"""Nadajnik: regresje z szóstego przeglądu - strażnik efektów spustów, chwilowy błąd hidraw (bez wycieku deskryptora),
-cięcie tekstów UTF-8 na granicy znaku, klucz HMAC tylko po jednej stronie."""
+"""Sender: regressions from the sixth review - trigger effect watchdog, a transient hidraw error (no descriptor leak),
+UTF-8 texts cut on a character boundary, an HMAC key on one side only."""
 import asyncio, errno, os, sys, tempfile, time
 sys.path.insert(0, sys.argv[1])
 sys.path.insert(1, sys.argv[1] + "/../common")
@@ -19,7 +19,7 @@ class Dev:
 
 
 def last_trig(path):
-    """Ostatnie efekty spustów z raportów BT (78 B) z flagami spustów albo None."""
+    """The last trigger effects from BT reports (78 B) with trigger flags, or None."""
     data = open(path, "rb").read()
     for k in range(len(data) - 78, -1, -78):
         c = data[k + 3:k + 78]
@@ -29,30 +29,30 @@ def last_trig(path):
 
 
 async def main():
-    # ---------- strażnik efektów spustów ----------
+    # ---------- trigger effect watchdog ----------
     R.TRIG_WATCHDOG_S = 0.3
     path = os.path.join(TMP, "hidraw")
     open(path, "wb").close()
     r = R.Rumble(0, Dev(), "hidraw", hidraw=(path, True))
     fx = (TFX_RES, 2, 5, 0, TFX_CLICK, 5, 7, 0, 0, 0, 0, 0)
     r.set_triggers(fx)
-    check(last_trig(path) == (R.trigger_effect(2, 5), R.weapon_effect(5, 7)), "efekty spustów ustawione")
+    check(last_trig(path) == (R.trigger_effect(2, 5), R.weapon_effect(5, 7)), "trigger effects set")
     await asyncio.sleep(0.2)
-    r.set_triggers(fx)                                       # odświeżenie z PC przed czasem strażnika
+    r.set_triggers(fx)                                       # refresh from the PC before the watchdog time
     await asyncio.sleep(0.2)
-    check(r.fx == fx, "odświeżane efekty trwają")
+    check(r.fx == fx, "refreshed effects persist")
     await asyncio.sleep(0.25)
     check(r.fx == TRIG2_OFF and last_trig(path) == (R.OFF_EFFECT, R.OFF_EFFECT),
-          "brak odświeżeń z PC (receiver zamknięty, PC uśpiony) -> spusty wracają do zwykłych")
+          "no refreshes from the PC (receiver closed, PC asleep) -> the triggers go back to normal")
     n = os.path.getsize(path)
     await asyncio.sleep(0.4)
-    check(os.path.getsize(path) == n and r._trig_watch is None, "bez efektów strażnik nie działa i nic nie wysyła")
+    check(os.path.getsize(path) == n and r._trig_watch is None, "without effects the watchdog is idle and sends nothing")
     r.set_triggers(fx)
-    check(r._trig_watch is not None, "nowe efekty z PC - strażnik znowu czuwa")
+    check(r._trig_watch is not None, "new effects from the PC - the watchdog is on again")
     r.close()
-    check(r._trig_watch is None, "zamknięcie zatrzymuje strażnika spustów")
+    check(r._trig_watch is None, "closing stops the trigger watchdog")
 
-    # ---------- chwilowy błąd hidraw ----------
+    # ---------- transient hidraw error ----------
     path2 = os.path.join(TMP, "hidraw2")
     open(path2, "wb").close()
     r = R.Rumble(1, Dev(), "hidraw", hidraw=(path2, True))
@@ -66,24 +66,24 @@ async def main():
     r.set(10, 20); r.set(11, 20); r.set(12, 20)
     R.os.write = real
     check(r.methods == ["hidraw"] and r.fails["hidraw"] == 0 and os.path.getsize(path2) > 0,
-          f"2x EIO (zatkany Bluetooth) i dalej działa - raport HID nie jest wyłączany ({r.methods})")
+          f"2x EIO (clogged Bluetooth) and it still works - the HID report is not turned off ({r.methods})")
     fd = r.fd
     def gone(fd, data):
         raise OSError(errno.ENODEV, "No such device")
     R.os.write = gone
     r.set(13, 20)
     R.os.write = real
-    check(r.methods == [] and r.fd is None, "ENODEV (pada nie ma) - wyłączone od razu, deskryptor zamknięty")
+    check(r.methods == [] and r.fd is None, "ENODEV (pad gone) - turned off at once, descriptor closed")
     try:
         os.fstat(fd)
         closed = False
     except OSError:
         closed = True
-    check(closed, "deskryptor hidraw naprawdę zamknięty (bez wycieku)")
+    check(closed, "the hidraw descriptor really closed (no leak)")
     r.close()
     r = R.Rumble(2, Dev(), "hidraw", hidraw=(path2, True))
     R.os.write = gone
-    check(r.set_triggers(TRIG2_OFF[:8] + (1, 100, 40, 0)) is False and r.methods == [], "błąd zapisu efektów spustów liczy się tak samo")
+    check(r.set_triggers(TRIG2_OFF[:8] + (1, 100, 40, 0)) is False and r.methods == [], "a trigger effect write error counts the same")
     R.os.write = real
     r.close()
 
@@ -96,7 +96,7 @@ sent = []
 events.flush(lambda *a: sent.append(a))
 arg = sent[0][-1]
 check(len(arg) <= events.ARG_MAX and "�" not in cstr(arg) and cstr(arg).endswith("…"),
-      f"argument zdarzenia ucięty na granicy znaku, z wielokropkiem ({cstr(arg)[-6:]!r})")
+      f"event argument cut on a character boundary, with an ellipsis ({cstr(arg)[-6:]!r})")
 import sender_net as net
 import sender_update as U
 net.codec, out = Codec(), []
@@ -104,26 +104,26 @@ net.emit = lambda t, i, *v: out.append((t, v))
 U.status, U.fail_msg = proto.UPD_FAILED, "błąd: nie można pobrać - " + "ąę" * 80
 U.send_build()
 msg = next(v[0] for t, v in out if t == proto.T_UPDMSG)
-check(len(msg) <= BODY[proto.T_UPDMSG].size and "�" not in cstr(msg), "powód błędu git pull bez pół litery")
+check(len(msg) <= BODY[proto.T_UPDMSG].size and "�" not in cstr(msg), "git pull error reason without half a letter")
 
-# ---------- klucz HMAC tylko po jednej stronie ----------
+# ---------- HMAC key on one side only ----------
 keyed, plain = Codec(b"sekret"), Codec()
 state = (128,) * 6 + (0, 0, 0, 80, 0, 0, 0, 8192, 0, 0, 0)
 legit = Codec().pack(T_STATE2, 0, *state, 1, 2, 3)
-check(plain.parse(legit)[0] == T_STATE2, "bez klucza po obu stronach: state2 przyjęty jak dotąd")
+check(plain.parse(legit)[0] == T_STATE2, "no key on both sides: state2 accepted as before")
 check(plain.parse(keyed.pack(T_PING, 255, 1)) is None and time.monotonic() - plain.mismatch_t < 1,
-      "bez klucza: ping z HMAC (16 B) rozpoznany jako pakiet z kluczem")
-check(plain.parse(keyed.pack(T_STATE, 0, *state)) is None, "... i stan + HMAC (= długość state2) już nie jest brany za state2")
-check(plain.parse(keyed.pack(T_TRIG, 0, 1, 2, 3, 4)) is None, "trig + HMAC (= długość trig2) odrzucony - nie losowe efekty spustów")
+      "no key: a ping with HMAC (16 B) recognized as a keyed packet")
+check(plain.parse(keyed.pack(T_STATE, 0, *state)) is None, "... and state + HMAC (= state2 length) is no longer taken for state2")
+check(plain.parse(keyed.pack(T_TRIG, 0, 1, 2, 3, 4)) is None, "trig + HMAC (= trig2 length) rejected - no random trigger effects")
 plain.mismatch_t -= proto.KEY_MISMATCH_S + 1
-check(plain.parse(legit)[0] == T_STATE2, "po KEY_MISMATCH_S ciszy state2 bez klucza znowu przyjmowany")
+check(plain.parse(legit)[0] == T_STATE2, "after KEY_MISMATCH_S of silence a state2 without a key is accepted again")
 other = Codec(b"inny")
 check(other.parse(keyed.pack(T_STATE, 0, *state)) is None and time.monotonic() - other.mismatch_t < 1,
-      "inny klucz: odrzucone i zgłoszone")
-check(keyed.parse(Codec(b"sekret").pack(T_TRIG2, 0, *TRIG2_OFF))[0] == T_TRIG2, "ten sam klucz: działa")
+      "another key: rejected and reported")
+check(keyed.parse(Codec(b"sekret").pack(T_TRIG2, 0, *TRIG2_OFF))[0] == T_TRIG2, "the same key: works")
 fresh = Codec(b"sekret")
 fresh.parse(b"\x00garbage-from-other-app")
-check(fresh.mismatch_t == float("-inf"), "obce datagramy na porcie nie udają innego klucza")
+check(fresh.mismatch_t == float("-inf"), "foreign datagrams on the port do not pose as another key")
 
 if fails:
     print("FAIL", fails)

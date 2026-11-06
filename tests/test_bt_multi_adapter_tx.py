@@ -1,6 +1,6 @@
-"""Sender: Bluetooth przy kilku kontrolerach (wbudowany zablokowany + dongle USB).
-  - skan z okna: bluetoothctl skanował domyślnym kontrolerem (hci0 - zablokowany wbudowany), a nie wybranym donglem
-  - wyłączenie pada (okno / bezczynność): `bluetoothctl disconnect` szukał pada tylko na domyślnym kontrolerze
+"""Sender: Bluetooth with several controllers (built-in blocked + USB dongle).
+  - scan from the window: bluetoothctl scanned with the default controller (hci0 - the blocked built-in one), not the selected dongle
+  - powering the pad off (window / idle): `bluetoothctl disconnect` looked for the pad only on the default controller
 python3 tests/test_bt_multi_adapter_tx.py sender"""
 import asyncio, json, os, stat, sys, tempfile, time
 sys.path.insert(0, sys.argv[1])
@@ -20,7 +20,7 @@ def objects(connected_on="hci1"):
     out = {"/org/bluez/hci0": {"org.bluez.Adapter1": {"Address": var("s", "11:22:33:44:55:66"), "Powered": var("b", False),
                                                        "PowerState": var("s", "off-blocked")}},
            "/org/bluez/hci1": {"org.bluez.Adapter1": {"Address": var("s", DONGLE), "Powered": var("b", True)}}}
-    for hci in ("hci0", "hci1"):                    # pad sparowany z oboma kontrolerami, połączony z jednym
+    for hci in ("hci0", "hci1"):                    # pad paired with both controllers, connected to one
         out[SB.dev_path(f"/org/bluez/{hci}", PAD)] = {"org.bluez.Device1": {
             "Address": var("s", PAD.upper()), "Name": var("s", "DualSense Wireless Controller"),
             "Paired": var("b", True), "Connected": var("b", hci == connected_on)}}
@@ -41,18 +41,18 @@ class Bus:
         return 0, "", ""
 
 
-# ---------- parse_objects: adres i liczba adapterów ----------
+# ---------- parse_objects: address and adapter count ----------
 info = {}
 st, path, devs = SB.parse_objects(objects(), "/org/bluez/hci1", info)
 assert (st, path) == (BTS_OK, "/org/bluez/hci1") and info == {"address": DONGLE, "count": 2}, info
-assert SB.parse_objects(objects())[:2] == (BTS_OK, "/org/bluez/hci1"), "bez info - jak dotąd"
-ok("BlueZ: adres wybranego kontrolera i liczba kontrolerów (do wyboru kontrolera w skanie)")
+assert SB.parse_objects(objects())[:2] == (BTS_OK, "/org/bluez/hci1"), "no info - as before"
+ok("BlueZ: address of the selected controller and the controller count (to pick the controller for the scan)")
 
-# ---------- skan: select <dongle> + scan on, limit czasu bez --timeout ----------
+# ---------- scan: select <dongle> + scan on, a time limit without --timeout ----------
 BIN = tempfile.mkdtemp()
 LOG, IN = os.path.join(BIN, "args.log"), os.path.join(BIN, "stdin.log")
 fake = os.path.join(BIN, "bluetoothctl")
-with open(fake, "w") as fh:          # jak bluetoothctl: kontrolery wypisuje chwilę po starcie, potem czyta polecenia
+with open(fake, "w") as fh:          # like bluetoothctl: prints the controllers a moment after the start, then reads commands
     fh.write(f'#!/bin/sh\necho "$*" >> "{LOG}"\n[ "$1" = disconnect ] && exit 0\nsleep 0.2\n'
              f'printf "Agent registered\\n[NEW] Controller 11:22:33:44:55:66 phone\\n'
              f'[NEW] Controller {DONGLE} dongle [default]\\n"\nexec cat >> "{IN}"\n')
@@ -72,25 +72,25 @@ async def t_scan():
     assert b.adapter == "/org/bluez/hci1" and b.adapter_addr == DONGLE and b.adapter_count == 2
     b.on_command(BT_SCAN_START, 1, bytes(6)); await settle()
     assert b.scanning() and b.last == (BT_SCAN_START, BTR_OK, b"")
-    assert open(LOG).read().split() == [], "bez 'scan on' w argumentach - skanowałby domyślny kontroler (hci0)"
+    assert open(LOG).read().split() == [], "no 'scan on' in the arguments - it would scan with the default controller (hci0)"
     assert open(IN).read().splitlines() == [f"select {DONGLE}", "scan on"], open(IN).read()
-    await settle(1.2)                                   # bluetoothctl interaktywny nie zna --timeout - limit nasz
-    assert not b.scanning() and b.scan is None, "auto-stop po czasie także w trybie interaktywnym"
+    await settle(1.2)                                   # interactive bluetoothctl does not know --timeout - the limit is ours
+    assert not b.scanning() and b.scan is None, "timed auto-stop in interactive mode too"
 
-    one = json.loads(objects())                         # jeden kontroler: jak dotąd (--timeout N scan on)
+    one = json.loads(objects())                         # one controller: as before (--timeout N scan on)
     del one["data"][0]["/org/bluez/hci0"]
     open(LOG, "w").close()
     b = SB.Bluetooth(run=Bus(json.dumps(one)), emit=lambda *a: None)
     b.on_command(BT_SCAN_START, 5, bytes(6)); await settle(0.3)
     assert open(LOG).read().split() == ["--timeout", "5", "scan", "on"]
     b.kill_scan(); await settle(0.1)
-    ok("skan przy dwóch kontrolerach: 'select <dongle>' + 'scan on' po wypisaniu kontrolera, limit czasu; "
-       "jeden kontroler - bez zmian")
+    ok("scan with two controllers: 'select <dongle>' + 'scan on' after the controller is printed, time limit; "
+       "one controller - unchanged")
 
 asyncio.run(t_scan())
 
 
-# ---------- wyłączenie pada przez D-Bus na kontrolerze, z którym jest połączony ----------
+# ---------- powering the pad off over D-Bus on the controller it is connected to ----------
 class C:
     idx, key, powering_off = 0, PAD, 0.0
     is_bluetooth = staticmethod(lambda: True)
@@ -103,11 +103,11 @@ async def t_power():
     await ctl.power_off(C(), "test")
     dis = [c for c in bus.calls if "Disconnect" in c]
     assert dis and dis[0][2] == SB.dev_path("/org/bluez/hci1", PAD), bus.calls
-    assert open(LOG).read() == "", "bez bluetoothctl (szukałby pada na hci0)"
+    assert open(LOG).read() == "", "no bluetoothctl (it would look for the pad on hci0)"
 
     old = os.environ["PATH"]; os.environ["PATH"] = BIN + os.pathsep + old
     try:
-        bus = Bus(objects(connected_on=""))             # pad nigdzie nie połączony -> zapas: bluetoothctl
+        bus = Bus(objects(connected_on=""))             # pad not connected anywhere -> fallback: bluetoothctl
         ctl.sender_bt.bt = SB.Bluetooth(run=bus, emit=lambda *a: None)
         await ctl.power_off(C(), "test")
         assert not [c for c in bus.calls if "Disconnect" in c] and f"disconnect {PAD}" in open(LOG).read()
@@ -117,7 +117,7 @@ async def t_power():
         assert f"disconnect {PAD}" in open(LOG).read()
     finally:
         os.environ["PATH"] = old
-    ok("wyłączenie pada: Disconnect przez D-Bus na kontrolerze z połączeniem (dongle), zapas bluetoothctl")
+    ok("pad power-off: Disconnect over D-Bus on the controller with the connection (dongle), bluetoothctl as fallback")
 
 asyncio.run(t_power())
-print("HUNT 15 (NADAJNIK) OK")
+print("HUNT 15 (SENDER) OK")

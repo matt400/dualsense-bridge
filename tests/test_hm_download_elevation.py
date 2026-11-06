@@ -1,6 +1,6 @@
-"""Receiver: regresje z jedenastego przeglądu - pobieranie HIDMaestro jednym zapytaniem na plik (zamiast setek po 64 KiB),
-uruchamianie jako administrator (znacznik w folderze tymczasowym, druga kopia bez okna UAC, blokada administratora
-widziana z procesu bez uprawnień), zadania autostartu z własnymi argumentami.
+"""Receiver: regressions from the eleventh review - HIDMaestro download with one request per file (instead of hundreds of 64 KiB),
+running as administrator (a marker in the temp folder, a second copy without the UAC prompt, the administrator lock
+seen from an unprivileged process), autostart tasks with their own arguments.
     python3 tests/test_hm_download_elevation.py receiver"""
 import io, json, os, sys, tempfile, time, types, zipfile
 sys.path.insert(0, os.path.dirname(__file__))
@@ -13,7 +13,7 @@ import rx_winapi
 from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 
-# ---------- 1. HIDMaestro: każdy potrzebny plik zipa jednym zapytaniem Range ----------
+# ---------- HIDMaestro: every needed zip file with one Range request ----------
 def make_zip():
     b = io.BytesIO()
     with zipfile.ZipFile(b, "w", zipfile.ZIP_DEFLATED) as z:
@@ -41,7 +41,7 @@ def opener(url, headers=None, timeout=0):
     rng = (headers or {}).get("Range")
     ranges.append(rng)
     a, b = map(int, rng[6:].split("-"))
-    if ignore_range[0] and b - a > 100_000:    # serwer / proxy, który na pobranie wpisu oddaje cały plik zamiast zakresu
+    if ignore_range[0] and b - a > 100_000:    # a server / proxy that answers an entry download with the whole file instead of the range
         return Resp(ZIP, 200, {}, url)
     return Resp(ZIP[a:b + 1], 206, {"Content-Range": f"bytes {a}-{b}/{len(ZIP)}"}, url)
 
@@ -53,34 +53,34 @@ names = sorted(os.listdir(folder))
 check(names == sorted([U.DLL, *U.DEPS]), f"pliki: {names}")
 check(open(os.path.join(folder, U.DLL), "rb").read() == zipfile.ZipFile(io.BytesIO(ZIP)).read("HIDMaestro.Core.dll"),
       "DLL bajt w bajt")
-# 3 pliki po ~0.3-1.5 MB: wcześniej ~45 zapytań po 64 KiB (w prawdziwym zipie ~900), teraz zapytanie na plik + katalog zipa
-check(len(ranges) <= 8, f"zapytań HTTP: {len(ranges)} (jedno na plik, nie na 64 KiB)")
-check(fetched < len(ZIP) * 0.6, f"bez big.bin: pobrano {fetched} z {len(ZIP)} B")
+# 3 files of ~0.3-1.5 MB: ~45 requests of 64 KiB before (~900 in the real zip), now a request per file + the zip directory
+check(len(ranges) <= 8, f"HTTP requests: {len(ranges)} (one per file, not per 64 KiB)")
+check(fetched < len(ZIP) * 0.6, f"without big.bin: downloaded {fetched} of {len(ZIP)} B")
 
 ranges.clear()
 ignore_range[0] = True
 try:
     U.install("v2.0.1", "https://example/zip", opener)
-    check(False, "serwer bez Range: błąd")
+    check(False, "server without Range: error")
 except OSError as e:
     check("Range" in str(e) and not os.path.exists(os.path.join(ROOT, "v2.0.1")),
-          f"odpowiedź 200 na zapytanie z Range = błąd, a nie bajty z początku pliku jako wpis: {e}")
+          f"a 200 reply to a Range request = an error, not the start of the file as the entry: {e}")
 ignore_range[0] = False
 
 U.status = U.Status(version="v2.0.0")
 real_load, real_latest = U._load_state, U.latest_release
-U._load_state = lambda: (time.time() + 10 * 24 * 3600, "v2.0.0")   # zegar cofnięty: ostatnie sprawdzenie "w przyszłości"
+U._load_state = lambda: (time.time() + 10 * 24 * 3600, "v2.0.0")   # clock set back: the last check is "in the future"
 asked = []
 U.latest_release = lambda: asked.append(1) or ("v2.0.0", "https://example/zip", 0.0)
 try:
     U.check()
-    check(asked, "zegar cofnięty: sprawdzenie nie jest wstrzymane do daty z przyszłości")
+    check(asked, "clock set back: the check is not suspended until a date in the future")
 finally:
     U._load_state, U.latest_release = real_load, real_latest
 
 
-# ---------- 2. jedna instancja: blokada receivera-administratora widziana z procesu bez uprawnień ----------
-class Fn:                                                         # funkcja DLL: wywołanie + argtypes / restype
+# ---------- single instance: the lock of an administrator receiver seen from an unprivileged process ----------
+class Fn:                                                         # DLL function: call + argtypes / restype
     def __init__(self, v): self.v = v
     def __call__(self, *a): return self.v
 
@@ -94,14 +94,14 @@ try:
     rx_winapi.ctypes.WinDLL = lambda *a, **k: FakeK(create=0)
     try:
         rx_winapi.ensure_single_instance()
-        check(False, "blokada administratora: wyjście")
+        check(False, "administrator lock: exit")
     except SystemExit as e:
-        check(e.code == 1, "CreateMutex = NULL + ERROR_ACCESS_DENIED = receiver już działa")
-    check(rx_winapi.instance_running(), "OpenMutex bez dostępu = blokada istnieje")
+        check(e.code == 1, "CreateMutex = NULL + ERROR_ACCESS_DENIED = the receiver is already running")
+    check(rx_winapi.instance_running(), "OpenMutex without access = the lock exists")
     rx_winapi.ctypes.get_last_error = lambda: 2            # ERROR_FILE_NOT_FOUND
-    check(not rx_winapi.instance_running(), "brak blokady = nic nie działa")
+    check(not rx_winapi.instance_running(), "no lock = nothing is running")
     rx_winapi.ctypes.WinDLL = lambda *a, **k: FakeK(open_=1234)
-    check(rx_winapi.instance_running(), "blokada otwarta = działa")
+    check(rx_winapi.instance_running(), "lock opened = running")
 finally:
     for name, v in (("WinDLL", real_dll), ("get_last_error", real_err)):
         if v is None:
@@ -110,9 +110,9 @@ finally:
             setattr(rx_winapi.ctypes, name, v)
 
 
-# ---------- 3. uruchamianie jako administrator ----------
+# ---------- running as administrator ----------
 import receiver_controller as RC
-check(RC._guard_path().startswith(tempfile.gettempdir()), "znacznik w folderze tymczasowym (folder receivera bywa tylko do odczytu)")
+check(RC._guard_path().startswith(tempfile.gettempdir()), "marker in the temp folder (the receiver folder can be read-only)")
 real = (RC.os.name, rx_winapi.is_admin, rx_winapi.relaunch_admin, rx_winapi.instance_running, sys.argv, A.run_admin_task,
         RC._guard_path)
 guard = os.path.join(ROOT, "guard")
@@ -126,31 +126,31 @@ try:
     A.run_admin_task = lambda args=None: task.append(args) or True
     rx_winapi.instance_running = lambda: True
     RC.elevate()
-    check(not uac and not task, "receiver już działa: druga kopia bez okna UAC (i tak zaraz wyjdzie)")
+    check(not uac and not task, "receiver already running: the second copy without the UAC prompt (it exits right away anyway)")
     rx_winapi.instance_running = lambda: False
     try:
         RC.elevate()
     except SystemExit:
         pass
-    check(task and "--pads 1" in task[-1] and not uac, f"zadanie dostaje argumenty tego startu do porównania: {task}")
-    check(os.path.exists(guard), "znacznik próby zapisany")
+    check(task and "--pads 1" in task[-1] and not uac, f"the task gets this start's arguments to compare: {task}")
+    check(os.path.exists(guard), "attempt marker written")
     rx_winapi.is_admin = lambda: True
     RC.elevate()
-    check(not os.path.exists(guard), "proces z uprawnieniami: znacznik usunięty - następny start znów bez UAC")
+    check(not os.path.exists(guard), "privileged process: marker removed - the next start is again without UAC")
 finally:
     (RC.os.name, rx_winapi.is_admin, rx_winapi.relaunch_admin, rx_winapi.instance_running, sys.argv, A.run_admin_task,
      RC._guard_path) = real
 
 
-# ---------- 4. zadania autostartu: własne argumenty ----------
+# ---------- autostart tasks: their own arguments ----------
 script = os.path.join(ROOT, "receiver_controller.py")
 open(script, "w").close()
 task_args = rx_config.autostart_command(["--config", os.path.join(ROOT, "my.toml")])[1].replace(
     os.path.abspath(sys.argv[0]), script)
 task_xml = A.task_xml(r"C:\Py\pythonw.exe", task_args, ROOT, r"PC\Ala")
 check(A.task_action(task_xml) == (r"C:\Py\pythonw.exe", task_args), f"komenda z XML zadania: {A.task_action(task_xml)}")
-check(A.task_action(task_xml.replace(script, script + "x")) is None, "skrypt nie istnieje (np. przekłamane znaki): None")
-check(A.task_action("<Task/>") is None, "XML bez akcji: None")
+check(A.task_action(task_xml.replace(script, script + "x")) is None, "the script does not exist (e.g. mangled characters): None")
+check(A.task_action("<Task/>") is None, "XML without an action: None")
 
 written, runs = [], []
 def schtasks(xml_):
@@ -163,23 +163,23 @@ def schtasks(xml_):
         return types.SimpleNamespace(returncode=0, stdout="", stderr="")
     return run
 
-A._schtasks = schtasks(task_xml)                                  # autostart z --config, zwykłe uprawnienia
+A._schtasks = schtasks(task_xml)                                  # autostart with --config, normal privileges
 check(A.elevate(r"C:\Py\pythonw.exe", f'"{script}"') and A.HIGHEST in written[-1]
       and A.task_action(written[-1]) == (r"C:\Py\pythonw.exe", task_args),
-      "podniesienie autostartu zostawia jego komendę (--config), a nie argumenty ręcznego startu")
+      "elevating the autostart keeps its command (--config), not the arguments of a manual start")
 A._schtasks = schtasks(task_xml.replace(script, script + "x"))
 check(A.elevate(r"C:\Py\pythonw.exe", f'"{script}"') and f'"{script}"' in written[-1],
-      "komendy zadania nie da się odczytać: jak dotąd - komenda tego procesu")
+      "the task command cannot be read: as before - this process's command")
 
 admin_xml = A.task_xml(r"C:\Py\pythonw.exe", task_args, ROOT, r"PC\Ala", elevated=True, logon=False)
 A._schtasks = schtasks(admin_xml)
 runs.clear()
-check(A.run_admin_task(task_args) and runs[-1][0] == "/run", "te same argumenty: start przez zadanie")
+check(A.run_admin_task(task_args) and runs[-1][0] == "/run", "the same arguments: start through the task")
 runs.clear()
 check(not A.run_admin_task(f'"{script}" --pads 1') and runs[-1][0] == "/query",
-      "inne argumenty: bez zadania (okno UAC z argumentami tego startu)")
-check(A.run_admin_task() and runs[-1][0] == "/run", "bez argumentów do porównania: jak dotąd")
+      "other arguments: no task (UAC prompt with this start's arguments)")
+check(A.run_admin_task() and runs[-1][0] == "/run", "no arguments to compare: as before")
 
-print("HUNT11", "OK" if not fails else f"BŁĘDY: {len(fails)}")
+print("HUNT11", "OK" if not fails else f"FAILURES: {len(fails)}")
 if fails:
     sys.exit(1)

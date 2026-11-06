@@ -13,7 +13,7 @@ N.init()
 port = N.in_sock.getsockname()[1]
 threading.Thread(target=N.net_loop, daemon=True).start()
 threading.Thread(target=F.feedback_thread, args=(N.send_feedback,), daemon=True).start()
-# --- nadajnik ---
+# --- sender ---
 import sender_config; sender_config.init(["127.0.0.1"])
 from sender_config import C as TC
 TC.PORT = port
@@ -23,7 +23,7 @@ net.init()
 got = {"cmd": [], "fb": []}
 net.on_command = lambda i, cmd, arg: got["cmd"].append((i, cmd))
 net.on_feedback = lambda i, v: got["fb"].append((i, v))
-# Wake-on-LAN i zdarzenia: ustawienia z okna receivera idą do nadajnika (scfg), zdarzenia wracają do dziennika
+# Wake-on-LAN and events: settings from the receiver window go to the sender (scfg), events come back to the log
 import rx_events as ev, rx_settings as R, sender_events, sender_wol
 from proto import E_WOL
 TC.WOL_FILE = os.path.join(TMP, "wol_e2e.json")
@@ -39,31 +39,31 @@ async def main():
     c.send_ident(); c.pad[0] = 255; c.send_state(True)
     pinger = asyncio.create_task(net.pinger())
     info = asyncio.create_task(ctl.info_loop())
-    hb = asyncio.create_task(streams.heartbeat())       # jak w prawdziwym nadajniku: bez niego receiver po 0.5 s resetuje slot
+    hb = asyncio.create_task(streams.heartbeat())       # as in the real sender: without it the receiver resets the slot after 0.5 s
     await asyncio.sleep(1.3)
-    print("   stan:", S.alive[0], S.pad_id[0], S.states[0]["lx"])
+    print("   state:", S.alive[0], S.pad_id[0], S.states[0]["lx"])
     assert S.alive[0] and S.pad_id[0] == "aa:bb:cc:dd:ee:ff" and S.states[0]["lx"] == 255
     assert S.info[0] is not None and S.info[0][0] is not None and S.info[0][0] < 50, S.info[0]
     assert sender_wol.cfg.mac == "aa:bb:cc:dd:ee:ff" and sender_wol.cfg.button == 2 and sender_events.enabled, sender_wol.cfg
-    assert os.path.exists(TC.WOL_FILE), "nadajnik zapisał ustawienia z receivera"
+    assert os.path.exists(TC.WOL_FILE), "the sender stored the settings from the receiver"
     sender_events.info(E_WOL, 0, "aa:bb:cc:dd:ee:ff")
     await asyncio.sleep(0.6)
     sev = [e for e in ev.since(0) if e.sender]
     assert len(sev) == 1 and "aa:bb:cc:dd:ee:ff" in sev[0].text, [e.text for e in ev.since(0)]
-    assert any(not e.sender and "online" in e.text.lower() for e in ev.since(0)), "nadajnik online w dzienniku"
+    assert any(not e.sender and "online" in e.text.lower() for e in ev.since(0)), "sender online in the log"
     N.send_cmd(0, CMD_POWER_OFF)
     F.pulse(0, "profile")
     await asyncio.sleep(0.5)
-    assert got["cmd"] == [(0, CMD_POWER_OFF)], got["cmd"]          # 3 kopie tego samego pakietu - nadajnik wykonuje raz
+    assert got["cmd"] == [(0, CMD_POWER_OFF)], got["cmd"]          # 3 copies of the same packet - the sender acts once
     fbv = [v for _, v in got["fb"]]
-    assert any(v[1] == 190 for v in fbv) and fbv[-1][:2] == (0, 0), fbv   # przed pulsem: kolor domyślny lightbara
+    assert any(v[1] == 190 for v in fbv) and fbv[-1][:2] == (0, 0), fbv   # before the pulse: the default lightbar colour
     hb.cancel()
     for _ in range(3):
         net.emit(8, 0)                                                # bye
     await asyncio.sleep(0.2)
     assert not S.alive[0] and not S.want[0].is_set()
     pinger.cancel(); info.cancel()
-    print(f"OK   end-to-end UDP: stan, ident -> profil, ping {S.info[0] and S.info[0][0]} ms, info, scfg -> wol.json, "
-          f"zdarzenie nadajnika w dzienniku, wyłączenie (3 kopie, wykonane raz), potwierdzenie {fbv[0]} -> {fbv[-1]}, bye")
+    print(f"OK   end-to-end UDP: state, ident -> profile, ping {S.info[0] and S.info[0][0]} ms, info, scfg -> wol.json, "
+          f"sender event in the log, power-off (3 copies, done once), confirmation {fbv[0]} -> {fbv[-1]}, bye")
 asyncio.run(main())
 print("E2E OK")

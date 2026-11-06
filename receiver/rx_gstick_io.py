@@ -1,6 +1,6 @@
 """Receiver: gyro -> analog stick, the runtime part - a 250 Hz thread, the sink to the virtual pad, per-pad (MAC) storage.
 
-  Store        gyrostick.json obok remap.json: {"version": 1, "pads": {"<mac albo slotN>": {...Config...}}}
+  Store        gyrostick.json next to remap.json: {"version": 1, "pads": {"<mac or slotN>": {...Config...}}}
   StateSink    sink: writes the engine output into the slot state (s["gs"]); rx_state.recompute applies it after the remap
   Runner       one Engine per slot; the thread reads acc from rx_state, steps the engine and calls the sink only on a change
   runner       the instance used by the window (rx_qt_gstick) and receiver_controller (starts the thread)
@@ -122,7 +122,7 @@ class Runner:
         self.pulse = pulse or F.pulse           # (slot, kind, force) -> a short rumble / colour pulse on the pad
         self.engines: list[Engine] = []
         self.wake = threading.Event()
-        self.cal_msg: list[bool | None] = []                   # ostatni wynik kalibracji slotu: None / True / False (okno)
+        self.cal_msg: list[bool | None] = []                   # the slot's last calibration result: None / True / False (window)
         self._driving: list[bool] = []                  # the sink currently holds our output
         self._keys: list[str | None] = []                     # the pad key the engine's settings belong to
         self._fb_t: list[float] = []                     # when the last feedback pulse of the slot was sent
@@ -137,7 +137,7 @@ class Runner:
         self._keys = [None] * n
         self._fb_t = [0.0] * n
 
-    # ---------- dla okna ----------
+    # ---------- for the window ----------
     def key(self, slot: int) -> str:
         """The store key of the slot's pad (its id, or "slotN")."""
         return S.store.key_for(S.pad_id[slot], slot)
@@ -262,7 +262,7 @@ class Runner:
         while not S.stop.is_set():
             busy = False
             now = time.monotonic()
-            if S.game != self._game:                  # zmiana okna na pierwszym planie = bezpieczne zerowanie
+            if S.game != self._game:                  # a foreground window change = a safe reset
                 self._game = S.game
                 for i, e in enumerate(self.engines):
                     if e.cfg.focus_release:

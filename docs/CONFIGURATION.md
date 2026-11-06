@@ -111,7 +111,7 @@ fork or an SSH clone: the sender service runs as root and doesn't have your SSH 
 ```
 cd dualsense-bridge/sender
 ./setup-update-key.sh      # creates a read-only key in .git/ and prints what to paste on GitHub
-./setup-update-key.sh      # after adding the key: checks access (prints "OK - nadajnik ma dostęp" = the sender has access)
+./setup-update-key.sh      # after adding the key: checks access (prints "OK - the sender can reach ..." when it has access)
 ```
 
 The reason a sender update failed is shown in the window on the PC (e.g. `Permission denied (publickey)`).

@@ -32,7 +32,7 @@ git(tmp, "clone", "-q", origin, work)
 
 r = U.update(work, pip=False)
 assert r.ok and not r.changed and "najnowszą" in r.text, r
-ok("brak zmian: 'Masz najnowszą wersję', bez restartu")
+ok("no changes: 'Masz najnowszą wersję', no restart")
 
 commit(origin, "receiver/rx_x.py", "a = 2\n", "fix")
 commit(origin, "receiver/rx_y.py", "b = 1\n", "feat")
@@ -48,26 +48,26 @@ r = U.update(work)
 assert r.changed and called == [work] and "biblioteki" in r.text, r
 commit(origin, "receiver/rx_x.py", "a = 3\n", "no deps")
 called.clear(); U.update(work)
-assert not called, "pip tylko przy zmianie requirements.txt"
-ok("zmiana requirements.txt -> pip install, bez zmiany - bez pip")
+assert not called, "pip only when requirements.txt changes"
+ok("requirements.txt changed -> pip install, unchanged - no pip")
 
 commit(origin, "receiver/rx_x.py", "a = 3b\n", "stages")
 stages = []
 r = U.update(work, pip=False, progress=stages.append)
 assert r.changed and stages == [U.PCT_PULL, U.PCT_PULLED, U.PCT_BACKED_UP, U.PCT_INSTALLED], stages
-assert stages == sorted(stages) and stages[-1] < 100, "etapy rosną, 100% dopiero po wyniku nadajnika (okno)"
+assert stages == sorted(stages) and stages[-1] < 100, "the stages grow, 100% only after the sender result (window)"
 stages.clear(); r = U.update(work, pip=False, progress=stages.append)
-assert not r.changed and stages == [U.PCT_PULL, U.PCT_PULLED], "bez zmian: tylko etapy pobierania"
-ok("postęp aktualizacji: etapy pobranie -> kopia -> pip, rosnące, bez zmian tylko pobranie")
+assert not r.changed and stages == [U.PCT_PULL, U.PCT_PULLED], "no changes: only the fetch stages"
+ok("update progress: stages fetch -> backup -> pip, growing, without changes only the fetch")
 
 with open(os.path.join(work, "remap.json"), "w") as f:
-    f.write("{}")                           # plik użytkownika (nieśledzony) nie przeszkadza
+    f.write("{}")                           # a user file (untracked) does not get in the way
 commit(work, "receiver/rx_x.py", "lokalnie\n", "local")
 commit(origin, "receiver/rx_x.py", "a = 4\n", "upstream")
 r = U.update(work, pip=False)
 assert not r.ok and not r.changed and "git pull" in r.text, r
-assert open(os.path.join(work, "receiver/rx_x.py")).read() == "lokalnie\n", "nic nie nadpisane ani scalone"
-ok("lokalne zmiany rozjechane z GitHubem: błąd gita, pliki nietknięte")
+assert open(os.path.join(work, "receiver/rx_x.py")).read() == "lokalnie\n", "nothing overwritten or merged"
+ok("local changes diverged from GitHub: git error, files untouched")
 
 r = U.update(tmp, pip=False)
 assert not r.ok and "ZIP" in r.text
@@ -75,19 +75,19 @@ U.gitupdate.find_git, real = (lambda: None), U.gitupdate.find_git
 r = U.update(work, pip=False)
 U.gitupdate.find_git = real
 assert not r.ok and "Git for Windows" in r.text
-assert U.ROOT == os.path.dirname(os.path.abspath(sys.argv[1])), "repozytorium = folder nad receiver/"
-ok("folder bez .git (ZIP) i brak programu git: czytelny komunikat")
+assert U.ROOT == os.path.dirname(os.path.abspath(sys.argv[1])), "repository = the folder above receiver/"
+ok("a folder without .git (ZIP) and no git program: a clear message")
 
 from proto import UPD_FAILED, UPD_NO_CHANGE
 b = ("a1b2c3d", 0, UPD_FAILED)
-assert "szczegóły w logu" in U.sender_text(b), "starszy nadajnik bez powodu: odesłanie do logu"
+assert "szczegóły w logu" in U.sender_text(b), "older sender without a reason: pointed to the log"
 t = U.sender_text(b, "git@github.com: Permission denied (publickey).")
 assert "Permission denied (publickey)" in t and "setup-update-key.sh" in t, t
 t = U.sender_text(b, "fatal: unable to access: Could not resolve host: github.com")
-assert "Could not resolve host" in t and "setup-update-key.sh" not in t, "błąd sieci - bez podpowiedzi o kluczu"
-assert "najnowsza" in U.sender_text(("a1b2c3d", 0, UPD_NO_CHANGE), "stary powód"), "powód tylko przy błędzie"
-ok("wynik aktualizacji nadajnika: powód błędu z telefonu w oknie, podpowiedź klucza tylko przy braku dostępu")
-# ---------- sprawdzanie GitHuba w tle: ile zmian czeka (bez pobierania kodu) ----------
+assert "Could not resolve host" in t and "setup-update-key.sh" not in t, "network error - no hint about the key"
+assert "najnowsza" in U.sender_text(("a1b2c3d", 0, UPD_NO_CHANGE), "stary powód"), "reason only on an error"
+ok("sender update result: the error reason from the phone in the window, the key hint only when access is missing")
+# ---------- background GitHub check: how many changes wait (without fetching the code) ----------
 chk = os.path.join(tmp, "chk")
 git(tmp, "clone", "-q", origin, chk)
 a = U.check_available(chk)
@@ -97,15 +97,15 @@ commit(origin, "receiver/rx_y.py", "b = 2\n", "Druga nowa: tryb X")
 before = open(os.path.join(chk, "receiver/rx_x.py")).read()
 a = U.check_available(chk)
 assert a.behind == 2 and a.subject == "Druga nowa: tryb X" and len(a.commit) == 7, a
-assert open(os.path.join(chk, "receiver/rx_x.py")).read() == before, "sprawdzenie nie zmienia plików"
+assert open(os.path.join(chk, "receiver/rx_x.py")).read() == before, "the check does not change files"
 git(chk, "checkout", "-q", "--detach")
-assert U.check_available(chk) is None, "bez gałęzi śledzącej -> brak informacji (nie błąd)"
-assert U.check_available(tmp) is None, "nie klon -> brak informacji"
+assert U.check_available(chk) is None, "no tracking branch -> no info (not an error)"
+assert U.check_available(tmp) is None, "not a clone -> no info"
 git(chk, "remote", "set-url", "origin", os.path.join(tmp, "nie-ma"))
 assert U.check_available(chk) is None, "brak sieci / repo -> brak informacji"
-ok("sprawdzanie GitHuba: liczba zmian i tytuł najnowszej, bez zmiany plików; błędy -> brak informacji")
+ok("GitHub check: number of changes and the title of the newest, no file changes; errors -> no info")
 
-# ---------- kod pobrany wcześniej, ale działa stary (nieudany restart / pull z konsoli) ----------
+# ---------- code fetched earlier, but the old one runs (failed restart / pull from the console) ----------
 pre = os.path.join(tmp, "pre")
 git(tmp, "clone", "-q", origin, pre)
 start = git(pre, "rev-parse", "HEAD").strip()
@@ -116,15 +116,15 @@ U.running, real_running = (lambda root=None: start[:7]), U.running
 called.clear()
 r = U.update(pre)
 assert r.ok and r.changed and r.old == start and "(2 " in r.text, r
-assert called == [pre], "requirements.txt zmieniony od DZIAŁAJĄCEJ wersji -> pip"
+assert called == [pre], "requirements.txt changed since the RUNNING version -> pip"
 U.running = lambda root=None: git(pre, "rev-parse", "HEAD").strip()[:7]
 r = U.update(pre, pip=False)
 assert r.ok and not r.changed and "najnowszą" in r.text, r
 U.running = lambda root=None: start[:7]
 a = U.check_available(pre)
-assert a.behind == 2, ("dostępna aktualizacja liczona od działającej wersji", a)
+assert a.behind == 2, ("available update counted from the running version", a)
 U.running = real_running
-ok("kod już pobrany, działa starszy: restart zamiast 'Masz najnowszą wersję'; plakietka liczy od działającej wersji")
+ok("code already fetched, an older one runs: restart instead of 'Masz najnowszą wersję'; the badge counts from the running version")
 
 calls = []
 import gitupdate
@@ -135,5 +135,5 @@ U.update(work, pip=False)
 gitupdate.git = real_git
 pull = [c for c in calls if c[0][:1] == ("pull",)]
 assert pull and pull[0][1] == U.QUIET_ENV and pull[0][2] == U.PULL_TIMEOUT_S, pull
-ok("git pull bez okien logowania i z limitem czasu (przycisk nie wisi na 'Aktualizuję…')")
+ok("git pull without login windows and with a time limit (the button does not hang on 'Aktualizuję…')")
 print("UPDATE OK")

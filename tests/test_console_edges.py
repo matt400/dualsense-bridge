@@ -8,24 +8,24 @@ import rx_console
 from chk import check, fails, wait_for                                  # noqa: E402  (shared helper, tests/chk.py)
 
 
-# ---------- tryb konsoli: restart w trakcie "Przetestuj" ----------
+# ---------- console mode: a restart during "Przetestuj" ----------
 saved_ctl = rx_console.ctl
 c = rx_console.Console(rx_console.ConsoleConfig())
 rx_console.ctl = c
 c.on, c._revert = True, (time.monotonic() + 10, c.cfg)
-check(not rx_console.is_on(), "test trybu konsoli w toku: restart nie zapamiętuje ON (test sam wraca do OFF)")
+check(not rx_console.is_on(), "console mode test in progress: a restart does not remember ON (the test goes back to OFF by itself)")
 c._revert = None
-check(rx_console.is_on(), "zwykły tryb ON: restart go zachowuje")
+check(rx_console.is_on(), "plain ON mode: a restart keeps it")
 rx_console.ctl = saved_ctl
 
-# ---------- tryb konsoli: pusta lista dozwolonych programów = bez blokady ----------
+# ---------- console mode: an empty allow list = no block ----------
 cc = rx_console.Console(rx_console.ConsoleConfig(allowed_apps=()))
 FG[0] = "explorer.exe"
-check(cc.blocked_by() is None, "pusta lista dozwolonych: pulpit nie blokuje (wcześniej blokowało wszystko)")
+check(cc.blocked_by() is None, "empty allow list: the desktop does not block (it blocked everything before)")
 FG[0] = "eldenring.exe"
-check(cc.blocked_by() is None, "pusta lista dozwolonych: bez blokady także w grze")
+check(cc.blocked_by() is None, "empty allow list: no block in a game either")
 cc = rx_console.Console(rx_console.ConsoleConfig())
-check(cc.blocked_by() == "eldenring.exe", "domyślna lista: gra blokuje")
+check(cc.blocked_by() == "eldenring.exe", "default list: a game blocks")
 FG[0] = None
 
 sys.exit(1 if fails else 0)

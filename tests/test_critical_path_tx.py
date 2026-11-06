@@ -1,4 +1,4 @@
-"""Reprodukcje bugów ścieżki krytycznej nadajnika (przegląd 2026-10-16) - każdy test przechodzi PO poprawkach."""
+"""Reproductions of sender critical-path bugs (review 2026-10-16) - every test passes AFTER the fixes."""
 import asyncio, sys
 sys.path.insert(0, sys.argv[1])
 sys.path.insert(1, sys.argv[1] + "/../common")
@@ -16,11 +16,11 @@ from fakedev import AbsInfo as AI
 from fakedev import Dev as TouchDev
 from fakedev import frame as abs_
 
-# ---- 1. nowy palec w tym samym x albo y co poprzedni: jądro nie wysyła tej osi (wartość slotu bez zmian) ----
-# jak hid-playstation + rdzeń input: drugi dotyk przy krawędzi (y = 0) ma tylko ABS_MT_POSITION_X
+# ---- a new finger at the same x or y as the previous one: the kernel does not send that axis (slot value unchanged) ----
+# like hid-playstation + the input core: a second touch at the edge (y = 0) has only ABS_MT_POSITION_X
 evs = (abs_(0, (ec.ABS_MT_SLOT, 0), (ec.ABS_MT_TRACKING_ID, 1), (ec.ABS_MT_POSITION_X, 900), (ec.ABS_MT_POSITION_Y, 0))
        + abs_(0.05, (ec.ABS_MT_TRACKING_ID, -1))
-       + abs_(0.05, (ec.ABS_MT_TRACKING_ID, 2), (ec.ABS_MT_POSITION_X, 300))       # y = 0 jak poprzednio - pominięte
+       + abs_(0.05, (ec.ABS_MT_TRACKING_ID, 2), (ec.ABS_MT_POSITION_X, 300))       # y = 0 as before - skipped
        + abs_(0.05, (ec.ABS_MT_TRACKING_ID, -1)))
 async def touch_run():
     c = Ctrl(0, "aa", None, None, TouchDev(evs))
@@ -28,11 +28,11 @@ async def touch_run():
     await asyncio.sleep(0.03)
 asyncio.run(touch_run())
 taps = {v[2] >> 4 for t, v in out if t == T_MOUSE and v[2] & 1}
-check(len(taps) == 2, f"tap drugim palcem w tym samym y co pierwszy (krawędź) nie ginie: numery tapów {sorted(taps)}")
+check(len(taps) == 2, f"a tap with a second finger at the same y as the first (edge) is not lost: tap numbers {sorted(taps)}")
 touch_on = [v for t, v in out if t == T_TOUCH and v[0] == 1]
 check(any(v[2] == 300 and v[3] == 0 for v in touch_on), f"dotyk DS4 drugiego palca (300, 0) dochodzi: {touch_on}")
 
-# ---- 2. SYN_DROPPED w trakcie kombinacji Wake-on-LAN: puszczenie zgubione, stan z jądra -> odliczanie anulowane ----
+# ---- SYN_DROPPED during the Wake-on-LAN combo: the release is lost, state from the kernel -> countdown cancelled ----
 PS, OPT = KEY_BIT[316], KEY_BIT[315]
 wol.cfg = wol.WolCfg(enabled=True, button=PAD_KEYS.index(315), hold_ms=300)
 fired = []
@@ -48,7 +48,7 @@ class PadDev:
         for dt, e in s.evs:
             if dt: await asyncio.sleep(dt)
             if e is None:
-                s.keys = []                  # puszczenie przycisków w zgubionych zdarzeniach (jądro już je zna)
+                s.keys = []                  # buttons released in the lost events (the kernel already knows)
                 continue
             yield e
 pad_evs = [(0, Ev(ec.EV_KEY, 316, 1)), (0, Ev(ec.EV_KEY, 315, 1)), (0, SYN),
@@ -57,11 +57,11 @@ async def pad_run():
     c = Ctrl(0, "aa:bb:cc:dd:ee:ff", PadDev(pad_evs), None, None)
     c.pad_dev.keys = [316, 315]
     await st.stream_pad(c)
-    await asyncio.sleep(0.4)                 # dłużej niż hold_ms
+    await asyncio.sleep(0.4)                 # longer than hold_ms
     return c
 c = asyncio.run(pad_run())
-check(not fired and c.wol_timer is None, f"kombinacja puszczona w trakcie SYN_DROPPED nie wysyła Wake-on-LAN: {fired}")
-check(c.mask == 0, "stan przycisków odtworzony z jądra po SYN_DROPPED")
+check(not fired and c.wol_timer is None, f"a combo released during SYN_DROPPED does not send Wake-on-LAN: {fired}")
+check(c.mask == 0, "button state restored from the kernel after SYN_DROPPED")
 
-print("WSZYSTKO OK" if not fails else f"FAIL: {fails}")
+print("ALL OK" if not fails else f"FAIL: {fails}")
 sys.exit(1 if fails else 0)

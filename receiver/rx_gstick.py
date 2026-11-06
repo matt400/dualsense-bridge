@@ -1,7 +1,7 @@
 """Receiver: gyro -> analog stick - the pad tilt (accelerometer) becomes a stick deflection.
 
 Pure logic, no Qt and no rx_state (tested on Linux, the 250 Hz thread is in rx_gstick_io, the window in rx_qt_gstick):
-  Config     ustawienia jednego pada (zapis per MAC: rx_gstick_io, gyrostick.json obok remap.json)
+  Config     the settings of one pad (stored per MAC: rx_gstick_io, gyrostick.json next to remap.json)
   tilt_basis, angles   gravity vector -> (pitch, roll) in degrees relative to the neutral center
   Engine     state machine: clutch, auto-sleep, deadzone with "snap-back", EMA filter, curve, sprint, delta threshold
   Sink       virtual pad abstraction layer (StateSink in rx_gstick_io; ViGEm / vJoy / uinput = further sinks)
@@ -28,7 +28,7 @@ Vec2: TypeAlias = tuple[float, float]
 # what the window shows: (state, zone, raw °, filtered °, output -1..1, mag 0..1, sprint, driving)
 Snapshot: TypeAlias = tuple[int, int, Vec2, Vec2, Vec2, float, bool, bool]
 
-# ---------------- ustawienia ----------------
+# ---------------- settings ----------------
 TARGETS = {"left": "Lewa gałka", "right": "Prawa gałka", "dpad": "D-pad", "none": "Brak (tylko podgląd)"}
 CURVES = {"linear": "Liniowa", "cubic": "Wykładnicza (sześcienna)", "aggressive": "Agresywna"}
 FEEDBACKS = {"off": "Wyłączony", "haptic": "Wibracja", "led": "Kolor lightbara", "both": "Wibracja i kolor"}
@@ -213,7 +213,7 @@ def sprint_mask(name: str) -> int:
 
 # ---------------- sink ----------------
 class Sink:
-    """Warstwa abstrakcji wirtualnego pada: silnik zna tylko ten interfejs, nie ViGEm / HIDMaestro / uinput.
+    """Virtual pad abstraction: the engine knows only this interface, not ViGEm / HIDMaestro / uinput.
 
     drive(): the gyro takes over the `target` input ("left" | "right" | "dpad") with x, y in -1..1 (y > 0 = up) and
     holds the `button` (bit mask, 0 = none); release(): the gyro gives the input back (the physical one works again).

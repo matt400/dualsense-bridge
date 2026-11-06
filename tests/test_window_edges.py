@@ -9,11 +9,11 @@ from rx_settings import MouseConfig
 from chk import check, fails, wait_for                                  # noqa: E402  (shared helper, tests/chk.py)
 
 
-# ---------- okno: wyjątek w wątku aktualizacji ----------
+# ---------- window: an exception in the update thread ----------
 try:
     import rx_qt
-except Exception as e:                              # bez PySide6 - pomijamy tylko ten fragment
-    print(f"SKIP aktualizacja z okna ({e!r})")
+except Exception as e:                              # no PySide6 - skip only this part
+    print(f"SKIP update from the window ({e!r})")
 else:
     import rx_update
     out = []
@@ -25,9 +25,9 @@ else:
     finally:
         rx_update.update = real_update
     check(len(out) == 1 and not out[0].ok and not out[0].changed and "git" in out[0].text,
-          "błąd aktualizacji wraca do okna (przycisk nie zostaje na zawsze w 'Aktualizuję…')")
+          "an update error returns to the window (the button does not stay on 'Aktualizuję…' forever)")
 
-# ---------- okno ustawień: suwaki myszy nie obcinają wartości z settings.json ----------
+# ---------- settings window: the mouse sliders do not clamp values from settings.json ----------
 try:
     from PySide6.QtWidgets import QApplication
     app = QApplication.instance() or QApplication([])
@@ -40,9 +40,9 @@ else:
     m = MouseConfig(**hi)
     d._load_mouse(m)
     got = d.collect_settings().mouse
-    check(got == m, f"maksymalne wartości myszy przechodzą przez okno bez zmian: {got}")
+    check(got == m, f"maximum mouse values pass through the window unchanged: {got}")
 
-# ---------- powód błędu aktualizacji nadajnika (pakiet updmsg) trafia do okna ----------
+# ---------- the sender update error reason (updmsg packet) reaches the window ----------
 from proto import T_PING, T_UPDMSG
 pkts = [(N.codec.pack(T_UPDMSG, 255, "Permission denied (publickey) żółw".encode()), ("10.0.0.9", 5005)),
         (N.codec.pack(T_PING, 255, 1), ("10.0.0.9", 5005))]
@@ -61,6 +61,6 @@ N.net_loop()
 S.stop.clear()
 N.in_sock = real_sock
 check(S.sender_update_msg == "Permission denied (publickey) żółw" and S.peer == ("10.0.0.9", 5005),
-      f"pakiet z powodem błędu aktualizacji nadajnika: {S.sender_update_msg!r}")
+      f"packet with the sender update error reason: {S.sender_update_msg!r}")
 
 sys.exit(1 if fails else 0)

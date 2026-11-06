@@ -23,7 +23,7 @@ net.emit = sender_ctrl.net.emit = lambda t, i, *v: out.append((t, v))
 TMP = tempfile.mkdtemp()
 
 
-# ---------- 1. a tap right after SYN_DROPPED still clicks ----------
+# ---------- a tap right after SYN_DROPPED still clicks ----------
 def taps(evs):
     out.clear()
     async def go():

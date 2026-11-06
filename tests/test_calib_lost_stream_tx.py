@@ -20,7 +20,7 @@ net.emit = sender_ctrl.net.emit = lambda t, i, *v: out.append((t, v))
 TMP = tempfile.mkdtemp()
 
 
-# ---------- 2. a calibration request does not outlive a lost motion stream ----------
+# ---------- a calibration request does not outlive a lost motion stream ----------
 c = sender_ctrl.Ctrl(0, "aa:bb:cc:dd:ee:ff", None, None, None)
 c.cal_request = 5
 seen = []

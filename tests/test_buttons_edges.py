@@ -8,25 +8,25 @@ import rx_buttons as B
 from chk import check, fails, wait_for                                  # noqa: E402  (shared helper, tests/chk.py)
 
 
-# ---------- odwrócenie gałki: pełne wychylenie w obie strony ----------
+# ---------- stick inversion: full deflection in both directions ----------
 inv = {"left": {"src": "left", "inv_x": True, "inv_y": True}}
-check(B.apply_sticks(inv, 255, 0, 128, 128)[:2] == (0, 255), "odwrócona gałka: 255 -> 0 i 0 -> 255 (było 255 -> 1)")
-check(B.apply_sticks(inv, 128, 128, 128, 128)[:2] == (128, 128), "odwrócona gałka: środek zostaje środkiem")
-check(all(abs(B._inv(B._inv(v)) - v) <= 1 for v in range(256)), "podwójne odwrócenie wraca do wartości (±1)")
+check(B.apply_sticks(inv, 255, 0, 128, 128)[:2] == (0, 255), "inverted stick: 255 -> 0 and 0 -> 255 (was 255 -> 1)")
+check(B.apply_sticks(inv, 128, 128, 128, 128)[:2] == (128, 128), "inverted stick: the centre stays the centre")
+check(all(abs(B._inv(B._inv(v)) - v) <= 1 for v in range(256)), "double inversion gives the value back (±1)")
 
-# ---------- PS trzymane przy włączaniu pada ----------
+# ---------- PS held while the pad powers on ----------
 PS = BIT[316]
 H.reset(1); N._digital[1] = None
 calls.clear()
 C.PS_HOLD_ACTION = "gamebar"
-state(1, mask=PS)                                   # pierwszy stan po połączeniu: PS trzymane od włączania
+state(1, mask=PS)                                   # first state after connecting: PS held since power-on
 time.sleep(C.PS_HOLD_S + 0.15)
-check(not any(c[0] == "k" for c in calls), "PS trzymane od połączenia nie otwiera Game Bar")
+check(not any(c[0] == "k" for c in calls), "PS held since connecting does not open Game Bar")
 state(1, mask=0); time.sleep(0.02)
-check(not S.states[1]["mask"] & PS, "puszczenie PS z włączania pada nie wysyła PS do gry")
+check(not S.states[1]["mask"] & PS, "releasing PS from the pad power-on does not send PS to the game")
 time.sleep(0.1)
 state(1, mask=PS); state(1, mask=0)
-check(S.states[1]["mask"] & PS, "kolejne krótkie PS działa normalnie (impuls dla gry)")
+check(S.states[1]["mask"] & PS, "the next short PS works normally (a pulse for the game)")
 time.sleep(0.15); state(1)
 
 sys.exit(1 if fails else 0)

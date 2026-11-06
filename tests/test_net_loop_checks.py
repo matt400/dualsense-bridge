@@ -7,7 +7,7 @@ from rxenv import *                                              # noqa
 from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 
-# 1. periodic checks keep running when _receive() yields nothing (junk datagram / timeout)
+# periodic checks keep running when _receive() yields nothing (junk datagram / timeout)
 calls = {"stale": 0}
 orig_recv, orig_stale = N._receive, N.check_stale
 def junk_recv():
@@ -23,7 +23,7 @@ N._receive, N.check_stale = orig_recv, orig_stale
 S.stop.clear()
 check(calls["stale"] >= 2, f"net_loop runs the silence checks without any valid packet ({calls['stale']})")
 
-# 2. a replayed ping from another address does not take the peer over while the sender is alive (only with a key)
+# a replayed ping from another address does not take the peer over while the sender is alive (only with a key)
 real, other = ("10.0.0.1", 5000), ("10.0.0.9", 6000)
 old_key = C.KEY
 try:
@@ -43,7 +43,7 @@ finally:
     C.KEY = old_key
     S.peer = None
 
-# 4. repeat scheduler: one copy now, the rest later, same packet; flush sends the pending ones at once
+# repeat scheduler: one copy now, the rest later, same packet; flush sends the pending ones at once
 sent = []
 orig_peer = N.send_peer
 N.send_peer = lambda pkt: sent.append((time.monotonic(), pkt))
@@ -68,7 +68,7 @@ try:
 finally:
     N.send_peer = orig_peer
 
-# 6. latency summary still filters by window
+# latency summary still filters by window
 import rx_latency as L
 L._samples.clear()
 check(L.summary(0) is None, "latency: no samples -> None")

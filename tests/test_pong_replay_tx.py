@@ -22,11 +22,11 @@ def pong(t0: int) -> bytes:
 
 now = net.clock.ns()
 net._on_pong(pong(now - 5 * net.MAX_RTT_NS))            # a ping recorded 5 s ago and replayed
-check(not net.rtts and not net.recent_rtt and net.pongs == 0, "odpowiedź na stary ping nie trafia do statystyk RTT")
-check(net.last_pong == float("-inf"), "odpowiedź na stary ping nie udaje żywego odbiornika")
+check(not net.rtts and not net.recent_rtt and net.pongs == 0, "a reply to an old ping does not go into the RTT stats")
+check(net.last_pong == float("-inf"), "a reply to an old ping does not pose as a live receiver")
 net._on_pong(pong(now + net.MAX_RTT_NS))                  # "sent" in the future: another clock base
-check(not net.rtts and net.pongs == 0, "ping z innej bazy zegara (przyszłość) też odrzucony")
+check(not net.rtts and net.pongs == 0, "a ping from another clock base (the future) rejected too")
 net._on_pong(pong(net.clock.ns() - 3_000_000))            # an ordinary 3 ms round trip
-check(len(net.rtts) == 1 and 2.5 < net.rtts[0] < 1000 and net.pongs == 1, "zwykły pong liczy się jak wcześniej")
-check(net.rtt_x10() != net.RTT_NONE, "info dostaje medianę RTT")
+check(len(net.rtts) == 1 and 2.5 < net.rtts[0] < 1000 and net.pongs == 1, "a plain pong counts as before")
+check(net.rtt_x10() != net.RTT_NONE, "info gets the RTT median")
 sys.exit(1 if fails else 0)

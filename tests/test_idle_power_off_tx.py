@@ -20,7 +20,7 @@ net.emit = sender_ctrl.net.emit = lambda t, i, *v: out.append((t, v))
 TMP = tempfile.mkdtemp()
 
 
-# ---------- 6. idle power-off: held stick is use, a USB pad is never powered off ----------
+# ---------- idle power-off: held stick is use, a USB pad is never powered off ----------
 class PadDev:
     def __init__(s, bus): s.info = type("I", (), {"bustype": bus})()
 def tick(c, now):

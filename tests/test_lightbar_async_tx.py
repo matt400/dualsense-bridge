@@ -20,7 +20,7 @@ net.emit = sender_ctrl.net.emit = lambda t, i, *v: out.append((t, v))
 TMP = tempfile.mkdtemp()
 
 
-# ---------- 4. lightbar: off the loop, latest colour wins ----------
+# ---------- lightbar: off the loop, latest colour wins ----------
 async def t_led():
     led = os.path.join(TMP, "led"); os.mkdir(led)
     for n, t in (("max_brightness", "255"), ("multi_intensity", ""), ("brightness", "")):
@@ -46,7 +46,7 @@ async def t_led():
     check(c.led_color == (4, 4, 4) and not c._led_busy, "lightbar: the final colour is recorded")
 asyncio.run(t_led())
 
-# ---------- 4b. lightbar: going back to the old colour while a write runs is not skipped ----------
+# ---------- lightbar: going back to the old colour while a write runs is not skipped ----------
 async def t_led_back():
     led = os.path.join(TMP, "led_back"); os.mkdir(led)
     for n, t in (("max_brightness", "255"), ("multi_intensity", ""), ("brightness", "")):

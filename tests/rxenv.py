@@ -1,4 +1,4 @@
-"""Środowisko testowe receivera na Linuksie: zaślepki Windows (ctypes.windll, vgamepad) i rejestr wywołań."""
+"""Receiver test environment on Linux: Windows stubs (ctypes.windll, vgamepad) and a call log."""
 import ctypes, sys, types, tempfile, os
 RX = sys.argv[1]
 sys.path.insert(0, RX)
@@ -11,7 +11,7 @@ vg = types.ModuleType("vgamepad"); vg.DS4_REPORT_EX = ctypes.c_char * 63; vg.VDS
 sys.modules["vgamepad"] = vg
 TMP = tempfile.mkdtemp()
 import rx_config
-rx_config.init(["--pads", "2", "--remap-file", os.path.join(TMP, "remap.json")])      # testy działają na dwóch slotach
+rx_config.init(["--pads", "2", "--remap-file", os.path.join(TMP, "remap.json")])      # tests run with two slots
 from rx_config import C
 C.REMAP_PATH = os.path.join(TMP, "remap.json")
 import rx_winapi as W
@@ -27,11 +27,11 @@ S.init(store); M.init(C.NUM_PADS); H.init(C.NUM_PADS); F.init()
 import rx_master; rx_master.init(C.NUM_PADS); import rx_testmode; rx_testmode.init(C.NUM_PADS); C.SETTINGS_PATH = os.path.join(TMP, "settings.json")
 from proto import Codec, PAD_KEYS
 N.codec = Codec()
-N.clock.base = 0          # zegar PC = perf_counter (testy liczą czasy pong2 / state2 bez losowego przesunięcia)
+N.clock.base = 0          # PC clock = perf_counter (tests compute pong2 / state2 times without a random offset)
 ORIG_SEND_PEER = N.send_peer
 ORIG_SEND_REPEAT = N.send_repeat
-N.send_repeat = lambda pkt, n: [N.send_peer(pkt) for _ in range(n)]   # testy: kopie od razu (rozłożenie: test_receiver_core)
-sent = []                                      # pakiety wysłane do nadajnika
+N.send_repeat = lambda pkt, n: [N.send_peer(pkt) for _ in range(n)]   # tests: copies right away (spacing: test_receiver_core)
+sent = []                                      # packets sent to the sender
 N.send_peer = lambda pkt: sent.append(N.codec.parse(pkt) + (pkt,))
 BIT = {c: 1 << k for k, c in enumerate(PAD_KEYS)}
 
