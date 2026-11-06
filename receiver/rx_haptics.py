@@ -653,7 +653,7 @@ def create_composite(backend: Any, idx: int, on_fb: Callable[..., None]) -> Any 
                 print(f"Controller {idx}: closing the composite pad: {ce!r}")
         print(f"Controller {t}: game haptics: composite pad failed ({e!r}) - using the plain pad")
         ev.warn(_("{pad}: haptyka gry - nie udało się utworzyć pada USB (composite): {err} - pad działa bez haptyki").format(
-            pad=ev.pad_name(t), err=_describe(e)))
+            pad=ev.pad_name(t), err=rx_hm.describe_error(e)))
         return None
     lk.ensure_thread()
     rx_speaker.attach(idx, lk)
@@ -664,11 +664,6 @@ def create_composite(backend: Any, idx: int, on_fb: Callable[..., None]) -> Any 
     if before:
         threading.Thread(target=_guard_defaults, args=(t, before), name=f"audio guard {idx}", daemon=True).start()
     return pad
-
-
-def _describe(e: BaseException) -> str:
-    """An error as one line for the event log (the HIDMaestro hint when it is one of its exceptions)."""
-    return rx_hm.describe_error(e)
 
 
 def detach(idx: int) -> None:

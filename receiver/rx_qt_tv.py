@@ -84,7 +84,7 @@ class PadNav:
     def _pressed(self) -> frozenset[str]:
         """The set of pad inputs pressed now on all connected pads (raw, before remapping); the tested pad is skipped in the Test view."""
         out = set()
-        testing = getattr(self.win, "view", None) == "test"
+        testing = self.win.view == "test"
         for i in range(C.NUM_PADS):
             if testing and i == self.win.ed.slot:
                 continue               # Test view: the tested pad does not control the window (exit: hold circle)
@@ -163,7 +163,7 @@ class PadNav:
         """The open drawer over the window (Bluetooth, shortcuts) that keeps the focus, or None."""
         if root is not self.win:
             return None
-        return next((s for d in getattr(self.win, "drawers", ()) if (s := d.focus_scope()) is not None), None)
+        return next((s for d in self.win.drawers if (s := d.focus_scope()) is not None), None)
 
     def _direction(self, root: QWidget, fw: QWidget | None, name: str, scope: QWidget | None = None) -> None:
         """A D-pad direction.

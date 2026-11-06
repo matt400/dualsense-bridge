@@ -99,12 +99,12 @@ assert saved["mouse"]["click_freeze_ms"] == 250 and saved["master"]["only_master
 ok("zapis myszy i mastera: działa od razu, bez restartu, settings.json")
 
 # ---------- Ustawienia -> Pady: backend, ścieżka DLL, stała kolejność; restart jako administrator ----------
-import rx_ds4, rx_hm
+import rx_ds4, rx_hm, rx_winapi
 dlg.tabs.setCurrentIndex(6); pump()
 assert dlg.vpad_backend.currentData() == "auto" and dlg.vpad_fixed.isChecked() and dlg.vpad_dll.text() == ""
 assert dlg.vpad_dll.placeholderText() == "automatycznie" and dlg.vpad_auto.isChecked()
-real_admin = rx_hm.is_admin
-rx_hm.is_admin = lambda: False
+real_admin = rx_winapi.is_admin
+rx_winapi.is_admin = lambda: False
 dlg.vpad_backend.set_data("hidmaestro"); dlg._vpad_state(); pump()
 assert dlg.vpad_admin.isVisible() and "administratora" in dlg.vpad_now.text(), dlg.vpad_now.text()
 dlg.grab().save(os.path.join(os.path.dirname(__file__), "gui_settings_pads.png"))
@@ -116,7 +116,7 @@ dlg.elevate.disconnect(); dlg.elevate.connect(lambda: win.restart(admin=True))
 dlg.vpad_backend.set_data("hidmaestro"); dlg._vpad_state(); dlg.vpad_admin.click(); pump()
 assert asked == [True], asked
 del win.restart
-rx_hm.is_admin = real_admin
+rx_winapi.is_admin = real_admin
 dlg.vpad_fixed.setChecked(False); dlg.vpad_dll.setText("  D:\\HM  "); dlg.vpad_auto.setChecked(False)
 dlg.save_btn.click(); pump()
 v = rx_settings.cur.vpad

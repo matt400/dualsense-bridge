@@ -82,7 +82,7 @@ sent_fb = []
 import threading
 F.reset(0); F.game(0, 180, 90)
 F.GAME_RUMBLE_STALE_S = 0.3
-th = threading.Thread(target=F._loop, args=(lambda i, v: sent_fb.append((time.monotonic(), v)),), daemon=True); th.start()
+th = threading.Thread(target=F.feedback_thread, args=(lambda i, v: sent_fb.append((time.monotonic(), v)),), daemon=True); th.start()
 t0 = time.monotonic()
 time.sleep(0.15); F.game(0, 180, 90)        # gra wciąż wysyła - bez wygaszenia
 time.sleep(0.3)

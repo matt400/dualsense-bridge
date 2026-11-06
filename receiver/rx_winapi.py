@@ -203,7 +203,9 @@ def release_single_instance() -> None:
 
 
 def is_admin() -> bool:
-    """Tell whether the process runs as administrator."""
+    """Tell whether the process runs as administrator (always True off Windows: there is no UAC to ask)."""
+    if os.name != "nt":
+        return True
     try:
         return bool(ctypes.windll.shell32.IsUserAnAdmin())
     except _WINAPI_ERRORS:
