@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from typing import Any, Final
 
 from proto import write_file, write_json
-from rx_config import C
+from rx_config import HERE, C
 from rx_i18n import _
 
 KEEP: Final = 5
@@ -30,7 +30,6 @@ META: Final = "meta.json"
 SHORT_COMMIT: Final = 7          # the length of an abbreviated git commit
 REASONS: Final = ("update", "restore", "manual")
 
-HERE: Final = os.path.dirname(os.path.abspath(__file__))
 
 
 def files() -> dict[str, str]:

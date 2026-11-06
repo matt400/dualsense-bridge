@@ -6,7 +6,7 @@ update() -> Result:
      -> git's message, nothing is overwritten or merged. Without login windows (QUIET_ENV) and with a time limit - a pull
      from a background process could wait for an invisible Git Credential Manager window while the button hung on "Updating..."
   2a. code downloaded earlier but not started (a failed restart, a git pull from the console): the pull finds nothing new, but
-     the running receiver is older than HEAD -> a restart as well (earlier: "You have the latest version" and the old code carried on)
+     the running receiver is older than HEAD -> a restart as well (not "You have the latest version" with the old code running on)
   3. receiver/requirements.txt changed -> pip install -r (new libraries)
 The user's settings (console.json, settings.json, remap.json, receiver_ui.ini) are in .gitignore - a pull does not touch them.
 After the new code is downloaded (before the restart) a copy of settings.json / console.json / remap.json is made in receiver/backups/

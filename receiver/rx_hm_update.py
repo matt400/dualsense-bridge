@@ -3,8 +3,8 @@ r"""Receiver: HIDMaestro downloaded and updated by itself from GitHub Releases (
 A release is a ~160 MB zip (SDK + test applications), and the receiver needs only HIDMaestro.Core.dll (the driver is inside it)
 and two Windows SDK projection DLLs (plus LICENSE from its folder - the licence travels with every version).
 The zip is read through HTTP Range: the zip directory from the end of the file, then only those entries -
-about 56 MB is downloaded instead of 160, each entry in one request (prefetch). Earlier every 64 KiB was a separate HTTPS
-request (~900 TLS connections), and GitHub's signed link to the storage expires after ~5 min - a slow link did not make it in time.
+about 56 MB is downloaded instead of 160, each entry in one request (prefetch): GitHub's signed link to the storage expires after
+~5 min, so a request per 64 KiB block (~900 TLS connections) would not make it on a slow link.
 zipfile checks the CRC32 of every entry, and the whole version goes to its folder atomically (tmp + rename).
 
 Protection against a malicious or broken release (a hijacked author account, a bad update while nobody is watching): the DLL is
@@ -44,7 +44,7 @@ from datetime import datetime
 from typing import Any, Final
 
 from proto import write_json
-from rx_config import C
+from rx_config import HERE, C
 
 REPO: Final = "hifihedgehog/HIDMaestro"
 API: Final = f"https://api.github.com/repos/{REPO}/releases/latest"
@@ -99,7 +99,7 @@ on_installed: Callable[[str], None] | None = None
 
 def root() -> str:
     """Return the folder holding the downloaded HIDMaestro versions."""
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "hidmaestro")
+    return os.path.join(HERE, "hidmaestro")
 
 
 def version_key(tag: str | None) -> tuple[int, ...] | None:

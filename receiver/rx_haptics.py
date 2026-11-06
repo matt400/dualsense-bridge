@@ -216,37 +216,171 @@ class Pacer:
         self.due = self.due + step if now - self.due < self.period else now + step
 
 
+# ---------------- the outgoing stream (haptics and speaker) ----------------
+class PacedStream:
+    """The outgoing half shared by the haptics link and the speaker: stream state, a short paced queue and the packets.
+
+    A subclass makes units (haptic chunks or speaker frames) on its own thread and hands each to _push(): silence opens nothing
+    and ends a running stream after SILENCE_END_S, a full queue drops its oldest unit (the numbering gap tells the sender) and
+    _pace() sends one unit per period, START on the first and END (on a silent unit) after the last. The class constants say
+    what a unit is.
+    """
+
+    KIND: str = ""                      # "haptics" / "speaker": the thread name and the log lines
+    UNITS: str = ""                     # what a unit is called in the end-of-stream log line
+    STEP: int = 1                       # how far the counter moves per unit
+    START: int = 0                      # the flag of the first unit of a stream ...
+    END: int = 0                        # ... and of the silent unit that ends it
+    ZERO: bytes = b""                   # a silent unit
+
+    def __init__(self, idx: int, send: SendFn | None, clock: Callable[[], float], period: float) -> None:
+        """Create the idle stream of virtual slot idx; `send(slot, counter, flags, unit)` defaults to _default_send()."""
+        self.idx = idx
+        self._send = send
+        self._clock = clock
+        self._period = period
+        self._wake = threading.Event()
+        self._lock = threading.Lock()               # the link's thread vs detach() / stop() from other threads
+        self._queue: deque[bytes | None] = deque()  # units to send; None = "end the stream here"
+        self._pacer = Pacer(period)
+        self._counter = 0                           # the number of the next unit (wraps at 2**32)
+        self._active = False                        # units are being produced (a stream is on)
+        self._sent_started = False                  # a START went out and no END since
+        self._from_pcm = False                      # the running stream comes from the game's audio (not from test())
+        self._quiet = 0                             # consecutive silent units while active
+        self._noted: set[str] = set()               # event log notes written since the pad was created
+        self._thread: threading.Thread | None = None
+        self.sent = self.dropped = self.overruns = 0
+
+    def _default_send(self) -> SendFn:
+        """The rx_net function that sends this kind of packet (imported late: rx_net imports these modules)."""
+        raise NotImplementedError
+
+    def step(self, now: float) -> float:
+        """One pass of the link's thread. -> how long the thread may sleep (a write wakes it)."""
+        raise NotImplementedError
+
+    def detach(self) -> None:
+        """The virtual pad is gone: drop the audio and end the stream at once."""
+        raise NotImplementedError
+
+    def stop(self) -> None:
+        """The receiver is closing: end a running stream now."""
+        self.detach()
+
+    def wake(self) -> None:
+        """Make the thread look at the settings and the audio now."""
+        self._wake.set()
+
+    def ensure_thread(self) -> None:
+        """Start the link's thread (once; the thread sleeps while nothing plays)."""
+        if self._thread is None or not self._thread.is_alive():
+            self._thread = S.start_thread(f"{self.KIND}{self.idx}", self.run)
+
+    def run(self) -> None:
+        """The link's thread: step until the receiver stops."""
+        while not S.stop.is_set():
+            self._wake.clear()                      # before the step: a write during it keeps the event set - nothing is lost
+            wait = self.step(self._clock())
+            self._wake.wait(wait)
+        self.stop()
+
+    def _note(self, why: str, text: str) -> None:
+        """One event log line per reason and pad connection (the audio keeps arriving; the line must not repeat)."""
+        if why not in self._noted:
+            self._noted.add(why)
+            t = rx_swap.route(self.idx)
+            print(f"Controller {t}: game {self.KIND} not used ({why})")
+            ev.info(text.format(pad=ev.pad_name(t)))
+
+    def _push(self, unit: bytes, from_pcm: bool) -> None:
+        """One finished unit: sound opens / keeps a stream, silence is dropped (idle) or counted towards the end (active)."""
+        if unit == self.ZERO:
+            if not self._active:
+                return
+            self._quiet += 1
+            if self._quiet * self._period >= SILENCE_END_S:
+                self._end()
+                return
+        else:
+            if not self._active:
+                self._active, self._from_pcm = True, from_pcm
+            self._quiet = 0
+        self._enqueue(unit)
+
+    def _enqueue(self, item: bytes | None) -> None:
+        """Queue a unit (or the end mark); a full queue drops its oldest unit - the gap in the numbering tells the sender."""
+        if len(self._queue) >= MAX_QUEUE:
+            for k, queued in enumerate(self._queue):
+                if queued is not None:
+                    del self._queue[k]
+                    self._counter = (self._counter + self.STEP) & 0xFFFFFFFF
+                    self.dropped += 1
+                    break
+        self._queue.append(item)
+
+    def _end(self) -> None:
+        """Close the running stream: the END goes out after the units still waiting."""
+        if self._active:
+            self._active = False
+            self._quiet = 0
+            self._enqueue(None)
+
+    def _pace(self, now: float) -> float:
+        """Send one unit when it is due. -> how long to sleep."""
+        if self._queue and self._pacer.ready(now):
+            item = self._queue.popleft()
+            self._emit(item)
+            self._pacer.sent(now, len(self._queue))
+        if self._queue:
+            return max(0.0005, self._pacer.due - now)
+        return STALL_S / 2 if self._active else IDLE_WAIT_S
+
+    def _emit(self, item: bytes | None) -> None:
+        """Send a unit (START on the first of a stream) or, for the end mark, a silent unit with END."""
+        if item is None:
+            if not self._sent_started:
+                return
+            flags, item, self._sent_started = self.END, self.ZERO, False
+            if self.dropped or self.overruns:
+                print(f"Controller {rx_swap.route(self.idx)}: {self.KIND} stream ended ({self.sent} {self.UNITS}, "
+                      f"{self.dropped} dropped, {self.overruns} ring overruns)")
+        else:
+            flags, self._sent_started = (0 if self._sent_started else self.START), True
+        send = self._send or self._default_send()
+        send(rx_swap.route(self.idx), self._counter, flags, item)
+        self._counter = (self._counter + self.STEP) & 0xFFFFFFFF
+        self.sent += 1
+
+    def _drop_stream(self) -> None:
+        """Forget the stream (the pad is gone) and send its END at once. Called with the lock held."""
+        self._noted.clear()
+        self._active = False
+        self._quiet = 0
+        self._queue.clear()
+        if self._sent_started:
+            self._emit(None)
+
+
 # ---------------- the per-slot link ----------------
-class Link:
+class Link(PacedStream):
     """HD haptics of one virtual pad slot: audio in, T_HAPT packets out. See the module docstring.
 
     The audio thread of HIDMaestro only calls write(); everything else - decimation, chunking, pacing, the stream state -
     runs on the link's own thread (step() is that thread's whole body, so tests drive it with a fake clock).
     """
 
+    KIND, UNITS, STEP, START, END, ZERO = "haptics", "chunks", HAPT_FRAMES, HAPT_START, HAPT_END, ZERO_CHUNK
+
     def __init__(self, idx: int, send: SendFn | None = None, clock: Callable[[], float] = time.perf_counter) -> None:
         """Create the idle link of virtual slot idx; `send(slot, first_frame, flags, chunk)` defaults to rx_net.send_haptics."""
-        self.idx = idx
-        self._send = send
-        self._clock = clock
+        super().__init__(idx, send, clock, CHUNK_S)
         self._ring = bytearray(RING_BYTES)
         self._w = self._r = 0                       # total bytes written / read (the ring index is the value masked)
-        self._wake = threading.Event()
-        self._lock = threading.Lock()               # the link's thread vs detach() / stop() from other threads
         self._inject: deque[bytes] = deque()        # chunks from test(): they take the same way out as the game's
         self._dec: Decimator | None = None
         self._pcm_at = 0.0                          # when write() last ran
         self._pend: tuple[list[int], list[int]] = ([], [])
-        self._queue: deque[bytes | None] = deque()  # chunks to send; None = "end the stream here"
-        self._pacer = Pacer()
-        self._counter = 0                           # the first-frame number of the next chunk (wraps at 2**32)
-        self._active = False                        # chunks are being produced (a stream is on)
-        self._sent_started = False                  # a HAPT_START went out and no HAPT_END since
-        self._from_pcm = False                      # the running stream comes from the game's audio (not from test())
-        self._quiet = 0                             # consecutive silent chunks while active
-        self._noted: set[str] = set()               # event log notes written since the pad was created
-        self._thread: threading.Thread | None = None
-        self.sent = self.dropped = self.overruns = 0
         self.channels, self.rate = 4, 48000         # the audio format of the endpoint (set by configure)
         self.speaker_channels = (0, 1)              # the interleaved channels of the speaker's left and right (rx_speaker)
         self.on_write: Callable[[int], None] | None = None   # called on the audio thread with the bytes written so far (rx_speaker)
@@ -317,23 +451,6 @@ class Link:
         data = bytes(self._ring[i:i + n]) if n <= first else bytes(self._ring[i:]) + bytes(self._ring[:n - first])
         return data, r + n
 
-    def wake(self) -> None:
-        """Make the thread look at the settings and the audio now."""
-        self._wake.set()
-
-    def ensure_thread(self) -> None:
-        """Start the link's thread (once; the thread sleeps while nothing plays)."""
-        if self._thread is None or not self._thread.is_alive():
-            self._thread = S.start_thread(f"haptics{self.idx}", self.run)
-
-    def run(self) -> None:
-        """The link's thread: step until the receiver stops."""
-        while not S.stop.is_set():
-            self._wake.clear()                      # before the step: a write during it keeps the event set - nothing is lost
-            wait = self.step(self._clock())
-            self._wake.wait(wait)
-        self.stop()
-
     # ----- the link's thread -----
     def step(self, now: float) -> float:
         """One pass: take new audio, make chunks, send what is due. -> how long the thread may sleep (a write wakes it)."""
@@ -365,14 +482,6 @@ class Link:
             self._note("master", _("{pad}: gra daje haptykę - pominięta (haptyka gry tylko dla pada master)"))
             return None
         return cfg.gain / 100
-
-    def _note(self, why: str, text: str) -> None:
-        """One event log line per reason and pad connection (the audio keeps arriving; the line must not repeat)."""
-        if why not in self._noted:
-            self._noted.add(why)
-            t = rx_swap.route(self.idx)
-            print(f"Controller {t}: game haptics not used ({why})")
-            ev.info(text.format(pad=ev.pad_name(t)))
 
     def _read(self) -> bytes | None:
         """Take the unread audio out of the ring (whole frames); None when there is none. A writer that lapped us: skip ahead."""
@@ -406,74 +515,12 @@ class Link:
         while len(self._pend[0]) >= HAPT_FRAMES:
             chunk = make_chunk(self._pend[0][:HAPT_FRAMES], self._pend[1][:HAPT_FRAMES])
             del self._pend[0][:HAPT_FRAMES], self._pend[1][:HAPT_FRAMES]
-            self._chunk(chunk, from_pcm=True)
+            self._push(chunk, from_pcm=True)
 
     def _take_injected(self) -> None:
         """Chunks from test() go through the same path as the game's - as fast as the queue drains (it would drop the rest)."""
         while self._inject and len(self._queue) < MAX_QUEUE - 1:
-            self._chunk(self._inject.popleft(), from_pcm=False)
-
-    def _chunk(self, chunk: bytes, from_pcm: bool) -> None:
-        """One finished chunk: sound opens / keeps a stream, silence is dropped (idle) or counted towards the end (active)."""
-        if chunk == ZERO_CHUNK:
-            if not self._active:
-                return
-            self._quiet += 1
-            if self._quiet * CHUNK_S >= SILENCE_END_S:
-                self._end()
-                return
-        else:
-            if not self._active:
-                self._active, self._from_pcm = True, from_pcm
-            self._quiet = 0
-        self._enqueue(chunk)
-
-    def _enqueue(self, item: bytes | None) -> None:
-        """Queue a chunk (or the end mark); a full queue drops its oldest chunk - the gap in the numbering tells the sender."""
-        if len(self._queue) >= MAX_QUEUE:
-            for k, queued in enumerate(self._queue):
-                if queued is not None:
-                    del self._queue[k]
-                    self._counter = (self._counter + HAPT_FRAMES) & 0xFFFFFFFF
-                    self.dropped += 1
-                    break
-        self._queue.append(item)
-
-    def _end(self) -> None:
-        """Close the running stream: a HAPT_END goes out after the chunks still waiting."""
-        if self._active:
-            self._active = False
-            self._quiet = 0
-            self._enqueue(None)
-
-    def _pace(self, now: float) -> float:
-        """Send one chunk when it is due. -> how long to sleep."""
-        if self._queue and self._pacer.ready(now):
-            item = self._queue.popleft()
-            self._emit(item)
-            self._pacer.sent(now, len(self._queue))
-        if self._queue:
-            return max(0.0005, self._pacer.due - now)
-        return STALL_S / 2 if self._active else IDLE_WAIT_S
-
-    def _emit(self, item: bytes | None) -> None:
-        """Send a chunk (START on the first of a stream) or, for the end mark, a silent chunk with HAPT_END."""
-        if item is None:
-            if not self._sent_started:
-                return
-            flags, item, self._sent_started = HAPT_END, ZERO_CHUNK, False
-            if self.dropped or self.overruns:
-                print(f"Controller {rx_swap.route(self.idx)}: haptics stream ended ({self.sent} chunks, {self.dropped} dropped, "
-                      f"{self.overruns} ring overruns)")
-        else:
-            flags, self._sent_started = (0 if self._sent_started else HAPT_START), True
-        send = self._send
-        if send is None:
-            import rx_net
-            send = rx_net.send_haptics
-        send(rx_swap.route(self.idx), self._counter, flags, item)
-        self._counter = (self._counter + HAPT_FRAMES) & 0xFFFFFFFF
-        self.sent += 1
+            self._push(self._inject.popleft(), from_pcm=False)
 
     # ----- from other threads -----
     def test(self, gain: float) -> None:
@@ -496,16 +543,12 @@ class Link:
             self._pend[0].clear()
             self._pend[1].clear()
             self._inject.clear()
-            self._noted.clear()
-            self._active = False
-            self._quiet = 0
-            self._queue.clear()
-            if self._sent_started:
-                self._emit(None)
+            self._drop_stream()
 
-    def stop(self) -> None:
-        """The receiver is closing: end a running stream now."""
-        self.detach()
+    def _default_send(self) -> SendFn:
+        """rx_net.send_haptics."""
+        import rx_net
+        return rx_net.send_haptics
 
 
 # ---------------- the slots ----------------

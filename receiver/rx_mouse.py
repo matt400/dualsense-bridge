@@ -4,7 +4,7 @@ T_MOUSE packet flags: bit0 = tap (left button), bit1 = scrolling (dx, dy is the 
 bits 4-7 = tap number 1..15 (the sender repeats the tap packet, the number lets the click be executed only once).
 
 Physical click stabilisation (settings in the window: rx_settings.MouseConfig). Pressing the finger down shifts its centre
-on the sensor, so the cursor used to "run away" from the target:
+on the sensor, which makes the cursor "run away" from the target:
   rewind  movement from the last click_rewind_ms before the press is undone (the same steps backwards - Windows
           acceleration treats them the same way, so the cursor returns to the same spot)
   freeze  for click_freeze_ms after the press and after the release the movement is ignored

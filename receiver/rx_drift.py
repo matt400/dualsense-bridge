@@ -14,25 +14,17 @@ from dataclasses import dataclass
 from typing import Final
 
 import rx_state as S
-from rx_shape import STICK_LIMITS
+from rx_shape import STICK_LIMITS, unit
 
 SETTLE_S: Final = 0.3
 MEASURE_S: Final = 3.0
 MARGIN: Final = 1.25
 MIN_DZ: Final = 0.03
 MOVE_R: Final = 0.30
-AXIS_CENTRE: Final = 128
-AXIS_NEG_SPAN: Final = 128           # the axis byte has 128 steps below the centre and 127 above it
-AXIS_POS_SPAN: Final = 127
 RAW_MARGIN_S: Final = 3
 RAW_S: Final = round(SETTLE_S + MEASURE_S + RAW_MARGIN_S)   # how long the sender keeps the sticks without a deadzone (with a margin)
 EPS: Final = 1e-6                     # (t0 + 0.3) - t0 can be 0.29999999999995 (depending on the monotonic value) - without it
                                 # "0.3 s elapsed" came out true or false at random (a flaky Test view test)
-
-
-def unit(v: int) -> float:
-    """Convert an axis byte 0..255 (centre 128) to -1..1 (same as rx_shape._unit)."""
-    return (v - AXIS_CENTRE) / (AXIS_NEG_SPAN if v < AXIS_CENTRE else AXIS_POS_SPAN)
 
 
 def propose(r: float) -> float:

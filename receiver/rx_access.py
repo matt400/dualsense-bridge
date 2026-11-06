@@ -22,7 +22,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final, TypeAlias
 
-from rx_shape import AXIS_CENTRE, AXIS_NEG_SPAN, AXIS_POS_SPAN, shape_stick
+from rx_shape import AXIS_CENTRE, clamp_num, shape_stick, unit
 
 Access: TypeAlias = dict[str, Any]                  # the stored settings of a pad, see the module docstring
 Runtime: TypeAlias = dict[str, dict[str, float]]    # {stick: parameters for apply()} - what recompute() uses
@@ -47,19 +47,10 @@ REACH_MARGIN: Final = 0.97       # the proposal sits a little below the reach, s
 FULL_AT: Final = 0.95            # a reach of at least this much of the travel needs no range scaling
 
 
-def _clamp(v: Any, lo: float, hi: float, default: float) -> float:
-    """Convert to float and clamp to lo..hi; the default for anything that is not a number (or NaN)."""
-    try:
-        v = float(v)
-    except (TypeError, ValueError):
-        return default
-    return default if math.isnan(v) else min(hi, max(lo, v))
-
-
 def normalize_stick(e: Any) -> dict[str, float]:
     """Return the full parameters of one stick within their ranges (`outer` always beyond `dz`); defaults for a bad entry."""
     e = e if isinstance(e, dict) else {}
-    out = {k: round(_clamp(e.get(k, d), *LIMITS[k], d), DECIMALS) for k, d in DEF.items()}
+    out = {k: round(clamp_num(e.get(k, d), *LIMITS[k], d), DECIMALS) for k, d in DEF.items()}
     out["outer"] = max(out["outer"], round(out["dz"] + MIN_GAP, DECIMALS))
     return out
 
@@ -86,11 +77,6 @@ def runtime(cfg: Access) -> Runtime:
     return {name: {**cfg[name], "anti": 0.0} for name in STICKS if name in cfg}
 
 
-def _unit(v: int) -> float:
-    """Convert an axis byte 0..255 (centre 128) to -1..1."""
-    return (v - AXIS_CENTRE) / (AXIS_NEG_SPAN if v < AXIS_CENTRE else AXIS_POS_SPAN)
-
-
 def apply(rt: Runtime, st: Sticks, last: Sticks) -> Sticks:
     """Apply the settings to the physical sticks `st`; `last` is the previous result (for the tremor damping).
 
@@ -106,8 +92,8 @@ def apply(rt: Runtime, st: Sticks, last: Sticks) -> Sticks:
         x, y = shape_stick(st[i], st[i + 1], p)
         thr = p["steady"]
         if thr and (x, y) != (AXIS_CENTRE, AXIS_CENTRE):
-            ux, uy = _unit(x), _unit(y)
-            if math.hypot(ux, uy) < SATURATED and math.hypot(ux - _unit(last[i]), uy - _unit(last[i + 1])) <= thr:
+            ux, uy = unit(x), unit(y)
+            if math.hypot(ux, uy) < SATURATED and math.hypot(ux - unit(last[i]), uy - unit(last[i + 1])) <= thr:
                 x, y = last[i], last[i + 1]
         out[i], out[i + 1] = x, y
     return (out[0], out[1], out[2], out[3])
@@ -153,7 +139,7 @@ def analyze_reach(samples: Sequence[Sequence[int]], stick: str) -> Reach:
     peak below MIN_PEAK is reported instead of guessing.
     """
     i = 0 if stick == "left" else 2
-    pts = [(_unit(s[i]), _unit(s[i + 1])) for s in samples]
+    pts = [(unit(s[i]), unit(s[i + 1])) for s in samples]
     radii = [math.hypot(x, y) for x, y in pts]
     peak = max(radii, default=0.0)
     if peak < MIN_PEAK:

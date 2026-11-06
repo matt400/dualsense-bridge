@@ -22,12 +22,12 @@ import rx_buttons as B
 import rx_gstick as G
 from rx_gstick_io import runner
 from rx_i18n import _
-from rx_qt_style import ACCENT, BAD, CARD, LINE, OK
-from rx_qt_widgets import Collapsible, Combo, CornerFrame, SliderRow, button, field, input_items, label
+from rx_qt_style import ACCENT, BAD, CARD, LINE
+from rx_qt_widgets import (PREVIEW_IDLE, PREVIEW_VIEW_PX, Collapsible, Combo, PreviewFrame, SliderRow, button, draw_output_marker,
+                           field, input_items, label)
 
 MSG_S = 4.0
 SAVE_DELAY_MS = 300      # settings are written this long after the last edit (a slider drag = one write)
-PREVIEW_W, PREVIEW_GAP, VIEW_PX = 360, 12, 110      # the floating preview: width and the gap to the corner of the pad drawing [px]
 STATE_TEXT = {G.ST_OFF: "Wyłączone", G.ST_HOLD: "Czeka na sprzęgło", G.ST_SAFE: "Ustaw pada blisko środka",
               G.ST_IDLE: "Uśpione (pad nieruchomy)", G.ST_CAL: "Kalibracja...", G.ST_RUN: "● Steruje"}
 CAL_TEXT = {True: "Środek ustawiony.", False: "Kalibracja nie wyszła - trzymaj pada nieruchomo przez chwilę."}
@@ -39,7 +39,7 @@ class TiltView(QWidget):
     def __init__(self) -> None:
         """A fixed-size square view, initially showing an idle engine."""
         super().__init__()
-        self.setFixedSize(VIEW_PX, VIEW_PX)
+        self.setFixedSize(PREVIEW_VIEW_PX, PREVIEW_VIEW_PX)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.cfg = G.Config()
         self.snap: G.Snapshot = (G.ST_OFF, G.Z_DEAD, (0.0, 0.0), (0.0, 0.0), (0.0, 0.0), 0.0, False, False)
@@ -76,16 +76,11 @@ class TiltView(QWidget):
             k = max(1.0, (x * x + y * y) ** 0.5 / r)
             return QPointF(c.x() + x / k, c.y() + y / k)
 
-        for pos, col, rad in ((at(raw), "#8e96ab", 3), (at(filt), ACCENT, 4)):
+        for pos, col, rad in ((at(raw), PREVIEW_IDLE, 3), (at(filt), ACCENT, 4)):
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(QColor(col))
             p.drawEllipse(pos, rad, rad)
-        out = QPointF(c.x() + xy[0] * r, c.y() - xy[1] * r)           # output: the full circle range
-        p.setPen(QPen(QColor(OK if driving else "#8e96ab"), 2))
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawEllipse(out, 7, 7)
-        p.drawLine(QPointF(out.x() - 11, out.y()), QPointF(out.x() + 11, out.y()))
-        p.drawLine(QPointF(out.x(), out.y() - 11), QPointF(out.x(), out.y() + 11))
+        draw_output_marker(p, QPointF(c.x() + xy[0] * r, c.y() - xy[1] * r), driving)    # output: the full circle range
         p.end()
 
 
@@ -241,7 +236,7 @@ class TiltSection(QWidget):
             self.cal_note.setText("")
 
 
-class TiltPreview(CornerFrame):
+class TiltPreview(PreviewFrame):
     """The live preview.
 
     Floating over the top-right corner of the pad drawing while a tilt category is expanded: the 2D view, raw / filtered
@@ -251,26 +246,9 @@ class TiltPreview(CornerFrame):
 
     def __init__(self, pad: QWidget) -> None:
         """Create the (hidden) preview floating over the pad drawing `pad`."""
-        super().__init__(pad, PREVIEW_GAP)
-        self.setObjectName("group")
+        super().__init__(pad, TiltView(), _("PRZECHYŁ - PODGLĄD"))
+        self.view: TiltView
         self._slot: int | None = None                  # the slot whose engine we asked to follow the pad, None = none
-        self._texts: tuple[str, str] | None = None     # the texts last laid out (the size is recomputed only when they change)
-        lay = QHBoxLayout(self)             # compact: the view on the left, the texts on the right - fits above the pad drawing
-        lay.setContentsMargins(10, 8, 12, 8)
-        lay.setSpacing(10)
-        self.view = TiltView()
-        self.numbers = label("", "dim", wrap=True)
-        self.status = label("", "dim", wrap=True)
-        texts = QVBoxLayout()
-        texts.setSpacing(4)
-        texts.addWidget(label(_("PRZECHYŁ - PODGLĄD"), "h2"))
-        texts.addWidget(self.numbers)
-        texts.addWidget(self.status)
-        texts.addStretch(1)
-        lay.addWidget(self.view)
-        lay.addLayout(texts, 1)
-        self.setFixedWidth(PREVIEW_W)
-        self.hide()
 
     def tick(self, show: bool, slot: int, cfg: G.Config) -> None:
         """30 Hz from the window timer: show / hide, follow the pad, refresh the view and the texts."""
@@ -281,23 +259,14 @@ class TiltPreview(CornerFrame):
             self.idle()
             self._slot = slot
             runner.set_preview(slot, True)
-        fresh = not self.isVisible()
-        if fresh:
-            self.show()
-            self.raise_()
+        fresh = self.reveal()
         snap = runner.snapshot(slot)
         self.view.set_data(cfg, snap)
         state, _zone, raw, _filt, xy, _mag, sprint, _driving = snap
         numbers = _("Raw: pitch {p:+.1f}°  roll {r:+.1f}°\nFiltered output: X {x:+.0f}%  Y {y:+.0f}%{s}").format(
             p=raw[1], r=raw[0], x=xy[0] * 100, y=xy[1] * 100, s="  [sprint]" if sprint else "")
         status = _("Podgląd - funkcja jest wyłączona") if not cfg.enabled and state != G.ST_OFF else _(STATE_TEXT[state])
-        if (numbers, status) != self._texts:
-            self._texts = (numbers, status)
-            self.numbers.setText(numbers)
-            self.status.setText(status)
-            fresh = True
-        if fresh:             # a pad resize is handled by the event filter; only new texts / a fresh show need a re-layout
-            self.place()
+        self.set_texts(numbers, status, fresh)
 
     def idle(self) -> None:
         """Hide the preview and let the engine go back to idle when the feature is off."""

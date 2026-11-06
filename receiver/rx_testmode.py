@@ -11,8 +11,8 @@ mouse: it lifts the output block to the game, and the buttons and D-pad held at 
 the tested pad) are delivered to the game as released until they are actually released - the first report after the test does not
 carry the combination; sticks and triggers go on analogously, live. The window gets on_escape().
 
-Without PS and without a hold: a long PS + triangle used to switch the pad off (Bluetooth). It is the edge that counts - a combination
-already held on entering Test or across the test boundary has to be released and pressed again.
+Without PS and without a hold, so a long PS + triangle (the pad's Bluetooth power-off) cannot fire it. It is the edge that
+counts - a combination already held on entering Test or across the test boundary has to be released and pressed again.
 
 Touchpad in the mouse mode (the master pad): the touchpad keeps driving the cursor in the Test view - it is the only way
 to operate the window from the couch - and only the "Test touchpad" button of the panel captures it. While a capture runs

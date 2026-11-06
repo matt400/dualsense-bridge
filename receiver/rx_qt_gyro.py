@@ -16,16 +16,14 @@ from typing import Any, NamedTuple
 
 from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QColor, QPainter, QPaintEvent, QPen
-from PySide6.QtWidgets import QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QSizePolicy, QWidget
 
 from rx_config import C
 from rx_i18n import _
-from rx_qt_style import ACCENT, CARD, LINE, OK
-from rx_qt_widgets import CornerFrame, label
-from rx_shape import GYRO_DPS_FULL, _unit, gyro_mouse_velocity, gyro_rates
+from rx_qt_style import ACCENT, CARD, LINE
+from rx_qt_widgets import PREVIEW_VIEW_PX, PreviewFrame, draw_output_marker
+from rx_shape import GYRO_DPS_FULL, unit, gyro_mouse_velocity, gyro_rates
 
-PREVIEW_W, PREVIEW_GAP, VIEW_PX = 360, 12, 110      # the same size and distance to the corner as the tilt preview [px]
-IDLE_COLOR = "#8e96ab"
 
 
 class Sample(NamedTuple):
@@ -47,7 +45,7 @@ class GyroView(QWidget):
     def __init__(self) -> None:
         """A fixed-size square view, initially at rest."""
         super().__init__()
-        self.setFixedSize(VIEW_PX, VIEW_PX)
+        self.setFixedSize(PREVIEW_VIEW_PX, PREVIEW_VIEW_PX)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.sample = IDLE
 
@@ -79,39 +77,17 @@ class GyroView(QWidget):
         p.setBrush(QColor(ACCENT))
         p.drawEllipse(QPointF(c.x() + x / k, c.y() + y / k), 4, 4)
         if s.out is not None:
-            out = QPointF(c.x() + s.out[0] * r, c.y() + s.out[1] * r)
-            p.setPen(QPen(QColor(OK if s.active else IDLE_COLOR), 2))
-            p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawEllipse(out, 7, 7)
-            p.drawLine(QPointF(out.x() - 11, out.y()), QPointF(out.x() + 11, out.y()))
-            p.drawLine(QPointF(out.x(), out.y() - 11), QPointF(out.x(), out.y() + 11))
+            draw_output_marker(p, QPointF(c.x() + s.out[0] * r, c.y() + s.out[1] * r), s.active)
         p.end()
 
 
-class GyroPreview(CornerFrame):
+class GyroPreview(PreviewFrame):
     """The frame over the pad drawing: the view, the rotation / output numbers and whether the gyro steers now."""
 
     def __init__(self, pad: QWidget) -> None:
         """Create the (hidden) preview floating over the pad drawing `pad`."""
-        super().__init__(pad, PREVIEW_GAP)
-        self.setObjectName("group")
-        self._texts: tuple[str, str] | None = None     # the texts last laid out (the size is recomputed only when they change)
-        lay = QHBoxLayout(self)
-        lay.setContentsMargins(10, 8, 12, 8)
-        lay.setSpacing(10)
-        self.view = GyroView()
-        self.numbers = label("", "dim", wrap=True)
-        self.status = label("", "dim", wrap=True)
-        texts = QVBoxLayout()
-        texts.setSpacing(4)
-        texts.addWidget(label(_("CELOWANIE - PODGLĄD"), "h2"))
-        texts.addWidget(self.numbers)
-        texts.addWidget(self.status)
-        texts.addStretch(1)
-        lay.addWidget(self.view)
-        lay.addLayout(texts, 1)
-        self.setFixedWidth(PREVIEW_W)
-        self.hide()
+        super().__init__(pad, GyroView(), _("CELOWANIE - PODGLĄD"))
+        self.view: GyroView
 
     def tick(self, show: bool, g: dict[str, Any], gyro: Sequence[float], active: bool, rs_out: Sequence[int]) -> None:
         """30 Hz from the window timer: show / hide, refresh the view and the texts.
@@ -126,14 +102,11 @@ class GyroPreview(CornerFrame):
         if not show:
             self.hide()
             return
-        fresh = not self.isVisible()
-        if fresh:
-            self.show()
-            self.raise_()
+        fresh = self.reveal()
         rates = gyro_rates(gyro, g, C.GYRO_RES)
         full = GYRO_DPS_FULL / g["sens"]
         stick = g["mode"] == "stick"
-        out = (_unit(rs_out[0]), _unit(rs_out[1])) if stick else None
+        out = (unit(rs_out[0]), unit(rs_out[1])) if stick else None
         self.view.set_data(Sample(stick, g["anti"], (rates[0] / full, rates[1] / full), out, active))
         numbers = _("Obrót: poziomo {x:+.0f}°/s  pionowo {y:+.0f}°/s").format(x=rates[0], y=rates[1])
         if out is not None:
@@ -143,10 +116,4 @@ class GyroPreview(CornerFrame):
             numbers += "\n" + _("Kursor: {x:+.0f} / {y:+.0f} px/s").format(x=vx, y=vy)
         status = (_("Podgląd - gyro jest wyłączone") if g["mode"] == "off"
                   else _("● Steruje") if active else _("Gyro nieaktywne"))
-        if (numbers, status) != self._texts:
-            self._texts = (numbers, status)
-            self.numbers.setText(numbers)
-            self.status.setText(status)
-            fresh = True
-        if fresh:             # a pad resize is handled by the event filter; only new texts / a fresh show need a re-layout
-            self.place()
+        self.set_texts(numbers, status, fresh)

@@ -1,8 +1,8 @@
 r"""Receiver: autostart with Windows through Task Scheduler - starts right after logon.
 
-Autostart used to be an entry in HKCU\...\Run. Windows launches such programs with a delay and one after another once the desktop
-settles down - the receiver started up to a minute after logon, so a pad switched on right after the PC booted did not
-switch the screen to console mode for a long time. A "at logon" task starts without that delay, without a run time limit
+Not an entry in HKCU\...\Run: Windows launches those with a delay and one after another once the desktop settles down -
+up to a minute after logon, so a pad switched on right after the PC booted would not switch the screen to console mode
+for a long time. A "at logon" task starts without that delay, without a run time limit
 (a default task is killed after 72 h) and also on battery.
 
   enable(exe, args)  the DualSenseBridge task (schtasks /xml) and removal of the old Run entry; on error the Run entry stays
@@ -206,9 +206,8 @@ def elevate(exe: str, args: str) -> bool:
 
     No task / already elevated / an error -> False (the receiver carries on). The definition is rebuilt (the XML from
     schtasks /query comes in the console code page), but with the task's own command (task_action) - the exe, args of
-    this process only when it cannot be read. Earlier it always used the arguments of the current process: a manual
-    start without --config (or with other options) replaced the autostart and at the next logon the receiver started
-    with different settings.
+    this process only when it cannot be read: a manual start without --config (or with other options) must not replace
+    the autostart's command, or the next logon would start the receiver with different settings.
     """
     try:
         r = _schtasks("/query", "/tn", NAME, "/xml")

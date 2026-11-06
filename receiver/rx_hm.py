@@ -38,6 +38,7 @@ from collections.abc import Callable, Sequence
 from typing import Any, Final, TypeAlias
 
 from proto import TRIG_RAW_LEN
+from rx_config import HERE
 from rx_report import build_ds5_report
 from rx_state import NEUTRAL_OUT
 
@@ -77,11 +78,6 @@ _loaded: "Backend | None" = None   # the loaded Backend: one HIDMaestro version 
 # one downloaded while running takes effect after a receiver restart
 
 
-def here() -> str:
-    """Folder of this module (where hidmaestro/ and a hand-placed DLL are looked up)."""
-    return os.path.dirname(os.path.abspath(__file__))
-
-
 def candidates(cfg_path: str = "") -> list[str]:
     """DLL paths to try, in order.
 
@@ -93,7 +89,7 @@ def candidates(cfg_path: str = "") -> list[str]:
         return [os.path.join(p, DLL) if os.path.isdir(p) else p]
     import rx_hm_update
     newest = rx_hm_update.newest_dll()
-    return [*([newest] if newest else []), os.path.join(here(), "hidmaestro", DLL), os.path.join(here(), DLL)]
+    return [*([newest] if newest else []), os.path.join(HERE, "hidmaestro", DLL), os.path.join(HERE, DLL)]
 
 
 def find_dll(cfg_path: str = "") -> str | None:

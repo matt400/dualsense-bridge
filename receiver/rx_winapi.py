@@ -159,7 +159,7 @@ def ensure_single_instance() -> None:
 
     ERROR_ACCESS_DENIED also means "already running": the lock is held by a receiver started as administrator, and an
     unprivileged process does not get full access to it (CreateMutex then returns NULL instead of ERROR_ALREADY_EXISTS)
-    - the second copy used to start and fail only on the busy UDP port with a misleading message.
+    - without this check the second copy would start and fail only on the busy UDP port with a misleading message.
     """
     global _mutex
     try:

@@ -116,7 +116,7 @@ class PadNav:
             self.held.clear()
             return
         # prev also contains buttons held together with PS: releasing PS before the D-pad / cross is not a new press
-        # (previously prev was empty while PS was held, so PS + right changed the profile and at once moved the focus in the window)
+        # (otherwise PS + right would change the profile and at once move the focus in the window)
         new = pressed - prev
         for d in list(self.held):
             if d not in pressed:

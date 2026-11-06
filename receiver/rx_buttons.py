@@ -23,7 +23,7 @@ from typing import Any, Final
 
 from proto import PAD_KEYS, write_json
 from rx_i18n import _
-from rx_shape import AXIS_CENTRE, BYTE_MAX, Profile, _byte, _unit, normalize_gyro, normalize_triggers, normalize_tuning
+from rx_shape import AXIS_CENTRE, BYTE_MAX, Profile, to_byte, unit, normalize_gyro, normalize_triggers, normalize_tuning
 
 BTN_PS: Final = 316                  # evdev code of the PS button
 BIT: Final = {c: 1 << k for k, c in enumerate(PAD_KEYS)}
@@ -208,10 +208,10 @@ def is_game_key(key: str) -> bool:
 def _inv(v: float) -> int:
     """Mirror an axis around the centre 128.
 
-    0 <-> 255, 128 stays 128 (like _unit/_byte in rx_shape - a full deflection in both directions gives a full
+    0 <-> 255, 128 stays 128 (like unit/to_byte in rx_shape - a full deflection in both directions gives a full
     deflection, not 1).
     """
-    return _byte(-_unit(v))
+    return to_byte(-unit(v))
 
 
 def apply_sticks(sm: Mapping[str, Any], lx: int, ly: int, rx: int, ry: int) -> tuple[int, ...]:

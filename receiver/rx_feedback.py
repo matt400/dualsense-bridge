@@ -8,8 +8,8 @@ triggers.
 
 Lightbar: a colour from the game applies only when a game is in the foreground (rx_games.in_game: not the desktop, Steam,
 a launcher) and the pad has "Game may change colour" (PadLight.game). Outside a game, and with the option off, the colour comes
-from the pad settings (solid / by battery, rx_lightbar). Steam sets the virtual pad's colour on the desktop too - it used to cover
-the own colour until the pad disconnected. The PC colour is remembered, so it returns at once when the game comes back. The first
+from the pad settings (solid / by battery, rx_lightbar). Steam sets the virtual pad's colour on the desktop too - this keeps it from
+covering the own colour until the pad disconnects. The PC colour is remembered, so it returns at once when the game comes back. The first
 such colour goes to the log - otherwise "my colour does not work" would leave no trace. Low battery blinks red
 also over the game colour; confirmations (e.g. the master's golden flash) are always on top.
 """
@@ -62,8 +62,8 @@ TRIG_REFRESH_S: Final = 2.0   # trigger effects are refreshed this often (a pad 
 TRIG_REPEAT: Final = 3        # a change of effects is sent this many times (UDP)
 GAME_RUMBLE_STALE_S: Final = 1.0   # game rumble with no new motor report for longer than this -> 0. Games send reports every frame while
                             # rumbling; the last "motors 0" (entering a menu, the end of a drive) can get lost
-                            # (HIDMaestro overwrites old packets) and the pad vibrated forever. It used to be 3 s -
-                            # in the Forza Horizon menu the pad kept twitching that long after leaving a drive
+                            # (HIDMaestro overwrites old packets) and the pad would vibrate forever. Not longer:
+                            # 3 s kept the pad twitching in the Forza Horizon menu after leaving a drive
 GAME_RUMBLE_GAP_S: Final = 0.25    # the game still sends reports (colour, triggers) but no motors for longer than this since the last
                             # motor report -> it stopped driving the rumble (a menu) -> 0, without waiting for STALE
 RUMBLE_REFRESH_S: Final = 0.5         # while rumbling: refreshes the timeout on the sender
@@ -323,9 +323,8 @@ def _target(i: int, now: float) -> tuple[tuple[int, ...], bool, bool]:
     if p is not None and now >= p[0]:
         pulses[i] = p = None
     if p is None:
-        # the default colour (idle_lightbar) is sent too: the sender and the pad keep the last colour, so after switching
-        # "by battery" -> "default", after a receiver restart or a reconnect the pad kept the old colour
-        # (e.g. by battery), because "default" used to mean "send nothing"
+        # the default colour (idle_lightbar) is sent too: the sender and the pad keep the last colour, so sending nothing would
+        # leave the old one (e.g. by battery) after switching to "default", a receiver restart or a reconnect
         return base, True, blink
     return (p[1], p[2], *(p[3] or base[2:])), True, blink
 
