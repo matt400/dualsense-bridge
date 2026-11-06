@@ -16,11 +16,37 @@ rx_console._toast = lambda title, msg="": calls.append(("toast", title, msg))
 rx_console._tv_mode = lambda w, h, sc: calls.append(("tv", w, h, sc))
 
 
+class Clock:
+    """The time module seen by rx_console and rx_net: monotonic() moves only when the test calls advance()."""
+
+    def __init__(self):
+        self.t = 1000.0
+
+    def monotonic(self):
+        return self.t
+
+    def advance(self, s):
+        self.t += s
+
+    def __getattr__(self, name):
+        return getattr(time, name)
+
+
+clock = Clock()
+rx_console.time = N.time = clock          # double-click window, auto-OFF, test end, pending auto-ON, the 1 s after a bye
+rx_console.TICK_S = 3600.0                # no periodic _tick from the worker: the test runs it with tick(c)
+
+
 def idle(c, timeout=5.0):
     """Wait until the worker thread has run every queued job (the jobs run in order)."""
     done = threading.Event()
     c._jobs.put(done.set)
     return done.wait(timeout)
+
+def tick(c):
+    """Run the periodic _tick in the worker thread (where it normally runs) and wait for it."""
+    c._jobs.put(c._tick)
+    return idle(c)
 
 def turned(c, on=True):
     """Mode switched AND the whole switch carried out: _apply sets c.on first, and the screen / sound / toast
@@ -43,7 +69,7 @@ def new_console(**kw):
     return c
 
 def click(i=0, button=316, gap=0.05):
-    state(i, mask=BIT[button]); time.sleep(gap); state(i, mask=0)
+    state(i, mask=BIT[button]); clock.advance(gap); state(i, mask=0)
 
 PS, SHARE = 316, 314
 
@@ -98,35 +124,35 @@ ok("detector: buttons, d-pad, triggers")
 
 # ---------- double click toggles ON/OFF (through the real rx_net.handle) ----------
 c = new_console(audio_tv="LG TV", audio_pc="Głośniki", double_click_ms=400)
-click(); time.sleep(0.05); click()
+click(); clock.advance(0.05); click()
 check(turned(c), "PS double click -> ON")
 check(calls == [("display", "tv"), ("tv", 2560, 1440, 200), ("audio", "LG TV"), ("toast", "Tryb konsoli włączony", "")],
       f"ON: screen, TV resolution and scale, TV sound, toast: {calls}")
 check(S.states[0]["raw"][0] == 0, "pad state still tracked (buttons reach the game)")
 calls.clear()
-click(); time.sleep(0.05); click()
+click(); clock.advance(0.05); click()
 check(turned(c, False), "second double click -> OFF")
 check(calls == [("display", "extend"), ("audio", "Głośniki"), ("toast", "Tryb konsoli wyłączony", "")], f"OFF: screen, PC sound, toast: {calls}")
 ok("double click: ON (TV + audio_tv + toast), OFF (extend + audio_pc + toast)")
 
 calls.clear()
-click(); time.sleep(0.5); click(); time.sleep(0.5); click()
-time.sleep(0.3)
+click(); clock.advance(0.5); click(); clock.advance(0.5); click()
+idle(c)
 check(not c.on and not calls, "clicks further apart than double_click_ms switch nothing")
-calls.clear(); time.sleep(0.5)        # the previous click has to be outside the window
-click(); time.sleep(0.05); click(); time.sleep(0.05); click()
+calls.clear(); clock.advance(0.5)     # the previous click has to be outside the window
+click(); clock.advance(0.05); click(); clock.advance(0.05); click()
 check(turned(c), "a series of clicks switches")
-time.sleep(0.4)
+idle(c)
 check(len([x for x in calls if x[0] == "toast"]) == 1, f"three quick clicks = one switch: {calls}")
 ok("sparse clicks ignored, a series does not switch twice")
 
 # another pad: two clicks on different pads are not a double click
-c.on = False; calls.clear()
+c.on = False; calls.clear(); clock.advance(0.5)        # the last click of the series is outside the window
 click(0); click(1)
-time.sleep(0.3)
+idle(c)
 check(not calls, "a click on two different pads does not count as a double click")
 # a button other than the configured one
-click(0, SHARE); click(0, SHARE); time.sleep(0.3)
+click(0, SHARE); click(0, SHARE); idle(c)
 check(not calls, "a double click of another button does nothing")
 ok("clicks on different pads / another button ignored")
 
@@ -143,10 +169,11 @@ c.close(restart=True)
 # ---------- auto-OFF after silence ----------
 c = new_console(audio_tv="LG TV", audio_pc="Głośniki", timeout_s=5)
 c._apply(True); calls.clear()
-now = time.monotonic()
+now = clock.monotonic()
 for i in range(C.NUM_PADS):
     S.last_seen[i] = now
-c._tick(); time.sleep(0.1)
+c._since = now - 6                       # turned on long ago: only the fresh packets keep it on
+c._tick()
 check(c.on and not calls, "fresh packets -> stays ON")
 for i in range(C.NUM_PADS):
     S.last_seen[i] = now - 6
@@ -156,7 +183,7 @@ check(not c.on and calls[:2] == [("display", "extend"), ("audio", "Głośniki")]
       and calls[2][1] == "Tryb konsoli wyłączony" and "5 s" in calls[2][2], f"silence > timeout_s -> OFF + toast: {calls}")
 calls.clear(); c._tick()
 check(not calls, "in OFF mode silence does nothing")
-c._apply(True); c._since = time.monotonic(); calls.clear()
+c._apply(True); c._since = clock.monotonic(); calls.clear()
 for i in range(C.NUM_PADS):
     S.last_seen[i] = 0.0
 c._tick()
@@ -171,7 +198,7 @@ for mode in ("extend", "internal"):
           f"start {mode}: {calls}")
     cc.close(restart=True)
 calls.clear(); cc = Console(ConsoleConfig(startup_mode="extend")); cc.start(); wait_for(lambda: calls)
-time.sleep(0.2); check(calls == [("display", "extend")], f"empty audio_pc -> sound unchanged: {calls}"); cc.close(restart=True)
+idle(cc); check(calls == [("display", "extend")], f"empty audio_pc -> sound unchanged: {calls}"); cc.close(restart=True)
 ok("start: DisplaySwitch /extend lub /internal + audio_pc")
 
 # ---------- command errors do not crash the script ----------
@@ -221,7 +248,7 @@ state(0, mask=0); calls.clear(); c.on = False
 click(0, PS); click(0, PS)
 check(turned(c) and got == ["ps"], "after capture the callback is one-shot, and the double click works again")
 c.on = False; calls.clear()
-c.arm_capture(got.append); click(0, PS); click(0, PS); time.sleep(0.3)
+c.arm_capture(got.append); click(0, PS); click(0, PS); idle(c)
 check(len(got) == 2 and not calls and not c.on, "while choosing a button a double click does not switch the mode")
 c.arm_capture(got.append); c.cancel_capture(); state(0, mask=BIT[SHARE]); state(0, mask=0)
 check(len(got) == 2, "a cancelled choice captures nothing")
@@ -236,8 +263,11 @@ ok("button choice: the first newly pressed, one-shot, without switching the mode
 rx_console.TEST_S = 0.4
 c = new_console(audio_tv="stare TV", audio_pc="stare PC"); calls.clear()
 c.test(ConsoleConfig(audio_tv="nowe TV", audio_pc="nowe PC"))
-check(wait_for(lambda: ("audio", "nowe TV") in calls) and c.on, "test: ON with the values from the window")
-check(wait_for(lambda: ("audio", "nowe PC") in calls, 4), "test: OFF after a while with the same values")
+check(turned(c) and ("audio", "nowe TV") in calls, "test: ON with the values from the window")
+clock.advance(0.3); tick(c)
+check(c.on and ("audio", "nowe PC") not in calls, "test: still ON before TEST_S")
+clock.advance(0.2); tick(c)
+check(("audio", "nowe PC") in calls, "test: OFF after TEST_S with the same values")
 check(not c.on and ("audio", "stare TV") not in calls, "the test does not use the stored configuration")
 c.close(restart=True)
 ok("Test: ON and automatic return, with the settings from the window")
@@ -256,25 +286,25 @@ ok("closing: ON goes back to extend, a restart does not repeat switches")
 from proto import T_CLICK
 c = new_console(); calls.clear()
 def combo(second, gap=0.03):
-    state(0, mask=BIT[PS]); time.sleep(gap); second(); time.sleep(gap); state(0, mask=0); time.sleep(gap)
+    state(0, mask=BIT[PS]); clock.advance(gap); second(); clock.advance(gap); state(0, mask=0); clock.advance(gap)
 for _ in range(2):                                         # PS + Share (screenshot) twice in a row
     combo(lambda: state(0, mask=BIT[PS] | BIT[SHARE]))
-time.sleep(0.2)
+idle(c)
 check(not c.on and not any(x[0] == "display" for x in calls), f"PS + Share twice does not switch the mode: {calls}")
 for _ in range(2):                                         # PS + d-pad (profile change) twice
     combo(lambda: state(0, mask=BIT[PS], hat=(1, 0)))
-time.sleep(0.2)
+idle(c)
 check(not c.on, "PS + d-pad twice does not switch the mode")
 for _ in range(2):                                         # PS + touchpad click (mouse / touch) twice
     combo(lambda: (feed(T_CLICK, 0, 1), feed(T_CLICK, 0, 0)))
-time.sleep(0.2)
+idle(c)
 check(not c.on, "PS + touchpad click twice does not switch the mode")
 for m in (BIT[SHARE], BIT[SHARE] | BIT[PS], BIT[SHARE], BIT[SHARE] | BIT[PS], BIT[SHARE], 0):
-    state(0, mask=m); time.sleep(0.03)
-time.sleep(0.2)
+    state(0, mask=m); clock.advance(0.03)
+idle(c)
 check(not c.on, "PS pressed while Share is held is a shortcut too")
-time.sleep(0.5)
-click(); time.sleep(0.05); click()
+clock.advance(0.5)
+click(); clock.advance(0.05); click()
 check(turned(c), "a plain double click after shortcuts still works")
 c.close(restart=True)
 ok("PS shortcuts (Share, d-pad, touchpad) do not count as clicks")
@@ -314,30 +344,30 @@ ok("TV: resolution and scale only on ON, mode choice, relative scale, waiting fo
 # ---------- R2 as the mode button (default): hysteresis, combinations ----------
 c = new_console(toggle_button="r2"); calls.clear()
 def r2(v, mask=0):
-    state(0, rt=v, mask=mask); time.sleep(0.03)
+    state(0, rt=v, mask=mask); clock.advance(0.03)
 r2(255); r2(0); r2(255); r2(0)
 check(turned(c), "double full R2 -> ON")
-c.on = False; calls.clear(); time.sleep(0.5)
+c.on = False; calls.clear(); clock.advance(0.5)
 for v in (150, 200, 170, 199, 160, 0):                     # jitter around the threshold is one press (hysteresis)
     r2(v)
-time.sleep(0.3)
+idle(c)
 check(not c.on, "trigger jitter at the threshold is not a double click")
-time.sleep(0.5)
+clock.advance(0.5)
 for v in (60, 150, 0, 70, 0):                               # light presses (in game) do not count
     r2(v)
-time.sleep(0.3)
+idle(c)
 check(not c.on, "light R2 presses do not switch")
-r2(255, BIT[304]); r2(0); r2(255, BIT[304]); r2(0); time.sleep(0.2)
+r2(255, BIT[304]); r2(0); r2(255, BIT[304]); r2(0); idle(c)
 check(not c.on, "R2 with another button (in game) is not a click")
-c.on = False; calls.clear(); time.sleep(0.5)
+c.on = False; calls.clear(); clock.advance(0.5)
 for v in (255, 120, 255, 120):                              # quick taps: the trigger comes back only halfway (not to zero)
     r2(v)
 check(turned(c), "R2 double tap without a full release -> ON")
-c.on = False; calls.clear(); time.sleep(0.5)
+c.on = False; calls.clear(); clock.advance(0.5)
 for v in (200, 128, 200, 128, 0):                           # the release threshold is a 1/8 step (rx_net calls only on a step change)
     r2(v)
 check(not c.on, "the trigger did not drop below half the peak - one press")
-c.on = False; calls.clear(); time.sleep(0.5)
+c.on = False; calls.clear(); clock.advance(0.5)
 for v in (200, 120, 200, 120):
     r2(v)
 check(turned(c), "peak 200: a drop below 128 (rx_net step) counts as a release")
@@ -353,45 +383,45 @@ rx_settings.apply(replace(rx_settings.cur, master=replace(rx_settings.cur.master
 c = new_console(toggle_button="r2"); calls.clear()
 feed(T_IDENT, 1, MAC.encode())
 check(turned(c) and any(x[0] == "toast" and "master" in x[2] for x in calls), f"master connected -> ON: {calls}")
-time.sleep(0.5)
+clock.advance(0.5)
 for v in (255, 0, 255, 0):
-    state(1, rt=v); time.sleep(0.03)
+    state(1, rt=v); clock.advance(0.03)
 check(turned(c, False), "double R2 on the master -> manual OFF")
-time.sleep(0.3); feed(T_IDENT, 1, MAC.encode()); time.sleep(0.3)
+clock.advance(0.3); feed(T_IDENT, 1, MAC.encode()); idle(c)
 check(not c.on, "the same pad still connected (ident unchanged) - the mode stays off")
-feed(T_BYE, 1); time.sleep(1.1); feed(T_IDENT, 1, MAC.encode())
+feed(T_BYE, 1); clock.advance(1.1); feed(T_IDENT, 1, MAC.encode())
 check(turned(c), "master reconnects -> ON again")
 c.close(restart=True)
-c = new_console(toggle_button="r2", auto_on_master=False); feed(T_BYE, 1); time.sleep(1.1)
-feed(T_IDENT, 1, MAC.encode()); time.sleep(0.3)
+c = new_console(toggle_button="r2", auto_on_master=False); feed(T_BYE, 1); clock.advance(1.1)
+feed(T_IDENT, 1, MAC.encode()); idle(c)
 check(not c.on, "auto_on_master = false -> no automation")
 c.close(restart=True)
-feed(T_IDENT, 0, b"cc:cc:cc:00:00:09"); time.sleep(0.2)
-c = new_console(toggle_button="r2"); feed(T_BYE, 0); time.sleep(1.1); feed(T_IDENT, 0, b"cc:cc:cc:00:00:09"); time.sleep(0.3)
+feed(T_IDENT, 0, b"cc:cc:cc:00:00:09"); clock.advance(0.2)
+c = new_console(toggle_button="r2"); feed(T_BYE, 0); clock.advance(1.1); feed(T_IDENT, 0, b"cc:cc:cc:00:00:09"); idle(c)
 check(not c.on, "a plain pad (not the master) does not turn the mode on")
 c.close(restart=True)
 rx_settings.apply(replace(rx_settings.cur, master=replace(rx_settings.cur.master, pad="")))
-c = new_console(toggle_button="r2"); feed(T_BYE, 0); feed(T_BYE, 1); time.sleep(1.1); calls.clear()
+c = new_console(toggle_button="r2"); feed(T_BYE, 0); feed(T_BYE, 1); clock.advance(1.1); calls.clear()
 feed(T_IDENT, 0, b"cc:cc:cc:00:00:09")
 check(turned(c), "no master: the first connected pad turns the mode on (after a PC start the mode stayed off)")
 c._jobs.put(c._toggle); check(turned(c, False), "manual OFF")
-feed(T_IDENT, 1, MAC.encode()); time.sleep(0.3)
+feed(T_IDENT, 1, MAC.encode()); idle(c)
 check(not c.on, "no master: a second pad joining later does not turn on a mode switched off by hand")
 c.close(restart=True)
-feed(T_BYE, 0); feed(T_BYE, 1); time.sleep(1.1)
+feed(T_BYE, 0); feed(T_BYE, 1); clock.advance(1.1)
 rx_settings.apply(replace(rx_settings.cur, master=replace(rx_settings.cur.master, pad=MAC)))
 os.environ[rx_console.RESTART_ENV] = "0"
-c = new_console(toggle_button="r2"); feed(T_BYE, 1); time.sleep(1.1); feed(T_IDENT, 1, MAC.encode()); time.sleep(0.3)
+c = new_console(toggle_button="r2"); feed(T_BYE, 1); clock.advance(1.1); feed(T_IDENT, 1, MAC.encode()); idle(c)
 check(not c.on and rx_console.RESTART_ENV not in os.environ, "restart with the mode off: the master coming back does not turn it on")
 c.close(restart=True)
-feed(T_BYE, 1); time.sleep(1.1)
+feed(T_BYE, 1); clock.advance(1.1)
 rx_settings.apply(replace(rx_settings.cur, master=replace(rx_settings.cur.master, pad="")))
 os.environ[rx_console.RESTART_ENV] = "0"
 c = new_console(toggle_button="r2")
-state(0); feed(T_IDENT, 0, b"cc:cc:cc:00:00:09"); time.sleep(0.3)   # the first packet, right after it the identifier
+state(0); feed(T_IDENT, 0, b"cc:cc:cc:00:00:09")   # the first packet, right after it the identifier
 check(idle(c) and not c.on, "no master: restart with the mode off - the ident after the first packet does not turn it on")
 c.close(restart=True)
-feed(T_BYE, 0); time.sleep(1.1)
+feed(T_BYE, 0); clock.advance(1.1)
 rx_settings.apply(replace(rx_settings.cur, master=replace(rx_settings.cur.master, pad=MAC)))
 os.environ[rx_console.RESTART_ENV] = "1"
 calls.clear(); c = Console(ConsoleConfig()); c.start()
@@ -407,34 +437,36 @@ F.pulse = lambda i, kind, force=False: pulses.append((i, kind))
 c = new_console(toggle_button="r2"); calls.clear()
 rxenv.FG[0] = "ittakestwo.exe"
 for v in (255, 0, 255, 0):
-    state(0, rt=v); time.sleep(0.03)
-time.sleep(0.3)
+    state(0, rt=v); clock.advance(0.03)
+idle(c)
 check(not c.on and (0, "denied") not in pulses, f"game in the foreground: double R2 does nothing and does not flash red: {pulses}")
-rxenv.FG[0] = "steamwebhelper.exe"; time.sleep(0.5)
+rxenv.FG[0] = "steamwebhelper.exe"; clock.advance(0.5)
 for v in (255, 0, 255, 0):
-    state(0, rt=v); time.sleep(0.03)
+    state(0, rt=v); clock.advance(0.03)
 check(turned(c), "Steam / Big Picture in the foreground: switches")
 c.close(restart=True)
 rx_settings.apply(replace(rx_settings.cur, master=replace(rx_settings.cur.master, pad=MAC)))
 c = new_console(toggle_button="r2"); calls.clear()
 rxenv.FG[0] = "ittakestwo.exe"
-feed(T_BYE, 1); time.sleep(1.1); feed(T_IDENT, 1, MAC.encode())
+feed(T_BYE, 1); clock.advance(1.1); feed(T_IDENT, 1, MAC.encode())
 for _ in range(15):
-    state(1); time.sleep(0.1)                               # pad alive, the game still in the foreground
+    state(1); clock.advance(0.1)                            # pad alive, the game still in the foreground
+tick(c)
 check(not c.on and c._pending == 1, "auto-ON during a game waits")
 import rx_events
 check(any("ittakestwo.exe" in e.text and "czeka" in e.text for e in rx_events.since(0)),
       "auto-ON waiting shows in the log (with the program name)")
 rxenv.FG[0] = "explorer.exe"
 for _ in range(15):
-    state(1); time.sleep(0.1)
+    state(1); clock.advance(0.1)
+tick(c)
 check(c.on, "game closed (desktop in the foreground) -> auto-ON")
 check(any("czekania" in e.text for e in rx_events.since(0)), "in the log: turned on after waiting (how many seconds)")
 c.close(restart=True)
 c = new_console(toggle_button="r2", allowed_apps=("explorer.exe",)); rxenv.FG[0] = "steam.exe"
 for v in (255, 0, 255, 0):
-    state(0, rt=v); time.sleep(0.03)
-time.sleep(0.3)
+    state(0, rt=v); clock.advance(0.03)
+idle(c)
 check(not c.on, "the allow list from the settings (steam.exe removed) applies")
 c.close(restart=True)
 rxenv.FG[0] = None
@@ -455,7 +487,7 @@ rx_console.POWER_WAIT_S, wait = 0.2, rx_console.POWER_WAIT_S
 t0 = time.monotonic(); rx_console.power_off("x")
 check(time.monotonic() - t0 < 0.8 and not c.on and calls == [("display", "extend")], f"busy thread: switches at once: {calls}")
 rx_console.POWER_WAIT_S = wait
-time.sleep(1.2)
+idle(c)                                                      # the busy job and the queued switch both ran
 check(calls.count(("display", "extend")) == 1, f"a pending job does not switch a second time: {calls}")
 c.close(restart=True)
 import rx_display
