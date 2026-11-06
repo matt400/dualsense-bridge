@@ -301,9 +301,8 @@ class Bluetooth:
         """Run one operation: refresh the state, call the operation from OPS, refresh again, and send the result to the window.
 
         BtError carries a result code for the window; any other exception is only logged, so a bad operation can never
-        stop the sender. The `finally` always clears `running` - an exception after the operation (e.g. in the refresh)
-        used to leave it set, and every following operation from the window answered "another operation is running"
-        until the sender was restarted.
+        stop the sender. The `finally` always clears `running`, also after an exception in the refresh - a stuck flag would
+        answer every following operation from the window with "another operation is running" until a restart.
         """
         what = " ".join(filter(None, (OP_NAMES[op], mac_text(mac), "on" if op == BT_POWER and arg else "")))
         res = BTR_FAILED

@@ -37,12 +37,12 @@ import struct
 import time
 import zlib
 from collections.abc import Callable
-from dataclasses import dataclass, fields
+from dataclasses import dataclass
 from typing import Final
 
 from proto import HAPT_CHUNK, HAPT_FRAMES, HAPT_RATE, SPK_BYTES, SPK_END, SPK_FRAME, SPK_START, UINT32_MASK
-from sender_haptics import (BUFFER_AT, BUFFER_BYTES, COUNTER_AT, CRC_AT, DATA_AT, HEADER, PAD_BUFFER_DEFAULT, REPORT_LEN, SEQ_AT, U32_HALF,
-                            on_clock)
+from sender_haptics import (BUFFER_AT, BUFFER_BYTES, COUNTER_AT, CRC_AT, DATA_AT, HEADER, PAD_BUFFER_DEFAULT, REPORT_LEN, SEQ_AT,
+                            LATE_S, RESYNC_S, RETRY_S, LogCounters, Playout, frame_delta, on_clock)
 from sender_opus import COMPLEXITY_AUTO, DEFAULT_MODE, OpusEncoder
 from sender_rumble import BT_SEQ_MASK, BT_SEQ_SHIFT, BYTE_MASK, CRC_LEN, CRC_SEED, Rumble
 from sender_tick import TickTimer
@@ -68,11 +68,7 @@ TAIL_TICKS: Final = 10                      # silent reports after the last fram
 PAD_BUFFER: Final = 48                      # the pad's own audio buffer while it plays, 16..128: bigger rides out BT jitter, costs delay
                                             # (16 = the old fixed value and the lowest the pad takes; the ~32 ms dropouts that remained are
                                             # suspected to come from it; 48 is what DS5Dongle ships)
-LATE_S: Final = 0.004                       # a tick later than this is counted as late
-RESYNC_S: Final = 0.05                      # a tick later than this (a stalled loop): restart the timeline instead of catching up
-PRIME_MAX_TICKS: Final = 8                  # after an underrun wait at most this many ticks for the ring to refill
 FOLLOW_S: Final = 0.002                     # the speaker timer wakes this long after the haptics tick it follows
-RETRY_S: Final = 1.0                        # a refused start (USB pad, no HID report) is retried after this
 _SILENCE: Final = memoryview(bytes(SPK_BYTES))
 _NO_HAPTICS: Final = memoryview(bytes(HAPT_CHUNK))
 _SAMPLES: Final = struct.Struct(f"<{SPK_FRAME}h")   # one frame as samples (explicit little endian, like the spk packet)
@@ -215,7 +211,7 @@ class PcmRing:
 
 
 @dataclass(slots=True)
-class Counters:
+class Counters(LogCounters):
     """What one stream did (for the log line at its end).
 
     Attributes:
@@ -244,12 +240,8 @@ class Counters:
     unwritten: int = 0
     encoder_errors: int = 0
 
-    def text(self) -> str:
-        """The counters as one log line."""
-        return ", ".join(f"{f.name} {getattr(self, f.name)}" for f in fields(self))
 
-
-class SpeakerStream:
+class SpeakerStream(Playout):
     """The speaker of one pad: takes spk frames, buffers them and plays them at the pad's own pace.
 
     Attributes:
@@ -287,10 +279,10 @@ class SpeakerStream:
         self.encoder.bind(report.buf, OPUS_AT)
         self.target = max(2, round(buffer_ms / (FRAME_S * 1000)))
         self.high, self.limit = self.target + HIGH_OVER, self.target + LIMIT_OVER
-        self.ring = PcmRing()
+        self.ring: PcmRing = PcmRing()
         self._spare = memoryview(bytearray(SPK_BYTES))          # the frame the drift correction fades into
         self.active = self.ending = self.priming = False
-        self.stats = Counters()
+        self.stats: Counters = Counters()
         self._expected = 0                                      # the frame the next packet must carry
         self._rx = 0.0                                          # when the last packet arrived
         self._due = 0.0                                         # when the next tick is due (absolute)
@@ -323,7 +315,7 @@ class SpeakerStream:
         else:
             if flags & SPK_START and st.frames > 1:             # the old stream was ended (a pause in the sound) and sound is back:
                 self._resume()                                  # the numbering goes on, so keep what is buffered
-            delta = ((frame - self._expected + U32_HALF) & UINT32_MASK) - U32_HALF     # signed: frames ahead (+) or behind (-)
+            delta = frame_delta(frame, self._expected)
             if -MAX_GAP_FRAMES <= delta < 0:
                 st.stale += 1                                   # late, repeated or reordered: its place in time has passed
                 return
@@ -350,14 +342,6 @@ class SpeakerStream:
         self.ending, self._tail = False, TAIL_TICKS
         if self.ring.depth == 0:
             self.priming, self._prime_ticks = True, 0
-
-    def _restart(self, frame: int) -> None:
-        """Start the ring over at ``frame``: the stream jumped (a restarted receiver, a long gap) or began again."""
-        self.stats.resyncs += 1
-        self.ring.clear()
-        self.priming, self._prime_ticks = True, 0
-        self.ending = False
-        self._expected = frame
 
     def _begin(self, frame: int, now: float) -> bool:
         """Put the pad into audio mode, set the volume and start the timer; False when the pad cannot play (retried after a second)."""
@@ -438,11 +422,6 @@ class SpeakerStream:
         """The deadline of the next report the speaker writes on its own clock, or None (idle, or following the haptics tick)."""
         return self._due if self.active and not self._following else None
 
-    def _arm(self) -> None:
-        """Arm the tick timer for the next deadline (``_due``)."""
-        if self._ticker is not None:
-            self._timer = self._ticker.arm(self._due)
-
     def _write(self, now: float) -> None:
         """Write one report from the speaker's own clock (no haptics: the haptics part is silent) and advance the deadline."""
         lag = now - self._due
@@ -459,13 +438,9 @@ class SpeakerStream:
         """Called for every audio report while the stream runs: encode the next frame (or silence) into the report."""
         ring, st = self.ring, self.stats
         depth = ring.depth
-        if self.priming:
-            if depth >= self.target or self._prime_ticks >= PRIME_MAX_TICKS or self.ending:
-                self.priming = False
-            else:
-                self._prime_ticks += 1
+        priming = self._still_priming(depth)
         pcm = self.encoder.pcm
-        if self.priming or depth == 0:
+        if priming or depth == 0:
             pcm[:] = _SILENCE
             st.silent += 1
             if depth == 0 and not self.priming and not self.ending:
@@ -484,10 +459,7 @@ class SpeakerStream:
     # ---------- end ----------
     def _finish(self, why: str) -> None:
         """End the stream: stop the timer, set the volume to 0 and give the actuators back to rumble, log what happened."""
-        if self._ticker is not None:
-            self._ticker.close()
-            self._ticker = None
-        self._timer = None
+        self._stop_ticker()
         self.active = self.ending = self._following = False
         self.report.detach()
         self.rumble.speaker_end()
