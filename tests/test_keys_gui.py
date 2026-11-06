@@ -16,7 +16,7 @@ import rx_qt
 import rx_settings
 import rx_shortcuts as SC
 from rx_buttons import BIT, BUTTON_CODES
-ok = lambda msg: print("OK  ", msg)
+from chk import ok
 pump = lambda ms=40: QTest.qWait(ms)
 SHOTS = os.environ.get("SHOTS") or os.path.dirname(__file__)
 

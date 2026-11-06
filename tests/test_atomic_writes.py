@@ -10,7 +10,7 @@ import rx_dsu
 import rx_settings
 from rx_console import ConsoleConfig
 
-from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
+from chk import check, fails, raises                          # noqa: E402  (shared helper, tests/chk.py)
 
 
 # ---------- 1. DSU: nowy subskrybent od razu dostaje stan pada, który się nie zmienia ----------
@@ -65,11 +65,7 @@ check(synced and json.load(open(path, encoding="utf-8")) == {"a": "ą"}, "write_
 def boom(*_a):
     raise OSError("dysk pełny")
 os.replace = boom
-try:
-    proto.write_json(path, {"a": 2})
-    check(False, "błąd zapisu przechodzi dalej")
-except OSError:
-    pass
+raises(OSError, lambda: proto.write_json(path, {"a": 2}), "błąd zapisu przechodzi dalej")
 os.replace = real_replace
 check(not os.path.exists(path + ".tmp"), "nieudany zapis usuwa plik .tmp")
 check(json.load(open(path, encoding="utf-8")) == {"a": "ą"}, "nieudany zapis zostawia poprzedni plik")

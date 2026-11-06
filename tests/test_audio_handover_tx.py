@@ -16,7 +16,7 @@ import sender_haptics as H
 import sender_speaker as S
 from proto import HAPT_CHUNK, HAPT_END, HAPT_FRAMES, HAPT_START, SPK_BYTES, SPK_START
 
-ok = lambda m: print("OK  ", m)
+from chk import ok
 REAL_MONOTONIC = time.monotonic
 P = S.PERIOD_S
 

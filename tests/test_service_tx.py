@@ -3,7 +3,7 @@ import os, subprocess, sys, tempfile
 TX = os.path.abspath(sys.argv[1])
 sys.path.insert(0, TX)
 sys.path.insert(1, TX + "/../common")
-ok = lambda m: print("OK  ", m)
+from chk import ok
 SCRIPT = os.path.join(TX, "install-service.sh")
 
 

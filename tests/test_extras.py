@@ -13,7 +13,7 @@ from proto import (BODY, E_PAD_ON, E_WOL, EV_WARN, LAT_NONE, PAD_KEYS, SCFG_BATT
                    T_STATE2, Codec)
 from rx_buttons import TRIG_ON
 
-ok = lambda m: print("OK  ", m)
+from chk import ok
 cod = Codec()
 ARR = 5_000_000_000
 

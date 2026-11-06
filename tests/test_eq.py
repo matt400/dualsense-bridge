@@ -10,7 +10,7 @@ import rx_eq as E, rx_haptics as H, rx_settings, rx_speaker as K
 import rx_state as S
 from proto import CAP_SPEAKER, SPK_BYTES
 
-from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
+from chk import check, fails, raises                          # noqa: E402  (shared helper, tests/chk.py)
 
 RATE = 48000
 
@@ -89,11 +89,7 @@ check(max(abs(v) for v in keep.process([0.0] * 50)) > 1.0, "zmiana innego pasma 
 # ---------- ustawienia: przycinanie, presety ----------
 check(E.clamp((20, -20, 1.4, 2.6, 0)) == (12, -12, 1, 3, 0), "clamp: zakres ±12 dB, zaokrąglenie")
 for bad in ((1, 2, 3), (1, 2, 3, 4, "x"), (1, 2, 3, 4, True), (1, 2, 3, 4, 5, 6)):
-    try:
-        E.clamp(bad)
-        check(False, f"clamp odrzuca {bad!r}")
-    except ValueError:
-        check(True, f"clamp odrzuca {bad!r}")
+    raises(ValueError, lambda: E.clamp(bad), f"clamp odrzuca {bad!r}")
 check(all(E.preset_of(v) == k and len(v) == E.NUM_BANDS and all(E.GAIN_DB[0] <= d <= E.GAIN_DB[1] for d in v) for k, v in E.PRESETS.items()),
       "presety: poprawne i rozpoznawane po wartościach")
 check(E.preset_of((1, 0, 0, 0, 0)) == "custom", "inne wartości = własny")

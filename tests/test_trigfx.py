@@ -12,7 +12,7 @@ from rx_editor import Editor
 from rx_settings import MasterConfig, MouseConfig, Settings
 from rx_shape import legacy_values, needs_fx, normalize_triggers, trigger_values
 
-ok = lambda m: print("OK  ", m)
+from chk import ok
 
 # ---------- normalizacja ----------
 t = normalize_triggers({"l2": {"start": 3, "force": 6}, "r2": {"mode": "click", "pos": 9, "force": 0, "start": 4},

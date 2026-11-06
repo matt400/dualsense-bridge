@@ -7,7 +7,7 @@ from sender_config import C
 import sender_rt as R
 
 TMP = tempfile.mkdtemp()
-ok = lambda m: print("OK  ", m)
+from chk import ok
 assert C.LOW_LATENCY is True and C.CPU_LATENCY_US == 50 and C.RT_PRIORITY == 10, "domyślnie włączone"
 
 # ---------- PM QoS ----------

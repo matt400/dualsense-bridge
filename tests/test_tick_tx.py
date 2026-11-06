@@ -6,7 +6,7 @@ sys.path.insert(0, sys.argv[1])
 sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_tick as T
 
-ok = lambda m: print("OK  ", m)
+from chk import ok
 EARLY_S = 0.001                              # call_at may run a callback a clock-resolution early, a timerfd never does
 LATE_S = 0.05                                # generous: a loaded CI machine, not the precision (that is measured on the pad)
 HAVE_TIMERFD = T.use_timerfd

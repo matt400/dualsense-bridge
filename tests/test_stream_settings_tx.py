@@ -9,7 +9,7 @@ import sender_rumble as R
 from proto import HAPT_CHUNK, HAPT_END, HAPT_START, SPK_BYTES, SPK_END, SPK_START
 from sender_config import C
 
-ok = lambda m: print("OK  ", m)
+from chk import ok
 TMP = tempfile.mkdtemp()
 
 

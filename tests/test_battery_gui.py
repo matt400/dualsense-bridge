@@ -11,7 +11,7 @@ import rx_games
 import rx_qt
 import rx_qt_style as ST
 rx_games.in_game = lambda exe=None: False    # the desktop: the wave may animate
-ok = lambda msg: print("OK  ", msg)
+from chk import ok
 pump = lambda ms=40: QTest.qWait(ms)
 
 win = rx_qt.create_window(os.path.join(TMP, "ui.ini")); win.resize(1180, 760); win.show(); pump(150)

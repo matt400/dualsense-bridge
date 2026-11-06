@@ -36,3 +36,8 @@ def wait_for(pred: Callable[[], object], timeout: float = 2.5) -> bool:
             return True
         time.sleep(0.01)
     return bool(pred())
+
+
+def ok(msg: str) -> None:
+    """Print an OK line after a group of plain ``assert`` statements (a failed assert ends the script before it)."""
+    print("OK  ", msg)

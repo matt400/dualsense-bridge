@@ -16,7 +16,7 @@ import rx_profiles as P
 import rx_qt
 import rx_reach as R
 from proto import BODY, CAP_CALIB, CMD_RAW_STICKS, RUMBLE_HIDRAW, T_CMD, T_IDENT
-ok = lambda msg: print("OK  ", msg)
+from chk import ok
 pump = lambda ms=40: QTest.qWait(ms)
 PAD = "aa:aa:aa:aa:aa:03"
 cmds = lambda: [BODY[T_CMD].unpack_from(pkt, 4) for t, _i, _sq, pkt in sent if t == T_CMD]

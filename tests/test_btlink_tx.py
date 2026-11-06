@@ -8,7 +8,7 @@ import sender_bt as SB
 import sender_btlink as BL
 from proto import BODY, BTD_CONNECTED, BTD_PAD, BTD_PAIRED, BTL_LQ, BTL_RSSI, T_BTLINK, mac_bytes
 
-from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
+from chk import check, fails, raises                          # noqa: E402  (shared helper, tests/chk.py)
 
 
 PAD, PAD2, OTHER = "aa:bb:cc:dd:ee:01", "aa:bb:cc:dd:ee:02", "11:22:33:44:55:66"
@@ -153,11 +153,7 @@ check(p.tried == [16, 14], f"filtr: po odmowie 16 B próbuje 14 B ({p.tried})")
 p = Picky(24)
 BL.set_filter(p)
 check(p.tried == [16, 14, 24], "filtr: próbuje po kolei trzy rozmiary")
-try:
-    BL.set_filter(Picky(99))
-    check(False, "filtr: odmowa wszystkich rozmiarów zgłasza błąd")
-except OSError:
-    check(True, "filtr: odmowa wszystkich rozmiarów zgłasza błąd")
+raises(OSError, lambda: BL.set_filter(Picky(99)), "filtr: odmowa wszystkich rozmiarów zgłasza błąd")
 
 # ---------- Bluetooth.send_links: pakiet btlink, ograniczenie częstości ----------
 async def t_send():

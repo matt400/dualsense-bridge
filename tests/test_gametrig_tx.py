@@ -11,7 +11,7 @@ from proto import (BODY, CAP_TRIG_RAW, RFX_ON, SENDER_VERSION, T_TRIG3, TFX_CLIC
                    TRIG2_OFF, Codec)
 
 TMP = tempfile.mkdtemp()
-ok = lambda m: print("OK  ", m)
+from chk import ok
 
 G_L2 = bytes([0x25, 0x30, 0x00, 0x05] + [0] * 7)          # klik z gry
 G_R2 = bytes([0x21, 0xFF, 0x03, 0x92, 0x24, 0x49, 0x12] + [0] * 4)   # opór z gry

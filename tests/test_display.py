@@ -7,7 +7,7 @@ sys.path.insert(1, sys.argv[1] + "/../common")
 import rx_display as D  # noqa: E402
 import rx_gamebar as G  # noqa: E402
 
-from chk import check, fails
+from chk import check, fails, raises
 
 
 
@@ -86,11 +86,7 @@ u = FakeUser32(ccd_ok=False)
 D._user32 = lambda: u
 out = D.set_resolution("x", 2560, 1440)
 check(u.gdi == [(2560, 1440, 120)] and "GDI" in out, f"CCD odmawia -> zapas GDI z pełnym trybem sterownika: {out}")
-try:
-    D.set_resolution("x", 1234, 567)
-    check(False, "brak trybu -> wyjątek")
-except ValueError:
-    check(True, "brak trybu -> wyjątek")
+raises(ValueError, lambda: D.set_resolution("x", 1234, 567), "brak trybu -> wyjątek")
 
 
 # ---------- rx_gamebar na zaślepce winreg ----------

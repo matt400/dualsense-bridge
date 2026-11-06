@@ -6,7 +6,7 @@ import rx_diag
 import rx_net
 from proto import BTL_LQ, BTL_RSSI, T_BTLINK, Codec, mac_bytes
 
-ok = lambda m: print("OK  ", m)
+from chk import ok
 cod = Codec()
 MAC = "aa:bb:cc:dd:ee:01"
 rx_diag.init(2)

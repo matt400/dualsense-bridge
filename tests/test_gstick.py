@@ -122,7 +122,7 @@ t.e.start_center(t.t, 0.4); t.run(tilt, 120, gdps=1.0)
 check(t.e.cal_result and t.e.cal_result[0], "kalibracja wyszła")
 cfg = replace(base, center=t.e.cal_result[1]); t.e.cfg = cfg
 t.run(tilt, 5); o = t.run(tilt, 3)
-check(o == (0.0, 0.0, False) and t.e.raw[1] == (t.e.raw[1]) and abs(t.e.raw[1]) < 0.5, f"w nowym środku wyjście 0 ({t.e.raw})")
+check(o == (0.0, 0.0, False) and math.isfinite(t.e.raw[1]) and abs(t.e.raw[1]) < 0.5, f"w nowym środku wyjście 0 ({t.e.raw})")
 t.run(acc(pitch=35), 3); check(t.e.out[1] > 0.4, "przechył względem nowego środka")
 t = T(base); t.e.start_center(t.t, 0.4); t.run(acc(), 120, gdps=200.0)
 check(t.e.cal_result == (False, None), "kalibracja w ruchu odrzucona")

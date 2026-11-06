@@ -18,7 +18,7 @@ import sender_supervisor as sup
 from proto import (CAP_HAPTICS, CAP_SPEAKER, HAPT_CHUNK, HAPT_START, SPK_BYTES, SPK_END, SPK_START, T_SPK, Codec, SeqFilter)
 from fakedev import common, crc_ok, new_hidraw, reports
 
-ok = lambda m: print("OK  ", m)
+from chk import ok
 KEY = b"0123456789abcdef"
 REAL_MONOTONIC = time.monotonic
 PERIOD = S.PERIOD_S

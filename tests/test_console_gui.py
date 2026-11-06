@@ -10,7 +10,7 @@ C.cfg["tray"] = False
 C.CONSOLE_PATH = os.path.join(TMP, "console.json")
 import rx_audio, rx_console, rx_qt
 from rx_console import Console, ConsoleConfig
-ok = lambda msg: print("OK  ", msg)
+from chk import ok
 pump = lambda ms=40: QTest.qWait(ms)
 BTN = lambda n: BIT[n]
 

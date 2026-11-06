@@ -18,7 +18,7 @@ import sender_streams
 from proto import (BODY, CAL_FEW, CAL_MOVED, CAL_OK, CAL_RUNNING, CAL_STATUS, CALF_STORED, CAP_CALIB, CMD_GYRO_CAL,
                    CMD_RAW_STICKS, T_CALRES, T_CMD, T_STATE, T_VERSION, Codec)
 
-ok = lambda m: print("OK  ", m)
+from chk import ok
 cod = Codec()
 sent = []
 sender_net.emit = sender_ctrl.net.emit = calib.net.emit = lambda t, i, *v: sent.append((t, i, v))

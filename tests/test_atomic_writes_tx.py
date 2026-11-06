@@ -6,7 +6,6 @@ sys.path.insert(0, sys.argv[1])
 sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
 from sender_config import C
-import proto
 import sender_calib as calib
 import sender_rumble as R
 import sender_state as state
@@ -70,7 +69,6 @@ asyncio.run(main())
 check(R.OFF_EFFECT == bytes([R.TRIG_OFF]) + bytes(10) and len(R.OFF_EFFECT) == R.TRIGGER_LEN, "efekt Off: 0x05 + 10 zer")
 check(R.trigger_effect(0, 0) == R.weapon_effect(9, 3) == R.vibration_effect(0, 0, 9) == R.OFF_EFFECT, "złe parametry -> Off")
 check(R.trigger_effect(3, 6)[0] == R.TRIG_FEEDBACK and R.weapon_effect(5, 6)[0] == R.TRIG_WEAPON, "efekty jak dotąd")
-check(proto.write_file is not None, "proto.write_file")
 
 if fails:
     print("FAIL", len(fails), "błędów")

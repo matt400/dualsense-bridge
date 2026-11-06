@@ -6,7 +6,7 @@ import sender_config; sender_config.init(["127.0.0.1"])
 from sender_config import C, SETTLE_S
 import sender_supervisor as sup
 
-ok = lambda m: print("OK  ", m)
+from chk import ok
 TMP = tempfile.mkdtemp()
 
 

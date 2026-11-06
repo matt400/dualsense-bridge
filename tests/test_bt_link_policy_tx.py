@@ -14,7 +14,7 @@ import sender_btadapter as A
 import sender_bt as SB
 import sender_net as net
 
-ok = lambda m: print("OK  ", m)
+from chk import ok
 TMP = Path(tempfile.mkdtemp())
 C.BT_FILE = str(TMP / "bt.json")
 SNIFF = A.HCI_LP_RSWITCH | A.HCI_LP_SNIFF

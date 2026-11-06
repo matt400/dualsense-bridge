@@ -13,7 +13,7 @@ import sender_bt as SB
 from proto import (BT_ADAPTER, BT_ADAPTER_USE, BTA_AUTO, BTA_MANUAL, BTA_PICK, BTC_ACTIVE, BTC_BLOCKED, BTC_FIXED,
                    BTC_PICKED, BTC_USB, BTF_HAS_BUILTIN, BTF_HAS_USB, BTF_MODE_SHIFT, BTF_ON_USB, BTR_NOT_FOUND, BTR_OK,
                    T_BTCTRL, T_BTSTATE, cstr)
-ok = lambda m: print("OK  ", m)
+from chk import ok
 TMP = Path(tempfile.mkdtemp())
 C.BT_FILE = str(TMP / "bt.json")                # nie w folderze nadajnika
 DONGLE = {"vid": "2357", "pid": "0604", "product": "TP-Link UB5A Adapter", "maker": "Realtek"}

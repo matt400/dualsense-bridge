@@ -11,7 +11,7 @@ import sender_update
 import sender_wol as W
 from proto import BATT_CHARGING, BODY, SCFG_BATT, SCFG_WOL, T_BUILD, T_BUILD2, T_BUILD3, T_SCFG, Codec
 
-ok = lambda m: print("OK  ", m)
+from chk import ok
 cod = Codec()
 
 

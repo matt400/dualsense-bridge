@@ -10,7 +10,7 @@ C.CONSOLE_PATH = os.path.join(TMP, "console.json")
 import rx_audio, rx_console, rx_diag, rx_qt
 from proto import T_IDENT
 from rx_console import Console, ConsoleConfig
-ok = lambda msg: print("OK  ", msg)
+from chk import ok
 pump = lambda ms=40: QTest.qWait(ms)
 
 rx_audio.list_outputs = lambda: [("1", "Speakers")]

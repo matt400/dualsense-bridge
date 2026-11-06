@@ -5,7 +5,7 @@ import xml.etree.ElementTree as ET
 sys.path.insert(0, os.path.dirname(__file__))
 from rxenv import *                                              # noqa
 import rx_autostart as A
-ok = lambda msg: print("OK  ", msg)
+from chk import ok
 NS = {"t": "http://schemas.microsoft.com/windows/2004/02/mit/task"}
 
 # ---------- XML zadania ----------

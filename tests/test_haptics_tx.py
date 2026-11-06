@@ -16,7 +16,7 @@ from evdev import ecodes as ec
 from proto import CAP_HAPTICS, HAPT_CHUNK, HAPT_END, HAPT_START, T_HAPT, TRIG2_OFF, Codec, SeqFilter
 from fakedev import common, crc_ok, new_hidraw, reports
 
-ok = lambda m: print("OK  ", m)
+from chk import ok
 KEY = b"0123456789abcdef"
 
 

@@ -11,7 +11,7 @@ from proto import (BODY, CAP_TRIG_FX, RFX_HOLD_S, RFX_ON, T_TRIG, T_TRIG2, TFX_C
                    TRIG2_OFF, Codec, trig2_from_legacy)
 
 TMP = tempfile.mkdtemp()
-ok = lambda m: print("OK  ", m)
+from chk import ok
 
 # ---------- kodowanie efektów ----------
 w = R.weapon_effect(5, 6)

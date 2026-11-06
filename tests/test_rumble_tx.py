@@ -9,7 +9,7 @@ from evdev import ecodes as ec
 from proto import CAP_HAPTICS, CAP_SPEAKER, CAP_TRIG_FX, CAP_TRIG_RAW, CAP_TRIGGERS, RUMBLE_EVDEV, RUMBLE_HIDRAW
 
 TMP = tempfile.mkdtemp()
-ok = lambda m: print("OK  ", m)
+from chk import ok
 
 # ---------- raport wyjściowy ----------
 bt = R.output_report(True, 3, 40, 200)

@@ -8,8 +8,7 @@ from proto import T_CLICK, T_IDENT, T_MOUSE
 from rx_console import Console, ConsoleConfig
 from rx_settings import MasterConfig, MouseConfig, Settings
 
-ok = lambda msg: print("OK  ", msg)
-from chk import check, fails, wait_for
+from chk import check, fails, wait_for, ok
 
 
 PS, SHARE, CROSS, TRI, OPT, R3 = 316, 314, 304, 307, 315, 318

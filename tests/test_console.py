@@ -6,8 +6,7 @@ import rx_audio, rx_console
 from rx_console import Console, ConsoleConfig
 
 PATH = os.path.join(TMP, "console.json"); C.CONSOLE_PATH = PATH
-ok = lambda msg: print("OK  ", msg)
-from chk import check, fails, wait_for
+from chk import check, fails, wait_for, ok, raises
 
 # ---------- polecenia systemowe zastąpione rejestrem ----------
 calls = []
@@ -308,10 +307,7 @@ sleep = D.time.sleep
 D.time.sleep = lambda s: None
 check(D.apply_tv(2560, 1440, 200, settle_s=5) == "DISPLAY2: 2560x1440, scale 200%", "apply_tv: czeka na jeden ekran, potem tryb i skala")
 D.active_sources = lambda: [1, 2]
-try:
-    D.apply_tv(2560, 1440, 200, settle_s=0); check(False, "dwa ekrany -> nie zmienia")
-except RuntimeError:
-    pass
+raises(RuntimeError, lambda: D.apply_tv(2560, 1440, 200, settle_s=0), "dwa ekrany -> nie zmienia")
 D.time.sleep = sleep                                             # moduł time jest wspólny - przywróć
 ok("TV: rozdzielczość i skala tylko przy ON, wybór trybu, skala względna, czekanie na ekran")
 
@@ -468,10 +464,7 @@ rx_display._user32 = lambda: types.SimpleNamespace(SetDisplayConfig=lambda *a: t
 rx_display.set_topology("extend"); rx_display.set_topology("tv")
 check([a[-1] for a in topo] == [0x84, 0x88] and topo[0][:4] == (0, None, 0, None), f"SetDisplayConfig: APPLY | TOPOLOGY: {topo}")
 rx_display._user32 = lambda: types.SimpleNamespace(SetDisplayConfig=lambda *a: 87)
-try:
-    rx_display.set_topology("extend"); check(False, "błąd SetDisplayConfig -> wyjątek")
-except OSError:
-    pass
+raises(OSError, lambda: rx_display.set_topology("extend"), "błąd SetDisplayConfig -> wyjątek")
 ok("wyłączenie / uśpienie PC: najpierw OFF (extend), także przy zajętym wątku; SetDisplayConfig")
 
 # ---------- rx_audio.find ----------

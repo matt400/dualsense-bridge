@@ -13,7 +13,7 @@ import rx_audio, rx_console, rx_qt, rx_settings
 from proto import T_IDENT
 from rx_console import Console, ConsoleConfig
 from rx_settings import UiConfig
-ok = lambda msg: print("OK  ", msg)
+from chk import ok
 pump = lambda ms=40: QTest.qWait(ms)
 
 
