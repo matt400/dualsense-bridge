@@ -22,7 +22,7 @@ nowa.
 1. Wygeneruj: Ustawienia → Bezpieczeństwo → **Kopiuj nowy klucz** albo
    `python -c "import secrets; print(secrets.token_urlsafe(24))"`.
 2. Receiver: `key = "..."` w `receiver.toml` (albo zmienna środowiskowa `PADKEY`).
-3. Nadajnik: `key = "..."` w `sender.toml` albo `doas ./install-service.sh <IP PC> --key "..."` - instalator wpisuje
+3. Nadajnik: `key = "..."` w `sender.toml` albo `sudo ./install-service.sh <IP PC> --key "..."` - instalator wpisuje
    klucz do `/etc/dualsense-sender.env` (prawa 0600), a nie do polecenia usługi, które każdy użytkownik widzi w `ps`.
 4. Uruchom oba ponownie. Inny klucz po obu stronach okno zgłasza w dzienniku zdarzeń.
 
@@ -46,12 +46,12 @@ Po powrocie po jednej stronie do wersji bez protokołu v3 usuń `auth.json` po d
   całe repozytorium razem z `.git`: aktualizacja uruchamia tam git jako administrator, więc `.git` zapisywalny dla
   Ciebie (hooki, konfiguracja) uruchomiłby kod jako administrator przy następnym sprawdzeniu aktualizacji. Python zainstalowany „tylko dla tego
   użytkownika” ma ten sam problem - zainstaluj go dla wszystkich użytkowników.
-- **Folder nadajnika.** Usługa działa jako root, a kod leży w folderze użytkownika. `doas ./install-service.sh
+- **Folder nadajnika.** Usługa działa jako root, a kod leży w folderze użytkownika. `sudo ./install-service.sh
   --own-root ...` oddaje repozytorium rootowi (przycisk Aktualizuj dalej działa; `setup-update-key.sh` uruchamiaj
-  potem przez `doas`).
+  potem przez `sudo`/`doas`).
 - **systemd.** Usługa działa z `NoNewPrivileges`, systemem plików tylko do odczytu poza repozytorium
   (`ProtectSystem=strict`), `/home` tylko do odczytu, prywatnym `/tmp`. Coś przestało działać w Twoim systemie?
-  `doas systemctl edit dualsense-sender` i wyzeruj winną opcję.
+  `sudo systemctl edit dualsense-sender` i wyzeruj winną opcję.
 
 ## Ustawienia nadajnika z okna
 
