@@ -12,6 +12,11 @@ tab says why. An older sender does not know the packets and stays silent: the ta
 
 UDP loses packets: a request goes out three times (the same number, the sender handles it once), a read is repeated by the sender
 and, if some settings are still missing after RETRY_S, asked for again (at most MAX_TRIES times).
+
+Versions: the setting ids are append-only, so a sender of another version knows a prefix of this receiver's list or more. A v17+
+sender marks the last setting of a read (CFGF_LAST), which tells how many it knows; an older one does not, so a read whose rows
+stopped growing for a whole retry period (the ids 0..n-1 all there) is taken as "this sender knows n". Either way the read is
+complete without the settings the sender lacks, and the push of the differences runs instead of waiting for them forever.
 """
 from __future__ import annotations
 
@@ -23,7 +28,7 @@ import rx_events as ev
 import rx_net
 import rx_settings
 import rx_state as S
-from proto import (BODY, HEADER_LEN, CFG_ALL, CFG_GET, CFG_RESET, CFG_SET, CFGF_REMOTE, CFGR_INVALID, CFGR_NO_KEY, CFGR_NO_V3,
+from proto import (BODY, HEADER_LEN, CFG_ALL, CFG_GET, CFG_RESET, CFG_SET, CFGF_LAST, CFGF_REMOTE, CFGR_INVALID, CFGR_NO_KEY, CFGR_NO_V3,
                    CFGR_OFF, CFGR_OK, CFGR_UNKNOWN, NO_PAD, T_CFGSET, T_CFGVAL)
 from rx_i18n import _
 
@@ -82,9 +87,27 @@ def sync(old: rx_settings.SenderConfig, new: rx_settings.SenderConfig) -> None:
         reset(name)
 
 
+def expected() -> int:
+    """How many settings a complete read holds: the ones both sides know (all of ours while the sender's count is unknown)."""
+    n = len(cfgspec.SPECS)
+    return n if S.sender_cfg_count is None else min(n, S.sender_cfg_count)
+
+
 def complete() -> bool:
-    """True when the sender has answered for every setting."""
-    return len(S.sender_cfg) >= len(cfgspec.SPECS)
+    """True when the sender has answered for every setting it knows (of the ones this receiver knows)."""
+    return all(spec.key in S.sender_cfg for spec in cfgspec.SPECS[:expected()])
+
+
+def _prefix() -> int:
+    """The length of the run of settings 0, 1, ... the sender has answered for (the ids it knows are always such a run)."""
+    return next((k for k, spec in enumerate(cfgspec.SPECS) if spec.key not in S.sender_cfg), len(cfgspec.SPECS))
+
+
+def clear() -> None:
+    """Forget what the sender reported (it came online again, or the window asks for a fresh read)."""
+    S.sender_cfg.clear()
+    S.sender_cfg_result = None
+    S.sender_cfg_count = None
 
 
 def reconcile() -> int:
@@ -111,6 +134,8 @@ def _value(spec: cfgspec.Spec, number: float) -> cfgspec.Value:
 def on_packet(data: bytes, now: float) -> None:
     """Handle a cfgval: remember the row, or the reason the sender refuses all of it (no key / not v3 / switched off)."""
     key, result, _echo, flags, number, base = BODY[T_CFGVAL].unpack_from(data, HEADER_LEN)
+    if flags & CFGF_LAST and key != CFG_ALL:
+        S.sender_cfg_count = key + 1    # the last setting of a read: the sender knows this many (more than ours is fine)
     if key == CFG_ALL:                  # an answer about the whole request: the sender refuses it
         S.sender_cfg_result = result if result in (CFGR_NO_KEY, CFGR_NO_V3, CFGR_OFF, CFGR_UNKNOWN) else CFGR_UNKNOWN
         return
@@ -136,12 +161,12 @@ class Watch:
         self.pending = False
         self.tries = 0
         self.t_ask = 0.0
+        self.rows_at_ask = 0            # how many settings had answered when the last read was asked for
 
     def online(self) -> None:
         """The sender came online: forget the old answers and read again."""
-        S.sender_cfg.clear()
-        S.sender_cfg_result = None
-        self.pending, self.tries, self.t_ask = True, 0, 0.0
+        clear()
+        self.pending, self.tries, self.t_ask, self.rows_at_ask = True, 0, 0.0, 0
 
     def offline(self) -> None:
         """The sender went away: nothing is pending (the next online starts again)."""
@@ -157,10 +182,26 @@ class Watch:
         elif S.sender_cfg_result not in (None, CFGR_OK):
             self.pending = False            # a refusal: nothing to retry
         elif now - self.t_ask >= RETRY_S and self.tries < MAX_TRIES:
+            if self._settled():
+                return
             self.tries += 1
             self.t_ask = now
+            self.rows_at_ask = len(S.sender_cfg)
             if can_send():
                 request_all()
             else:
                 self.pending = False
+
+    def _settled(self) -> bool:
+        """An older sender (no CFGF_LAST): when a whole retry period added no row, it knows exactly the run it answered for.
+
+        The sender answers a read twice, so a run that did not grow across a retry is not a loss but the end of its list. Then
+        the count is fixed, the read is complete, and the differences are pushed (the next tick does it).
+        """
+        n = len(S.sender_cfg)
+        if self.tries == 0 or S.sender_cfg_count is not None or n == 0 or n != self.rows_at_ask or _prefix() != n:
+            return False
+        S.sender_cfg_count = n
+        S.sender_cfg_gen += 1
+        return True
 

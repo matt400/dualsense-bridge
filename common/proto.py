@@ -87,7 +87,10 @@ unknown length, so a variant only goes to a side that is known to understand it)
   cfgval (type 14) "BBHBdd" sender -> PC (idx = 255): the id of the setting (CFG_ALL for a refusal of the whole request), the result
                          CFGR_*, the reference of the request, flags CFGF_*, the value now in use and the one from sender.toml (so the
                          window can show "changed" and offer to go back). Sent for every setting after CFG_GET and for the one
-                         changed after CFG_SET / CFG_RESET. A receiver / sender pair that does not know them drops the unknown length
+                         changed after CFG_SET / CFG_RESET. A receiver / sender pair that does not know them drops the unknown length.
+                         In the answer to a read the last setting carries CFGF_LAST (v17+): the receiver learns how many settings the
+                         sender knows (ids are append-only), so a newer receiver does not wait for settings an older sender lacks.
+                         An older receiver ignores the unknown flag bit
 The phone's Bluetooth driven from the window (v10+; a phone with no screen). The sender announces the support itself - with a btstate
 packet (idx 255)
 to the receiver from which scfg arrived; the receiver sends btcmd only after btstate (an older sender would reject the length):
@@ -209,7 +212,7 @@ FRESH_EXEMPT = frozenset({T_PING})
 # ---------------------------------------------------------------------------------------------------------------------
 # Capabilities and limits announced in the version packet, trigger effects.
 # ---------------------------------------------------------------------------------------------------------------------
-SENDER_VERSION: Final = 16
+SENDER_VERSION: Final = 17
 RUMBLE_EVDEV, RUMBLE_HIDRAW, CAP_TRIGGERS = 1, 2, 4     # bits of the version packet (CAP_TRIGGERS: trigger resistance works)
 CAP_TRIG_FX: Final = 8                                  # a bit of the version packet: the sender knows trig2 (click, vibration)
 CAP_CALIB: Final = 16                                   # a bit of the version packet: CMD_GYRO_CAL and CMD_RAW_STICKS (v9+)
@@ -236,6 +239,7 @@ CFG_ALL: Final = 255                                    # cfgset / cfgval key id
 # setting, the sender has no HMAC key, the packet was not v3, the sender has remote changes switched off (remote_cfg_file = "")
 CFGR_OK, CFGR_LATER, CFGR_INVALID, CFGR_UNKNOWN, CFGR_NO_KEY, CFGR_NO_V3, CFGR_OFF = range(7)
 CFGF_REMOTE: Final = 1                                  # cfgval flag: the value comes from a change made in the receiver window
+CFGF_LAST: Final = 2                                    # cfgval flag: the last setting of a full read - the sender knows id + 1 settings
 LAT_NONE: Final = 0xFFFF                                # the delay field in state2: no measurement (a repeat, no data)
 TRIG_START_MAX, TRIG_FORCE_MAX = 9, 8                   # trigger resistance: the start zone 0-9 (every 10 %), strength 1-8
 TFX_OFF, TFX_RES, TFX_CLICK, TFX_VIB = range(4)         # trigger effect mode (trig2 packet)
