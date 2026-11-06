@@ -5,7 +5,7 @@
 - **Wirtualny DualSense** (HIDMaestro) albo **DS4** (ViGEmBus) z przyciskami, gałkami, spustami, touchpadem,
   żyroskopem, wibracjami i kolorem lightbara z gry. Ustawienia → Pady: `auto` (HIDMaestro, gdy jest DLL i receiver
   działa jako administrator, inaczej ViGEmBus), `hidmaestro` (to samo, ale brak HIDMaestro to ostrzeżenie w dzienniku)
-  albo `vigem`. HIDMaestro pobiera się sam z GitHuba - przypięta wersja (teraz v2.1.0, stały link, sprawdzany SHA-256), więc wydanie, które autor
+  albo `vigem`. HIDMaestro pobiera się sam z GitHuba - przypięta wersja (`PINNED_TAG`, stały link, sprawdzany SHA-256), więc wydanie, które autor
   opublikuje później, nie instaluje się samo; przypięcie przesuwa się razem z aktualizacją receivera (tylko DLL z zipa wydania, przez HTTP Range), a
   receiver uruchamia się jako administrator (UAC; zadanie autostartu z najwyższymi uprawnieniami). Zmiana działa od razu (pady powstają od nowa). Błąd HIDMaestro przy tworzeniu pada = ten pad przez
   ViGEmBus i ostrzeżenie w dzienniku. Karta pada (ikona touchpada) pokazuje, jakim padem jest slot.
@@ -134,8 +134,8 @@
       konsoli, PS + klik touchpada) - testowanie przycisków niczego nie przełączy;
     - **wyjście awaryjne z pada: Options + Create** (naciśnięte razem) na padzie master (bez mastera w ustawieniach -
       na dowolnym) kończy test bez myszy, także przy schowanym oknie i gdy testowany jest sam master: blokada znika od razu, a
-      trzymane w tej chwili przyciski gra dostaje jako puszczone, dopóki ich nie puścisz. Bez PS - długie PS + △
-      wyłączało pada.
+      trzymane w tej chwili przyciski gra dostaje jako puszczone, dopóki ich nie puścisz. Bez PS, więc długie PS + △
+      (wyłącza pada) go nie uruchomi.
 - **Skróty z PS:**
 
   | Skrót | Działanie |
