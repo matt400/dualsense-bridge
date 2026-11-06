@@ -38,6 +38,7 @@ from collections.abc import Callable, Sequence
 from typing import Any, Final, TypeAlias
 
 from proto import TRIG_RAW_LEN
+import rx_winapi
 from rx_config import HERE
 from rx_report import build_ds5_report
 from rx_state import NEUTRAL_OUT
@@ -95,16 +96,6 @@ def candidates(cfg_path: str = "") -> list[str]:
 def find_dll(cfg_path: str = "") -> str | None:
     """The first candidate that exists, or None."""
     return next((p for p in candidates(cfg_path) if os.path.isfile(p)), None)
-
-
-def is_admin() -> bool:
-    """Whether the process has administrator rights (always True off Windows)."""
-    if os.name != "nt":
-        return True
-    try:
-        return bool(ctypes.windll.shell32.IsUserAnAdmin())
-    except Exception:  # noqa: BLE001 - any failure of the shell32 call means: not elevated
-        return False
 
 
 def loaded() -> "Backend | None":
@@ -387,7 +378,7 @@ class Backend:
 
         Find the DualSense profile and bind the IL submit delegate; any failure is an HMError.
         """
-        if not is_admin():
+        if not rx_winapi.is_admin():
             raise HMError("administrator rights required (Windows needs them to create a virtual device)")
         clr = _load_clr(path)
         try:

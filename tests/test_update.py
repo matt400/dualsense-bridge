@@ -71,9 +71,9 @@ ok("lokalne zmiany rozjechane z GitHubem: błąd gita, pliki nietknięte")
 
 r = U.update(tmp, pip=False)
 assert not r.ok and "ZIP" in r.text
-U.find_git, real = (lambda: None), U.find_git
+U.gitupdate.find_git, real = (lambda: None), U.gitupdate.find_git
 r = U.update(work, pip=False)
-U.find_git = real
+U.gitupdate.find_git = real
 assert not r.ok and "Git for Windows" in r.text
 assert U.ROOT == os.path.dirname(os.path.abspath(sys.argv[1])), "repozytorium = folder nad receiver/"
 ok("folder bez .git (ZIP) i brak programu git: czytelny komunikat")

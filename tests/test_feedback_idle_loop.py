@@ -17,7 +17,7 @@ def counting_wait(timeout=None):
     return real_wait(timeout)
 F.fb_event.wait = counting_wait
 S.stop.clear()
-th = threading.Thread(target=F._loop, args=(lambda i, v: None,), daemon=True)
+th = threading.Thread(target=F.feedback_thread, args=(lambda i, v: None,), daemon=True)
 th.start()
 time.sleep(0.4)
 S.stop.set(); F.fb_event.set(); th.join(2)

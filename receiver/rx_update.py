@@ -70,11 +70,6 @@ SENDER_TEXT: Final = {
 _version: tuple[Any, ...] | None = None
 
 
-def find_git() -> str | None:
-    """Return the git executable (see gitupdate.find_git) or None."""
-    return gitupdate.find_git()
-
-
 def version() -> tuple[Any, ...]:
     """Return the receiver code version (commit, time, title) - computed once, the code changes only with a restart."""
     global _version
@@ -157,7 +152,7 @@ def check_available(root: str = ROOT, git: str | None = None) -> Available | Non
 
     Returns Available, or None (no git / network / tracking branch - the window then simply shows nothing).
     """
-    git = git or find_git()
+    git = git or gitupdate.find_git()
     if git is None or not os.path.isdir(os.path.join(root, ".git")):
         return None
     if not _git_lock.acquire(blocking=False):
@@ -225,7 +220,7 @@ def update(root: str = ROOT, git: str | None = None, pip: bool = True, progress:
     if not os.path.isdir(os.path.join(root, ".git")):
         return Result(False, False, _("Folder nie jest repozytorium git (pobrany jako ZIP?) - sklonuj: "
                                       "git clone https://github.com/matt400/dualsense-bridge"))
-    git = git or find_git()
+    git = git or gitupdate.find_git()
     if git is None:
         return Result(False, False, _("Nie znaleziono git - zainstaluj Git for Windows (git-scm.com)"))
     report(PCT_PULL)

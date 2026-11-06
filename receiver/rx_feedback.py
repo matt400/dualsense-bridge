@@ -329,15 +329,6 @@ def _target(i: int, now: float) -> tuple[tuple[int, ...], bool, bool]:
     return (p[1], p[2], *(p[3] or base[2:])), True, blink
 
 
-def feedback_thread(send: SendFeedback, send_trig: SendTriggers | None = None, send_leds: SendLeds | None = None) -> None:
-    """Run the feedback loop: send(slot, (small, large, r, g, b)) goes to the sender (rx_net.send_feedback).
-
-    send_trig(slot, trig3 values (15), trig2 (12) or trig (4), repeats) sends trigger effects (rx_net.send_triggers).
-    send_leds(slot, (flags, mute LED, player LEDs), repeats) sends the LEDs the game set (rx_net.send_leds).
-    """
-    _loop(send, send_trig, send_leds)
-
-
 def sender_leds(i: int) -> bool:
     """Tell whether this pad's sender understands the leds packet (v15+; the ways byte has no free bit left, so the version decides)."""
     info = S.sender_info[i]
@@ -484,11 +475,13 @@ def _tick_pad(i: int, now: float, send: SendFeedback, send_trig: SendTriggers | 
     return blink
 
 
-def _loop(send: SendFeedback, send_trig: SendTriggers | None = None, send_leds: SendLeds | None = None) -> None:
-    """Send feedback on change.
+def feedback_thread(send: SendFeedback, send_trig: SendTriggers | None = None, send_leds: SendLeds | None = None) -> None:
+    """Run the feedback loop: send(slot, (small, large, r, g, b)) goes to the sender (rx_net.send_feedback).
 
-    Every 0.5 s while rumbling (refreshes its timeout on the sender) and every 5 s at rest (a lost packet will not leave
-    a wrong lightbar colour).
+    send_trig(slot, trig3 values (15), trig2 (12) or trig (4), repeats) sends trigger effects (rx_net.send_triggers).
+    send_leds(slot, (flags, mute LED, player LEDs), repeats) sends the LEDs the game set (rx_net.send_leds).
+    Feedback goes out on change, every 0.5 s while rumbling (refreshes its timeout on the sender) and every 5 s at rest
+    (a lost packet will not leave a wrong lightbar colour).
     """
     blink = False
     while not S.stop.is_set():

@@ -49,6 +49,7 @@ import rx_security
 import rx_update
 import rx_settings
 import rx_state as S
+import rx_winapi
 from rx_backup import Backup
 from rx_buttons import LABELS
 from rx_config import C
@@ -93,6 +94,7 @@ class ConsoleSettings(QDialog):
         self.setWindowTitle(_("Ustawienia"))
         self.setMinimumWidth(720)
         self.resize(PREF_SIZE)
+        self._frame: QSize | None = None    # the window frame (title bar), known after the first showing
         self.toggle_button = ConsoleConfig().toggle_button
         self.captured.connect(self._on_captured)
         self._cap_timer = QTimer(self, singleShot=True, interval=CAPTURE_TIMEOUT_MS)
@@ -398,7 +400,7 @@ class ConsoleSettings(QDialog):
         self.vpad_skip.setEnabled(not busy)
         if backend != "vigem" and rx_ds4.hm_note:
             lines.append(_("HIDMaestro nieużywany: {why}").format(why=rx_ds4.hm_note))
-        need_admin = backend != "vigem" and not rx_hm.is_admin()
+        need_admin = backend != "vigem" and not rx_winapi.is_admin()
         if need_admin:
             lines.append(_("Receiver działa bez uprawnień administratora - HIDMaestro nie utworzy padów."))
         self.vpad_now.setText("\n".join(lines))
@@ -860,7 +862,7 @@ class ConsoleSettings(QDialog):
 
     def _light_edited(self, *_args: Any) -> None:
         """Record the edited fields under the current entry: for a pad without one this is the copy of the defaults plus the change."""
-        if getattr(self, "_loading", False):
+        if self._loading:
             return
         key = self._light_key
         self._lights[key] = PadLight(mode=self.light_mode.currentData(), color=self._color,
@@ -911,7 +913,7 @@ class ConsoleSettings(QDialog):
             self.reload()
             self._fit()
         self.show()
-        if not hasattr(self, "_frame"):
+        if self._frame is None:
             self._fit()                     # the first opening: the real window frame is known only now
         self.raise_()
         self.activateWindow()
@@ -925,7 +927,7 @@ class ConsoleSettings(QDialog):
         """
         if self.isVisible():
             self._frame = self.frameGeometry().size() - self.geometry().size()
-        frame = getattr(self, "_frame", FRAME_GUESS)
+        frame = self._frame if self._frame is not None else FRAME_GUESS
         owner = self.parent()
         scr = (owner.screen() if owner is not None else None) or self.screen() or QApplication.primaryScreen()
         area = scr.availableGeometry()
