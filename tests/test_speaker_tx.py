@@ -394,7 +394,7 @@ async def fake_clock_scenarios():
         tick(s, 0.03)
         tick(s)                                     # underrun, priming
         feed(s, 1)
-        for _ in range(S.PRIME_MAX_TICKS + 1):
+        for _ in range(H.PRIME_MAX_TICKS + 1):
             tick(s)
         assert not s.priming and 2 in played(pad), "does not wait forever"
         ok("underrun: a silent frame in the report, re-priming to the buffer depth, gives up after a few ticks")

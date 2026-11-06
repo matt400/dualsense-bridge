@@ -64,6 +64,7 @@ OVERRUN_CHUNKS: Final = 3                   # deeper than target + this many rep
 TIMEOUT_S: Final = 0.2                      # no packet for this long ends the stream
 LATE_S: Final = 0.004                       # a tick later than this is counted as late
 RESYNC_S: Final = 0.05                      # a tick later than this (a stalled loop): no burst of catch-up reports, restart the timeline
+RETRY_S: Final = 1.0                        # a refused start (USB pad, no HID report) is retried after this
 PRIME_MAX_TICKS: Final = 8                  # after an underrun wait at most this many ticks (85 ms) for the buffer to refill
 U32_HALF: Final = 1 << 31                  # a frame-counter step below this is "ahead", above it "behind" (modulo 2**32)
 HANDOVER_S: Final = 0.0005                  # float slack when the speaker asks whether this stream's first tick is due at its deadline
@@ -85,6 +86,10 @@ def on_clock(earliest: float, ref: float | None, period: float) -> float:
         return earliest
     return ref + math.ceil((earliest - ref) / period - 1e-9) * period
 
+
+def frame_delta(frame: int, expected: int) -> int:
+    """The signed distance of a frame number from the expected one, modulo 2**32: frames ahead (+) or behind (-)."""
+    return ((frame - expected + U32_HALF) & UINT32_MASK) - U32_HALF
 
 class ChunkReport(HapticsReport, Protocol):
     """A haptics report the stream can fill: ``payload`` is where the next ``chunks`` chunks of audio are copied."""
@@ -204,8 +209,18 @@ class FrameRing:
         return n // FRAME_BYTES
 
 
+class LogCounters:
+    """A stream's counters (a dataclass) that print as one log line."""
+
+    __slots__ = ()
+
+    def text(self) -> str:
+        """The counters as one log line."""
+        return ", ".join(f"{f.name} {getattr(self, f.name)}" for f in fields(self))  # type: ignore[arg-type]  # subclasses are dataclasses
+
+
 @dataclass(slots=True)
-class Counters:
+class Counters(LogCounters):
     """What one stream did (for the log line at its end).
 
     Attributes:
@@ -234,12 +249,69 @@ class Counters:
     resyncs: int = 0
     unwritten: int = 0
 
-    def text(self) -> str:
-        """The counters as one log line."""
-        return ", ".join(f"{f.name} {getattr(self, f.name)}" for f in fields(self))
+
+class _Ring(Protocol):
+    """What Playout needs of a stream's buffer."""
+
+    @property
+    def depth(self) -> int: ...
+    def clear(self) -> None: ...
 
 
-class HapticsStream:
+class _Stats(Protocol):
+    """What Playout needs of a stream's counters."""
+
+    resyncs: int
+
+
+class Playout:
+    """The playout half shared by HapticsStream and SpeakerStream: priming, restarts and the tick timer.
+
+    A subclass sets these in its __init__: ring, stats, target, and the state below.
+    """
+
+    ring: _Ring
+    stats: _Stats
+    target: int
+    priming: bool
+    ending: bool
+    _prime_ticks: int
+    _expected: int
+    _due: float
+    _ticker: TickTimer | None
+    _timer: TickTimer | None
+
+    def _restart(self, frame: int) -> None:
+        """Start the buffer over at ``frame``: the stream jumped (a restarted receiver, a long gap) or began again."""
+        self.stats.resyncs += 1
+        self.ring.clear()
+        self.priming, self._prime_ticks = True, 0
+        self.ending = False
+        self._expected = frame
+
+    def _still_priming(self, depth: int) -> bool:
+        """After a start or an underrun: wait until the buffer reaches the target (PRIME_MAX_TICKS at most, or the stream ends)."""
+        if self.priming:
+            if depth >= self.target or self._prime_ticks >= PRIME_MAX_TICKS or self.ending:
+                self.priming = False
+            else:
+                self._prime_ticks += 1
+        return self.priming
+
+    def _arm(self) -> None:
+        """Arm the tick timer for the next deadline (``_due``)."""
+        if self._ticker is not None:
+            self._timer = self._ticker.arm(self._due)
+
+    def _stop_ticker(self) -> None:
+        """Close the tick timer of the stream that is ending."""
+        if self._ticker is not None:
+            self._ticker.close()
+            self._ticker = None
+        self._timer = None
+
+
+class HapticsStream(Playout):
     """The haptics of one pad: takes hapt chunks, buffers them and writes them to the pad at the pad's own pace.
 
     Attributes:
@@ -274,9 +346,9 @@ class HapticsStream:
         self.high = self.target + self.frames                   # deeper: drop one frame per tick (drift)
         self.low = self.target - self.frames // 2               # shallower: repeat one frame per tick (drift)
         self.limit = self.target + OVERRUN_CHUNKS * self.frames  # deeper: drop the oldest audio at once (a burst)
-        self.ring = FrameRing()
+        self.ring: FrameRing = FrameRing()
         self.active = self.ending = self.priming = self.writing = False
-        self.stats = Counters()
+        self.stats: Counters = Counters()
         self._expected = 0                                      # the frame the next chunk must start at
         self._rx = 0.0                                          # when the last chunk arrived
         self._due = 0.0                                         # when the next tick is due (absolute)
@@ -304,7 +376,7 @@ class HapticsStream:
         if flags & HAPT_START and st.chunks > 1:
             self._restart(frame)                                # the PC began a new stream without ending the old one
         else:
-            delta = ((frame - self._expected + U32_HALF) & UINT32_MASK) - U32_HALF     # signed: frames ahead (+) or behind (-)
+            delta = frame_delta(frame, self._expected)
             if delta < 0 and delta >= -MAX_GAP_FRAMES:
                 st.stale += 1                                   # late, repeated or reordered: its place in time has passed
                 return
@@ -324,20 +396,12 @@ class HapticsStream:
         if flags & HAPT_END:
             self.ending, self._why = True, "end of stream"
 
-    def _restart(self, frame: int) -> None:
-        """Start the buffer over at ``frame``: the stream jumped (a restarted receiver, a very long gap) or began again."""
-        self.stats.resyncs += 1
-        self.ring.clear()
-        self.priming, self._prime_ticks = True, 0
-        self.ending = False
-        self._expected = frame
-
     def _begin(self, frame: int, now: float) -> bool:
         """Put the pad into audio mode and start the tick timer; False when the pad cannot play haptics (retried after a second)."""
         if now < self._retry:
             return False
         if not self.rumble.haptics_begin():
-            self._retry = now + 1.0
+            self._retry = now + RETRY_S
             print(f"Controller {self.idx}: haptics chunk ignored - this pad cannot play haptics (USB or no HID report)")
             return False
         self.active, self.ending, self.priming, self._prime_ticks = True, False, False, 0
@@ -393,21 +457,11 @@ class HapticsStream:
         self._due += self.period
         self._arm()
 
-    def _arm(self) -> None:
-        """Arm the tick timer for the next deadline (``_due``)."""
-        if self._ticker is not None:
-            self._timer = self._ticker.arm(self._due)
-
     def _play_or_silence(self) -> None:
         """Fill the report's payload for this tick: the oldest audio, or silence while the buffer refills."""
         ring, st = self.ring, self.stats
         depth = ring.depth
-        if self.priming:
-            if depth >= self.target or self._prime_ticks >= PRIME_MAX_TICKS or self.ending:
-                self.priming = False
-            else:
-                self._prime_ticks += 1
-        if self.priming:
+        if self._still_priming(depth):
             self.report.payload[:] = _SILENCE[:len(self.report.payload)]
         elif depth >= self.frames or (self.ending and depth):
             self._play(depth)
@@ -437,10 +491,7 @@ class HapticsStream:
     # ---------- end ----------
     def _finish(self, why: str) -> None:
         """End the stream: stop the timer, give the actuators back to rumble and log what happened."""
-        if self._ticker is not None:
-            self._ticker.close()
-            self._ticker = None
-        self._timer = None
+        self._stop_ticker()
         wrote = self.writing
         self.active = self.ending = self.writing = False
         self.rumble.haptics_end()
