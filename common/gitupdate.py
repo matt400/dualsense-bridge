@@ -17,6 +17,7 @@ GIT_PATHS: Final = (r"C:\Program Files\Git\cmd\git.exe", r"C:\Program Files (x86
 GIT_TIMEOUT_S: Final = 15
 GIT_PULL_TIMEOUT_S: Final = 120
 SSH_CONNECT_TIMEOUT_S: Final = 15
+DEFAULT_BRANCH: Final = "main"                          # when the clone has no origin/HEAD
 COMMIT_ABBREV_LEN: Final = 7                            # the commit hash length shown and sent in the build packet
 # the sender's deploy key (read-only) and its known_hosts - in .git, so they never end up in the repository;
 # created by sender/setup-update-key.sh. The service (root -> the repository owner) has no SSH agent or password for the key.
@@ -173,8 +174,28 @@ def git_version(root: str, git_exe: str | None = None) -> GitVersion:
         return GitVersion("", 0, "")
 
 
+def branch_problem(root: str, git_exe: str | None = None) -> str:
+    """Tell why a pull would not bring the remote's default branch: a side branch or a detached HEAD.
+
+    ``git pull`` only moves the checked-out branch, so on ``feat/x`` it reports "up to date" while ``main`` moves on.
+
+    Args:
+        root: The repository root.
+        git_exe: The git executable; None = :func:`find_git`.
+
+    Returns:
+        The reason with the command that fixes it, or "" when the default branch is checked out.
+    """
+    remote_head = git(root, "symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD", git_exe=git_exe).stdout.strip()
+    main = remote_head.removeprefix("origin/") or DEFAULT_BRANCH
+    head = git(root, "symbolic-ref", "-q", "--short", "HEAD", git_exe=git_exe).stdout.strip()
+    if not head:
+        return f"detached HEAD, not on {main} - run: git checkout {main}"
+    return "" if head == main else f"on branch {head}, not {main} - run: git checkout {main}"
+
+
 def git_pull(root: str, git_exe: str | None = None, env: dict[str, str] | None = None,
-             timeout: float = GIT_PULL_TIMEOUT_S) -> PullResult:
+             timeout: float = GIT_PULL_TIMEOUT_S, default_branch_only: bool = False) -> PullResult:
     """Run ``git pull --ff-only``: a fast-forward to the version from GitHub; local changes give an error, nothing is overwritten.
 
     Args:
@@ -183,6 +204,7 @@ def git_pull(root: str, git_exe: str | None = None, env: dict[str, str] | None =
         env: Extra variables for git. The receiver passes some that suppress login windows - otherwise a pull from a
             background process waited for an invisible Git Credential Manager window until the timeout.
         timeout: Seconds before the pull is given up.
+        default_branch_only: Refuse (UPD_FAILED, see :func:`branch_problem`) instead of pulling a side branch.
 
     Returns:
         The UPD_* state, git's message on error, the old and the new commit and the changed files.
@@ -193,6 +215,8 @@ def git_pull(root: str, git_exe: str | None = None, env: dict[str, str] | None =
     if git_exe is None:
         return PullResult(UPD_NO_GIT, "", "", "", [])
     try:
+        if default_branch_only and (problem := branch_problem(root, git_exe)):
+            return PullResult(UPD_FAILED, problem, "", "", [])
         old = git(root, "rev-parse", "HEAD", git_exe=git_exe).stdout.strip()
         pull = git(root, "pull", "--ff-only", git_exe=git_exe, timeout=timeout, env=env)
         if pull.returncode:

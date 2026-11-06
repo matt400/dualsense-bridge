@@ -112,4 +112,6 @@ cd dualsense-bridge/sender
 ```
 
 Powód nieudanej aktualizacji nadajnika jest widoczny w oknie na PC (np. `Permission denied (publickey)`).
+Nadajnik aktualizuje się tylko na gałęzi domyślnej (`main`): na innej gałęzi albo przy odłączonym HEAD okno pokazuje
+`on branch feat/x, not main - run: git checkout main` zamiast pobierać.
 Bez okna: `update.bat` w głównym folderze (tylko receiver).

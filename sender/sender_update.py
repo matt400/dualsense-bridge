@@ -3,6 +3,7 @@
 CMD_UPDATE -> git pull --ff-only in the repository folder (the parent of sender/), as the repository owner when the
 sender runs as root (the service) -> build packet carrying the state (UPD_*) -> once new code is pulled the sender
 restarts (os.execv: same PID, so systemd notices nothing; a manually started sender comes back too).
+Only the default branch is pulled: a side branch or a detached HEAD is reported as a failure with the fix.
 The build packet (commit, commit time, state) is sent every 5 s - the receiver window shows the sender's version.
 """
 import asyncio
@@ -96,7 +97,7 @@ async def _pull_and_report() -> None:
     global status, fail_msg
     print("Update requested from PC - git pull")
     send_build()
-    st, msg, old, new, files = await asyncio.to_thread(gitupdate.git_pull, ROOT)
+    st, msg, old, new, files = await asyncio.to_thread(gitupdate.git_pull, ROOT, default_branch_only=True)
     status, fail_msg = st, msg if st == proto.UPD_FAILED else ""
     detail = msg or (f"{old[:7]} -> {new[:7]}" if st == UPD_DONE else ROOT if st == proto.UPD_NOT_GIT else "")
     print(f"Update: {TEXT.get(st, st)}" + (f" ({detail})" if detail else ""))

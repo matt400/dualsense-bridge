@@ -115,4 +115,6 @@ cd dualsense-bridge/sender
 ```
 
 The reason a sender update failed is shown in the window on the PC (e.g. `Permission denied (publickey)`).
+The sender only updates on the default branch (`main`): on another branch or a detached HEAD the window shows
+`on branch feat/x, not main - run: git checkout main` instead of pulling.
 Without the window: `update.bat` in the main folder (receiver only).
