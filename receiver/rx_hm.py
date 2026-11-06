@@ -476,10 +476,24 @@ MUTE_LED_AT, PLAYER_LEDS_AT = 8, 43           # mute_button_led (only with flag 
 FLAG1_MUTE_LED, FLAG1_PLAYER_LEDS = 0x01, 0x10
 
 
-def out_used(f0: int, f1: int) -> tuple[int, ...]:
-    """The output report bytes parse_output and parse_leds need for these validity flags (the rest is not read)."""
+_F0_USED: Final = 0x04 | 0x08                                    # the flag bits out_used depends on (the triggers ...)
+_F1_USED: Final = 0x04 | FLAG1_MUTE_LED | FLAG1_PLAYER_LEDS       # (... the lightbar, the mute LED and the player LEDs)
+
+
+def _out_used(f0: int, f1: int) -> tuple[int, ...]:
+    """Build the byte list of out_used (once per flag combination, at import)."""
     return (((*OUT_RGB,) if f1 & 0x04 else ()) + (tuple(R2_BYTES) if f0 & 0x04 else ()) + (tuple(L2_BYTES) if f0 & 0x08 else ())
             + ((MUTE_LED_AT,) if f1 & FLAG1_MUTE_LED else ()) + ((PLAYER_LEDS_AT,) if f1 & FLAG1_PLAYER_LEDS else ()))
+
+
+# every combination of the flag bits that matter (32): the output thread looks its list up instead of building tuples per report
+_OUT_USED: Final = {(f0, f1): _out_used(f0, f1) for f0 in range(_F0_USED + 1) if not f0 & ~_F0_USED
+                    for f1 in range(_F1_USED + 1) if not f1 & ~_F1_USED}
+
+
+def out_used(f0: int, f1: int) -> tuple[int, ...]:
+    """The output report bytes parse_output and parse_leds need for these validity flags (the rest is not read)."""
+    return _OUT_USED[f0 & _F0_USED, f1 & _F1_USED]
 
 
 ParsedOutput: TypeAlias = tuple[

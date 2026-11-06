@@ -718,12 +718,12 @@ async def ctrl_scenarios():
     assert O.OpusEncoder(80).mode == "hybrid" and O.DEFAULT_MODE == "hybrid", "hybrid is the default"
     ok("libopus: hybrid by default (TOC config 12-15, CBR, decodes), celt on request, an unknown mode counts as hybrid")
 
-    # the complexity: automatic = 3 for hybrid and 5 for celt, a number sets it, a larger one counts as 10, the packets stay CBR
+    # the complexity: automatic = 1 for hybrid and 5 for celt, a number sets it, a larger one counts as 10, the packets stay CBR
     def complexity_of(enc):
         value = ctypes.c_int32(-1)
         assert lib.opus_encoder_ctl(enc._state, ctypes.c_int(4011), ctypes.byref(value)) == 0     # OPUS_GET_COMPLEXITY
         return value.value
-    for mode, given, want in (("hybrid", O.COMPLEXITY_AUTO, 3), ("celt", O.COMPLEXITY_AUTO, 5), ("hybrid", 0, 0), ("hybrid", 1, 1),
+    for mode, given, want in (("hybrid", O.COMPLEXITY_AUTO, 1), ("celt", O.COMPLEXITY_AUTO, 5), ("hybrid", 0, 0), ("hybrid", 1, 1),
                               ("celt", 10, 10), ("hybrid", 99, 10), ("celt", -7, 5)):
         e = O.OpusEncoder(80, mode, given)
         b = bytearray(400)
@@ -731,7 +731,7 @@ async def ctrl_scenarios():
         e.pcm[:] = sine(1, hz=1234.0)
         assert complexity_of(e) == want and e.mode == mode and e.encode(), (mode, given, complexity_of(e))
         e.close()
-    ok("libopus: complexity automatic (3 hybrid / 5 celt) or set, 0-10, larger values count as 10")
+    ok("libopus: complexity automatic (1 hybrid / 5 celt) or set, 0-10, larger values count as 10")
 
     # end to end: UDP packets -> sender_net -> supervisor -> Ctrl -> stream -> real libopus -> 0x36 in the HID file
     path = newpath()

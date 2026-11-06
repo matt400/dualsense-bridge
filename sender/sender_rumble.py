@@ -51,6 +51,7 @@ from evdev import ff
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "common"))   # proto.py is shared, it lives in common/
 
 import sender_opus
+from sender_hidwrite import AUDIO_PENDING, MAX_PENDING, HidWriter
 from sender_ioctl import IOC_READ, IOC_WRITE, ioc
 from proto import (CAP_HAPTICS, CAP_SPEAKER, CAP_TRIG_FX, CAP_TRIG_RAW, CAP_TRIGGERS, PLAYER_LEDS_MASK, RFX_GAIN_MAX, RFX_HOLD_S,
                    RFX_ON, RUMBLE_EVDEV, RUMBLE_HIDRAW, TFX_CLICK, TFX_OFF, TFX_RES, TFX_VIB, TRG3_L2, TRG3_R2, TRIG2_OFF,
@@ -138,6 +139,7 @@ LOGGED_COMMANDS: Final = 3                  # how many of the first rumble comma
 # A pad that is gone (ENODEV...) and an error that will not change (no kernel support, a bad report, permissions)
 # switch it off at once.
 FAIL_MAX: Final = 5
+KIND_HID, KIND_AUDIO = "hid", "audio"       # which error counter a queued write belongs to (Rumble.fails / _haptics_fails)
 FATAL_ERRNO: Final = frozenset({errno.ENODEV, errno.ENOENT, errno.ENXIO, errno.EBADF, errno.ENOSYS, errno.EOPNOTSUPP,
                                 errno.EINVAL, errno.EACCES, errno.EPERM})
 
@@ -547,7 +549,8 @@ class Rumble:
     """
 
     def __init__(self, idx: int, pad_dev: InputDevice, mode: str = MODE_AUTO,
-                 hidraw: tuple[str, bool] | None = None, haptics_motors: str = MOTORS_HAPTICS) -> None:
+                 hidraw: tuple[str, bool] | None = None, haptics_motors: str = MOTORS_HAPTICS,
+                 writer_loop: asyncio.AbstractEventLoop | None = None) -> None:
         """Open the available rumble ways of a pad.
 
         Args:
@@ -557,11 +560,15 @@ class Rumble:
             hidraw: ``(path, is_bluetooth)`` of the pad's hidraw node, to skip the lookup (tests).
             haptics_motors: What wins while haptics play: ``"haptics"`` (a game's motors wait, logged once per stream) or
                 ``"rumble"`` (the motors pause the haptics until they stop).
+            writer_loop: The event loop the pad is served on: HID reports are then written by a thread of their own
+                (sender_hidwrite), so a slow hidraw write does not stall the loop. None = written directly (tests, --test).
         """
         self.idx, self.dev = idx, pad_dev
         self.setting = mode                   # the configured mode: the HID fallback in _send is for "auto" only
         self.methods: list[str] = []
         self.fd: int | None = None
+        self._loop = writer_loop
+        self._writer: HidWriter | None = None   # the writer thread of fd (with writer_loop), else None = os.write on the caller's thread
         self.bt, self.seq, self.path = False, 0, None
         self.ff_id: int | None = None
         self.v2: bool | None = None
@@ -677,6 +684,8 @@ class Rumble:
         self.path, self.bt = path, bt
         self.fw = firmware_version(self.fd)
         self.v2 = None if self.fw is None else self.fw >= VIBRATION_V2_FROM
+        if self._loop is not None:            # after the firmware read: from here on the writer owns the descriptor
+            self._writer = HidWriter(self.fd, f"hidraw-{self.idx}", self._write_failed, self._write_ok, self._loop)
         return True
 
     # ---------- control ----------
@@ -735,13 +744,13 @@ class Rumble:
         trig = self._want_triggers(*self.cur)
         try:
             self.seq = (self.seq + 1) & BT_SEQ_MASK
-            os.write(self.fd, output_report(self.bt, self.seq, *self.cur, self.v2, self.rgb, trig, self.audio, self.leds))
+            self._write(output_report(self.bt, self.seq, *self.cur, self.v2, self.rgb, trig, self.audio, self.leds), KIND_HID)
         except (BlockingIOError, InterruptedError):
             return False                    # a full queue - the next refresh from the PC will deliver the effect
         except OSError as e:
             self._failed(WAY_HIDRAW, e)
             return False
-        self.fails[WAY_HIDRAW] = 0
+        self._wrote(WAY_HIDRAW)
         self.trig = trig
         return True
 
@@ -766,13 +775,13 @@ class Rumble:
             return False
         try:
             self.seq = (self.seq + 1) & BT_SEQ_MASK
-            os.write(self.fd, output_report(self.bt, self.seq, *self.cur, self.v2, self.rgb, None, self.audio, self.leds))
+            self._write(output_report(self.bt, self.seq, *self.cur, self.v2, self.rgb, None, self.audio, self.leds), KIND_HID)
         except (BlockingIOError, InterruptedError):
             return False                    # a full queue - the receiver repeats the packet and refreshes it every few seconds
         except OSError as e:
             self._failed(WAY_HIDRAW, e)
             return False
-        self.fails[WAY_HIDRAW] = 0
+        self._wrote(WAY_HIDRAW)
         return True
 
     def _arm_trig_watch(self, on: bool) -> None:
@@ -907,7 +916,7 @@ class Rumble:
                         and WAY_HIDRAW not in self.methods):
                     self._fallback_hidraw(small, large)
             else:
-                self.fails[way] = 0
+                self._wrote(way)
                 wrote = wrote or way == WAY_HIDRAW
         if self._resume:                               # the report above stops the motors of a paused stream
             self._resume = False
@@ -964,12 +973,52 @@ class Rumble:
             self._close_fd()                          # without this the descriptor leaked (reopening overwrote fd)
         return True
 
-    def _close_fd(self) -> None:
-        """Close the hidraw file descriptor if one is open."""
-        if self.fd is not None:
+    def _close_fd(self, wait: bool = False) -> None:
+        """Close the hidraw file descriptor if one is open (with a writer thread: after it has written what is queued).
+
+        Args:
+            wait: Wait for the writer thread to write the queued reports (the final ones of close()) before returning.
+        """
+        writer, self._writer = self._writer, None
+        if writer is not None:
+            writer.close(wait)                      # the thread closes the descriptor after its last write
+        elif self.fd is not None:
             with contextlib.suppress(OSError):      # the descriptor is dropped either way; a dead one is not worth a report
                 os.close(self.fd)
-            self.fd = None
+        self.fd = None
+
+    def _write(self, data: bytes | bytearray | memoryview, kind: str, reused: bool = False, limit: int = MAX_PENDING) -> None:
+        """Write one report to hidraw: queued to the writer thread when there is one, else ``os.write`` right here.
+
+        Raises:
+            BlockingIOError: A full queue (kernel or writer): not written, not a failure.
+            OSError: The write failed (directly) or the writer is closed.
+        """
+        if self._writer is not None:
+            self._writer.write(data, kind, reused, limit)
+        else:
+            os.write(self.fd, data)                 # type: ignore[arg-type]  # callers check fd first
+
+    def _wrote(self, way: str) -> None:
+        """A write of ``way`` went out: clear its error count. A queued write is confirmed later by the thread (_write_ok)."""
+        if way != WAY_HIDRAW or self._writer is None:
+            self.fails[way] = 0
+
+    def _write_failed(self, kind: str, error: OSError) -> None:
+        """Loop callback of the writer thread: a queued report failed - count it like a direct write error."""
+        if self._closed or self._writer is None:
+            return
+        if kind == KIND_AUDIO:
+            self._haptics_failed(error)
+        else:
+            self._failed(WAY_HIDRAW, error)
+
+    def _write_ok(self, kind: str) -> None:
+        """Loop callback of the writer thread: a write went out again after errors - the run of errors is over."""
+        if kind == KIND_AUDIO:
+            self._haptics_fails = 0
+        else:
+            self.fails[WAY_HIDRAW] = 0
 
     def _send_hidraw(self, small: int, large: int, audio: bool = False) -> None:
         """Send rumble (and colour); trigger effects only when they are about to change (game rumble on the triggers).
@@ -985,7 +1034,7 @@ class Rumble:
         if trig == self.trig:
             trig = None
         self.seq = (self.seq + 1) & BT_SEQ_MASK
-        os.write(self.fd, output_report(self.bt, self.seq, small, large, self.v2, self.rgb, trig, audio, self.leds))
+        self._write(output_report(self.bt, self.seq, small, large, self.v2, self.rgb, trig, audio, self.leds), KIND_HID)
         if trig is not None:
             self.trig = trig
 
@@ -1123,7 +1172,7 @@ class Rumble:
         common[SPEAKER_VOLUME_AT] = max(0, min(BYTE_MASK, volume))
         self.seq = (self.seq + 1) & BT_SEQ_MASK
         try:
-            os.write(self.fd, _bt_report(common, self.seq))
+            self._write(_bt_report(common, self.seq), KIND_AUDIO)
         except (BlockingIOError, InterruptedError):
             pass
         except OSError as e:
@@ -1146,7 +1195,7 @@ class Rumble:
             return
         self.seq = (self.seq + 1) & BT_SEQ_MASK
         try:
-            os.write(self.fd, haptics_setup_report(self.seq))
+            self._write(haptics_setup_report(self.seq), KIND_AUDIO)
         except (BlockingIOError, InterruptedError):
             pass
         except OSError as e:
@@ -1172,13 +1221,14 @@ class Rumble:
             return False
         self.seq = (self.seq + 1) & BT_SEQ_MASK
         try:
-            os.write(self.fd, report.finish(self.seq))
+            self._write(report.finish(self.seq), KIND_AUDIO, reused=True, limit=AUDIO_PENDING)
         except (BlockingIOError, InterruptedError):
             return False
         except OSError as e:
             self._haptics_failed(e)
             return False
-        self._haptics_fails = 0
+        if self._writer is None:              # queued: the writer thread reports the outcome (_write_failed / _write_ok)
+            self._haptics_fails = 0
         self.t_audio = time.monotonic()
         return True
 
@@ -1233,7 +1283,7 @@ class Rumble:
         if WAY_EVDEV in self.methods and self.ff_id is not None:
             with contextlib.suppress(OSError):      # the pad may already be gone; there is nothing left to erase then
                 self.dev.erase_effect(self.ff_id)
-        self._close_fd()
+        self._close_fd(wait=True)                   # the stop / release reports above go out before the descriptor closes
         self.methods, self.cur = [], (0, 0)
 
 
