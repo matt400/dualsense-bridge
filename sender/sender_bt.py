@@ -35,7 +35,7 @@ import sender_btlink as btlink
 import sender_net as net
 import sender_state as state
 from proto import (BODY, BTA_MANUAL, BTA_PICK, BTC_ACTIVE, BTC_BLOCKED, BTC_FIXED, BTC_PICKED, BTC_USB,
-                   BTD_CONNECTED, BTD_PAD, BTD_PAIRED, BTD_TRUSTED, BTF_BUSY, BTF_HAS_BUILTIN, BTF_HAS_USB,
+                   BTD_CONNECTED, BTD_PAD, BTD_PAIRED, BTD_TRUSTED, BTF_BUSY, BTF_HAS_BUILTIN, BTF_HAS_USB, BTF_LIST,
                    BTF_MODE_SHIFT, BTF_ON_USB, BTF_SCANNING, BTL_LQ, BTL_RSSI, BTR_AUTH, BTR_BUSY, BTR_DENIED, BTR_FAILED, BTR_NONE,
                    BTR_NOT_FOUND, BTR_OFF, BTR_OK, BTR_RUNNING, BTR_TIMEOUT, BTS_BLOCKED, BTS_DENIED, BTS_ERROR,
                    BTS_NO_ADAPTER, BTS_NO_SERVICE, BTS_NO_TOOL, BTS_OFF, BTS_OK, BT_ACTIVE_S, BT_ADAPTER,
@@ -44,7 +44,6 @@ from proto import (BODY, BTA_MANUAL, BTA_PICK, BTC_ACTIVE, BTC_BLOCKED, BTC_FIXE
                    mac_bytes, mac_text, utf8_field)
 from sender_config import C
 
-BTF_LIST: Final = 4         # btstate flag (outside proto.BTF_*, since it only means "a list round follows me")
 BUSCTL, BLUETOOTHCTL = "busctl", "bluetoothctl"
 BLUEZ, ADAPTER, DEVICE = "org.bluez", "org.bluez.Adapter1", "org.bluez.Device1"
 COD_MAJOR_SHIFT, COD_MAJOR_MASK, COD_MAJOR_PERIPHERAL = 8, 0x1F, 0x05      # Bluetooth class of device: major class (5 = peripheral)

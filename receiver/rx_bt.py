@@ -16,7 +16,7 @@ import rx_events as ev
 import rx_net
 import rx_state as S
 from proto import (BODY, BTC_ACTIVE, BTC_BLOCKED, BTC_FIXED, BTC_PICKED, BTC_USB, BTD_CONNECTED, BTD_PAD, BTD_PAIRED,
-                   BTF_BUSY, BTF_HAS_BUILTIN, BTF_HAS_USB, BTF_MODE_SHIFT, BTF_ON_USB, BTF_SCANNING,
+                   BTF_BUSY, BTF_HAS_BUILTIN, BTF_HAS_USB, BTF_LIST, BTF_MODE_SHIFT, BTF_ON_USB, BTF_SCANNING,
                    BTR_AUTH, BTR_BUSY, BTR_DENIED, BTR_FAILED, BTR_NONE, BTR_NOT_FOUND, BTR_OFF, BTR_OK, BTR_RUNNING,
                    BTR_TIMEOUT, BTS_BLOCKED, BTS_DENIED, BTS_ERROR, BTS_NO_ADAPTER, BTS_NO_SERVICE, BTS_NO_TOOL,
                    BTS_OFF, BTS_OK, BT_ADAPTER, BT_ADAPTER_USE, BT_CONNECT, BT_DISCONNECT, BT_LIST, BT_PAIR,
@@ -26,7 +26,6 @@ from rx_i18n import _
 
 # operations on a device / the adapter
 OPS = frozenset({BT_PAIR, BT_CONNECT, BT_DISCONNECT, BT_REMOVE, BT_POWER, BT_ADAPTER, BT_ADAPTER_USE})
-BTF_LIST = 4                 # btstate flag: a list round follows right after it (sender_bt.BTF_LIST)
 STALE_S = 12.0               # a state older than this (without the panel the sender sends it every 5 s) = unknown
 KEEPALIVE_S = 2.0            # an open panel renews BT_LIST this often (the sender sends the list for BT_ACTIVE_S)
 PENDING_S = 3.0              # a command without a (lost) sender answer stops being "in progress" after this many seconds

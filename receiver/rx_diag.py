@@ -19,12 +19,11 @@ from dataclasses import dataclass, field
 from typing import Final
 
 import rx_state as S
-from proto import BODY, BTL_LQ, BTL_RSSI, T_BTLINK, mac_text
+from proto import BODY, BTL_LQ, BTL_RSSI, NS_PER_MS, T_BTLINK, mac_text
 
 HISTORY: Final = 150                   # samples kept (150 x 0.4 s = 60 s)
 LINK_STALE_S: Final = 4.0              # a btlink reading older than this is not shown (the sender sends one a second)
 PING_RESTART_S: Final = 1.0            # a longer gap between the sender's pings restarts the jitter estimate
-NS_PER_MS: Final = 1_000_000
 JITTER_GAIN: Final = 16                # RFC 3550: J += (|D| - J) / 16
 
 # the levels follow the window's colour classes ("ok", "warn", "bad", "" = no judgement)

@@ -37,7 +37,6 @@ from rx_i18n import _
 
 ROOT: Final = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REQUIREMENTS: Final = "receiver/requirements.txt"
-NO_WINDOW: Final = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 PULL_TIMEOUT_S: Final = 90            # git pull (network); longer = an error instead of a hanging button
 
 PIP_TIMEOUT_S: Final = 600
@@ -265,7 +264,7 @@ def _backup(old: str, new: str) -> str:
 def _run(cmd: list[str], root: str, timeout: float) -> subprocess.CompletedProcess[str]:
     """Run a command in `root` with captured output and a timeout, without a console window."""
     return subprocess.run(cmd, cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                          timeout=timeout, creationflags=NO_WINDOW, check=False)
+                          timeout=timeout, creationflags=gitupdate.NO_WINDOW, check=False)
 
 
 def _last_lines(text: str, n: int = 3) -> str:

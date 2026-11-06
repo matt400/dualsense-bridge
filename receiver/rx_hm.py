@@ -224,7 +224,7 @@ def install_dotnet() -> tuple[bool, str]:
     cmd = ["winget", "install", "--id", WINGET_NET, "--exact", "--silent", "--accept-package-agreements",
            "--accept-source-agreements", "--disable-interactivity"]
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=900, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=900, creationflags=rx_winapi.NO_WINDOW)
     except (OSError, subprocess.SubprocessError) as e:
         return False, f"winget: {e!r}"
     reset()

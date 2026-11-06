@@ -27,10 +27,9 @@ import sender_net as net
 import sender_rt
 import sender_state as state
 from proto import (CFG_ALL, CFG_GET, CFG_RESET, CFG_SET, CFGF_LAST, CFGF_REMOTE, CFGR_INVALID, CFGR_LATER, CFGR_NO_KEY, CFGR_NO_V3,
-                   CFGR_OFF, CFGR_OK, CFGR_UNKNOWN, T_CFGVAL)
+                   CFGR_OFF, CFGR_OK, CFGR_UNKNOWN, NO_PAD, T_CFGVAL)
 from sender_config import C
 
-NO_PAD: Final = 255                  # the idx of a packet that is not about one pad
 REPEAT_S: Final = 0.05               # the answer to a whole read goes out a second time after this long (a lost packet)
 LATENCY_KEYS: Final = frozenset({"rt_priority", "low_latency", "cpu_latency_us"})
 

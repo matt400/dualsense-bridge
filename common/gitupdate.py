@@ -29,7 +29,7 @@ _GENERIC_ERROR_LINES: Final = ("fatal: could not read from remote repository", "
 _FETCH_REF_FLAGS: Final = " *+-=!t"
 _AUTH_ERROR_MARKERS: Final = ("permission denied (publickey", "host key verification failed", "could not read username",
                               "authentication failed", "repository not found", "terminal prompts disabled", "passphrase")
-_CREATE_NO_WINDOW: Final = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+NO_WINDOW: Final = getattr(subprocess, "CREATE_NO_WINDOW", 0)   # creationflags on Windows: no console window flashing up
 
 
 class GitVersion(NamedTuple):
@@ -160,7 +160,7 @@ def git(root: str, *args: str, git_exe: str | None = None, timeout: float = GIT_
         kwargs["env"] = {**kwargs["env"], **env}
     return subprocess.run([git_exe or find_git() or "git", "-c", "safe.directory=*", *args], cwd=root,
                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout,
-                          creationflags=_CREATE_NO_WINDOW, **kwargs)
+                          creationflags=NO_WINDOW, **kwargs)
 
 
 def git_version(root: str, git_exe: str | None = None) -> GitVersion:

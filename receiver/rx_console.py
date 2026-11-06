@@ -203,7 +203,7 @@ def _display(mode: str) -> None:
         print(f"Console: SetDisplayConfig failed ({e!r}) - using DisplaySwitch")
     exe = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "DisplaySwitch.exe")
     subprocess.run([exe, DISPLAY_ARG[mode]], timeout=DISPLAYSWITCH_TIMEOUT_S, check=False,
-                   creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                   creationflags=W.NO_WINDOW)
 
 
 def _screens() -> int | None:
