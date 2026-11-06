@@ -34,7 +34,8 @@ OPUS_MAX_PACKET: Final = 1275                                           # the la
 FRAMES_PER_S: Final = 100                                               # 10 ms frames: a CBR frame of N bytes is N * 8 * 100 bit/s
 OPUS_BYTES_MIN, OPUS_BYTES_MAX = 30, 200                                # sane range of bytes per frame (24 .. 160 kbit/s)
 COMPLEXITY: Final = 5       # P3a: 0.43 ms per frame on the OnePlus 6 (3-5 % of a core); 10 would cost 0.56 ms for no audible gain
-HYBRID_COMPLEXITY: Final = 3    # hybrid also runs SILK (about +1 ms per frame at 5 on the OnePlus 6); the pad's speaker hides the rest
+HYBRID_COMPLEXITY: Final = 1    # hybrid also runs SILK (about +1 ms per frame at 5 on the OnePlus 6); 1 costs ~40 % less than 3
+                                # (x86: 117 vs 197 us per frame) and the pad's small speaker hides the difference
 COMPLEXITY_AUTO: Final = -1     # the setting "pick it for the mode": HYBRID_COMPLEXITY for hybrid, COMPLEXITY for celt
 COMPLEXITY_MAX: Final = 10      # libopus takes 0 (fastest) .. 10 (best)
 LIB_NAMES: Final = ("libopus.so.0", "libopus.so", "libopus.0.dylib")
