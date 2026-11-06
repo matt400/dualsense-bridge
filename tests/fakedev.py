@@ -37,6 +37,7 @@ class Dev:
 
     path = "/dev/input/event7"
     name = "DualSense Wireless Controller"
+    fd = -1                       # no real descriptor: an ioctl on it fails with EBADF, like on a device that is gone
 
     def __init__(self, evs, absv=None, keys=()):
         self.evs, self.absv, self.keys, self.closed = evs, absv or {}, list(keys), False
@@ -46,6 +47,9 @@ class Dev:
 
     def active_keys(self):
         return self.keys
+
+    def capabilities(self):
+        return {}                  # no force feedback: rumble goes through hidraw (or nowhere)
 
     def grab(self):
         pass

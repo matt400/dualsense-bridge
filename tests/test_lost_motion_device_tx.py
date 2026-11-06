@@ -25,6 +25,7 @@ E = lambda t, c, v: types.SimpleNamespace(type=t, code=c, value=v)
 class LostDev:
     """Urządzenie, które po kilku zdarzeniach znika (OSError jak przy odłączeniu)."""
     path = "/dev/input/event99"
+    fd = -1
     def __init__(self, events):
         self.events = events
     def absinfo(self, c):

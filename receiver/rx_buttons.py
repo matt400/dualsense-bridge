@@ -15,13 +15,12 @@ is in the foreground. A game profile exists even when empty (= "no changes in th
 """
 from __future__ import annotations
 
-import json
 import os
 import threading
 from collections.abc import Mapping
 from typing import Any, Final
 
-from proto import PAD_KEYS, write_json
+from proto import PAD_KEYS, read_json_object, write_json
 from rx_i18n import _
 from rx_shape import AXIS_CENTRE, BYTE_MAX, Profile, to_byte, unit, normalize_gyro, normalize_triggers, normalize_tuning
 
@@ -256,14 +255,13 @@ class RemapStore:
     def load(self) -> None:
         """Load remap.json (a missing or broken file = no remaps), normalising every profile; resets the live profiles."""
         try:
-            with open(self.path, encoding="utf-8") as f:
-                data = json.load(f)
+            data = read_json_object(self.path)
         except FileNotFoundError:
             return
         except (OSError, ValueError) as e:
             print(f"Remap file {self.path}: cannot read ({e}) - starting with no remaps")
             return
-        profiles = data.get("profiles", {}) if isinstance(data, dict) else {}
+        profiles = data.get("profiles", {})
         if not isinstance(profiles, dict):
             print(f"Remap file {self.path}: 'profiles' is not an object - starting with no remaps")
             profiles = {}

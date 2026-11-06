@@ -13,14 +13,13 @@ window restarts the receiver (the settings are read at startup).
 """
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import time
 from dataclasses import dataclass
-from typing import Any, Final
+from typing import Final
 
-from proto import write_file, write_json
+from proto import read_json_object, write_file, write_json
 from rx_config import HERE, C
 from rx_i18n import _
 
@@ -89,9 +88,7 @@ def create(reason: str = "update", commit: str = "", new: str = "") -> Backup | 
 def _read(path: str) -> Backup | None:
     """Read a backup folder into a Backup (a damaged or missing meta.json is tolerated); None when it holds no known file."""
     try:
-        with open(os.path.join(path, META), encoding="utf-8") as f:
-            loaded = json.load(f)
-        meta: dict[str, Any] = loaded if isinstance(loaded, dict) else {}
+        meta = read_json_object(os.path.join(path, META))
     except (OSError, ValueError):
         meta = {}
     known = files()

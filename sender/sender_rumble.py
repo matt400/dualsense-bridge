@@ -460,10 +460,7 @@ def find_hidraw(pad_dev: InputDevice, sys_root: str = "/sys") -> tuple[str | Non
     Returns:
         ``(/dev/hidrawN, is Bluetooth)``, or ``(None, False)``.
     """
-    try:
-        node = os.path.realpath(f"{sys_root}/class/input/{os.path.basename(os.fsdecode(pad_dev.path))}")
-    except (OSError, AttributeError):
-        node = "/"
+    node = os.path.realpath(f"{sys_root}/class/input/{os.path.basename(os.fsdecode(pad_dev.path))}")
     hid = _hid_device_dir(node)
     if hid is not None:
         directory, bus = hid
@@ -499,7 +496,7 @@ def has_ff(dev: InputDevice) -> bool:
     """Tell whether the evdev device advertises the FF_RUMBLE force-feedback effect (the kernel driver supports rumble)."""
     try:
         return ec.FF_RUMBLE in dev.capabilities().get(ec.EV_FF, [])
-    except (OSError, AttributeError):
+    except OSError:
         return False
 
 

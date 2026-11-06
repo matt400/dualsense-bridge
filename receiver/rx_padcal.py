@@ -12,13 +12,12 @@ apply in every profile; they take effect only while "on" is true (the values sta
 """
 from __future__ import annotations
 
-import json
 import os
 import threading
 from typing import Any, Final
 
 import rx_access
-from proto import write_json
+from proto import read_json_object, write_json
 from rx_config import C
 from rx_i18n import _
 from rx_shape import STICK_DEF, STICK_LIMITS, Profile
@@ -42,10 +41,12 @@ def path() -> str:
 def _clean(e: Any) -> dict[str, float]:
     """Convert a pad entry from the file to {stick: dz} clamped to 0..DZ_MAX, without zeros and unknown keys."""
     out: dict[str, float] = {}
+    if not isinstance(e, dict):
+        return out
     for name in STICKS:
         try:
             v = round(min(DZ_MAX, max(0.0, float(e.get(name, 0)))), DZ_DECIMALS)
-        except (TypeError, ValueError, AttributeError):
+        except (TypeError, ValueError):
             continue
         if v:
             out[name] = v
@@ -62,17 +63,21 @@ def _load() -> dict[str, dict[str, float]]:
         _pads = {}
         _access.clear()
         try:
-            with open(path(), encoding="utf-8") as f:
-                raw = json.load(f).get("pads", {})
-            for k, v in raw.items():
-                if d := _clean((v or {}).get("drift")):
-                    _pads[str(k).lower()] = d
-                if a := rx_access.normalize((v or {}).get("access")):
-                    _access[str(k).lower()] = a
+            pads = read_json_object(path()).get("pads", {})
+            if not isinstance(pads, dict):
+                raise ValueError("'pads' is not an object")
         except FileNotFoundError:
-            pass
-        except (OSError, ValueError, AttributeError) as e:
+            pads = {}
+        except (OSError, ValueError) as e:
             print(f"Pad calibration file {path()}: cannot read ({e}) - no drift correction")
+            pads = {}
+        for k, v in pads.items():
+            if not isinstance(v, dict):
+                continue
+            if d := _clean(v.get("drift")):
+                _pads[str(k).lower()] = d
+            if a := rx_access.normalize(v.get("access")):
+                _access[str(k).lower()] = a
     return _pads
 
 

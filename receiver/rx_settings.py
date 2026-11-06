@@ -18,7 +18,6 @@ takes effect at once: apply() replaces the `cur` object (a single assignment - t
 from __future__ import annotations
 
 import ipaddress
-import json
 import os
 import string
 import threading
@@ -28,7 +27,7 @@ from typing import Any, ClassVar, Final, TypeAlias
 
 import cfgspec
 import rx_eq
-from proto import mac_bytes, mac_text, write_json
+from proto import mac_bytes, mac_text, read_json_object, write_json
 from rx_buttons import BUTTON_CODES
 from rx_i18n import _
 
@@ -520,14 +519,12 @@ def load(path: str, base: Settings | None = None) -> Settings:
     """Read settings.json into Settings; a missing or corrupt file gives `base` (by default defaults())."""
     base = base or defaults()
     try:
-        with open(path, encoding="utf-8") as f:
-            raw = json.load(f)
+        raw = read_json_object(path)
     except FileNotFoundError:
         return base
     except (OSError, ValueError) as e:
         print(f"Settings: cannot read {path} ({e!r}) - using defaults")
         return base
-    raw = raw if isinstance(raw, dict) else {}
 
     def sec(k: str) -> dict[str, Any]:
         section = raw.get(k)

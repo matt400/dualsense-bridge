@@ -579,10 +579,10 @@ class Codec:
         if not self.state_path:
             return None
         try:
-            with open(self.state_path, encoding="utf-8") as f:
-                return json.load(f).get("v3")
-        except (OSError, ValueError, AttributeError):
+            fingerprint = read_json_object(self.state_path).get("v3")
+        except (OSError, ValueError):
             return None     # no file yet, unreadable or not our JSON object: behave as if v3 was never negotiated
+        return fingerprint if isinstance(fingerprint, str) else None
 
     def _upgrade(self) -> None:
         """Switch to v3 for good and save the key fingerprint so that a restart keeps it.
@@ -803,6 +803,21 @@ def load_config(path: str | None, defaults: Collection[str] | None = None) -> di
             if key not in defaults:
                 print(f"WARNING: unknown config key {key!r} in {path} (ignored)")
     return cfg
+
+
+def read_json_object(path: str) -> dict[str, Any]:
+    """Read a JSON file whose top level must be an object (the settings and state files of both sides).
+
+    Raises:
+        FileNotFoundError: The file does not exist (callers usually treat that as "nothing saved yet").
+        OSError: The file cannot be read.
+        ValueError: The file is not valid JSON, or its top level is not an object (``json.JSONDecodeError`` is a ValueError).
+    """
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        raise ValueError(f"expected a JSON object, got {type(data).__name__}")
+    return data
 
 
 def write_file(path: str, content: str | bytes) -> None:

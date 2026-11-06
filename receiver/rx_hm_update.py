@@ -43,7 +43,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any, Final
 
-from proto import write_json
+from proto import read_json_object, write_json
 from rx_config import HERE, C
 
 REPO: Final = "hifihedgehog/HIDMaestro"
@@ -165,10 +165,9 @@ def _state_path() -> str:
 def _load_state() -> tuple[float, str]:
     """Return (time of the last check, the latest tag seen); (0.0, "") when there is no readable state."""
     try:
-        with open(_state_path(), encoding="utf-8") as f:
-            raw = json.load(f)
+        raw = read_json_object(_state_path())
         return float(raw.get("checked", 0)), str(raw.get("latest", ""))
-    except (OSError, ValueError, TypeError, AttributeError):
+    except (OSError, ValueError, TypeError):      # TypeError: float() of a non-number
         return 0.0, ""
 
 

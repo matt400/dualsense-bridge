@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import contextlib
 import fcntl
-import json
 import re
 import shutil
 import socket
@@ -33,7 +32,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
 
-from proto import BTA_AUTO, BTA_MANUAL, BTA_PICK
+from proto import BTA_AUTO, BTA_MANUAL, BTA_PICK, read_json_object
 from sender_state import write_json_later
 
 SYSFS: Final = Path("/sys/class/bluetooth")
@@ -296,14 +295,13 @@ def load_mode(path: str, default: tuple[int, str]) -> tuple[int, str]:
     if not path:
         return default
     try:
-        with open(path, encoding="utf-8") as f:
-            raw = json.load(f)
+        raw = read_json_object(path)
     except FileNotFoundError:
         return default
     except (OSError, ValueError) as e:
         print(f"Bluetooth adapter: {path} ignored ({e!r})")
         return default
-    if not isinstance(raw, dict) or raw.get("mode") not in MODES:
+    if raw.get("mode") not in MODES:
         return default
     mode, key = MODES[raw["mode"]], raw.get("device", "")
     return (mode, key) if mode != BTA_PICK or (isinstance(key, str) and key) else default
