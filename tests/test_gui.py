@@ -14,7 +14,7 @@ import rx_editor, rx_games, rx_qt
 win = rx_qt.create_window(os.path.join(TMP, "ui.ini"))
 app = QApplication.instance()
 win.resize(1160, 720); win.show()
-ok = lambda msg: print("OK  ", msg)
+from chk import ok
 pump = lambda ms=60: QTest.qWait(ms)
 base = S.profile_key(0)
 pump(150)

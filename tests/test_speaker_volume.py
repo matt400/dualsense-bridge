@@ -11,7 +11,7 @@ import rx_haptics as H, rx_hm, rx_settings, rx_speaker as K
 import rx_state as S
 from proto import CAP_SPEAKER
 
-from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
+from chk import check, fails, ok                              # noqa: E402  (shared helper, tests/chk.py)
 
 # ---------- the factor ----------
 sp = K.SpeakerLink(0)
@@ -131,7 +131,7 @@ check(calls == [("speaker", False, False, -12.5), ("speaker", True, True, 0.0)],
 pad.attach_audio_controls(lambda *a: None)
 check(len(audio.ControlChanged.handlers) == 1, "subscribing again replaces the old handler (no double delivery)")
 audio.ControlChanged.handlers[0](None, SimpleNamespace())                    # an event without the properties
-check(True, "a malformed event does not raise into HIDMaestro")
+ok("a malformed event does not raise into HIDMaestro")
 pad._detach_frames()
 check(len(audio.ControlChanged.handlers) == 1, "attach_audio (frames only) leaves the volume subscription alone")
 pad.detach_audio()
@@ -144,7 +144,7 @@ pad = bare_pad(SimpleNamespace(ControlChanged=Event()))
 def boom(*a): raise RuntimeError("x")
 pad.attach_audio_controls(boom)
 pad.ctrl.UsbAudio.ControlChanged.handlers[0](None, SimpleNamespace(Function="speaker", IsMute=False, MuteValue=False, VolumeDb=0.0))
-check(True, "a failing sink is swallowed")
+ok("a failing sink is swallowed")
 
 # ---------- create_composite subscribes first ----------
 order: list = []

@@ -18,7 +18,7 @@ from proto import (BODY, BT_CONNECT, BT_DISCONNECT, BT_LIST, BT_PAIR, BT_POWER, 
                    BTR_RUNNING, BTS_NO_TOOL, BTS_OFF, BTS_OK, T_BTCMD, T_BTCTRL, T_BTDEV, T_BTSTATE, mac_bytes)
 from rx_buttons import BIT, BUTTON_CODES
 from rx_qt_bt import DeviceRow, status_icon
-ok = lambda msg: print("OK  ", msg)
+from chk import ok
 pump = lambda ms=40: QTest.qWait(ms)
 SHOTS = os.environ.get("SHOTS") or os.path.dirname(__file__)
 PAD, PAD2, PHONE = "aa:bb:cc:dd:ee:01", "aa:bb:cc:dd:ee:02", "11:22:33:44:55:66"

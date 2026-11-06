@@ -17,7 +17,7 @@ from proto import (BODY, CFG_ALL, CFG_GET, CFG_RESET, CFG_SET, CFGF_LAST, CFGF_R
                    CFGR_OK, CFGR_UNKNOWN, T_CFGSET, T_CFGVAL, T_PING, T_PONG, T_PONG2, Codec, EpochClock)
 from sender_ctrl import Ctrl
 
-from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
+from chk import check, fails, raises                          # noqa: E402  (shared helper, tests/chk.py)
 
 ID = cfgspec.BY_KEY
 N = len(cfgspec.SPECS)
@@ -111,22 +111,13 @@ for s in cfgspec.SPECS:     # wartość domyślna mieści się w granicach i prz
 # ---------- wartości: typy, granice, NaN, indeks wyboru ----------
 sp = cfgspec.SPECS[ID["haptics_buffer_ms"]]
 for bad in (5, 5000, 20.5, True, "20", float("nan"), None):
-    try:
-        cfgspec.check(sp, bad); check(False, f"cfgspec.check przepuściło {bad!r}")
-    except ValueError:
-        pass
+    raises(ValueError, lambda: cfgspec.check(sp, bad), f"cfgspec.check przepuściło {bad!r}")
 check(cfgspec.check(sp, 20.0) == 20 and isinstance(cfgspec.check(sp, 20.0), int), "liczba całkowita jako float -> int")
 check(cfgspec.from_wire(cfgspec.SPECS[ID["tap_click"]], 1.0) is True, "bool z 1.0")
 for bad in (0.5, 2.0, math.inf, math.nan):
-    try:
-        cfgspec.from_wire(cfgspec.SPECS[ID["tap_click"]], bad); check(False, f"bool przyjął {bad}")
-    except ValueError:
-        pass
+    raises(ValueError, lambda: cfgspec.from_wire(cfgspec.SPECS[ID["tap_click"]], bad), f"bool przyjął {bad}")
 for bad in (-1.0, 4.0, 1.5, math.inf):
-    try:
-        cfgspec.from_wire(cfgspec.SPECS[ID["rumble"]], bad); check(False, f"wybór przyjął {bad}")
-    except ValueError:
-        pass
+    raises(ValueError, lambda: cfgspec.from_wire(cfgspec.SPECS[ID["rumble"]], bad), f"wybór przyjął {bad}")
 check(cfgspec.from_wire(cfgspec.SPECS[ID["rumble"]], 3.0) == "off", "wybór = indeks na liście")
 
 # ---------- odczyt: wszystkie ustawienia, wartości = to, co działa ----------

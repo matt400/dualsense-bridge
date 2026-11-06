@@ -16,7 +16,7 @@ from proto import (BODY, E_NO_RECEIVER, E_WOL, E_WOL_FAIL, EV_ERROR, EV_INFO, KE
                    T_BUILD, T_BUILD2, T_EVENT, T_SCFG, Codec, mac_bytes, magic_packet)
 from sender_ctrl import Ctrl
 
-ok = lambda m: print("OK  ", m)
+from chk import ok
 cod = Codec()
 
 # ---------- protokół ----------

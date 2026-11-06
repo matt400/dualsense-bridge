@@ -15,7 +15,7 @@ import sender_supervisor as sup
 from proto import LEDS_MUTE, LEDS_PLAYER, MUTE_BIT, MUTE_OFF, MUTE_ON, MUTE_PULSE, T_FB, T_LEDS, T_STATE, Codec, SeqFilter
 from fakedev import common, crc_ok, new_hidraw, reports
 
-ok = lambda m: print("OK  ", m)
+from chk import ok
 KEY = b"0123456789abcdef"
 
 

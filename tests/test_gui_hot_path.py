@@ -15,7 +15,7 @@ C.CONSOLE_PATH = os.path.join(TMP, "console.json")
 import rx_audio, rx_console, rx_events as ev, rx_hm, rx_qt
 from proto import T_IDENT
 from rx_console import Console, ConsoleConfig
-ok = lambda msg: print("OK  ", msg)
+from chk import ok
 pump = lambda ms=40: QTest.qWait(ms)
 A = "aa:aa:aa:aa:aa:01"
 

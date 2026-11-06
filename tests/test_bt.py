@@ -13,7 +13,7 @@ from proto import (BODY, BT_ACTIVE_S, BT_CONNECT, BT_DISCONNECT, BT_LIST, BT_PAI
                    BTF_BUSY, BTF_SCANNING, BTR_AUTH, BTR_BUSY, BTR_DENIED, BTR_FAILED, BTR_NOT_FOUND, BTR_OFF, BTR_OK,
                    BTR_RUNNING, BTS_BLOCKED, BTS_DENIED, BTS_ERROR, BTS_NO_ADAPTER, BTS_NO_SERVICE, BTS_NO_TOOL, BTS_OFF,
                    BTS_OK, T_BTCMD, T_BTDEV, T_BTSTATE, T_CMD, T_IDENT, T_VERSION, Codec, mac_bytes)
-ok = lambda m: print("OK  ", m)
+from chk import ok
 PAD, PAD2, PHONE, TV = "aa:bb:cc:dd:ee:01", "aa:bb:cc:dd:ee:02", "11:22:33:44:55:66", "77:88:99:aa:bb:cc"
 
 # ---------- protokół ----------

@@ -6,7 +6,7 @@ import rx_events as ev
 import rx_net
 from proto import BATT_CHARGING, SCFG_BATT, T_BUILD, T_BUILD2, T_BUILD3, Codec
 
-ok = lambda m: print("OK  ", m)
+from chk import ok
 cod = Codec()
 MAC, BC = bytes.fromhex("112233445566"), socket.inet_aton("10.0.0.255")
 

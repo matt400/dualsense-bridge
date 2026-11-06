@@ -12,7 +12,7 @@ from proto import (BODY, LAT_NONE, STATE_FIELDS, T_PONG, T_PONG2, T_STATE, T_STA
 from rx_buttons import normalize_profile
 from rx_shape import legacy_values, normalize_triggers, trigger_values
 
-ok = lambda m: print("OK  ", m)
+from chk import ok
 C.CONSOLE_PATH = os.path.join(TMP, "console.json")
 
 

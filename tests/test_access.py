@@ -9,7 +9,7 @@ import rx_padcal
 import rx_profiles as P
 import rx_reach as R
 from proto import T_IDENT
-ok = lambda m: print("OK  ", m)
+from chk import ok
 PAD = "aa:aa:aa:aa:aa:02"
 
 

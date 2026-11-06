@@ -7,7 +7,7 @@ import sender_config; sender_config.init(["127.0.0.1"])
 import sender_haptics as H
 from proto import HAPT_CHUNK, HAPT_END, HAPT_FRAMES, HAPT_RATE, HAPT_START
 
-ok = lambda m: print("OK  ", m)
+from chk import ok
 F = HAPT_FRAMES
 PERIOD = F / HAPT_RATE
 

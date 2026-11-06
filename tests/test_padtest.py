@@ -10,7 +10,7 @@ import rx_status as ST
 from proto import (BODY, CAL_MOVED, CAL_OK, CALF_STORED, CAP_CALIB, CMD_GYRO_CAL, CMD_RAW_STICKS, RUMBLE_EVDEV, T_CALRES,
                    T_CLICK, T_CMD, T_IDENT, T_MOUSE, T_TOUCH)
 from rx_buttons import normalize_profile
-ok = lambda m: print("OK  ", m)
+from chk import ok
 A = "aa:aa:aa:aa:aa:01"
 
 # ---------- propozycja strefy martwej ----------

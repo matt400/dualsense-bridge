@@ -5,7 +5,7 @@ import rx_i18n; rx_i18n.set_lang("en")              # asercje na angielskich tek
 import rx_editor, rx_profiles as P, rx_status as ST
 from proto import T_CMD
 
-ok = lambda msg: print("OK  ", msg)
+from chk import ok
 base = S.profile_key(0)
 ed = rx_editor.Editor(0)
 assert ed.key == base and not ed.modified() and ed.status()[0] == "ok"

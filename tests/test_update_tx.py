@@ -8,7 +8,7 @@ import gitupdate
 import proto, sender_control, sender_net as net, sender_state as state, sender_update as U
 from proto import BODY, CMD_UPDATE, T_BUILD, UPD_DONE, UPD_NO_CHANGE, UPD_NOT_GIT, UPD_RUNNING
 
-ok = lambda m: print("OK  ", m)
+from chk import ok
 ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
 os.environ.update(ENV)
 

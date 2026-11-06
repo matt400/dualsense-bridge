@@ -9,7 +9,7 @@ import rx_hm, rx_hm_update as U
 REAL_PIN = (U.PINNED_TAG, dict(U.PINNED_SHA256))
 U.PINNED_TAG = ""                      # sekcje poniżej idą za najnowszym wydaniem (przez API); przypięta wersja ma własną sekcję
 
-from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
+from chk import check, fails, ok                              # noqa: E402  (shared helper, tests/chk.py)
 
 
 DLL_BYTES = b"MZ" + os.urandom(200_000)
@@ -164,7 +164,7 @@ check("does not match the pinned SHA-256" in st.error and st.version == "v1.21.0
       f"podmieniony plik: odmowa, wersja bez zmian: {st.error}")
 check(not any(n.startswith(".") for n in os.listdir(ROOT_PIN)), "po odmowie folder tymczasowy sprzątnięty")
 U.verify(os.path.join(ROOT_PIN, "v1.21.0"), "v1.0.1")
-check(True, "inne wydanie niż przypięte nie jest sprawdzane (tryb „najnowsze”)")
+ok("inne wydanie niż przypięte nie jest sprawdzane (tryb „najnowsze”)")
 calls.clear()
 U.PINNED_TAG = "v1.0.0"                                      # przypięcie starsze od pobranej wersji: bez cofania
 st = U.check(force=True)
@@ -238,7 +238,7 @@ try:
         check(e.code == 0 and ran and ran[-1][-2:] == ["--autostart", "on"], f"UAC z tymi samymi argumentami: {ran}")
     rx_winapi.relaunch_admin = lambda cmd: False
     RC.elevate()
-    check(True, "odmowa w UAC: receiver działa dalej")
+    ok("odmowa w UAC: receiver działa dalej")
     sys.argv = ["receiver_controller.py", "--no-elevate"]
     ran.clear(); rx_winapi.relaunch_admin = lambda cmd: ran.append(cmd) or True
     RC.elevate()

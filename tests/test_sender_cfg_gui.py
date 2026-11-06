@@ -29,12 +29,9 @@ check(all(cfgspec.check(cfgspec.SPECS[cfgspec.BY_KEY[n]], i.default) is not None
 panel = P.SenderCfgPanel()
 sections = panel.sections()
 check(len(sections) == 1 + len(groups), "strona: nagłówek i po sekcji na grupę")
-for name, row in panel.rows.items():
-    kind = row.spec.kind
-    want = {cfgspec.KIND_BOOL: QCheckBox, cfgspec.KIND_CHOICE: Combo, cfgspec.KIND_INT: QSpinBox, cfgspec.KIND_FLOAT: QDoubleSpinBox}[kind]
-    if not isinstance(row.control, want):
-        check(False, f"{name}: zły rodzaj kontrolki")
-check(True, "kontrolki pasują do rodzaju ustawienia")
+WIDGET = {cfgspec.KIND_BOOL: QCheckBox, cfgspec.KIND_CHOICE: Combo, cfgspec.KIND_INT: QSpinBox, cfgspec.KIND_FLOAT: QDoubleSpinBox}
+wrong = [name for name, row in panel.rows.items() if not isinstance(row.control, WIDGET[row.spec.kind])]
+check(not wrong, f"kontrolki pasują do rodzaju ustawienia (zły rodzaj: {wrong})")
 
 panel.load(rx_settings.SenderConfig(values={"max_pads": 4}))
 check(panel.rows["max_pads"].control.value() == 4, "zapisany wybór pokazany w polu")

@@ -13,7 +13,7 @@ from sender_ctrl import Ctrl
 from sender_streams import BtDelay
 
 TMP = tempfile.mkdtemp()
-ok = lambda m: print("OK  ", m)
+from chk import ok
 
 # ---------- efekt spustu ----------
 off = R.trigger_effect(0, 0)

@@ -5,7 +5,7 @@ sys.path.insert(1, sys.argv[1] + "/../common")
 import rxenv  # noqa: F401 - Windows stubs
 import rx_winapi as W
 
-ok = lambda m: print("OK  ", m)
+from chk import ok
 started: list[int] = []
 
 

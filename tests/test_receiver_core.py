@@ -4,7 +4,7 @@ from rxenv import *                              # noqa
 import rx_shape as SH
 from proto import T_STATE, T_INFO, T_CLICK, T_IDENT, T_CMD, CMD_POWER_OFF, RTT_NONE
 
-ok = lambda msg: print("OK  ", msg)
+from chk import ok
 
 # ---------- 1. kształtowanie ----------
 assert SH.shape_stick(200, 50, {}) == (200, 50)

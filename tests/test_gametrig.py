@@ -13,7 +13,7 @@ from proto import (BODY, CAP_TRIG_FX, CAP_TRIG_RAW, RFX_ON, T_TRIG2, T_TRIG3, TF
                    TRIG2_OFF, Codec)
 from rx_buttons import normalize_profile
 
-ok = lambda m: print("OK  ", m)
+from chk import ok
 G_L2 = bytes([0x25, 0x30, 0x00, 0x05] + [0] * 7)
 G_R2 = bytes([0x21, 0xFF, 0x03] + [0] * 8)
 OFF = bytes([0x05] + [0] * 10)

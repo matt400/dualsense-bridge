@@ -16,7 +16,7 @@ import rx_profiles as P
 import rx_qt
 from proto import (BODY, CAL_OK, CAL_RUNNING, CALF_STORED, CAP_CALIB, CMD_GYRO_CAL, CMD_RAW_STICKS, RUMBLE_HIDRAW,
                    T_CALRES, T_CLICK, T_CMD, T_IDENT, T_TOUCH)
-ok = lambda msg: print("OK  ", msg)
+from chk import ok
 pump = lambda ms=40: QTest.qWait(ms)
 A = "aa:aa:aa:aa:aa:01"
 SHOTS = os.environ.get("SHOTS") or os.path.dirname(__file__)

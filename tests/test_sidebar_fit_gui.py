@@ -11,7 +11,7 @@ import rx_audio, rx_console, rx_qt
 from rx_console import Console, ConsoleConfig
 from rx_qt_sidebar import MIN_BUTTON
 from rx_qt_style import TV_SCALE, px
-ok = lambda msg: print("OK  ", msg)
+from chk import ok
 pump = lambda ms=40: QTest.qWait(ms)
 
 rx_audio.list_outputs = lambda: [("1", "Speakers")]

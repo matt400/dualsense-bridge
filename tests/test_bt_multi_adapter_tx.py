@@ -9,7 +9,7 @@ import sender_config; sender_config.init(["127.0.0.1"])
 import sender_bt as SB, sender_control as ctl
 from proto import BT_SCAN_START, BTR_OK, BTS_OK
 
-ok = lambda m: print("OK  ", m)
+from chk import ok
 DONGLE, PAD = "00:1A:7D:DA:71:13", "aa:bb:cc:dd:ee:01"
 
 
