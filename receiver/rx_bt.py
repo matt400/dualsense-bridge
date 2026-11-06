@@ -14,6 +14,7 @@ from typing import Any
 
 import rx_events as ev
 import rx_net
+import rx_state as S
 from proto import (BODY, BTC_ACTIVE, BTC_BLOCKED, BTC_FIXED, BTC_PICKED, BTC_USB, BTD_CONNECTED, BTD_PAD, BTD_PAIRED,
                    BTF_BUSY, BTF_HAS_BUILTIN, BTF_HAS_USB, BTF_MODE_SHIFT, BTF_ON_USB, BTF_SCANNING,
                    BTR_AUTH, BTR_BUSY, BTR_DENIED, BTR_FAILED, BTR_NONE, BTR_NOT_FOUND, BTR_OFF, BTR_OK, BTR_RUNNING,
@@ -300,7 +301,7 @@ def any_busy(now: float | None = None) -> bool:
 def send(op: int, arg: int = 0, mac: str = "") -> bool:
     """A command to the sender (3x). -> False when the sender does not know it (no btstate) or there is no address."""
     global pending, _logged
-    if not supported() or rx_net.codec is None:
+    if not supported() or S.peer is None:
         return False
     raw = mac_bytes(mac) or bytes(6)
     if op in OPS:                      # the operation is in progress at once (scan and keepalive do not block the buttons)

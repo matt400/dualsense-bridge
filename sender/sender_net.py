@@ -62,7 +62,7 @@ on_triggers: Callable[[int, tuple[Any, ...]], None] | None = None   # callback(i
 on_leds: Callable[[int, tuple[int, int, int]], None] | None = None   # callback(idx, (LEDS_* flags, mute LED, player LEDs)) set in main
 on_haptics: Callable[[int, int, int, memoryview], None] | None = None   # callback(idx, first frame, HAPT_* flags, samples) set in main
 on_speaker: Callable[[int, int, int, memoryview], None] | None = None   # callback(idx, frame, SPK_* flags, samples) set in main
-on_scfg: Callable[..., None] | None = None          # callback(flags, mac, broadcast, button, hold ms) set in main
+on_scfg: Callable[..., object] | None = None        # callback(flags, mac, broadcast, button, hold ms) set in main
 on_bt: Callable[..., None] | None = None            # callback(BT_* operation, argument, MAC 6 B) set in main (sender_bt)
 on_cfg: Callable[..., None] | None = None           # callback(authenticated, CFG_* operation, setting id, reference, value) set in main
 scfg_t = 0.0                          # when the scfg packet arrived - the receiver knows build2 and events
@@ -142,7 +142,7 @@ def init() -> None:
     global codec
     # the lambda looks pc_clock up at call time: the clock object is replaced when the sender resynchronises (and in tests)
     codec = Codec(C.KEY, token=lambda: pc_clock.now_ms(), now_ms=clock.ms32,
-                  state_path=getattr(C, "AUTH_FILE", "") or None, writer=state.write_json_later)    # no fsync on the event loop
+                  state_path=C.AUTH_FILE or None, writer=state.write_json_later)    # no fsync on the event loop
     if not C.KEY:
         print("WARNING: no HMAC key - anyone on the local network can send commands to this sender "
               "(update, Bluetooth pairing, pad power-off). Set the same key on both sides (docs/SECURITY.md)")

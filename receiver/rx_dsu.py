@@ -34,7 +34,6 @@ STATE_DISCONNECTED: Final = 0
 MODEL_FULL_GYRO: Final = 2
 CONNECTION_BLUETOOTH: Final = 2
 STICK_MAX: Final = 255
-MAX_CLIENTS: Final = 4
 IDLE_WAIT_ACTIVE_S: Final = 0.1    # how long the send thread sleeps without a wake-up: with subscribers ...
 IDLE_WAIT_S: Final = 0.5           # ... and without
 
@@ -132,10 +131,10 @@ def build_data_packet(slot: int, s: Mapping[str, Any], counter: int) -> bytes:
     return dsu_pkt(EVENT_DATA, payload)
 
 
-def _recv() -> tuple[bytes, tuple[str, int]] | None:
+def _recv(sock: socket.socket) -> tuple[bytes, tuple[str, int]] | None:
     """Receive one datagram; None on the timeout (it only exists to check S.stop) or a harmless socket error."""
     try:
-        return dsu.recvfrom(RECV_SIZE)
+        return sock.recvfrom(RECV_SIZE)
     except TimeoutError:
         return None
     except OSError as e:
@@ -148,7 +147,7 @@ def _subscribe(addr: tuple[str, int]) -> None:
     """Register (or renew) a data subscription; the number of clients is capped so forged addresses cannot become a stream source."""
     with dsu_lock:
         new = addr not in dsu_clients
-        if new and len(dsu_clients) >= getattr(C, "DSU_MAX_CLIENTS", MAX_CLIENTS):
+        if new and len(dsu_clients) >= C.DSU_MAX_CLIENTS:
             return
         dsu_clients[addr] = time.monotonic()
         S.dsu_active = True
@@ -158,33 +157,33 @@ def _subscribe(addr: tuple[str, int]) -> None:
         S.dsu_wake.set()       # a new client gets the state at once
 
 
-def _handle_request(data: bytes, addr: tuple[str, int]) -> None:
+def _handle_request(sock: socket.socket, data: bytes, addr: tuple[str, int]) -> None:
     """Answer one client packet: protocol version, slot info or a data subscription."""
     event = struct.unpack_from("<I", data, CLIENT_HDR_LEN - 4)[0]
     if event == EVENT_VERSION:
-        dsu.sendto(dsu_pkt(EVENT_VERSION, struct.pack("<H", PROTOCOL_VERSION)), addr)
+        sock.sendto(dsu_pkt(EVENT_VERSION, struct.pack("<H", PROTOCOL_VERSION)), addr)
     elif event == EVENT_INFO:
         count = struct.unpack_from("<i", data, CLIENT_HDR_LEN)[0] if len(data) >= INFO_COUNT_END else 0
         for slot in data[INFO_COUNT_END:INFO_COUNT_END + clamp(count, 0, MAX_SLOTS_QUERY)]:
-            dsu.sendto(dsu_pkt(EVENT_INFO, shared(slot) + b"\x00"), addr)
+            sock.sendto(dsu_pkt(EVENT_INFO, shared(slot) + b"\x00"), addr)
     elif event == EVENT_DATA:
         _subscribe(addr)
 
 
-def rx_thread() -> None:
+def rx_thread(sock: socket.socket) -> None:
     """Receive thread: answer the protocol-version and slot-info requests and register data subscriptions.
 
     A subscription is just the client address with the time of its last request (clients must renew it).
     """
     while not S.stop.is_set():
-        got = _recv()
+        got = _recv(sock)
         if got is None:
             continue
         data, addr = got
         if len(data) < CLIENT_HDR_LEN or data[:4] != b"DSUC":
             continue
         with contextlib.suppress(OSError):         # a client that vanished mid-answer
-            _handle_request(data, addr)
+            _handle_request(sock, data, addr)
 
 
 class _TxState:
@@ -229,21 +228,21 @@ def _live_clients() -> tuple[list[tuple[str, int]], bool]:
     return clients, resend
 
 
-def _send(pkts: list[bytes], clients: list[tuple[str, int]]) -> None:
+def _send(sock: socket.socket, pkts: list[bytes], clients: list[tuple[str, int]]) -> None:
     """Send the packets to every client, as one datagram when DSU_BATCH is on; a vanished client's subscription just expires."""
     if C.DSU_BATCH and pkts:
         batch = b"".join(pkts)
         for a in clients:
             with contextlib.suppress(OSError):
-                dsu.sendto(batch, a)
+                sock.sendto(batch, a)
     else:
         for a in clients:
             for pkt in pkts:
                 with contextlib.suppress(OSError):
-                    dsu.sendto(pkt, a)
+                    sock.sendto(pkt, a)
 
 
-def tx_thread() -> None:
+def tx_thread(sock: socket.socket) -> None:
     """Send data to subscribers after a state change (at most dsu_hz), and without changes every dsu_tx_interval."""
     tx = _TxState(C.NUM_PADS)
     interval = 1.0 / C.DSU_HZ if C.DSU_HZ else 0.0
@@ -262,7 +261,7 @@ def tx_thread() -> None:
             # dsu_tx_interval, and until then the client saw empty data - a game starting with a tilted view / empty gyro
             tx.last_ver = [-1] * tx.n
         if clients:
-            _send(tx.collect(time.monotonic()), clients)
+            _send(sock, tx.collect(time.monotonic()), clients)
 
 
 def close() -> None:
@@ -276,10 +275,10 @@ def close() -> None:
 def start() -> None:
     """Bind the DSU UDP socket and start the receive and send threads."""
     global dsu
-    dsu = bind_udp(C.DSU_PORT, "DSU server", host=getattr(C, "DSU_BIND", "127.0.0.1"))
-    if dsu.getsockname()[0] != "127.0.0.1":
+    dsu = sock = bind_udp(C.DSU_PORT, "DSU server", host=C.DSU_BIND)
+    if sock.getsockname()[0] != "127.0.0.1":
         print(f"DSU server on {C.DSU_BIND}:{C.DSU_PORT} - reachable from the network (dsu_bind)")
     # the receive thread checks S.stop; closing the socket from another thread does not interrupt recvfrom on Linux
-    dsu.settimeout(0.25)
+    sock.settimeout(0.25)
     print(f"DSU server on UDP {C.DSU_PORT} (slots 0..{C.NUM_PADS - 1}).")
-    _threads[:] = [S.start_thread("dsu rx", rx_thread), S.start_thread("dsu tx", tx_thread)]
+    _threads[:] = [S.start_thread("dsu rx", rx_thread, sock), S.start_thread("dsu tx", tx_thread, sock)]

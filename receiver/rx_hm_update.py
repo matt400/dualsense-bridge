@@ -11,8 +11,8 @@ Protection against a malicious or broken release (a hijacked author account, a b
 loaded into the administrator process and installs a driver, and a release has no Authenticode signature. So the receiver does not
 follow `releases/latest`: PINNED_TAG fixes the version and its download link, and PINNED_SHA256 the SHA-256 of every file taken
 from the zip (a swapped asset is refused). A newer HIDMaestro arrives only with a reviewed commit that moves the pin.
-With PINNED_TAG = "" the newest release is followed instead, and a new version waits MIN_AGE_DAYS after publication
-(hm_min_age_days in receiver.toml, 0 = at once) - replaced releases usually disappear within days; the first installation does
+With PINNED_TAG = "" the newest release is followed instead, and a new version waits hm_min_age_days days after publication
+(receiver.toml, 0 = at once) - replaced releases usually disappear within days; the first installation does
 not wait, and a person can skip the wait for one release with the "Install now" button.
 
   receiver/hidmaestro/v2.0.3/HIDMaestro.Core.dll   a version in its own folder: a newer one does not overwrite a DLL loaded
@@ -21,7 +21,7 @@ not wait, and a person can skip the wait for one release with the "Install now" 
 
   newest_dll()      the DLL of the newest downloaded version or None (rx_hm.candidates)
   check(force)      one check (at most every CHECK_S, unless force) -> Status; skip_wait=True (the window's "Install now"
-                    button) installs a release that is still inside the MIN_AGE_DAYS wait
+                    button) installs a release that is still inside the hm_min_age_days wait
   thread()          the receiver thread: a check after startup and then once a day
 """
 from __future__ import annotations
@@ -54,7 +54,7 @@ DEPS: Final = ("Microsoft.Windows.SDK.NET.dll", "WinRT.Runtime.dll")   # Windows
 LICENSE: Final = "LICENSE"
 # The version the receiver installs: a fixed tag with a fixed download link (zip_url), not `releases/latest` - a release the author
 # publishes later is never installed behind the user's back. Moving to a newer one is a reviewed commit that changes PINNED_TAG and
-# PINNED_SHA256 together. "" = follow the newest GitHub release (then MIN_AGE_DAYS applies). Plain module variables: tests switch them.
+# PINNED_SHA256 together. "" = follow the newest GitHub release (then hm_min_age_days applies). Plain module variables: tests switch them.
 PINNED_TAG: str = "v2.1.0"
 # SHA-256 of what is taken from that zip. HIDMaestro.Core.dll: the "SDK SHA-256" of the v2.1.0 release notes (it matched the DLL
 # downloaded from the zip); the two Windows SDK projections have no published hash, so theirs were computed from the same zip.
@@ -65,7 +65,6 @@ PINNED_SHA256: dict[str, str] = {
 }
 DAY_S: Final = 24 * 3600
 CHECK_S: Final = DAY_S
-MIN_AGE_DAYS: Final = 7                     # a new version installs only this many days after publication (see above)
 START_DELAY_S: Final = 20                   # after the receiver starts: pads and the window first, then the network
 TIMEOUT_S: Final = 30
 CHUNK: Final = 1 << 16
@@ -88,7 +87,7 @@ class Status:
     busy: bool = False       # a check / download is running
     error: str = ""          # the last error (network, zip) - "" = OK
     checked: float = 0.0     # time.time() of the last check
-    held_until: float = 0.0  # the newer version (latest) waits until this moment (time.time()) - MIN_AGE_DAYS; 0 = not waiting
+    held_until: float = 0.0  # the newer version (latest) waits until this moment (time.time()) - hm_min_age_days; 0 = not waiting
 
 
 status = Status()
@@ -217,7 +216,7 @@ def latest_release() -> tuple[str, str, float]:
 
 def min_age_s() -> float:
     """Return how long a new release must wait before installing, in seconds (hm_min_age_days from the configuration)."""
-    return max(0.0, float(getattr(C, "HM_MIN_AGE_DAYS", MIN_AGE_DAYS))) * DAY_S
+    return C.HM_MIN_AGE_DAYS * DAY_S
 
 
 class HttpRange(io.RawIOBase):
@@ -396,7 +395,7 @@ def refresh_status() -> Status:
 def check(force: bool = False, skip_wait: bool = False) -> Status:
     """Run one check: a newer version on GitHub gets downloaded. A network error does not touch the downloaded version.
 
-    skip_wait installs the latest release even if it is younger than MIN_AGE_DAYS. Only a person pressing a button in the
+    skip_wait installs the latest release even if it is younger than hm_min_age_days. Only a person pressing a button in the
     window may ask for that - the background thread never does.
     """
     if not _lock.acquire(blocking=False):
@@ -418,7 +417,7 @@ def _behind_pin() -> bool:
 
 
 def _waits(tag: str, published: float, skip_wait: bool, now: float) -> bool:
-    """Tell whether the install of `tag` must wait for MIN_AGE_DAYS (and remember until when in status.held_until).
+    """Tell whether the install of `tag` must wait for hm_min_age_days (and remember until when in status.held_until).
 
     Never for the pinned version (it was reviewed when the pin was committed), for the first installation, or for a release the
     person asked for with skip_wait.

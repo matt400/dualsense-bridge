@@ -51,8 +51,7 @@ class Row(NamedTuple):
 
 def can_send() -> bool:
     """True when the sender would obey us: we have an HMAC key and already speak v3."""
-    c = rx_net.codec
-    return c is not None and bool(c.key) and c.v3
+    return bool(rx_net.codec.key) and rx_net.codec.v3
 
 
 def _request(op: int, key: int, value: float = 0.0) -> None:

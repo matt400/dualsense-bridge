@@ -72,10 +72,10 @@ def reset(i: int, keep: bool = False) -> None:
     "as after connecting" would take the first PS after leaving the test for one held since the pad was switched on (the game would
     not get it), and a PS held across the boundary + Share would give Share in the game instead of a screenshot.
     """
-    if slots[i].timer is not None:
-        slots[i].timer.cancel()
+    if (timer := slots[i].timer) is not None:
+        timer.cancel()
     h = slots[i] = Slot()
-    if keep and S.states is not None:
+    if keep and S.states:
         mask, hx, hy = S.states[i]["raw"][:3]
         h.fresh = False
         h.prev_mask, h.prev_hat = mask, (hx, hy)

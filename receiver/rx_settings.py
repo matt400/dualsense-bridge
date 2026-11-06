@@ -87,7 +87,7 @@ class MouseConfig:
     click_rewind_ms: int = 80       # movement from the last this-many ms before the click is undone (the cursor returns to where you aimed)
     drag_threshold: int = 60        # while a click is held the cursor starts moving (a drag) only after this many touchpad units
 
-    V: ClassVar[Validators] = None   # validators - assigned below (a class attribute, not an instance field)
+    V: ClassVar[Validators]          # validators - assigned below (a class attribute, not an instance field)
 
 
 # ranges shared by settings.json validation and the sliders in the settings window (a slider narrower than the validation would clip the
@@ -158,7 +158,7 @@ class MasterConfig:
     actions: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_ACTIONS))
     claim_hold: bool = True         # PS + R3 held for CLAIM_S seconds on a pad = that pad becomes the master
 
-    V: ClassVar[Validators] = None
+    V: ClassVar[Validators]
 
 
 MasterConfig.V = {"pad": _text, "when_absent": _choice(ABSENT), "only_master": _features, "actions": _actions,
@@ -179,7 +179,7 @@ class UiConfig:
     pads_mode: str = "dynamic"
     pads_count: int = 2
 
-    V: ClassVar[Validators] = None
+    V: ClassVar[Validators]
 
     def slots(self, connected: Sequence[bool]) -> list[int]:
         """The slots whose cards are shown, given which pads are connected now (index = slot, in slot order)."""
@@ -240,7 +240,7 @@ class LightbarConfig:
     low_pct: int = 15             # low battery threshold [%] - blinking and the warning on the card (initially low_batt from the toml)
     pads: dict[str, PadLight] = field(default_factory=dict)
 
-    V: ClassVar[Validators] = None
+    V: ClassVar[Validators]
 
     def get(self, key: str) -> PadLight:
         """Return the lightbar setting for a pad key: its own entry, else the "*" default, else the built-in default."""
@@ -285,7 +285,7 @@ class WolConfig:
     button: str = "options"       # PS + this button held while the receiver does not answer
     hold_ms: int = 1000
 
-    V: ClassVar[Validators] = None
+    V: ClassVar[Validators]
 
 
 WolConfig.V = {"enabled": _bool, "mac": _mac, "bcast": _ipv4, "button": _choice(WOL_BUTTONS), "hold_ms": _num(*WOL_HOLD_MS)}
@@ -303,7 +303,7 @@ class LogConfig:
     max_lines: int = 500          # this many last lines in the panel
     sender: bool = False          # events from the sender (the event packet) - the sender sends them only when this is on
 
-    V: ClassVar[Validators] = None
+    V: ClassVar[Validators]
 
 
 LogConfig.V = {"level": _choice(LOG_LEVELS), "max_lines": _num(*LOG_LINES), "sender": _bool}
@@ -332,7 +332,7 @@ class VpadConfig:
     hm_dll: str = ""
     hm_auto: bool = True          # download and update HIDMaestro from GitHub (only without an own hm_dll path)
 
-    V: ClassVar[Validators] = None
+    V: ClassVar[Validators]
 
 
 VpadConfig.V = {"backend": _choice(VPAD_BACKENDS), "fixed_slots": _bool, "hm_dll": _path, "hm_auto": _bool}
@@ -376,7 +376,7 @@ class HapticsConfig:
 
     pads: dict[str, PadHaptics] = field(default_factory=dict)
 
-    V: ClassVar[Validators] = None
+    V: ClassVar[Validators]
 
     def get(self, key: str) -> PadHaptics:
         """Return the setting for a pad key: its own entry, else the "*" default, else the built-in default (off)."""
@@ -405,7 +405,7 @@ class SpeakerConfig:
 
     pads: dict[str, PadSpeaker] = field(default_factory=dict)
 
-    V: ClassVar[Validators] = None
+    V: ClassVar[Validators]
 
     def get(self, key: str) -> PadSpeaker:
         """Return the setting for a pad key: its own entry, else the "*" default, else the built-in default (off)."""
@@ -446,7 +446,7 @@ class SenderConfig:
 
     values: dict[str, Any] = field(default_factory=dict)
 
-    V: ClassVar[Validators] = None
+    V: ClassVar[Validators]
 
 
 def _sender_values(v: Any) -> dict[str, Any]:

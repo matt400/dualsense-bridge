@@ -5,7 +5,7 @@ import threading
 import time
 import traceback
 from collections.abc import Callable
-from typing import Any, Final, TypeAlias
+from typing import Any, Final, Literal, TypeAlias
 
 import rx_access
 import rx_padcal
@@ -21,54 +21,54 @@ PadState: TypeAlias = dict[str, Any]       # the live state of one pad, see new_
 lock = threading.Lock()
 profile_lock = threading.RLock()            # profile choice (game / editor / shortcuts / ident) from several threads
 stop = threading.Event()
-restart = False                            # True = after a clean shutdown start the receiver again (saving settings in the window);
+restart: bool | Literal["admin"] = False    # True = after a clean shutdown start the receiver again (saving settings in the window);
 # "admin" = the same as administrator (UAC - HIDMaestro)
 seen = SeqFilter(1.0)                      # dropping late / duplicated packets
 MACS: Final = [bytes([0, 2, 3, 4, 5, 6 + s]) for s in range(5)]
 SENDER_TIMEOUT: Final = 3.0                       # silence longer than this (3 pings) = the sender is offline
 
-peer = None        # address of the last sender (for feedback / pong)
-sender_build = None  # (commit, commit time, update state UPD_*, receive time) from the sender's build packet
+peer: tuple[str, int] | None = None   # address of the last sender (for feedback / pong)
+sender_build: tuple[str, int, int, float] | None = None   # (commit, commit time, update state UPD_*, receive time) from build
 sender_update_msg = ""  # the reason for the last sender update failure (the updmsg packet)
-sender_batt = None  # (percent, charging) of the sender device's own battery (build3); None = no battery / an older sender
+sender_batt: tuple[int, bool] | None = None   # (percent, charging) of the sender device's battery (build3); None = none / old sender
 sender_cfg: dict[str, Any] = {}  # name -> rx_sender_cfg.Row: the sender's settings as it last reported them (cfgval)
 sender_cfg_result: int | None = None  # None = no answer yet, CFGR_OK, or why the sender refuses (no key / not v3 / switched off)
 sender_cfg_gen = 0                    # grows with every cfgval - the Sender tab refreshes when it changes
 sender_cfg_count: int | None = None   # how many settings the sender knows (CFGF_LAST, or a read that stopped growing); None = not known
-sender_wol = None  # (the PC's MAC, broadcast) - what the sender's Wake-on-LAN will use (the build2 packet); "" = it does not know
+sender_wol: tuple[str, str] | None = None   # (the PC's MAC, broadcast) the sender's Wake-on-LAN will use (build2); None = unknown
 last_pkt = 0.0     # when the last valid packet arrived - for the online indicator
-store: RemapStore = None   # the remap profiles (set by init)
+store: RemapStore              # the remap profiles (set by init; reading it earlier is a bug, so there is no placeholder)
 dsu_wake = threading.Event()
 dsu_active = False              # the DSU server has subscribers - without them state changes do not wake it (rx_dsu)
 gyro_wake = threading.Event()   # wakes the gyro mouse thread (rx_gyro)
-game = None                     # the foreground program (lower case, e.g. "eldenring.exe") or None
-link_loss = None                # packet loss from the sender in the last second [%] (None = no data)
+game: str | None = None         # the foreground program (lower case, e.g. "eldenring.exe") or None
+link_loss: float | None = None  # packet loss from the sender in the last second [%] (None = no data)
 
-# Per-pad state, one entry per slot. All of these are None until init() builds the lists (a few listeners that can fire
-# earlier check `S.states is not None`); the annotations describe the lists as they are afterwards.
-states: list[PadState] = None      # the live state, see new_state()
-wake: list[threading.Event] = None       # wakes the slot thread after a state change
-want: list[threading.Event] = None       # set = the virtual pad should exist
-plugged: list[bool] = None               # the virtual pad is plugged in
-last_seen: list[float] = None            # when the pad last sent a packet (monotonic)
-connected_at: list[float | None] = None  # when the pad connected (monotonic; None = not connected) - the pad card shows how long ago
-alive: list[bool] = None                 # the pad is sending
-ignore_until: list[float] = None         # mute a slot until then (after a bye packet)
-mouse_mode: list[bool] = None            # the touchpad drives the mouse
-tp_down: list[int] = None                # the last touchpad click value (0 / 1 / 2)
-swallow: list[bool] = None               # the next touchpad release belongs to a shortcut
-last_v: list[tuple | None] = None        # the last state packet - repeats are skipped
-last_touch: list[tuple | None] = None    # the last touch packet
-batt_info: list[tuple[int, int]] = None  # (percent, flags) for the window
-pad_id: list[str | None] = None          # the pad identifier from the ident packet
-remap_maps: list[Profile] = None             # the normalised button map in use
-override: list[str | None] = None        # a profile chosen by hand, None = automatic
-active: list[str] = None                 # the profile key in use
-info: list[tuple | None] = None          # (ping ms | None, pad Hz, motion Hz, time)
-pps: list[float] = None                  # state packets per second
-sender_info: list[tuple | None] = None   # (sender version, rumble ways, reason); None = old sender
-probe: list[list | None] = None          # drift measurement samples (lx, ly, rx, ry) or None
-gyro_cal: list[tuple | None] = None      # the last calres packet
+# Per-pad state, one entry per slot. The lists are empty until init() builds them with C.NUM_PADS entries (a few listeners
+# that can fire earlier check `if S.states`).
+states: list[PadState] = []             # the live state, see new_state()
+wake: list[threading.Event] = []        # wakes the slot thread after a state change
+want: list[threading.Event] = []        # set = the virtual pad should exist
+plugged: list[bool] = []                # the virtual pad is plugged in
+last_seen: list[float] = []             # when the pad last sent a packet (monotonic)
+connected_at: list[float | None] = []   # when the pad connected (monotonic; None = not connected) - the pad card shows how long ago
+alive: list[bool] = []                  # the pad is sending
+ignore_until: list[float] = []          # mute a slot until then (after a bye packet)
+mouse_mode: list[bool] = []             # the touchpad drives the mouse
+tp_down: list[int] = []                 # the last touchpad click value (0 / 1 / 2)
+swallow: list[bool] = []                # the next touchpad release belongs to a shortcut
+last_v: list[tuple | None] = []         # the last state packet - repeats are skipped
+last_touch: list[tuple | None] = []     # the last touch packet
+batt_info: list[tuple[int, int]] = []   # (percent, flags) for the window
+pad_id: list[str | None] = []           # the pad identifier from the ident packet
+remap_maps: list[Profile] = []          # the normalised button map in use
+override: list[str | None] = []         # a profile chosen by hand, None = automatic
+active: list[str] = []                  # the profile key in use
+info: list[tuple | None] = []           # (ping ms | None, pad Hz, motion Hz, time)
+pps: list[float] = []                   # state packets per second
+sender_info: list[tuple | None] = []    # (sender version, rumble ways, reason); None = old sender
+probe: list[list | None] = []           # drift measurement samples (lx, ly, rx, ry) or None
+gyro_cal: list[tuple | None] = []       # the last calres packet
 
 
 def new_state() -> PadState:

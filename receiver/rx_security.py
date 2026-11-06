@@ -78,7 +78,7 @@ def issues() -> list[Issue]:
         out.append(Issue("key", _("Brak klucza HMAC: każdy w sieci lokalnej może sterować tym komputerem przez receiver "
                                   "(mysz, akcje pada master) i wysyłać polecenia do nadajnika. Ustaw ten sam klucz (key) "
                                   "w receiverze i w nadajniku.")))
-    if getattr(C, "DSU_BIND", "127.0.0.1") not in LOCAL_HOSTS:
+    if C.DSU_BIND not in LOCAL_HOSTS:
         out.append(Issue("dsu", _("Serwer DSU jest dostępny z sieci (dsu_bind): każdy w sieci lokalnej widzi ruchy "
                                   "i przyciski padów. Ustaw dsu_bind = \"127.0.0.1\", jeśli emulator działa na tym "
                                   "komputerze.")))

@@ -51,13 +51,15 @@ def move_focus(root: QWidget, forward: bool, scope: QWidget | None = None) -> QW
 
     scope: only elements inside this widget (an open Bluetooth drawer).
     """
-    focus = QApplication.focusWidget()
-    start = root if focus is None or focus.window() is not root else focus
-    w: QWidget = start
+    start, focus = root, QApplication.focusWidget()
+    if focus is not None and focus.window() is root:
+        start = focus
+    w = start
     for _ in range(1000):
-        w = w.nextInFocusChain() if forward else w.previousInFocusChain()
-        if w is start:
+        nxt = w.nextInFocusChain() if forward else w.previousInFocusChain()
+        if nxt is None or nxt is start:      # around the whole chain (or a widget outside any chain)
             return None
+        w = nxt
         if _focusable(w, root, scope):
             w.setFocus(Qt.FocusReason.TabFocusReason)
             sa, p = None, w.parentWidget()

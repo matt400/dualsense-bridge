@@ -159,7 +159,7 @@ class StickScope(QWidget):
         """Start with both sticks centred, no trail, no dead zone circles and no peaks."""
         super().__init__()
         self.stick_pos = {"left": (0.0, 0.0), "right": (0.0, 0.0)}      # not `pos`: that would shadow QWidget.pos()
-        self.trail = {"left": deque(maxlen=TRAIL), "right": deque(maxlen=TRAIL)}
+        self.trail: dict[str, deque[tuple[float, float]]] = {"left": deque(maxlen=TRAIL), "right": deque(maxlen=TRAIL)}
         self.dz: dict[str, float] = {}         # drift correction {stick: dz}
         self.peak: dict[str, float] = {}       # the last measurement {stick: peak}
         self.reach: dict[str, float] = {}      # the accessibility range {stick: outer} - the ring where the output is full

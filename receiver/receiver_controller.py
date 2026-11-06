@@ -335,7 +335,7 @@ def _shutdown(slot_threads: list[threading.Thread], fb_thread: threading.Thread)
     deadline = time.monotonic() + 2.0
     for t in slot_threads:      # slot threads disconnect the virtual DS4 from ViGEm (thread end = disconnected)
         t.join(max(0.0, deadline - time.monotonic()))
-    rx_console.close(restart=S.restart)
+    rx_console.close(restart=bool(S.restart))
     rx_net.close()
     rx_dsu.close()
     rx_winapi.release_single_instance()

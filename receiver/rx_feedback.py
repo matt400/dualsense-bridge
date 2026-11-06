@@ -396,6 +396,7 @@ def trigger_target(i: int) -> tuple[Any, ...]:
     TFX_OFF); when the game itself drives the triggers, game rumble on the profile's triggers is switched off.
     """
     import rx_master        # rx_master imports this module
+    vals: tuple[int, ...]
     if not rx_master.allowed(i, "triggers"):
         vals, game = TRIG2_OFF, NO_GAME_TRIG
     else:

@@ -182,7 +182,7 @@ class Tile(QFrame):
         for w in (self.title, self.value, self.sub, self.chart):
             lay.addWidget(w)
         self.setToolTip(tip)
-        self._sig: tuple[str, str] | None = None
+        self._sig: tuple[str, str, str] | None = None     # (value, level, statistics line) on screen
 
     def show_value(self, value: float | None, level: str, extra: str = "") -> None:
         """The current value, its level and the statistics line (`extra` replaces it, e.g. the loss counters)."""

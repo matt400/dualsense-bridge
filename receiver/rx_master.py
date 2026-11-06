@@ -73,10 +73,10 @@ def reset(i: int, keep: bool = False) -> None:
     fire an action), and a new press after the boundary works at once (like rx_hotkeys.reset); without keep - as after
     the pad connects (the first state is the initial state).
     """
-    if slots[i].timer is not None:
-        slots[i].timer.cancel()
+    if (timer := slots[i].timer) is not None:
+        timer.cancel()
     h = slots[i] = Slot()
-    if keep and S.states is not None:
+    if keep and S.states:
         h.fresh = False
         h.prev = frozenset(pressed_inputs(*S.states[i]["raw"]))
         h.mod = MOD in h.prev
