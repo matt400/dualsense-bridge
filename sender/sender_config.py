@@ -41,7 +41,7 @@ DEFAULTS: dict[str, Any] = {
     "tap_max_s": 0.2,
     "tap_max_move": 40,
     "heartbeat_s": 0.05,
-    "pad_min_dt": 0.001,           # min gap between state packets (1 ms = 1000 Hz; it was 4 ms - up to 3 ms of stick delay); the first one
+    "pad_min_dt": 0.001,           # min gap between state packets (1 ms = 1000 Hz; 4 ms would add up to 3 ms of stick delay); the first one
                                    # after silence goes out at once, changes inside the window merge into one packet at its end; 0 = no
                                    # limit
     "motion_min_dt": 0.001,        # same for motion; gyro/acc samples inside the window are averaged

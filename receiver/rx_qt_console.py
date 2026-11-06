@@ -921,8 +921,8 @@ class ConsoleSettings(QDialog):
     def _fit(self) -> None:
         """Centre on the main window's screen and fully inside the work area (without the taskbar).
 
-        A fixed 860x780 on 1080p with 150 % scaling (720 px of height) went under the taskbar together with the Save
-        buttons. The window frame (the title bar) is known only after showing - remembered, so later openings place the
+        A fixed size cannot work: 860x780 on 1080p with 150 % scaling (720 px of height) would put the Save buttons under
+        the taskbar. The window frame (the title bar) is known only after showing - remembered, so later openings place the
         window once, before showing it (without moving a visible window).
         """
         if self.isVisible():

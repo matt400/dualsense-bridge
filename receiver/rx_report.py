@@ -61,8 +61,8 @@ def build_report(s: Mapping[str, Any], counter: int, mmode: bool, b: bytearray |
     b[6] = ((counter & 0x3F) << 2) | (1 if s["mask"] & PS_BIT else 0) | (2 if (s["tp"] and not mmode) else 0)
     b[7], b[8] = s["lt"], s["rt"]
     # DS4 timestamp = units of 5.33 us (187.5 kHz = 3/16 per us) of the time the sample arrived (s["ts"], us); reports are
-    # sent on events, so a fixed increment (counter * 750) disturbed the gyro integration in apps that compute dt, and the
-    # build time jitters when reports are merged (pad_hz) - the sample's own time is what dt must follow
+    # sent on events, so a fixed increment (counter * 750) would disturb the gyro integration in apps that compute dt, and
+    # the build time jitters when reports are merged (pad_hz) - the sample's own time is what dt must follow
     _U16.pack_into(b, 9, s["ts"] * 3 // 16 & 0xFFFF)
     gx, gy, gz = s["gyro"]
     ax, ay, az = s["acc"]

@@ -257,8 +257,8 @@ def tx_thread(sock: socket.socket) -> None:
         last = time.perf_counter()
         clients, resend = _live_clients()
         if resend:
-            # a new client (emulator) did not know the state: without this a motionless pad (the same "ver") would get it only after
-            # dsu_tx_interval, and until then the client saw empty data - a game starting with a tilted view / empty gyro
+            # a new client (emulator) does not know the state: a motionless pad (the same "ver") would reach it only after
+            # dsu_tx_interval, and until then the client sees empty data - a game starting with a tilted view / empty gyro
             tx.last_ver = [-1] * tx.n
         if clients:
             _send(sock, tx.collect(time.monotonic()), clients)

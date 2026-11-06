@@ -447,6 +447,6 @@ def slot_thread(idx: int) -> None:
                 gc.collect()
                 print(f"Controller {idx}: virtual pad unplugged")
             rx_haptics.detach(idx)
-            # rumble and colour from the game belonged to the unplugged pad: without this, a pad that connects in this slot vibrated with
-            # the game's old rumble (refreshed every 0.5 s) before a new one is created - and on a backend error forever
+            # rumble and colour from the game belong to the unplugged pad: the next pad in this slot must not get the game's old
+            # rumble (refreshed every 0.5 s) before its own virtual pad exists - or forever, if creating it fails
             F.reset(rx_swap.route(idx))

@@ -68,9 +68,9 @@ class LinkStats:
     S.link_loss / S.pps (the GUI window).
 
     A jump in the number is a loss when it fits the silence: at most as many packets as the sender would send in that time (the measured
-    rate with a margin). A bigger jump = a sender restart (a new random number). Before, the threshold was fixed (1000):
-    a signal gap longer than ~1-4 s (250-1000 packets/s) counted as a restart and the indicator showed 0 %
-    loss exactly during the biggest dropouts.
+    rate with a margin). A bigger jump = a sender restart (a new random number). A fixed threshold would not do: at
+    250-1000 packets/s a gap of a few seconds would count as a restart, and the indicator would show 0 % loss exactly
+    during the biggest dropouts.
     """
 
     WINDOW: Final = 1.0
@@ -258,8 +258,8 @@ def _ensure_repeat_thread() -> None:
 def send_repeat(pkt: bytes | None, n: int) -> None:
     """The same packet (the same number - the sender handles it once) now and n-1 times later, after REPEAT_DELAYS.
 
-    Copies sent at once got lost together in one burst of losses, and each had its own number, so the sender ran the
-    command several times (only its repeat locks protected it).
+    Copies sent at once get lost together in one burst of losses, and with a number each the sender would run the
+    command several times.
     """
     if pkt is None:
         return
@@ -403,8 +403,8 @@ def ds5_batt_byte(pct: int, flags: int) -> int:
     """Return the DualSense battery byte (level 0..10 + state) straight from the pad's percentage.
 
     The pad itself reports a 0..10 level and the sender's value is level * 10 + 5 (hid-playstation), so pct // 10 gives
-    the level back exactly. Going through the DS4 0..8 scale (batt_codes) lost it: 35 % came out as 25 %, 75 % as 85 %.
-    An unknown level (a USB pad) looks like a full pad on a cable, as before.
+    the level back exactly; the DS4 0..8 scale (batt_codes) cannot (35 % would come out as 25 %, 75 % as 85 %).
+    An unknown level (a USB pad) looks like a full pad on a cable.
     """
     if pct > PCT_MAX:
         return DS5_BATT_FULL_LEVEL | DS5_BATT_FULL
@@ -747,8 +747,8 @@ def check_stale(now: float) -> None:
 def check_key(now: float) -> None:
     """Sender packets rejected because of a different HMAC key setting (proto.Codec.mismatch_t).
 
-    A warning in the log, at most every KEY_WARN_S. Without it the pads simply did not work, and the only hint was the
-    sender's log.
+    A warning in the log, at most every KEY_WARN_S: with a key mismatch the pads do nothing, and otherwise the only hint
+    would be in the sender's log.
     """
     if now - codec.mismatch_t < 1.0 and now - _key_warned[0] >= KEY_WARN_S:
         _key_warned[0] = now

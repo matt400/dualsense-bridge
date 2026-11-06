@@ -143,8 +143,7 @@ def elevate() -> None:
     First through the DualSenseBridgeAdmin task (no UAC prompt; created by a receiver running as administrator), without
     it - a UAC prompt. A refusal in UAC / --no-elevate -> carry on without privileges (virtual pads through ViGEmBus).
     Before rx_config.init: --autostart on always goes through UAC (the task would run the receiver without that flag).
-    The receiver already running -> no elevation (the second copy exits soon anyway - earlier it first showed a UAC
-    prompt).
+    The receiver already running -> no elevation: the second copy exits soon anyway, so a UAC prompt would be for nothing.
     """
     if os.name != "nt" or NO_ELEVATE in sys.argv[1:]:
         return

@@ -4,7 +4,8 @@ update() -> Result:
   1. the repository folder (the parent of receiver/) must be a git clone - a downloaded ZIP has no history
   2. git pull --ff-only: only a fast-forward to the GitHub version; local changes in code files or own commits
      -> git's message, nothing is overwritten or merged. Without login windows (QUIET_ENV) and with a time limit - a pull
-     from a background process could wait for an invisible Git Credential Manager window while the button hung on "Updating..."
+     from a background process could otherwise wait for an invisible Git Credential Manager window, the button stuck on
+     "Updating..."
   2a. code downloaded earlier but not started (a failed restart, a git pull from the console): the pull finds nothing new, but
      the running receiver is older than HEAD -> a restart as well (not "You have the latest version" with the old code running on)
   3. receiver/requirements.txt changed -> pip install -r (new libraries)
@@ -99,8 +100,8 @@ def sender_state(build: Sequence[Any] | None, old_commit: str = "") -> int | Non
     """Return the sender update state from the build packet.
 
     After downloading code the sender restarts (os.execv) and the new process reports UPD_NONE - when the receiver
-    updated for longer (e.g. pip install), the window saw only that state and wrote "the sender did not answer". A
-    commit different from the one before the update (old_commit) = updated.
+    takes longer to update (e.g. pip install), that is the only state the window sees, so the commit decides: one
+    different from the one before the update (old_commit) = updated, not "the sender did not answer".
     """
     return None if build is None else _state_of(build, old_commit)
 

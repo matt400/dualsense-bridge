@@ -66,8 +66,8 @@ MAX_GAP_FRAMES: Final = 8                   # a gap up to this long (80 ms) is a
 TIMEOUT_S: Final = 0.2                      # no packet for this long ends the stream
 TAIL_TICKS: Final = 10                      # silent reports after the last frame, before the volume goes to 0 (~107 ms)
 PAD_BUFFER: Final = 48                      # the pad's own audio buffer while it plays, 16..128: bigger rides out BT jitter, costs delay
-                                            # (16 = the old fixed value and the lowest the pad takes; the ~32 ms dropouts that remained are
-                                            # suspected to come from it; 48 is what DS5Dongle ships)
+                                            # (16 is the lowest the pad takes and is suspected of ~32 ms dropouts; 48 is what
+                                            # DS5Dongle ships)
 FOLLOW_S: Final = 0.002                     # the speaker timer wakes this long after the haptics tick it follows
 _SILENCE: Final = memoryview(bytes(SPK_BYTES))
 _NO_HAPTICS: Final = memoryview(bytes(HAPT_CHUNK))

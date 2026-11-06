@@ -42,7 +42,7 @@ THROTTLING_IGNORE_TIMER_RESOLUTION: Final = 0x4
 
 
 def init_process() -> None:
-    """A 1 ms timer, high priority, QuickEdit switched off (selecting text in the console froze the program)."""
+    """A 1 ms timer, high priority, QuickEdit switched off (selecting text in the console would freeze the program)."""
     # best effort: every step is an optimisation, none of them may stop the receiver from starting
     with contextlib.suppress(*_WINAPI_ERRORS):
         ctypes.windll.winmm.timeBeginPeriod(TIMER_PERIOD_MS)
@@ -74,8 +74,8 @@ def set_app_id() -> None:
 def _no_power_throttling() -> None:
     """Switch off power throttling of the process (Windows 10/11).
 
-    A process with a hidden window (the tray) may be moved into the efficiency mode (EcoQoS) and lose timer resolution -
-    that caused random latency spikes. Both mechanisms are switched off (errors ignored on older Windows versions).
+    A process with a hidden window (the tray) may be moved into the efficiency mode (EcoQoS) and lose timer resolution,
+    which gives random latency spikes. Both mechanisms are switched off (errors ignored on older Windows versions).
     """
     class PowerThrottlingState(ctypes.Structure):
         _fields_ = [("Version", wt.DWORD), ("ControlMask", wt.DWORD), ("StateMask", wt.DWORD)]
@@ -221,8 +221,8 @@ def relaunch_admin(cmd: Sequence[str]) -> bool:
     sh = ctypes.windll.shell32
     sh.ShellExecuteW.argtypes = [wt.HWND, wt.LPCWSTR, wt.LPCWSTR, wt.LPCWSTR, wt.LPCWSTR, ctypes.c_int]
     sh.ShellExecuteW.restype = ctypes.c_void_p
-    # always SW_SHOWNORMAL: Windows applies this value to the new process's first ShowWindow - SW_HIDE (pythonw) made
-    # the receiver window not appear after clicking the tray icon; pythonw has no console to show anyway
+    # always SW_SHOWNORMAL: Windows applies this value to the new process's first ShowWindow - with SW_HIDE (pythonw) the
+    # receiver window would not appear after clicking the tray icon; pythonw has no console to show anyway
     r = sh.ShellExecuteW(None, "runas", cmd[0], subprocess.list2cmdline(cmd[1:]), os.getcwd(), SW_SHOWNORMAL)
     return (r or 0) > SHELLEXECUTE_MIN_OK
 

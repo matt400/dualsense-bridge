@@ -308,7 +308,7 @@ def send(op: int, arg: int = 0, mac: str = "") -> bool:
         pending = (op, mac_text(raw), time.monotonic())
         _logged = None                 # the same operation a second time also reaches the log
     # the same packet (the same number) now and twice later - like the pad commands (rx_net.send_repeat): three copies
-    # at once vanished together in one loss burst, and each with its own number was a separate command for the sender
+    # sent at once vanish together in one loss burst, and with a number each they would be separate commands for the sender
     rx_net.send_repeat(rx_net.codec.pack(T_BTCMD, 255, op, arg, raw), 3)
     return True
 
