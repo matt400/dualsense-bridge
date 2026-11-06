@@ -1,6 +1,6 @@
 """Sender: the pad is grabbed before the rumble backend opens; the heartbeat leaves a starting pad alone.
     python3 tests/test_start_order_tx.py sender"""
-import asyncio, inspect, sys, types
+import asyncio, sys, types
 sys.path.insert(0, sys.argv[1])
 sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
@@ -78,8 +78,27 @@ async def start_order():
     check(any(k == "state" for k, _s in seen), "...and resumes once the pad is ready")
 
 asyncio.run(start_order())
-src = inspect.getsource(sup._start_new_pad)
-check("c.starting = True" in src and src.index("c.starting = True") < src.index("state.active[key] = c"),
-      "a new pad is marked 'starting' before it becomes visible in state.active")
+
+
+# ---------- a new pad is 'starting' at the moment it becomes visible ----------
+class Active(dict):
+    """state.active that records the starting flag of every pad at the moment it is inserted."""
+    def __setitem__(self, key, c):
+        seen_starting.append(c.starting)
+        super().__setitem__(key, c)
+
+
+seen_starting: list[bool] = []
+spawned = []
+real_active, real_spawn, real_pick = sender_state.active, sender_state.spawn, sup.pick_slot
+sender_state.active = sup.state.active = Active()
+sup.state.spawn = lambda coro: (spawned.append(coro), coro.close())
+sup.pick_slot = lambda key: 0
+try:
+    sup._start_new_pad("aa:bb:cc:dd:ee:07", {"pad": Dev(), "motion": None, "touch": None}, 0.0)
+finally:
+    sender_state.active = sup.state.active = real_active
+    sup.state.spawn, sup.pick_slot = real_spawn, real_pick
+check(seen_starting == [True] and len(spawned) == 1, f"a new pad is marked 'starting' before it appears in state.active ({seen_starting})")
 
 sys.exit(1 if fails else 0)

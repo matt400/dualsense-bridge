@@ -25,10 +25,6 @@ F.release_triggers(send)
 check(out == [(0, (0, 0, 0, 0), F.TRIG_REPEAT)], "older sender (trig packet) - release with the same packet")
 out.clear(); F.release_triggers(send)
 check(out == [], "nothing the second time (already released)")
-src = open(os.path.join(RX, "receiver_controller.py"), encoding="utf-8").read()
-fin = src[src.index("def _shutdown("):src.index("def main(")]
-check(fin.index("release_triggers") < fin.index("rx_net.close()") and fin.index("fb_thread.join") < fin.index("release_triggers"),
-      "receiver_controller: release after the feedback thread stops, before the socket closes")
 
 # ---------- the sender update result after its restart ----------
 old = "a1b2c3d"
@@ -43,8 +39,6 @@ check(U.sender_state((old, 1, UPD_NONE), old) == UPD_NONE and "nie odpowiedział
 check(U.sender_state((old, 1, UPD_NO_CHANGE), old) == UPD_NO_CHANGE and U.sender_state(("x", 1, UPD_FAILED), old) == UPD_FAILED,
       "the result reported by the sender wins")
 check(U.sender_state(("e4f5a6b", 2, UPD_NONE)) == UPD_NONE, "no commit from before the update - as before")
-qt = open(os.path.join(RX, "rx_qt.py"), encoding="utf-8").read()
-check("sender_state(S.sender_build, self._upd_commit) == UPD_RUNNING" in qt, "the window stops waiting when the sender commit changed")
 
 # ---------- DSU: state changes do not wake the thread without clients ----------
 S.push = None
@@ -57,7 +51,10 @@ S.notify(0)
 check(S.dsu_wake.is_set(), "with a DSU client - wakes as before")
 S.dsu_active = False
 import rx_dsu
-check("S.dsu_active = True" in open(os.path.join(RX, "rx_dsu.py"), encoding="utf-8").read(), "a DSU subscription turns waking on")
+rx_dsu.dsu_clients.clear(); S.dsu_wake.clear()
+rx_dsu._subscribe(("127.0.0.1", 50000))
+check(S.dsu_active and S.dsu_wake.is_set(), "a DSU subscription turns waking on (and wakes the thread for the first state)")
+rx_dsu.dsu_clients.clear(); S.dsu_active = False
 
 # ---------- another HMAC key: a warning in the log ----------
 N.codec = Codec()

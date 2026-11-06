@@ -1,6 +1,6 @@
 """Sender: Bluetooth.loop clears the wake event before the work; DevWatch.start closes the inotify descriptor when add_reader fails.
     python3 tests/test_bt_loop_and_devwatch_tx.py sender"""
-import asyncio, inspect, os, sys, tempfile
+import asyncio, os, sys, tempfile, time
 sys.path.insert(0, sys.argv[1])
 sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
@@ -11,10 +11,34 @@ from chk import check, fails                                  # noqa: E402  (sha
 
 
 # ---------- Bluetooth.loop: wake cleared before the work ----------
-src = inspect.getsource(SB.Bluetooth.loop)
-check(0 <= src.index("self.wake.clear()") < src.index("self.active(now)") < src.index("self.wake.wait()"),
-      "Bluetooth.loop clears the wake event at the top of an iteration, before the work and the wait")
-check(src.count("self.wake.clear()") == 1, "...and only there")
+async def poke_during_work():
+    """A poke that arrives while an iteration works must end that iteration's wait at once (not after IDLE_S / 5 = 1 s)."""
+    b = SB.Bluetooth(run=None, emit=lambda *a: None)
+    turns: list[float] = []
+
+    def active(now):
+        turns.append(time.monotonic())
+        if len(turns) == 1:
+            b.poke()                        # e.g. a command from the window during the first iteration
+        return False
+
+    async def no_adapters():
+        pass
+
+    b.active, b.check_adapters, b.kill_scan = active, no_adapters, lambda: None
+    task = asyncio.create_task(b.loop())
+    while len(turns) < 2 and (not turns or time.monotonic() - turns[0] < 0.5):
+        await asyncio.sleep(0.01)
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+    return turns
+
+
+real_new = SB.net.new_receiver
+SB.net.new_receiver = lambda now: False
+turns = asyncio.run(poke_during_work())
+SB.net.new_receiver = real_new
+check(len(turns) >= 2 and turns[1] - turns[0] < 0.2, f"Bluetooth.loop: a poke during the work is not lost ({len(turns)} turns)")
 
 # ---------- DevWatch.start: no descriptor leak ----------
 def open_fds():
