@@ -34,7 +34,7 @@ MAX_PENDING: Final = 16         # reports waiting for the thread: a few 0x31 rep
 AUDIO_PENDING: Final = 4        # an audio report is refused above this depth (40 ms): a late burst would overrun the pad's buffer
 SLOTS: Final = MAX_PENDING + 2  # copy buffers: the queued ones, the one being written and the one being filled
 SLOT_BYTES: Final = 1024        # the largest output report of the pad is 547 B (0x39)
-CLOSE_TIMEOUT_S: Final = 1.0    # how long close(wait=True) waits for the queue to drain
+CLOSE_TIMEOUT_S: Final = 0.1    # how long close(wait=True) blocks the loop for the last reports (a few us normally, a stall is cut short)
 
 ErrorSink = Callable[[str, OSError], None]
 OkSink = Callable[[str], None]
