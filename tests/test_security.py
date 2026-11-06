@@ -96,7 +96,7 @@ U.status = U.Status(version="v1.0.0")
 U.latest_release = lambda: ("v1.1.0", "https://example/zip", now - 3600)
 st = U.check(force=True)
 check(not installs and st.held_until > now + 6 * 86400 and st.latest == "v1.1.0",
-      f"wydanie sprzed godziny: czeka {U.MIN_AGE_DAYS} dni (także przy „Sprawdź teraz”)")
+      f"wydanie sprzed godziny: czeka {C.HM_MIN_AGE_DAYS:g} dni (także przy „Sprawdź teraz”)")
 U.latest_release = lambda: ("v1.1.0", "https://example/zip", now - 8 * 86400)
 U.check(force=True)
 check(installs == ["v1.1.0"], "wydanie sprzed 8 dni: instalacja")

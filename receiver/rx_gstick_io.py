@@ -20,7 +20,7 @@ import rx_state as S
 from proto import read_json_object, write_json
 from rx_buttons import pressed_inputs
 from rx_config import C
-from rx_gstick import (EV_DEAD_IN, EV_NONE, EV_OUTER_IN, FORCE, ST_OFF, Config, Engine, Sink, Snapshot, normalize, sprint_mask,
+from rx_gstick import (EV_DEAD_IN, EV_NONE, EV_OUTER_IN, ST_OFF, Config, Engine, Sink, Snapshot, normalize, sprint_mask,
                        to_raw)
 
 FEEDBACK_GAP_S = 0.15           # minimum gap between two feedback pulses of a pad (no chatter on a zone edge)
@@ -217,7 +217,7 @@ class Runner:
             s = S.states[i]
             acc, gyro, raw, gs = s["acc"], s["gyro"], s["raw"], s["gs"]
         if gs is None and self._driving[i]:         # the slot state was reset (a gap in the data): put our output back
-            e.sent = FORCE
+            e.force = True
             self._driving[i] = False
         k0, k1, k2 = C.ACC_SIGN
         res = C.ACC_RES

@@ -243,7 +243,6 @@ STILL_DPS, STILL_G = 0.5, 0.004   # "still": rotation below 0.5 °/s and the acc
 WAKE_DPS, WAKE_G = 2.0, 0.02      # a sleeping pad is woken only by clear movement
 CAL_S, CAL_MIN_SAMPLES, CAL_MAX_DPS = 0.4, 20, 12.0   # center calibration: averaging time, minimum samples, highest rotation
 MAX_DT = 0.05
-FORCE = ("force",)        # marker: the next output must be sent regardless of the delta threshold (target change etc.)
 
 
 class Engine:
@@ -257,28 +256,30 @@ class Engine:
     def __init__(self, cfg: Config | None = None) -> None:
         """Start asleep-free and unarmed: the first sample decides what happens."""
         self.cfg = cfg or Config()
-        self._cfg = None                 # the config the cache was computed for (_apply)
+        self._cfg: Config | None = None  # the config the cache was computed for (_apply)
         self._basis = tilt_basis(None)
         self.preview = False             # the window is showing the preview: track the tilt even when the feature is off (no output)
-        self._rest = None                # (uy, uz) detected at rest for an uncalibrated pad; None = not yet
+        self._rest: tuple[float, float] | None = None   # (uy, uz) detected at rest for an uncalibrated pad; None = not yet
         self.t = 0.0
         self.armed = False               # without a return to zero there is no stick jump after enabling / returning to the window
         self.asleep = False
         self.dead = True
-        self.filt = None
+        self.filt: tuple[float, float] | None = None
         self.zone = Z_DEAD
         self.sprint = False
         self.state = ST_OFF
         self.raw = self.filt_xy = self.xy = (0.0, 0.0)
         self.mag = 0.0
-        self.out = None
-        self.sent = None
+        self.out: tuple[float, float, bool] | None = None
+        self.sent: tuple[float, float, bool] | None = None
+        self.force = False               # send the next output regardless of the delta threshold (a target change etc.)
         self.send = False
         self.event = EV_NONE
-        self._ref = None                 # reference sample for stillness detection
+        self._ref: tuple[float, float, float] | None = None   # reference sample for stillness detection
         self._since = 0.0
         self._cal: list[Any] | None = None   # [end, sx, sy, sz, n, max_dps] during center calibration
-        self.cal_result = None           # (ok, center | None) after calibration - collected by rx_gstick_io
+        # (ok, center | None) after calibration - collected by rx_gstick_io
+        self.cal_result: tuple[bool, tuple[float, ...] | None] | None = None
 
     # ---------- control from outside ----------
     @property
@@ -315,7 +316,7 @@ class Engine:
         if old is None or (old.enabled, old.target, old.sprint) != (cfg.enabled, cfg.target, cfg.sprint):
             self.armed = False
             self.sprint = False
-            self.sent = FORCE
+            self.force = True
 
     def _neutral(self, state: int) -> bool:
         """The gyro doesn't drive: the physical input works, the preview is zero."""
@@ -332,7 +333,7 @@ class Engine:
         giving back the input.
         """
         out, sent = self.out, self.sent
-        if sent is FORCE:
+        if self.force:
             send = True
         elif out == sent:
             send = False
@@ -341,9 +342,9 @@ class Engine:
         else:
             x, y, sp = out
             send = (sp != sent[2] or (x == 0.0 and y == 0.0) or x * x + y * y >= FULL_RANGE_SQ
-                    or max(abs(x - sent[0]), abs(y - sent[1])) >= self._cfg.delta / 100)
+                    or max(abs(x - sent[0]), abs(y - sent[1])) >= self.cfg.delta / 100)
         if send:
-            self.sent = out
+            self.sent, self.force = out, False
         self.send = send
         return send
 

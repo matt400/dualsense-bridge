@@ -139,7 +139,9 @@ class PadCard(QFrame):
         The status line and the body with the battery, latency, button latency and the profile line.
         """
         super().__init__()
-        self.slot, self._key, self._lat, self._since = slot, None, None, ("", "")
+        self.slot, self._since = slot, ("", "")
+        self._key: tuple[Any, ...] | None = None          # what the card shows (refresh skips an unchanged state)
+        self._lat: tuple[tuple[Any, ...], tuple[Any, ...] | None] | None = None   # the latency labels on screen
         self.setObjectName("card")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         lay = QVBoxLayout(self)
@@ -261,6 +263,7 @@ class PadCard(QFrame):
         summ, press = ST.latency(i), ST.button_latency(i)
         link = ST.link_text(i, now)
         level = ST.latency_level(summ, i, now) if S.alive[i] else ""
+        sig: tuple[str, str, tuple[tuple[str, float], ...], str, str]
         if summ is None:
             text = ST.ping_text(i, now)
             sig = (text, "", (), link, level if text != "—" else "")
@@ -418,6 +421,7 @@ class MainWindow(ScreenPlacement):
     update_progress = Signal(int)         # the update stage (percent) from the update thread
     test_escaped = Signal()               # Options + Create on the pad ended the Test view (the network thread, rx_testmode)
     _bar_state: tuple[Any, ...] | None    # what the profile bar shows (update_profile_bar skips an unchanged state)
+    _upd_result: rx_update.Result | None  # the receiver's own update result, while waiting for the sender's
 
     def __init__(self, settings: QSettings) -> None:
         """Restore the saved state (pad, view, geometry), create the timers, build the UI and the tray.
@@ -437,12 +441,14 @@ class MainWindow(ScreenPlacement):
         self.view = view if view in dict(VIEWS) and view != "test" else "out"     # the test (with the lock) not from startup
         self.edit_view = self.view             # the last Result / Physical view - leaving the test returns to it
         self.exit_hold = None                  # the Test view in TV mode: since when ○ has been held
-        self.part = None                       # the selected pad part (name) or None
+        self.part: str | None = None           # the selected pad part (name) or None
         self.warned = [False] * C.NUM_PADS     # a low battery notification sent once per discharge
         self.note_text, self.note_until = None, 0.0
         self.low_any, self.tip, self.online, self._bar_state = False, None, None, None
         # the update banner state and the percent shown while updating (never goes back)
-        self._banner_sig, self._upd_notified, self._sender_stale, self._upd_pct = None, None, None, 0
+        # _upd_run numbers the update attempts: the stuck guard of an older attempt does nothing
+        self._banner_sig, self._upd_notified, self._sender_stale, self._upd_pct, self._upd_run, self._upd_result = (
+            None, None, None, 0, 0, None)
         self.settings_dlg: ConsoleSettings | None = None   # the console mode settings window (created on first opening)
 
         self.apply_timer = QTimer(self)
@@ -1003,9 +1009,10 @@ class MainWindow(ScreenPlacement):
         self.note(_("Pobieranie aktualizacji…"), "")
         self._upd_sender = S.sender_online() and S.sender_build is not None   # a new sender answers with a result
         self._upd_seen = time.monotonic()
-        self._upd_wait_t0, self._upd_left = 0.0, None
+        self._upd_wait_t0 = 0.0
+        self._upd_left: int | None = None      # seconds left on the sender countdown shown
         self._upd_result = None
-        self._upd_run = run = getattr(self, "_upd_run", 0) + 1
+        self._upd_run = run = self._upd_run + 1
         QTimer.singleShot(int(UPDATE_STUCK_S * 1000), lambda: self._update_stuck(run))
         self._upd_commit = S.sender_build[0] if S.sender_build else ""   # a new commit after the restart = updated
         S.sender_update_msg = ""                 # the reason from the previous attempt must not describe this one

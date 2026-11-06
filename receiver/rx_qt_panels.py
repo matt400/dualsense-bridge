@@ -69,8 +69,8 @@ def scrolled(widget: QWidget) -> QScrollArea:
     sa.setWidgetResizable(True)
     sa.setFrameShape(QFrame.Shape.NoFrame)
     sa.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-    if widget.layout():
-        widget.layout().setContentsMargins(0, 12, 6, 0)      # a gap under the tabs and room for the scroll bar
+    if (lay := widget.layout()) is not None:
+        lay.setContentsMargins(0, 12, 6, 0)      # a gap under the tabs and room for the scroll bar
     sa.setWidget(widget)
     return sa
 

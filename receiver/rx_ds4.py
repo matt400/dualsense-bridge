@@ -20,9 +20,10 @@ from typing import Any
 
 try:
     import vgamepad as vg
-except Exception as e:      # noqa: BLE001 - no / broken ViGEmBus: vgamepad connects to it already at import - without this the receiver
-    # crashed at startup (silently from autostart); this way the window, DSU and mouse work, and the error is in the log
-    vg, VG_ERROR = None, e
+except Exception as e:      # noqa: BLE001 - no / broken ViGEmBus: vgamepad connects to it already at import
+    # the receiver must still start (from autostart nobody would see a crash): the window, DSU and mouse work, the error is in the log
+    vg = None
+    VG_ERROR: Exception | None = e      # why vgamepad did not load (shown in the log); None = it loaded
 else:
     VG_ERROR = None
 
@@ -236,7 +237,7 @@ def backend_changed(old: rx_settings.Settings, new: rx_settings.Settings) -> Non
         rx_hm.reset()
         _hm_warned = None
         gen += 1
-    if old.vpad != new.vpad and S.wake is not None:
+    if old.vpad != new.vpad and S.wake:
         for w in S.wake:
             w.set()
 

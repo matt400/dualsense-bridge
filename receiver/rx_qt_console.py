@@ -583,12 +583,13 @@ class ConsoleSettings(QDialog):
 
     def _haptics_tab(self) -> list[QWidget | QLayout]:
         """The Haptics tab: game HD haptics and the pad's speaker per pad (opt-in), the strength / volume and the test buttons."""
-        self._haptics, self._haptics_key, self._haptics_loading = {}, DEFAULT_PAD, False
+        self._haptics: dict[str, PadHaptics] = {}
+        self._haptics_key, self._haptics_loading = DEFAULT_PAD, False
         self._speaker: dict[str, PadSpeaker] = {}
         self.hap_scope = PadScope()
         self.hap_scope.changed.connect(self._pick_haptics_pad)
         self.hap_scope.reset.connect(self._reset_haptics_pad)
-        self.hap_on =QCheckBox(_("Haptyka gry (HD haptics) na tym padzie"))
+        self.hap_on = QCheckBox(_("Haptyka gry (HD haptics) na tym padzie"))
         self.hap_on.toggled.connect(self._haptics_edited)
         self.hap_gain = spinbox(*HAPTICS_GAIN, 5, " %")
         self.hap_gain.valueChanged.connect(self._haptics_edited)
@@ -742,7 +743,8 @@ class ConsoleSettings(QDialog):
 
     def _light_tab(self) -> list[QWidget | QLayout]:
         """The Lightbar tab: the low battery threshold and the per-pad colour / mode / blinking / game override."""
-        self._lights, self._color, self._light_key, self._loading = {}, "", DEFAULT_PAD, False
+        self._lights: dict[str, PadLight] = {}
+        self._color, self._light_key, self._loading = "", DEFAULT_PAD, False
         self.low_pct = spinbox(*LOW_PCT, 1, " %")
         low = group(_("NISKA BATERIA"),
                     field(_("Próg niskiej baterii"), self.low_pct),
@@ -1100,6 +1102,8 @@ class ConsoleSettings(QDialog):
         """Start waiting for a pad button press (with a timeout), or cancel the wait."""
         if self._cap_timer.isActive():
             self._stop_capture()
+            return
+        if rx_console.ctl is None:                           # console mode not started (no settings loaded yet)
             return
         rx_console.ctl.arm_capture(self.captured.emit)       # called from the network thread; emit is safe between threads
         self._cap_timer.start()

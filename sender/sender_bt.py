@@ -188,20 +188,22 @@ async def _scan_feed(proc: asyncio.subprocess.Process, address: str, wait_s: flo
     after start - an earlier "select" ended with "Controller ... not available"), waiting at most wait_s. Afterwards
     it reads the output until the process ends: a full pipe would stall bluetoothctl in the middle of the scan.
     """
+    out, inp = proc.stdout, proc.stdin
+    if out is None or inp is None:
+        raise ValueError("bluetoothctl must be started with stdin and stdout pipes")
     loop = asyncio.get_running_loop()
     end, seen, sent = loop.time() + wait_s, "", False
     try:
         while True:
             try:
-                chunk = await (proc.stdout.read(4096) if sent else
-                               asyncio.wait_for(proc.stdout.read(4096), max(0.0, end - loop.time())))
+                chunk = await (out.read(4096) if sent else asyncio.wait_for(out.read(4096), max(0.0, end - loop.time())))
             except TimeoutError:
                 chunk = None
             if not sent:
                 seen = (seen + (chunk or b"").decode(errors="replace").upper())[-256:]
                 if chunk is None or address in seen:
-                    proc.stdin.write(f"select {address}\nscan on\n".encode())
-                    await proc.stdin.drain()
+                    inp.write(f"select {address}\nscan on\n".encode())
+                    await inp.drain()
                     sent = True
                     continue
             if not chunk:
@@ -411,8 +413,8 @@ class Bluetooth:
     def get_mode(self) -> int:
         """Return the BTA_* mode (and set self.key for BTA_PICK): bt.json from the window, otherwise bt_adapter from sender.toml."""
         if self.mode is None:
-            default = btadapter.mode_from(getattr(C, "BT_ADAPTER", "auto"))
-            self.mode, self.key = btadapter.load_mode(getattr(C, "BT_FILE", ""), default)
+            default = btadapter.mode_from(C.BT_ADAPTER)
+            self.mode, self.key = btadapter.load_mode(C.BT_FILE, default)
         return self.mode
 
     def prefer(self) -> str:
@@ -487,7 +489,7 @@ class Bluetooth:
             raise BtError(f"unknown adapter mode {mode}")
         was = self.get_mode()
         self.mode, self.key = mode, key
-        btadapter.save_mode(getattr(C, "BT_FILE", ""), mode, key)
+        btadapter.save_mode(C.BT_FILE, mode, key)
         if mode == BTA_MANUAL and was != BTA_MANUAL:
             await asyncio.to_thread(btadapter.unblock_all, self.ctrls or btadapter.scan(self.sysfs), self.sysfs)
         await self.check_adapters(force=True)

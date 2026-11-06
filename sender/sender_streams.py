@@ -13,7 +13,7 @@ import collections
 import fcntl
 import time
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, TypeAlias
 
 from evdev import InputDevice, InputEvent
 from evdev import ecodes as ec
@@ -442,9 +442,12 @@ class _MotionStream:
 
     def _reread_axes(self) -> None:
         """Read the axes from the device: an axis whose change was lost must not keep its old value."""
+        dev = self.c.motion_dev
+        if dev is None:
+            return
         for k in range(MOTION_AXES):
             try:
-                self.sample[k] = self.c.motion_dev.absinfo(k).value
+                self.sample[k] = dev.absinfo(k).value
             except DEVICE_READ_ERRORS:
                 continue    # the axis cannot be read (the device is going away): keep the value we have
 
@@ -644,6 +647,9 @@ def _frame_mouse(c: Ctrl, fingers: list[_Finger], prev: list[tuple[int, int] | N
             sess.pend = [0, 0]
 
 
+TouchPacket: TypeAlias = tuple[tuple[int, int, int, int], tuple[int, int, int, int]]   # (active, id, x, y) of both fingers
+
+
 def _finger_packet(finger: _Finger, max_x: int, max_y: int) -> tuple[int, int, int, int]:
     """One finger of the touch packet: ``(active, id, x, y)`` in the DS4 touchpad scale."""
     pos = finger.position()
@@ -652,7 +658,7 @@ def _finger_packet(finger: _Finger, max_x: int, max_y: int) -> tuple[int, int, i
     return 1, finger.id, clamp(pos[0] * TOUCH_W // max_x, 0, TOUCH_W), clamp(pos[1] * TOUCH_H // max_y, 0, TOUCH_H)
 
 
-def _frame_touch_packet(c: Ctrl, fingers: list[_Finger], max_x: int, max_y: int, last_touch: tuple) -> tuple:
+def _frame_touch_packet(c: Ctrl, fingers: list[_Finger], max_x: int, max_y: int, last_touch: TouchPacket) -> TouchPacket:
     """DS4/DSU part of a touchpad frame: send the touch packet unless it only repeats the last one.
 
     The deadzone checks BOTH fingers (the second must not be swallowed by the first).
@@ -660,7 +666,7 @@ def _frame_touch_packet(c: Ctrl, fingers: list[_Finger], max_x: int, max_y: int,
     Returns:
         The touch state to remember as ``last_touch``.
     """
-    touch = tuple(_finger_packet(f, max_x, max_y) for f in fingers)
+    touch = (_finger_packet(fingers[0], max_x, max_y), _finger_packet(fingers[1], max_x, max_y))
     if touch != last_touch and not (_same_finger(touch[0], last_touch[0]) and _same_finger(touch[1], last_touch[1])):
         c.touch = touch
         c.send_touch()
@@ -774,7 +780,7 @@ class _TouchStream:
         self.dropping = False
         _resync_touch(c, self.fingers, self.prev)
         try:
-            self.slot = c.touch_dev.absinfo(ec.ABS_MT_SLOT).value
+            self.slot = c.touch_dev.absinfo(ec.ABS_MT_SLOT).value if c.touch_dev is not None else 0
         except DEVICE_READ_ERRORS:
             self.slot = 0
         if self.sess is not None:

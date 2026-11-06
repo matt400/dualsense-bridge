@@ -241,7 +241,7 @@ class BtDrawer(SideDrawer):
         self.timer = QTimer(self)
         self.timer.setInterval(REFRESH_MS)
         self.timer.timeout.connect(self.refresh)
-        self._keepalive = 0
+        self._keepalive = 0.0
 
     # ---------- building ----------
     def _build(self, lay: QVBoxLayout) -> None:
@@ -300,7 +300,7 @@ class BtDrawer(SideDrawer):
     # ---------- opening ----------
     def _on_open(self) -> None:
         """Panel opened: refresh at once and start the periodic refresh."""
-        self._keepalive = 0
+        self._keepalive = 0.0
         self.refresh()
         self.timer.start()
 
@@ -364,8 +364,9 @@ class BtDrawer(SideDrawer):
         busy = BT.any_busy(now)
         self.power_btn.setVisible(state == BTS_OFF)
         self.power_btn.setEnabled(not busy)
-        scanning = bool(ok and s is not None and s.scanning)
-        self.scan_btn.setText(_("Zatrzymaj skanowanie ({s} s)").format(s=s.scan_left) if scanning else
+        scan_left = s.scan_left if ok and s is not None and s.scanning else None
+        scanning = scan_left is not None
+        self.scan_btn.setText(_("Zatrzymaj skanowanie ({s} s)").format(s=scan_left) if scanning else
                               _("Skanuj ({s} s)").format(s=BT_SCAN_MAX_S))
         set_prop(self.scan_btn, "primary", not scanning)
         self.scan_btn.setEnabled(state in (BTS_OK, BTS_OFF) and (scanning or not busy))
@@ -379,9 +380,8 @@ class BtDrawer(SideDrawer):
         The mode (not during our own change - no flash of the old mode), the list of controllers with names and a Use
         button, the description.
         """
-        shown = s is not None and s.mode != 0
-        self.adapter_box.setVisible(shown)
-        if not shown:
+        self.adapter_box.setVisible(s is not None and s.mode != 0)
+        if s is None or s.mode == 0:
             return
         if BT.busy_op("", now) not in (BT_ADAPTER, BT_ADAPTER_USE) and str(s.mode) in self.adapter_seg.buttons:
             self.adapter_seg.set(str(s.mode))
@@ -403,10 +403,10 @@ class BtDrawer(SideDrawer):
         """Controller rows - persistent (the pad focus does not jump), key = index and name."""
         order = [(c.index, c.name) for c in BT.controllers]
         for key in [k for k in self.ctrl_rows if k not in order]:
-            row = self.ctrl_rows.pop(key)
-            self.ctrl_lay.removeWidget(row)
-            row.hide()
-            row.deleteLater()
+            gone = self.ctrl_rows.pop(key)
+            self.ctrl_lay.removeWidget(gone)
+            gone.hide()
+            gone.deleteLater()
         for k, c in enumerate(BT.controllers):
             row = self.ctrl_rows.get((c.index, c.name))
             if row is None:
@@ -433,12 +433,12 @@ class BtDrawer(SideDrawer):
         devs = BT.devices if enabled else ()
         order = [d.mac for d in devs]
         for mac in [m for m in self.rows if m not in order]:
-            row = self.rows.pop(mac)
-            if row.isAncestorOf(self.focusWidget() or self):
+            gone = self.rows.pop(mac)
+            if gone.isAncestorOf(self.focusWidget() or self):
                 self.scan_btn.setFocus(Qt.FocusReason.OtherFocusReason)
-            self.list_lay.removeWidget(row)
-            row.hide()
-            row.deleteLater()
+            self.list_lay.removeWidget(gone)
+            gone.hide()
+            gone.deleteLater()
         for d in devs:
             row = self.rows.get(d.mac)
             if row is None:

@@ -125,9 +125,9 @@ class LinkStats:
         self.t0 = now
 
 
-codec: Codec = None
+codec = Codec()          # keyless until init() builds the real one (make_codec); tests assign their own
 clock = EpochClock()     # the PC clock in pong2 and in v3 tokens (a random offset per process)
-in_sock: socket.socket = None
+in_sock: socket.socket | None = None   # bound by init()
 # (the sender's time from the last ping [ns], perf_counter_ns of its arrival) - the v3 token for the sender
 _sender_clock: tuple[int, int] | None = None
 _warned_idx: set[int] = set()
@@ -213,10 +213,10 @@ def _adopt_peer(addr: tuple[str, int], now: float, from_ping: bool = False) -> N
 
 def send_peer(pkt: bytes | None) -> None:
     """Send a packet to the sender (ignored while it is unknown or the packet is None); send errors are dropped."""
-    p = S.peer
-    if p is not None and pkt is not None:     # None: v3 without the sender's clock (before the first ping)
+    p, sock = S.peer, in_sock
+    if p is not None and pkt is not None and sock is not None:     # pkt None: v3 without the sender's clock (before the first ping)
         with contextlib.suppress(OSError):      # a send error is dropped: UDP, the peer may be gone
-            in_sock.sendto(pkt, p)
+            sock.sendto(pkt, p)
 
 
 REPEAT_DELAYS: Final = (0.01, 0.03, 0.06)   # repeats of packets that must not get lost (commands, triggers, scfg) [s]
@@ -353,7 +353,7 @@ def scfg_values(s: rx_settings.Settings | None = None) -> tuple[Any, ...]:
 
 def send_scfg(repeat: int = 1) -> None:
     """Send the settings packet (Wake-on-LAN, events) to the sender, `repeat` times."""
-    if codec is None or S.peer is None:      # startup (settings loaded before the socket) / the sender not known yet
+    if S.peer is None:                       # startup (settings loaded before the socket) / the sender not known yet
         return
     send_repeat(codec.pack(T_SCFG, NO_PAD, *scfg_values()), repeat)
 
@@ -828,8 +828,11 @@ class _DebugStats:
 
 def _receive() -> tuple[bytes | None, tuple[str, int], int] | None:
     """Receive one datagram: (data, address, arrival ns); data None = the receive timeout; None = skip the iteration."""
+    sock = in_sock
+    if sock is None:
+        raise RuntimeError("rx_net.init() binds the socket before the network thread starts")
     try:
-        data, addr = in_sock.recvfrom(RECV_SIZE)
+        data, addr = sock.recvfrom(RECV_SIZE)
         return data, addr, time.perf_counter_ns()     # the arrival time (the PC clock as in pong2) - the start of the "pc" segment
     except (TimeoutError, BlockingIOError):   # the receive timeout (SO_RCVTIMEO): Windows / Linux
         return None, ("", 0), 0

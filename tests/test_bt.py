@@ -119,6 +119,7 @@ ok("BlueZ: pierwszy włączony adapter (dongle USB), włączony / wyłączony / 
 
 import rxenv
 rx_sent = rxenv.sent                           # pakiety receivera do nadajnika (rxenv)
+rxenv.S.peer = ("127.0.0.1", 5005)              # nadajnik znany: polecenia BT mają dokąd iść
 tx_out = []                                    # pakiety nadajnika (emit)
 emit = lambda t, i, *v: tx_out.append((t, i, v))
 def states(): return [v for t, _i, v in tx_out if t == T_BTSTATE]
@@ -395,6 +396,9 @@ assert RB.indicator(time.monotonic() + RB.STALE_S + 1)[0] == "", "stary stan = n
 ok("receiver: lista podmieniana całą rundą (zgubiony pakiet = poprzednia), RSSI / bez RSSI, ucięta nazwa z …, "
    "kropka stanu")
 
+peer, rxenv.S.peer = rxenv.S.peer, None
+assert not RB.pair(PAD), "adres nadajnika nieznany: polecenie nie wychodzi"
+rxenv.S.peer = peer
 rx_sent.clear()
 assert RB.pair(PAD)
 pk = [p for t, i, _sq, p in rx_sent]

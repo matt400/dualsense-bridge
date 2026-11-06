@@ -184,7 +184,7 @@ class PadView(QWidget):
         self.live: dict[str, Any] = {"on": frozenset(), "ls": (128, 128), "rs": (128, 128), "l2": 0, "r2": 0}
         self.badges: list[Badge] = []
         self.test = False                                 # the Test view: no badges and no clicking, touch on the drawing
-        self.touch_live = ((), 0)                         # (fingers (x, y) in the DS4 scale, touchpad click 0/1/2)
+        self.touch_live: tuple[tuple[tuple[int, int], ...], int] = ((), 0)   # (fingers (x, y) in the DS4 scale, touchpad click 0/1/2)
         self._tf = self._inv = QTransform()
         # paint resources that do not change between frames: the body gradient is in drawing units (the painter transform
         # scales it), the stage gradient only depends on the widget size

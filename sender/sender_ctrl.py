@@ -153,7 +153,7 @@ class Ctrl:
         self.fb: tuple[int, int, int, int, int] | None = None   # the last feedback from the PC (small, large, r, g, b)
         self.wol_timer: asyncio.TimerHandle | None = None       # countdown of holding the Wake-on-LAN combination (sender_wol)
         self._pulse_timer: asyncio.TimerHandle | None = None
-        self._pulse_back: tuple[int, int, int, int, int] | None = None   # (0, 0, r, g, b) - the state after a running flash
+        self._pulse_back: tuple[int, ...] | None = None   # (0, 0, r, g, b) - the state after a running flash
         self.stick_dz = C.STICK_DZ    # stick deadzone; 0 while the drift measurement from the window runs (CMD_RAW_STICKS)
         self._raw_timer: asyncio.TimerHandle | None = None
         self.gyro_bias = [0.0, 0.0, 0.0]   # gyro bias subtracted before sending (calibration / autobias)

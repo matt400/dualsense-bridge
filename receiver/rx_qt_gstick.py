@@ -206,10 +206,10 @@ class TiltSection(QWidget):
         if reload:
             self.cfg = cfg = runner.config(self.slot)
         cfg = cfg or self.cfg
-        for cb, v in ((self.on, cfg.enabled), (self.inv_p, cfg.invert_pitch), (self.inv_r, cfg.invert_roll),
-                      (self.focus, cfg.focus_release)):
+        for cb, checked in ((self.on, cfg.enabled), (self.inv_p, cfg.invert_pitch), (self.inv_r, cfg.invert_roll),
+                            (self.focus, cfg.focus_release)):
             cb.blockSignals(True)
-            cb.setChecked(v)
+            cb.setChecked(checked)
             cb.blockSignals(False)
         for combo, v in ((self.target, cfg.target), (self.clutch, cfg.clutch), (self.sprint, cfg.sprint), (self.curve, cfg.curve),
                          (self.feedback, cfg.feedback)):

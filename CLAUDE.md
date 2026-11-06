@@ -75,7 +75,7 @@ Every module has a docstring with its role; find the file here before opening an
   return type is required for new code (`-> None` included). Do not annotate the ViGEm notification callback in
   `rx_feedback.make_cb`: vgamepad compares its signature, annotations included.
 - Docstrings follow the Google convention (ruff `D`); complexity is capped (C901 max 12, PLR0912 / PLR0915): split a long function instead of adding `noqa`.
-- Per-pad state lists in `rx_state` are `None` until `init()`; they are declared with their real types on purpose.
+- Per-pad state lists in `rx_state` are empty until `init()` fills them (one entry per slot); a listener that can run earlier checks `if S.states`.
 
 ## Tests
 ```

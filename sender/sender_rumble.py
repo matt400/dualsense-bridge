@@ -566,7 +566,8 @@ class Rumble:
         self.fd: int | None = None
         self._loop = writer_loop
         self._writer: HidWriter | None = None   # the writer thread of fd (with writer_loop), else None = os.write on the caller's thread
-        self.bt, self.seq, self.path = False, 0, None
+        self.bt, self.seq = False, 0
+        self.path: str | None = None
         self.ff_id: int | None = None
         self.v2: bool | None = None
         self.fw: int | None = None
@@ -830,8 +831,8 @@ class Rumble:
                     self._rv[k] = self._rv_off[k] = None
                 else:
                     hold = True
-            if self._rv[k] is not None:
-                out[k] = self._rv[k]
+            if (effect := self._rv[k]) is not None:
+                out[k] = effect
         return hold
 
     def _want_triggers(self, small: int, large: int, now: float | None = None) -> tuple[bytes, bytes] | None:
