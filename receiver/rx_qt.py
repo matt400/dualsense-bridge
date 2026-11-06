@@ -53,7 +53,7 @@ from rx_qt_console import ConsoleSettings
 from rx_qt_icons import icon, pixmap
 from rx_qt_log import LogPanel
 from rx_qt_gstick import TiltPreview
-from rx_qt_gyro import PREVIEW_GAP, GyroPreview
+from rx_qt_gyro import GyroPreview
 from rx_qt_pad import PadView
 from rx_qt_panels import ChangesPage, GyroPage, PartPage, ProfileBar, RumblePage, scrolled
 from rx_qt_screens import ScreenPlacement, parse_size
@@ -61,7 +61,7 @@ from rx_qt_sidebar import SideMenu
 from rx_qt_style import DIM, LEVEL, SEGMENT, TV_SCALE, apply_theme, px, set_prop
 from rx_qt_test import TestPanel
 from rx_qt_tv import PadNav
-from rx_qt_widgets import (BatteryBar, BatteryPill, ConfirmButton, ProgressRing, Segmented, SegmentBar, button, icon_button,
+from rx_qt_widgets import (PREVIEW_GAP, BatteryBar, BatteryPill, ConfirmButton, ProgressRing, Segmented, SegmentBar, button, icon_button,
                            icon_label, label)
 
 LIVE_MS, SLOW_MS, APPLY_MS = 33, 400, 150

@@ -12,11 +12,11 @@ t = SH.normalize_tuning({"left": {"dz": 0.1}})["left"]
 assert SH.shape_stick(128 + 10, 128, t) == (128, 128)                 # w strefie martwej
 assert SH.shape_stick(255, 128, t) == (255, 128) and SH.shape_stick(0, 128, t) == (0, 128)
 x, _ = SH.shape_stick(128 + 64, 128, t)                               # 50% -> (0.5-0.1)/0.9 = 44%
-assert abs(SH._unit(x) - 0.444) < 0.01, x
+assert abs(SH.unit(x) - 0.444) < 0.01, x
 tc = SH.normalize_tuning({"right": {"curve": 2.0}})["right"]
-assert abs(SH._unit(SH.shape_stick(128 + 64, 128, tc)[0]) - 0.25) < 0.01
+assert abs(SH.unit(SH.shape_stick(128 + 64, 128, tc)[0]) - 0.25) < 0.01
 ta = SH.normalize_tuning({"right": {"anti": 0.2}})["right"]
-assert abs(SH._unit(SH.shape_stick(129, 128, ta)[0]) - 0.2) < 0.02     # minimalne wychylenie -> 20%
+assert abs(SH.unit(SH.shape_stick(129, 128, ta)[0]) - 0.2) < 0.02     # minimalne wychylenie -> 20%
 to = SH.normalize_tuning({"left": {"outer": 0.8}})["left"]
 assert SH.shape_stick(128 + 104, 128, to)[0] == 255                    # 82% -> pełne
 assert SH.normalize_tuning({"left": {"dz": 0.5, "outer": 0.5}})["left"]["outer"] == 0.55

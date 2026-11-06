@@ -9,7 +9,7 @@
 
 Every shortcut can be restricted to the master pad (rx_master.allowed). Inputs used in a shortcut do not reach the game
 until they are released. It works on RAW inputs, before remapping, so remapping PS does not disable the shortcuts.
-ps_modifier = False disables all of it (PS then goes to the game at once, as it used to).
+ps_modifier = False disables all of it (PS then goes to the game at once).
 """
 from __future__ import annotations
 
@@ -68,9 +68,9 @@ def reset(i: int, keep: bool = False) -> None:
 
     keep: the pad stays connected (Test view boundary, output block) - the state is built from the inputs held right now
     (S.states[i]["raw"]), not as after a pad connects. A PS held across the boundary reaches neither the game nor
-    Game Bar, but it is a shortcut with a new button; a fresh PS after the boundary is an ordinary PS for the game. Earlier, a reset
-    "as after connecting" took the first PS after leaving the test for one held since the pad was switched on (the game did not get it),
-    and a PS held across the boundary + Share gave Share in the game instead of a screenshot.
+    Game Bar, but it is a shortcut with a new button; a fresh PS after the boundary is an ordinary PS for the game. A reset
+    "as after connecting" would take the first PS after leaving the test for one held since the pad was switched on (the game would
+    not get it), and a PS held across the boundary + Share would give Share in the game instead of a screenshot.
     """
     if slots[i].timer is not None:
         slots[i].timer.cancel()

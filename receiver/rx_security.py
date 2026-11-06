@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from types import ModuleType
 from typing import Final
 
-from rx_config import C
+from rx_config import HERE, C
 from rx_i18n import _
 
 LOCAL_HOSTS: Final = frozenset({"127.0.0.1", "localhost", "::1"})
@@ -34,7 +34,7 @@ class Issue:
 
 def code_dir() -> str:
     """Folder holding the receiver's source files."""
-    return os.path.dirname(os.path.abspath(__file__))
+    return HERE
 
 
 def repo_root() -> str | None:

@@ -7,9 +7,9 @@ segment bar, the sender pill that shows the sender device's battery.
 import math
 import time
 from collections.abc import Callable, Iterable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from PySide6.QtCore import QEvent, QObject, QPoint, QRect, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QObject, QPoint, QPointF, QRect, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFontMetrics, QIcon, QPainter, QPainterPath, QPaintEvent, QPen, QPixmap, QWheelEvent
 from PySide6.QtWidgets import (QButtonGroup, QComboBox, QFrame, QHBoxLayout, QLabel, QLayout, QPushButton, QSlider, QSpinBox,
                                QStackedWidget, QToolTip, QVBoxLayout, QWidget)
@@ -52,15 +52,28 @@ def icon_button(name: str, tip_text: str, size: int = 20) -> QPushButton:
     return b
 
 
-class _SpinBox(QSpinBox):
-    """A number field that reacts to the wheel only when focused, so scrolling a panel does not change values."""
+if TYPE_CHECKING:
+    _WheelBase = QWidget        # see _FocusWheel
+else:
+    _WheelBase = object
+
+
+class _FocusWheel(_WheelBase):
+    """A mixin for value widgets (first base): the wheel changes the value only when focused, otherwise it scrolls the panel.
+
+    A plain object at run time: two QWidget bases in one class crash PySide6. The type checker sees the widget it is mixed into.
+    """
 
     def wheelEvent(self, e: QWheelEvent) -> None:
-        """Pass the wheel on only to a focused field; otherwise let it scroll the panel."""
+        """Pass the wheel on only to a focused widget; otherwise let it scroll the panel."""
         if self.hasFocus():
             super().wheelEvent(e)
         else:
             e.ignore()
+
+
+class _SpinBox(_FocusWheel, QSpinBox):
+    """A number field that reacts to the wheel only when focused, so scrolling a panel does not change values."""
 
 
 def spinbox(lo: int, hi: int, step: int = 1, suffix: str = "") -> QSpinBox:
@@ -189,13 +202,8 @@ class Combo(QComboBox):
         e.ignore()
 
 
-class _Slider(QSlider):
+class _Slider(_FocusWheel, QSlider):
     """A slider that reacts to the wheel only when focused, so scrolling a panel does not change values."""
-    def wheelEvent(self, e: QWheelEvent) -> None:
-        if self.hasFocus():
-            super().wheelEvent(e)
-        else:
-            e.ignore()
 
 
 class SliderRow(QWidget):
@@ -538,6 +546,62 @@ class CornerFrame(QFrame):
             self.y_offset = y
             self.place()
 
+
+PREVIEW_W, PREVIEW_GAP, PREVIEW_VIEW_PX = 360, 12, 110     # the floating previews: width, gap to the pad drawing's corner, view size [px]
+PREVIEW_IDLE = "#8e96ab"                                    # the output marker while the feature does not steer
+
+
+class PreviewFrame(CornerFrame):
+    """A live preview over the pad drawing (tilt, gyro aim): the view on the left, a title, numbers and a status line on the right."""
+
+    def __init__(self, pad: QWidget, view: QWidget, title: str) -> None:
+        """Create the (hidden) preview of `view` floating over the pad drawing `pad`."""
+        super().__init__(pad, PREVIEW_GAP)
+        self.setObjectName("group")
+        self._texts: tuple[str, str] | None = None     # the texts last laid out (the size is recomputed only when they change)
+        lay = QHBoxLayout(self)             # compact: the view on the left, the texts on the right - fits above the pad drawing
+        lay.setContentsMargins(10, 8, 12, 8)
+        lay.setSpacing(10)
+        self.view = view
+        self.numbers = label("", "dim", wrap=True)
+        self.status = label("", "dim", wrap=True)
+        texts = QVBoxLayout()
+        texts.setSpacing(4)
+        texts.addWidget(label(title, "h2"))
+        texts.addWidget(self.numbers)
+        texts.addWidget(self.status)
+        texts.addStretch(1)
+        lay.addWidget(view)
+        lay.addLayout(texts, 1)
+        self.setFixedWidth(PREVIEW_W)
+        self.hide()
+
+    def reveal(self) -> bool:
+        """Show the preview on top; True when it was hidden until now (it needs a re-layout)."""
+        if self.isVisible():
+            return False
+        self.show()
+        self.raise_()
+        return True
+
+    def set_texts(self, numbers: str, status: str, fresh: bool) -> None:
+        """Show the texts; re-layout only for new texts or a fresh show (a pad resize is handled by the event filter)."""
+        if (numbers, status) != self._texts:
+            self._texts = (numbers, status)
+            self.numbers.setText(numbers)
+            self.status.setText(status)
+            fresh = True
+        if fresh:
+            self.place()
+
+
+def draw_output_marker(p: QPainter, at: QPointF, driving: bool) -> None:
+    """The stick output of a preview: a ring with a cross, green while the feature steers."""
+    p.setPen(QPen(QColor(OK if driving else PREVIEW_IDLE), 2))
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawEllipse(at, 7, 7)
+    p.drawLine(QPointF(at.x() - 11, at.y()), QPointF(at.x() + 11, at.y()))
+    p.drawLine(QPointF(at.x(), at.y() - 11), QPointF(at.x(), at.y() + 11))
 
 class SegmentBar(QWidget):
     """A thin bar of coloured segments (latency components): a segment's width = its share of the total."""

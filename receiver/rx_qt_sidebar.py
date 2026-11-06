@@ -1,6 +1,6 @@
 """Receiver: the vertical icon menu on the left edge of the window (next to the pad column).
 
-It holds what used to sit in the header, in three groups: the panels and views (Diagnostics, Bluetooth, pad shortcuts, event
+It holds the window's actions in three groups: the panels and views (Diagnostics, Bluetooth, pad shortcuts, event
 log), the window (full screen, settings) and the system actions at the bottom (update, restart, quit). The buttons are created by
 the window (they keep their names: bt_btn, keys_btn, ...); this widget only lays them out in a narrow column and keeps their
 sizes right when the TV mode scales the interface. The order of creation is the keyboard / pad focus order, so the window

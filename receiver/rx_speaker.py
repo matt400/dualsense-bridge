@@ -33,14 +33,12 @@ from __future__ import annotations
 import functools
 import math
 import sys
-import threading
 import time
 from array import array
 from collections import deque
 from collections.abc import Callable, Sequence
 from typing import Final, TypeAlias
 
-import rx_events as ev
 import rx_eq
 import rx_haptics as H
 import rx_settings
@@ -51,16 +49,10 @@ from rx_config import C
 from rx_i18n import _
 
 SPEAKER_SENDER: Final = 14                  # from this sender version the T_SPK packet exists (with the CAP_SPEAKER bit)
-BYTES_PER_SAMPLE: Final = 2
 SRC_FRAME: Final = 512                      # source samples one frame stands for (10.667 ms of the game's 48 kHz sound) ...
 FRAME_S: Final = SRC_FRAME / SPK_RATE       # ... = the pad's report period: one packet (SPK_FRAME = 480 samples at 45 kHz) per this time
 BLOCK_IN, BLOCK_OUT = 16, 15                # the resampler's unit: 16 source samples -> 15 output samples (48 -> 45 kHz)
 SRC_NEED: Final = SRC_FRAME + 2             # a frame needs the previous sample (history) and 2 after its last one for the 4-tap cubic
-MAX_QUEUE: Final = 4                        # frames waiting for their turn (40 ms); older ones are dropped (a gap = loss)
-SILENCE_END_S: Final = 0.15                 # digital silence this long ends the stream (the sender's own timeout is 200 ms)
-STALL_S: Final = 0.12                       # no audio from HIDMaestro this long while streaming = the game stopped rendering
-IDLE_WAIT_S: Final = 1.0                    # the thread's longest sleep (a write wakes it at once)
-WAKE_BYTES: Final = 1536                    # an idle link is woken once this much audio (4 ms) waits: windows of silence stay cheap
 HOST_MIN_DB: Final = -100.0                 # the endpoint's volume range (profile dualsense-composite) is -100 .. 0 dB
 HOST_RANGE_DB: Final = 40.0                 # the span the slider really covers: its quietest audible step plays 40 dB down (host_factor)
 HOST_MUTE_POS: Final = 0.005                # a slider position this low or lower (the minimum, 0 %) is silence
@@ -189,7 +181,7 @@ class Resampler:
 
     def push_zeros(self, count: int) -> None:
         """Append digital silence (cheaper than building the zeros as a list first)."""
-        self.buf.frombytes(bytes(count * BYTES_PER_SAMPLE))
+        self.buf.frombytes(bytes(count * H.BYTES_PER_SAMPLE))
 
     def frame(self) -> bytes | None:
         """The next frame as SPK_BYTES of little endian int16, or None until enough source samples are buffered."""
@@ -211,43 +203,31 @@ class Resampler:
 
 
 # ---------------- the per-slot link ----------------
-class SpeakerLink:
+class SpeakerLink(H.PacedStream):
     """The speaker of one virtual pad slot: audio in (from the slot's rx_haptics.Link), spk packets out. See the module docstring.
 
     The audio thread of HIDMaestro never touches this object beyond poke(); everything else runs on the link's own thread (step() is
     that thread's whole body, so tests drive it with a fake clock).
     """
 
+    KIND, UNITS, START, END, ZERO = "speaker", "frames", SPK_START, SPK_END, ZERO_FRAME
+
     def __init__(self, idx: int, send: SendFn | None = None, clock: Callable[[], float] = time.perf_counter) -> None:
         """Create the idle speaker of virtual slot idx; `send(slot, frame, flags, pcm)` defaults to rx_net.send_speaker."""
-        self.idx = idx
-        self._send = send
-        self._clock = clock
+        super().__init__(idx, send, clock, FRAME_S)
         self.link: H.Link | None = None             # the audio source (set by attach)
         self._r = 0                                 # the read position in the link's ring
-        self._wake = threading.Event()
-        self._lock = threading.Lock()               # the link's thread vs detach() / stop() from other threads
         self._inject: deque[array[int]] = deque()   # source frames (512 samples) from test(): the same way out as the game's
         self._rs = Resampler()                      # mixed mono samples that do not make a whole frame yet
         self._eq = rx_eq.Equalizer()                # this pad's equalizer (only the link's thread touches it)
-        self._queue: deque[bytes | None] = deque()  # frames to send; None = "end the stream here"
-        self._pacer = H.Pacer(FRAME_S)
-        self._counter = 0                           # the number of the next frame (wraps at 2**32)
-        self._active = False                        # frames are being produced (a stream is on)
-        self._sent_started = False                  # an SPK_START went out and no SPK_END since
-        self._from_pcm = False                      # the running stream comes from the game's audio (not from test())
-        self._quiet = 0                             # consecutive silent frames while active
-        self._noted: set[str] = set()               # event log notes written since the pad was created
-        self._thread: threading.Thread | None = None
         self.host_gain = 1.0                        # the Windows volume / mute of the pad's speaker endpoint as a factor (set_host_volume)
         self._host_muted = False
         self._host_db = 0.0
-        self.sent = self.dropped = self.overruns = 0
 
     # ----- the audio thread -----
     def poke(self, written: int) -> None:
         """Called by rx_haptics.Link.write on HIDMaestro's audio thread after every write: wake the thread when there is sound to take."""
-        if (self._active or written - self._r >= WAKE_BYTES) and not self._wake.is_set():
+        if (self._active or written - self._r >= H.WAKE_BYTES) and not self._wake.is_set():
             self._wake.set()
 
     # ----- setup -----
@@ -261,10 +241,6 @@ class SpeakerLink:
             self._rs.clear()
         link.on_write = self.poke
         return None
-
-    def wake(self) -> None:
-        """Make the thread look at the settings and the audio now."""
-        self._wake.set()
 
     def set_host_volume(self, function: str, is_mute: bool, muted: bool, volume_db: float) -> None:
         """The host wrote a volume or mute control of the pad's audio endpoint (HIDMaestro's ControlChanged, its audio event thread).
@@ -286,19 +262,6 @@ class SpeakerLink:
         if not is_mute:                                 # the numbers Windows really sends: what to look at when the curve needs tuning
             print(f"Controller {rx_swap.route(self.idx)}: speaker volume {volume_db:.0f} dB -> x{self.host_gain:.3f}")
 
-    def ensure_thread(self) -> None:
-        """Start the link's thread (once; the thread sleeps while nothing plays)."""
-        if self._thread is None or not self._thread.is_alive():
-            self._thread = S.start_thread(f"speaker{self.idx}", self.run)
-
-    def run(self) -> None:
-        """The link's thread: step until the receiver stops."""
-        while not S.stop.is_set():
-            self._wake.clear()                      # before the step: a write during it keeps the event set - nothing is lost
-            wait = self.step(self._clock())
-            self._wake.wait(wait)
-        self.stop()
-
     # ----- the link's thread -----
     def step(self, now: float) -> float:
         """One pass: take new audio, make frames, send what is due. -> how long the thread may sleep (a write wakes it)."""
@@ -314,7 +277,7 @@ class SpeakerLink:
                 if data:
                     self._feed(data, cfg.gain / 100 * self.host_gain)
                 self._take_injected()
-                if self._active and self._from_pcm and self.link is not None and now - self.link.pcm_at > STALL_S:
+                if self._active and self._from_pcm and self.link is not None and now - self.link.pcm_at > H.STALL_S:
                     self._end()                     # the game stopped rendering: Windows parks the endpoint, no more callbacks
             return self._pace(now)
 
@@ -332,14 +295,6 @@ class SpeakerLink:
             self._note("master", _("{pad}: gra daje dźwięk - pominięty (głośnik pada tylko dla pada master)"))
             return None
         return cfg
-
-    def _note(self, why: str, text: str) -> None:
-        """One event log line per reason and pad connection (the audio keeps arriving; the line must not repeat)."""
-        if why not in self._noted:
-            self._noted.add(why)
-            t = rx_swap.route(self.idx)
-            print(f"Controller {t}: game sound for the speaker not used ({why})")
-            ev.info(text.format(pad=ev.pad_name(t)))
 
     def _read(self) -> bytes | None:
         """Take the unread audio out of the link's ring (whole frames); None when there is none."""
@@ -368,75 +323,13 @@ class SpeakerLink:
     def _drain(self, from_pcm: bool) -> None:
         """Turn the buffered source samples into frames."""
         while (frame := self._rs.frame()) is not None:
-            self._frame(frame, from_pcm)
+            self._push(frame, from_pcm)
 
     def _take_injected(self) -> None:
         """The jingle goes through the same path as the game's sound - as fast as the queue drains (it would drop the rest)."""
-        while self._inject and len(self._queue) < MAX_QUEUE - 1:
+        while self._inject and len(self._queue) < H.MAX_QUEUE - 1:
             self._rs.push(self._inject.popleft())
             self._drain(from_pcm=False)
-
-    def _frame(self, frame: bytes, from_pcm: bool) -> None:
-        """One finished frame: sound opens / keeps a stream, silence is dropped (idle) or counted towards the end (active)."""
-        if frame == ZERO_FRAME:
-            if not self._active:
-                return
-            self._quiet += 1
-            if self._quiet * FRAME_S >= SILENCE_END_S:
-                self._end()
-                return
-        else:
-            if not self._active:
-                self._active, self._from_pcm = True, from_pcm
-            self._quiet = 0
-        self._enqueue(frame)
-
-    def _enqueue(self, item: bytes | None) -> None:
-        """Queue a frame (or the end mark); a full queue drops its oldest frame - the gap in the numbering tells the sender."""
-        if len(self._queue) >= MAX_QUEUE:
-            for k, queued in enumerate(self._queue):
-                if queued is not None:
-                    del self._queue[k]
-                    self._counter = (self._counter + 1) & 0xFFFFFFFF
-                    self.dropped += 1
-                    break
-        self._queue.append(item)
-
-    def _end(self) -> None:
-        """Close the running stream: an SPK_END goes out after the frames still waiting."""
-        if self._active:
-            self._active = False
-            self._quiet = 0
-            self._enqueue(None)
-
-    def _pace(self, now: float) -> float:
-        """Send one frame when it is due. -> how long to sleep."""
-        if self._queue and self._pacer.ready(now):
-            item = self._queue.popleft()
-            self._emit(item)
-            self._pacer.sent(now, len(self._queue))
-        if self._queue:
-            return max(0.0005, self._pacer.due - now)
-        return STALL_S / 2 if self._active else IDLE_WAIT_S
-
-    def _emit(self, item: bytes | None) -> None:
-        """Send a frame (START on the first of a stream) or, for the end mark, a silent frame with SPK_END."""
-        if item is None:
-            if not self._sent_started:
-                return
-            flags, item, self._sent_started = SPK_END, ZERO_FRAME, False
-            if self.dropped or self.overruns:
-                print(f"Controller {rx_swap.route(self.idx)}: speaker stream ended ({self.sent} frames, {self.dropped} dropped, "
-                      f"{self.overruns} ring overruns)")
-        else:
-            flags, self._sent_started = (0 if self._sent_started else SPK_START), True
-        send = self._send
-        if send is None:
-            import rx_net
-            send = rx_net.send_speaker
-        send(rx_swap.route(self.idx), self._counter, flags, item)
-        self._counter = (self._counter + 1) & 0xFFFFFFFF
-        self.sent += 1
 
     # ----- from other threads -----
     def test(self, gain: float, eq: Sequence[int] = rx_eq.FLAT) -> None:
@@ -450,8 +343,8 @@ class SpeakerLink:
         tester.set_gains(eq)
         mono = mix(tune, tune, gain) if tester.flat else mix_eq(tune, tune, gain, tester)
         self._inject.extend(mono[k * SRC_FRAME:(k + 1) * SRC_FRAME] for k in range(TEST_FRAMES))
-        silence = array("h", bytes(SRC_FRAME * BYTES_PER_SAMPLE))      # +2 frames: one waits for 1 sample ahead
-        self._inject.extend([silence] * (math.ceil(SILENCE_END_S / FRAME_S) + 2))
+        silence = array("h", bytes(SRC_FRAME * H.BYTES_PER_SAMPLE))      # +2 frames: one waits for 1 sample ahead
+        self._inject.extend([silence] * (math.ceil(H.SILENCE_END_S / FRAME_S) + 2))
         self.ensure_thread()
         self.wake()
 
@@ -464,17 +357,13 @@ class SpeakerLink:
             self.link = None
             self._rs.clear()
             self._inject.clear()
-            self._noted.clear()
-            self._active = False
-            self._quiet = 0
-            self._queue.clear()
             self.host_gain, self._host_muted, self._host_db = 1.0, False, 0.0     # the next pad starts at full level again
-            if self._sent_started:
-                self._emit(None)
+            self._drop_stream()
 
-    def stop(self) -> None:
-        """The receiver is closing: end a running stream now."""
-        self.detach()
+    def _default_send(self) -> SendFn:
+        """rx_net.send_speaker."""
+        import rx_net
+        return rx_net.send_speaker
 
 
 # ---------------- the slots ----------------

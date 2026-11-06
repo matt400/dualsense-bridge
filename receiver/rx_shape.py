@@ -54,7 +54,7 @@ GYRO_SENS_RANGE: Final = (0.1, 5.0)
 GYRO_ANTI_MAX: Final = 0.5
 
 
-def _num(v: Any, lo: float, hi: float, default: float) -> float:
+def clamp_num(v: Any, lo: float, hi: float, default: float) -> float:
     """Convert to float and clamp to lo..hi; the default for anything that is not a number (or NaN)."""
     try:
         v = float(v)
@@ -71,7 +71,7 @@ def normalize_tuning(t: Any) -> dict[str, dict[str, Any]]:
         e = t.get(name)
         if not isinstance(e, dict):
             continue
-        ne = {k: round(_num(e.get(k, d), *STICK_LIMITS[k], d), 3) for k, d in STICK_DEF.items()}
+        ne = {k: round(clamp_num(e.get(k, d), *STICK_LIMITS[k], d), 3) for k, d in STICK_DEF.items()}
         ne["outer"] = max(ne["outer"], round(ne["dz"] + MIN_OUTER_GAP, 3))      # the range always lies beyond the deadzone
         if ne != STICK_DEF:
             out[name] = ne
@@ -79,8 +79,8 @@ def normalize_tuning(t: Any) -> dict[str, dict[str, Any]]:
         e = t.get(name)
         if not isinstance(e, dict):
             continue
-        dz = round(_num(e.get("dz", 0), 0, TRIG_DZ_MAX, 0))
-        ne = {"dz": dz, "max": max(round(_num(e.get("max", BYTE_MAX), TRIG_MAX_MIN, BYTE_MAX, BYTE_MAX)), dz + TRIG_MIN_SPAN)}
+        dz = round(clamp_num(e.get("dz", 0), 0, TRIG_DZ_MAX, 0))
+        ne = {"dz": dz, "max": max(round(clamp_num(e.get("max", BYTE_MAX), TRIG_MAX_MIN, BYTE_MAX, BYTE_MAX)), dz + TRIG_MIN_SPAN)}
         if ne != TRIG_DEF:
             out[name] = ne
     return out
@@ -92,12 +92,12 @@ def trigger_entry(e: Any) -> dict[str, Any] | None:
         return None
     mode = e.get("mode")
     if mode is None:                                  # old format: resistance only
-        if not round(_num(e.get("force"), 0, 8, 0)):
+        if not round(clamp_num(e.get("force"), 0, 8, 0)):
             return None
         mode = "res"
     if mode not in TRIG_MODES:
         return None
-    return {"mode": mode, **{k: round(_num(e.get(k), lo, hi, d)) for k, (lo, hi, d) in TRIG_PARAMS[mode].items()}}
+    return {"mode": mode, **{k: round(clamp_num(e.get(k), lo, hi, d)) for k, (lo, hi, d) in TRIG_PARAMS[mode].items()}}
 
 
 def normalize_triggers(t: Any) -> Triggers:
@@ -107,7 +107,7 @@ def normalize_triggers(t: Any) -> Triggers:
     r = t.get("rumble")
     if isinstance(r, dict):
         out["rumble"] = {"on": r.get("on") is True,
-                         **{k: round(_num(r.get(k), lo, hi, d)) for k, (lo, hi, d) in RUMBLE_LIMITS.items()}}
+                         **{k: round(clamp_num(r.get(k), lo, hi, d)) for k, (lo, hi, d) in RUMBLE_LIMITS.items()}}
     return out
 
 
@@ -158,21 +158,21 @@ def normalize_gyro(g: Any, inputs: Collection[str]) -> dict[str, Any]:
     ne = {
         "mode": g.get("mode") if g.get("mode") in GYRO_MODES else "off",
         "hold": g.get("hold") if g.get("hold") in inputs else "always",
-        "sens": round(_num(g.get("sens"), *GYRO_SENS_RANGE, 1.0), 2),
+        "sens": round(clamp_num(g.get("sens"), *GYRO_SENS_RANGE, 1.0), 2),
         "inv_x": bool(g.get("inv_x")),
         "inv_y": bool(g.get("inv_y")),
-        "anti": round(_num(g.get("anti"), 0.0, GYRO_ANTI_MAX, 0.0), 3),
+        "anti": round(clamp_num(g.get("anti"), 0.0, GYRO_ANTI_MAX, 0.0), 3),
     }
     return {} if ne == GYRO_DEF else ne
 
 
-def _unit(v: float) -> float:
+def unit(v: float) -> float:
     """Convert an axis byte 0..255 (centre 128) to -1..1."""
     return (v - AXIS_CENTRE) / (AXIS_NEG_SPAN if v < AXIS_CENTRE else AXIS_POS_SPAN)
 
 
-def _byte(f: float) -> int:
-    """Convert -1..1 to an axis byte 0..255 (the inverse of _unit)."""
+def to_byte(f: float) -> int:
+    """Convert -1..1 to an axis byte 0..255 (the inverse of unit)."""
     return max(0, min(BYTE_MAX, round(AXIS_CENTRE + f * (AXIS_NEG_SPAN if f < 0 else AXIS_POS_SPAN))))
 
 
@@ -180,7 +180,7 @@ def shape_stick(x: int, y: int, t: dict[str, float] | None) -> tuple[int, int]:
     """Radial deadzone with rescaling, the range (outer), the response curve and the anti-deadzone."""
     if not t:
         return x, y
-    fx, fy = _unit(x), _unit(y)
+    fx, fy = unit(x), unit(y)
     r = math.hypot(fx, fy)
     dz = t["dz"]
     if r <= dz or r == 0:
@@ -191,7 +191,7 @@ def shape_stick(x: int, y: int, t: dict[str, float] | None) -> tuple[int, int]:
     if t["anti"]:
         m = t["anti"] + (1.0 - t["anti"]) * m
     k = m / r
-    return _byte(fx * k), _byte(fy * k)
+    return to_byte(fx * k), to_byte(fy * k)
 
 
 def shape_trigger(v: int, t: dict[str, float] | None) -> int:
@@ -230,11 +230,11 @@ def gyro_stick(rx: int, ry: int, rates: Sequence[float], g: dict[str, Any]) -> t
     if g["anti"]:
         k = (g["anti"] + (1.0 - g["anti"]) * min(1.0, m)) / m
         gx, gy = gx * k, gy * k
-    sx, sy = _unit(rx) + gx, _unit(ry) + gy
+    sx, sy = unit(rx) + gx, unit(ry) + gy
     r = math.hypot(sx, sy)
     if r > 1.0:
         sx, sy = sx / r, sy / r
-    return _byte(sx), _byte(sy)
+    return to_byte(sx), to_byte(sy)
 
 
 def gyro_mouse_velocity(rates: Sequence[float], g: dict[str, Any]) -> tuple[float, float]:
