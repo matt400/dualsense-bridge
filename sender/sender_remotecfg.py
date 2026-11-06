@@ -26,8 +26,8 @@ import sender_config
 import sender_net as net
 import sender_rt
 import sender_state as state
-from proto import (CFG_ALL, CFG_GET, CFG_RESET, CFG_SET, CFGF_REMOTE, CFGR_INVALID, CFGR_LATER, CFGR_NO_KEY, CFGR_NO_V3, CFGR_OFF,
-                   CFGR_OK, CFGR_UNKNOWN, T_CFGVAL)
+from proto import (CFG_ALL, CFG_GET, CFG_RESET, CFG_SET, CFGF_LAST, CFGF_REMOTE, CFGR_INVALID, CFGR_LATER, CFGR_NO_KEY, CFGR_NO_V3,
+                   CFGR_OFF, CFGR_OK, CFGR_UNKNOWN, T_CFGVAL)
 from sender_config import C
 
 NO_PAD: Final = 255                  # the idx of a packet that is not about one pad
@@ -47,21 +47,25 @@ def _number(spec: cfgspec.Spec, raw: Any) -> float:
     return 0.0
 
 
-def _reply(key: int, result: int, ref: int) -> None:
-    """Answer about one setting (``key`` = CFG_ALL: about the whole request): the value in use, sender.toml's value, the flags."""
+def _reply(key: int, result: int, ref: int, last: bool = False) -> None:
+    """Answer about one setting (``key`` = CFG_ALL: about the whole request): the value in use, sender.toml's value, the flags.
+
+    ``last`` marks the final setting of a full read (CFGF_LAST): the receiver learns how many settings this sender knows.
+    """
     if key >= len(cfgspec.SPECS):
         net.emit(T_CFGVAL, NO_PAD, key, result, ref, 0, 0.0, 0.0)
         return
     spec = cfgspec.SPECS[key]
     now = sender_config.CHANGES.get(spec.key, sender_config.BASE.get(spec.key))
-    flags = CFGF_REMOTE if spec.key in sender_config.CHANGES else 0
+    flags = (CFGF_REMOTE if spec.key in sender_config.CHANGES else 0) | (CFGF_LAST if last else 0)
     net.emit(T_CFGVAL, NO_PAD, key, result, ref, flags, _number(spec, now), _number(spec, sender_config.BASE.get(spec.key)))
 
 
 def _send_all(ref: int) -> None:
     """One cfgval for every setting."""
-    for key in range(len(cfgspec.SPECS)):
-        _reply(key, CFGR_OK, ref)
+    n = len(cfgspec.SPECS)
+    for key in range(n):
+        _reply(key, CFGR_OK, ref, last=key == n - 1)
 
 
 def _reply_all(ref: int) -> None:

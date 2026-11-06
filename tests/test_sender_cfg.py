@@ -6,7 +6,7 @@ from rxenv import *                                              # noqa
 import cfgspec
 import rx_sender_cfg as SC
 import rx_settings
-from proto import (BODY, HEADER_LEN, CFG_ALL, CFG_GET, CFG_RESET, CFG_SET, CFGF_REMOTE, CFGR_NO_KEY, CFGR_OK, CFGR_UNKNOWN, T_CFGSET, T_CFGVAL,
+from proto import (BODY, HEADER_LEN, CFG_ALL, CFG_GET, CFG_RESET, CFG_SET, CFGF_LAST, CFGF_REMOTE, CFGR_NO_KEY, CFGR_OK, CFGR_UNKNOWN, T_CFGSET, T_CFGVAL,
                    Codec)
 from chk import check, fails                                  # noqa: E402
 
@@ -163,5 +163,50 @@ check("max_pads" not in S.sender_cfg and S.sender_cfg_result == CFGR_OK,
       "starszy nadajnik nie zna ustawienia: bez wiersza z zerami, reszta działa")
 raw_cfgval(CFG_ALL, CFGR_NO_KEY)
 check(S.sender_cfg_result == CFGR_NO_KEY, "odmowa całego żądania (CFG_ALL) nadal działa")
+
+# ---------- starszy nadajnik zna mniej ustawień: odczyt i tak się kończy, różnice idą ----------
+def answer_read(count, last_flag):
+    """The sender's answer to a read: settings 0..count-1, the last one with CFGF_LAST when the sender is v17+."""
+    for k in range(count):
+        spec = cfgspec.SPECS[k]
+        v = cfgspec.to_wire(spec, cfgspec.check(spec, spec_default(spec)))
+        flags = CFGF_LAST if last_flag and k == count - 1 else 0
+        data = tx.pack(T_CFGVAL, 255, k, CFGR_OK, 7, flags, v, v)
+        p = N.codec.parse(data)
+        N._on_control(p[0], p[1], p[2], data, S.peer, time.monotonic(), 0)
+
+def spec_default(spec):
+    return spec.choices[0] if spec.kind == cfgspec.KIND_CHOICE else (False if spec.kind == cfgspec.KIND_BOOL else spec.lo)
+
+OLD = 5                                                     # an older sender: only the first OLD settings exist there
+rx_settings.cur = rx_settings.Settings(sender=rx_settings.SenderConfig(values={"max_pads": 3}))
+check(cfgspec.BY_KEY["max_pads"] < OLD, "ustawienie z testu jest znane staremu nadajnikowi")
+
+watch = SC.Watch(); watch.online(); watch.tick(2000.0); wire.clear()
+answer_read(OLD, last_flag=True)
+check(S.sender_cfg_count == OLD and SC.complete(), "v17+: CFGF_LAST mówi, ile ustawień zna nadajnik - odczyt kompletny")
+watch.tick(2000.1)
+r = requests()
+check(not watch.pending and [x[:2] for x in r[::3]] == [(CFG_SET, cfgspec.BY_KEY["max_pads"])], "uzgodnienie idzie od razu")
+
+watch = SC.Watch(); watch.online(); watch.tick(3000.0); wire.clear()
+answer_read(OLD, last_flag=False)                           # a v16 sender: no flag
+watch.tick(3000.0 + SC.RETRY_S + 0.1)
+check(watch.pending and S.sender_cfg_count is None, "bez flagi: najpierw jeszcze jedno pytanie (to mogła być strata)")
+requests()
+answer_read(OLD, last_flag=False)                           # the repeat brings nothing new
+watch.tick(3000.0 + 2 * SC.RETRY_S + 0.2)
+check(S.sender_cfg_count == OLD and SC.complete(), "bez flagi: lista nie urosła przez cały okres - nadajnik zna tyle")
+watch.tick(3000.0 + 2 * SC.RETRY_S + 0.3)
+r = requests()
+check(not watch.pending and [x[:2] for x in r[::3]] == [(CFG_SET, cfgspec.BY_KEY["max_pads"])], "bez flagi: uzgodnienie też idzie")
+
+watch = SC.Watch(); watch.online(); watch.tick(4000.0); wire.clear()
+answer_read(OLD, last_flag=False)
+S.sender_cfg.pop(cfgspec.SPECS[2].key)                      # a hole in the run: a lost packet, not the end of the list
+watch.tick(4000.0 + SC.RETRY_S + 0.1); requests()
+watch.tick(4000.0 + 2 * SC.RETRY_S + 0.2)
+check(S.sender_cfg_count is None and watch.pending, "dziura w liście to strata: pytamy dalej, licznik nieustalony")
+rx_settings.cur = rx_settings.Settings()
 
 sys.exit(1 if fails else 0)
