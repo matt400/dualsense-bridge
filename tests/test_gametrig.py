@@ -103,4 +103,8 @@ assert F.fb[0]["trig"] == (G_L2, None), "unknown what is running - effects stay"
 F.reset(0)
 assert F.fb[0]["trig"] == F.NO_GAME_TRIG and F.fb[0]["trig_owner"] is None, "a new virtual pad - no game effects"
 ok("a program change does not release the effects; closing the program and detaching the pad do")
+# ---------- an all-zero effect (raw bytes too) is no effect ----------
+assert not F._has_effect((0, 0, bytes(F.TRIG_RAW_LEN), bytes(F.TRIG_RAW_LEN), 0)), "all zeros (raw bytes too) - no effect"
+assert F._has_effect((0, 3, 0)) and F._has_effect((0, bytes(3) + b"\1")), "a non-zero number or byte - an effect"
+ok("empty trigger bytes are no effect")
 print("GAME TRIGGERS OK")

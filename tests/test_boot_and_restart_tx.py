@@ -1,5 +1,6 @@
 """Sender: guards compared with time.monotonic() work right after boot; a restarted motion stream keeps the autobias-corrected gyro bias.
     python3 tests/test_boot_and_restart_tx.py sender"""
+import asyncio
 import os
 import sys
 import tempfile
@@ -9,6 +10,8 @@ import types
 sys.path.insert(0, sys.argv[1])
 sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
+import sender_control
+import sender_ctrl
 import sender_net as net
 import sender_streams as ST
 import sender_update as UPD
@@ -27,10 +30,11 @@ try:
     check(net.last_pong == float("-inf"), "net: no pong yet = -inf")
     check(not W.receiver_alive(), "WoL: a receiver that never answered is not 'alive' at a small uptime")
     check(not (5.0 - net.last_pong < net.ALIVE_S), "net: not alive before the first pong at a small uptime")
+    c = sender_ctrl.Ctrl(0, "usb-pad", None, None, None)        # not Bluetooth: power_off gets past the guard and skips the disconnect
+    asyncio.run(sender_control.power_off(c, "test"))
+    check(c.powering_off == 5.0, "power off: the first request after boot is not inside the retry guard")
 finally:
     time.monotonic = real_mono
-src = open(os.path.join(sys.argv[1], "sender_ctrl.py"), encoding="utf-8").read()
-check('self.powering_off = float("-inf")' in src, "Ctrl.powering_off starts at -inf (power-off retry guard)")
 
 # ---------- 7: a restarted motion stream keeps the autobias-corrected gyro bias ----------
 stored_table = {"bias": [10.0, 20.0, 30.0]}

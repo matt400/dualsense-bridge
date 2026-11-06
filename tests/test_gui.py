@@ -240,3 +240,17 @@ win.select_pad(0); click_part("left_stick"); pump(100)
 win.grab().save(shot)
 assert os.path.getsize(shot) > 10000
 ok("window screenshot: tests/gui.png")
+
+# ---------- update: stop waiting for the sender once its commit changed ----------
+import types
+from proto import UPD_RUNNING
+win._upd_result = types.SimpleNamespace(text="receiver up to date", ok=True, changed=False)
+win._upd_sender, win._upd_commit, win._upd_wait_t0, win._upd_left = True, "a1b2c3d", time.monotonic(), None
+S.sender_build = ("a1b2c3d", 1, UPD_RUNNING, time.monotonic())
+win._update_poll()
+assert "sender" in win.note_text[0].lower() and win.note_text[1] == "", f"same commit, running - still waiting: {win.note_text}"
+S.sender_build = ("e4f5a6b", 2, UPD_RUNNING, time.monotonic())   # the new commit is up while the state still says running
+win._update_poll()
+assert win.note_text[1] == "ok" and "receiver up to date" in win.note_text[0], f"a new commit = updated, waiting ends: {win.note_text}"
+win._upd_result = None; S.sender_build = None
+ok("update: the window stops waiting when the sender commit changed")
