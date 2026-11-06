@@ -2,7 +2,7 @@
 
 A write to /dev/hidrawN of a Bluetooth pad usually takes a few microseconds, but now and then it waits for the kernel's Bluetooth
 queue: P3a measured p999 5.5-6.7 ms and a 17 ms worst case (O_NONBLOCK does not help, the hidraw write path ignores it). On the event
-loop that froze every evdev read, the UDP receive and every timer of every pad for as long - the audio tick of the next report too.
+loop that would freeze every evdev read, the UDP receive and every timer of every pad for as long - the audio tick of the next report too.
 
     loop: Rumble builds a report -> HidWriter.write (copy into a slot, queue) -> writer thread: os.write
 

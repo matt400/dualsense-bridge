@@ -220,7 +220,7 @@ def emit(ptype: int, idx: int, *vals: int | float | bytes) -> None:
 def emit_repeat(ptype: int, idx: int, *vals: int | float | bytes, delays: tuple[float, ...] = REPEAT_DELAYS) -> None:
     """Send a packet that must not get lost (bye): the same one now and again after each of ``delays`` seconds.
 
-    The copies carry the same number, so the receiver handles the packet once. Three copies at once were lost
+    The copies carry the same number, so the receiver handles the packet once. Three copies sent at once get lost
     together in a single burst of losses (interference, a clogged queue), so the repeats are spread in time with
     loop.call_later.
     """
@@ -285,8 +285,8 @@ def _on_control(t: int, idx: int, sq: int, data: bytes) -> None:
     Each stream passes through its own SeqFilter key, so UDP duplicates (the receiver repeats important packets) and
     old reordered packets are dropped without blocking the other streams. A packet that asks for something different each
     time (a command, a setting, a Bluetooth operation) has the thing it asks for in its key: the receiver sends such a request
-    three times with one number, and with a single key per type the repeats of an earlier request were dropped as old as soon as a
-    later request (another command, another setting) had arrived - when the first copy was lost, the request never ran.
+    three times with one number, and with a single key per type the repeats of an earlier request would be dropped as old once a
+    later request (another command, another setting) arrived - if the first copy got lost, the request would never run.
     """
     now = time.monotonic()
     if t == T_FB:

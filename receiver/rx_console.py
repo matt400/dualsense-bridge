@@ -69,13 +69,13 @@ TEST_S: Final = 10.0
 APP_NAME: Final = "DualSense bridge"
 # a trigger as the mode button: pressed from half travel, released when it falls below half of the deepest point of that
 # press (hysteresis - jitter does not give a "double click", but a quick double tap that only lets the trigger go part
-# of the way back still counts as two presses; a fixed low release threshold made such taps merge into one)
+# of the way back still counts as two presses; with a fixed low release threshold such taps would merge into one)
 TRIG_HI: Final = 128
 RESTART_ENV: Final = "DSB_CONSOLE_ON" # a restart from the window: "1" / "0" = the console mode before the restart (stays the same)
 DISPLAY_ARG: Final = {"extend": "/extend", "internal": "/internal", "tv": "/external"}
 VERIFY_AFTER_S: Final = (3.0, 10.0, 25.0)   # after switching on: check whether the picture is on the TV only (and retry). After startup
                                # Windows (logon, waking the TV over HDMI) restores the remembered "extend" layout -
-                               # the mode was "on" while the picture stayed on both screens
+                               # the mode would be "on" while the picture stays on both screens
 POWER_WAIT_S: Final = 8.0             # this long at most the PC shutdown / sleep waits for the screens to return to extend
 TICK_S: Final = 1.0                # the worker wakes up this often when idle
 JOIN_TIMEOUT_S: Final = 10
@@ -250,9 +250,8 @@ def _step(what: str, fn: Callable[..., Any], *args: Any) -> None:
 def auto_pad(i: int) -> bool:
     """Tell whether a pad connected in slot i switches the console mode on.
 
-    The master pad, and without a set master (any pad may do everything) - the first connected pad. Before, without a
-    master auto-ON never worked (after the PC started the mode stayed off); a second pad arriving later does not switch
-    on a mode that was switched off by hand.
+    The master pad, and without a set master (any pad may do everything) - the first connected pad, so auto-ON also
+    works right after the PC starts; a second pad arriving later does not switch on a mode that was switched off by hand.
     """
     if rx_settings.cur.master.pad:
         return master.is_master(i)
@@ -338,8 +337,9 @@ class Console:
         """The pad in slot i has just connected (the first packet after silence) or sent a new identifier (ident).
 
         Without a master in the settings the connection alone decides: the identifier arrives right after the first packet
-        and set auto-ON a second time - after a receiver restart with the mode off the first one used up the skip
-        (_skip_auto) and the second switched the mode on anyway; with a game in the foreground the warning went out twice.
+        and would set auto-ON a second time - after a receiver restart with the mode off the first one uses up the skip
+        (_skip_auto) and the second would switch the mode on anyway; with a game in the foreground the warning would go
+        out twice.
         """
         if not self.cfg.auto_on_master:
             return
@@ -385,9 +385,9 @@ class Console:
     def resync(self, i: int) -> None:
         """A boundary of the Test view (the network thread, before on_state).
 
-        During the test on_state is not called, so the mode button's state was from before the test - R2 held on entering
-        and released during the test "stayed held" and the first click after the test was lost. The state is taken from the
-        pad's current inputs, the click series starts over.
+        During the test on_state is not called, so the mode button's state is from before the test: R2 held on entering
+        and released during the test would still count as held and swallow the first click after the test. The state is
+        taken from the pad's current inputs instead, and the click series starts over.
         """
         mask, hx, hy, lt, rt = S.states[i]["raw"]
         if self._trigger:

@@ -247,8 +247,8 @@ def _load_clr(path: str) -> Any:
     """Load CoreCLR through pythonnet (once per process) and reference HIDMaestro.Core.dll.
 
     The DLL is added from its own folder (dependencies next to it). The runtime is chosen explicitly (>= .NET 10): without
-    a choice clr_loader takes the newest installed, and one older than 10 loaded the DLL with no types at all - the import
-    ended with "No module named 'HIDMaestro'".
+    a choice clr_loader takes the newest installed, and one older than 10 loads the DLL with no types at all - the import
+    then fails with "No module named 'HIDMaestro'".
     """
     global _clr_ready
     if not _clr_ready:

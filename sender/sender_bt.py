@@ -185,7 +185,7 @@ async def _scan_feed(proc: asyncio.subprocess.Process, address: str, wait_s: flo
     """Drive a scan on the chosen controller through bluetoothctl's stdin.
 
     The commands go to bluetoothctl only once it prints that controller (BlueZ lists the controllers asynchronously
-    after start - an earlier "select" ended with "Controller ... not available"), waiting at most wait_s. Afterwards
+    after start - a "select" sent sooner ends with "Controller ... not available"), waiting at most wait_s. Afterwards
     it reads the output until the process ends: a full pipe would stall bluetoothctl in the middle of the scan.
     """
     loop = asyncio.get_running_loop()
@@ -238,8 +238,8 @@ class Bluetooth:
         self.running = False                         # an operation is in progress (until its end, before the result is sent)
         self.scan: asyncio.subprocess.Process | None = None
         # scan start / stop one after another: a start is several calls (refresh, power, starting bluetoothctl) - a second
-        # start or stop in the meantime still saw self.scan = None, so the first process was left orphaned
-        # (the scan took the radio from the pads for up to BT_SCAN_MAX_S and "Stop" in the window did not stop it)
+        # start or stop in the meantime would still see self.scan = None and orphan the first process (which then takes
+        # the radio from the pads for up to BT_SCAN_MAX_S, and "Stop" in the window cannot stop it)
         self.scan_lock = asyncio.Lock()
         self.scan_end = 0.0
         self.active_until = 0.0
@@ -320,8 +320,8 @@ class Bluetooth:
                 print(f"Bluetooth {what}: OK")
             await self.refresh()
         finally:
-            # always: an exception after the operation (e.g. in the refresh) left running = True - every following operation
-            # from the window got "another operation is running" until the sender was restarted
+            # always: an exception after the operation (e.g. in the refresh) must not leave running = True, or every later
+            # operation from the window would get "another operation is running" until a sender restart
             self.running, self.last = False, (op, res, mac)
         self.send(full=True)
         self.poke()
@@ -404,7 +404,7 @@ class Bluetooth:
                 continue
             print(f"Bluetooth {d.mac}: paired pad was not trusted - trusted now")
             # looked up by address, not by the old object: a refresh that ran during the await above has replaced the list
-            # (a changed RSSI makes the old Device unequal to the new one - .index() raised ValueError and ended the caller)
+            # (a changed RSSI makes the old Device unequal to the new one, so .index() would raise ValueError)
             self.devices = [Device(x.mac, x.name, x.rssi, x.flags | BTD_TRUSTED) if x.mac == d.mac else x for x in self.devices]
 
     # ---------- controller choice ----------
@@ -615,8 +615,8 @@ class Bluetooth:
     async def connect(self, mac: str) -> None:
         """Connect a device; trust it here too if it is a pad.
 
-        A pad paired earlier outside the window (bluetoothctl) without trust would connect only from the phone, and when
-        switched on with the PS button it went dark after a few seconds. Trust only for pads: a trusted device can later
+        A pad paired earlier outside the window (bluetoothctl) without trust connects only from the phone, and when
+        switched on with the PS button it goes dark after a few seconds. Trust only for pads: a trusted device can later
         connect by itself (a foreign device - not without consent from the window).
         """
         await self.stop_scan()
@@ -639,7 +639,7 @@ class Bluetooth:
         """Switch a pad off (window / idle) with a D-Bus Disconnect on the controller the pad is connected to.
 
         `bluetoothctl disconnect` looks for the device only on bluetoothctl's default controller (hci0) - for a pad on a
-        dongle (hci1) it ended with "Device ... not available" and the pad did not switch off.
+        dongle (hci1) it ends with "Device ... not available" and the pad stays on.
 
         Returns:
             False when D-Bus did not help (no busctl / BlueZ, an unknown pad) - then bluetoothctl remains as the fallback.
@@ -833,9 +833,8 @@ class Bluetooth:
                     if active and not self.running and self.links.hci is not None:
                         await self.send_links(now)
                 elif now - t_adapter >= IDLE_S and not self.running:
-                    # controller choice and link policy without a receiver: the phone starts while the PC is off (a pad wakes it
-                    # through Wake-on-LAN), the receiver is not running - earlier the dongle and the lack of SNIFF waited for the window on
-                    # the PC
+                    # controller choice and link policy without a receiver: the phone may start while the PC is off (a pad wakes
+                    # it through Wake-on-LAN), and the dongle and SNIFF must not wait for the window on the PC
                     t_adapter = now
                     await self.check_adapters()
                 wait = TICK_S if active else IDLE_S / 5

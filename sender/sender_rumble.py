@@ -135,7 +135,7 @@ TRIG_WATCHDOG_S: Final = 7.0
 LOGGED_COMMANDS: Final = 3                  # how many of the first rumble commands are written to the log (diagnostics)
 
 # write error: this many consecutive errors before a rumble method is switched off. A single EIO / ETIMEDOUT on a
-# clogged Bluetooth link is not a failure - earlier it switched off the HID report (rumble, colour, triggers) until the pad reconnected.
+# clogged Bluetooth link is not a failure and must not switch off the HID report (rumble, colour, triggers) until the pad reconnects.
 # A pad that is gone (ENODEV...) and an error that will not change (no kernel support, a bad report, permissions)
 # switch it off at once.
 FAIL_MAX: Final = 5

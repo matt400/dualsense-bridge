@@ -145,8 +145,8 @@ def in_use() -> str | None:
 def cleanup(keep: str) -> None:
     """Remove older versions and leftovers of interrupted downloads.
 
-    The folder of the version loaded in this process stays until a restart: rmtree removed unlocked DLL dependencies
-    from it (loaded lazily) - a HIDMaestro loaded before the update crashed on the next pad connection (a missing file).
+    The folder of the version loaded in this process stays until a restart: rmtree would remove its unlocked DLL
+    dependencies (loaded lazily), and the HIDMaestro already loaded would crash on the next pad connection.
     Locked files stay until next time.
     """
     busy = in_use()

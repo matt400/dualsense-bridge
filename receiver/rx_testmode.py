@@ -194,7 +194,7 @@ def escape(i: int, raw: tuple | None = None) -> None:
     """Forced exit from the Test view through pad i: end the block, neutral inputs until released, the window leaves.
 
     raw: the state of pad i from the packet that triggered the exit - stored at once because the combination is in it
-    for the first time (earlier the state in S.states was from before the press and Options + Create would not be
+    for the first time (S.states still holds the state from before the press, so Options + Create would not be
     swallowed).
     """
     global active, escaped, _gen

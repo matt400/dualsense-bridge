@@ -24,7 +24,7 @@ MOVE_R: Final = 0.30
 RAW_MARGIN_S: Final = 3
 RAW_S: Final = round(SETTLE_S + MEASURE_S + RAW_MARGIN_S)   # how long the sender keeps the sticks without a deadzone (with a margin)
 EPS: Final = 1e-6                     # (t0 + 0.3) - t0 can be 0.29999999999995 (depending on the monotonic value) - without it
-                                # "0.3 s elapsed" came out true or false at random (a flaky Test view test)
+                                # "0.3 s elapsed" would come out true or false at random
 
 
 def propose(r: float) -> float:

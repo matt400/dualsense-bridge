@@ -222,7 +222,7 @@ def ensure_no_sniff(name: str, sniff: SniffFn | None = None, info: InfoFn | None
     """Keep the controller's link policy free of SNIFF.
 
     The kernel resets it EVERY time the controller is switched on (Write Default Link Policy from its capabilities -
-    SNIFF comes back), so a one-time setting made when the controller was chosen vanished when BlueZ powered it on a
+    SNIFF comes back), so a one-time setting made when the controller is chosen vanishes when BlueZ powers it on a
     moment later (rfkill unblock, Powered, a bluetoothd restart, plugging the dongle in again). Without HCIGETDEVINFO
     it always sets.
 
@@ -246,7 +246,7 @@ def apply(ctrls: tuple[Ctrl, ...], mode: int, key: str = "", sysfs: Path = SYSFS
     """Make the chosen controller unblocked and SNIFF-free and block the rest; manual mode changes nothing.
 
     The chosen one is unblocked first and the rest are blocked afterwards: a write error in the middle (e.g. EIO from
-    rfkill) leaves at most two radios on - in the reverse order a phone with no screen was left without any Bluetooth.
+    rfkill) leaves at most two radios on - in the reverse order a phone with no screen could be left without any Bluetooth.
 
     Returns:
         The chosen controller, or None.

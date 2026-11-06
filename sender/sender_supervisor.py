@@ -586,8 +586,8 @@ def _start_new_pad(key: str, group: Group, now: float) -> None:
         close_group(group)
         return
     idx = pick_slot(key)
-    # without this pop a pad with no slot kept next_scan_s at MIN_SCAN_WAIT_S - ~17 wake-ups/s endlessly
-    # (with full slots discover() no longer removed it)
+    # forget the pad here: with full slots discover() does not remove it, and a pad with no slot would keep next_scan_s at
+    # MIN_SCAN_WAIT_S - ~17 wake-ups/s for as long as it stays connected
     _first_seen.pop(key, None)
     if idx is None:
         close_group(group)

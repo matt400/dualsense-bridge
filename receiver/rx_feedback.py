@@ -63,7 +63,7 @@ TRIG_REPEAT: Final = 3        # a change of effects is sent this many times (UDP
 GAME_RUMBLE_STALE_S: Final = 1.0   # game rumble with no new motor report for longer than this -> 0. Games send reports every frame while
                             # rumbling; the last "motors 0" (entering a menu, the end of a drive) can get lost
                             # (HIDMaestro overwrites old packets) and the pad would vibrate forever. Not longer:
-                            # 3 s kept the pad twitching in the Forza Horizon menu after leaving a drive
+                            # with 3 s the pad keeps twitching in the Forza Horizon menu after leaving a drive
 GAME_RUMBLE_GAP_S: Final = 0.25    # the game still sends reports (colour, triggers) but no motors for longer than this since the last
                             # motor report -> it stopped driving the rumble (a menu) -> 0, without waiting for STALE
 RUMBLE_REFRESH_S: Final = 0.5         # while rumbling: refreshes the timeout on the sender
@@ -198,8 +198,8 @@ def forget_ended_games(running: Callable[[str], bool]) -> list[int]:
 def stop_game_rumble(why: str) -> None:
     """The foreground program changed (left a game, alt-tab): game rumble -> 0.
 
-    A game that ends mid-rumble (e.g. Forza Horizon on exit) no longer sends "motors 0", and the receiver kept
-    refreshing the last value every 0.5 s - the pad vibrated forever. A game that returns to the foreground sends a
+    A game that ends mid-rumble (e.g. Forza Horizon on exit) never sends "motors 0", and the receiver refreshes the last
+    value every 0.5 s, so without this the pad would vibrate forever. A game that returns to the foreground sends a
     fresh rumble itself.
     """
     for i, f in enumerate(fb):
@@ -453,7 +453,7 @@ def _wait_time(now: float, blink: bool) -> float:
     waits = [RUMBLE_REFRESH_S] + [p[0] - now for p in pulses if p is not None]     # 0.5 s: also expiry
     # expire the rumble exactly on time (without this, STALE + up to 0.5 s of waiting)
     # only pads with a signal: the loop handles expiry only for S.alive - for a pad without a signal
-    # (the virtual DS4 still plugged, game rumble non-zero) the deadline was in the past and the loop spun without sleeping
+    # (the virtual DS4 still plugged, game rumble non-zero) the deadline would be in the past and the loop would spin
     waits += [f["t"] + GAME_RUMBLE_STALE_S + 0.001 - now for i, f in enumerate(fb) if S.alive[i] and (f["large"] or f["small"])]
     if blink:
         waits.append(L.next_edge(now) + 0.002)

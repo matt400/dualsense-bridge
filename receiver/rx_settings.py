@@ -210,8 +210,8 @@ def _color(v: Any) -> str:
     """Accept "" or "#rrggbb" (lower-cased)."""
     if v == "":
         return ""
-    # exactly 6 hex digits: int(..., 16) let through "#0x1234", "# 12345" and "#12_345", and then
-    # rx_lightbar.hex_rgb crashed the feedback thread on every refresh
+    # exactly 6 hex digits: int(..., 16) lets through "#0x1234", "# 12345" and "#12_345", which rx_lightbar.hex_rgb
+    # cannot parse (an exception in the feedback thread on every refresh)
     if not (isinstance(v, str) and len(v) == HEX_COLOR_LEN and v[0] == "#" and all(c in string.hexdigits for c in v[1:])):
         raise ValueError("expected #rrggbb")
     return v.lower()

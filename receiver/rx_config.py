@@ -77,8 +77,8 @@ GYRO_DS4_RAW: Final = 16.0            # raw gyro counts per DS4 report unit at g
 def default_config(folder: str | None = None) -> str | None:
     """Return the receiver.toml next to the receiver, or None.
 
-    Without this the file worked only with --config: entries in receiver.toml (e.g. log_file) were silently ignored on a
-    normal start and on an autostart without that argument.
+    So the file is read also without --config: a normal start and an autostart take entries such as log_file from
+    receiver.toml.
     """
     path = os.path.join(folder or HERE, DEFAULT_CONFIG)
     return path if os.path.isfile(path) else None
