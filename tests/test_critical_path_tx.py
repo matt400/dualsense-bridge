@@ -1,36 +1,20 @@
 """Reprodukcje bugów ścieżki krytycznej nadajnika (przegląd 2026-10-16) - każdy test przechodzi PO poprawkach."""
-import asyncio, sys, time
+import asyncio, sys
 sys.path.insert(0, sys.argv[1])
 sys.path.insert(1, sys.argv[1] + "/../common")
 from evdev import ecodes as ec
 import sender_config; sender_config.init(["127.0.0.1"])
-from sender_config import C
 import sender_net as net, sender_streams as st, sender_ctrl, sender_wol as wol
 from sender_ctrl import Ctrl
 from proto import KEY_BIT, PAD_KEYS, T_MOUSE, T_TOUCH
 out = []
 def emit(t, i, *v): out.append((t, v))
 net.emit = sender_ctrl.net.emit = emit
-fails = []
-def check(cond, name):
-    print(("PASS " if cond else "FAIL ") + name)
-    if not cond:
-        fails.append(name)
-
-class Ev:
-    def __init__(s, t, c, v): s.type, s.code, s.value = t, c, v
-SYN = Ev(ec.EV_SYN, ec.SYN_REPORT, 0)
-DROP = Ev(ec.EV_SYN, ec.SYN_DROPPED, 0)
-class AI:
-    max, value = 1919, 0
-class TouchDev:
-    def __init__(s, evs): s.evs = evs
-    def absinfo(s, c): return AI()
-    async def async_read_loop(s):
-        for dt, e in s.evs:
-            if dt: await asyncio.sleep(dt)
-            yield e
-def abs_(dt, *pairs): return [(dt if k == 0 else 0, Ev(ec.EV_ABS, c, v)) for k, (c, v) in enumerate(pairs)] + [(0, SYN)]
+from chk import check, fails
+from fakedev import DROP, SYN, Ev
+from fakedev import AbsInfo as AI
+from fakedev import Dev as TouchDev
+from fakedev import frame as abs_
 
 # ---- 1. nowy palec w tym samym x albo y co poprzedni: jądro nie wysyła tej osi (wartość slotu bez zmian) ----
 # jak hid-playstation + rdzeń input: drugi dotyk przy krawędzi (y = 0) ma tylko ABS_MT_POSITION_X

@@ -2,7 +2,7 @@
 the jitter buffer (SpeakerStream) on a fake clock, one clock for haptics and speaker, the audio mode in Rumble (setup, volume,
 volume 0 at the end), the flags of every other report during a stream, the settings, and the whole way from the UDP packet through
 a real libopus to the pad's HID file."""
-import asyncio, contextlib, ctypes, io, math, os, statistics, struct, sys, tempfile, time, zlib
+import asyncio, contextlib, ctypes, io, math, os, statistics, struct, sys, time, zlib
 sys.path.insert(0, sys.argv[1])
 sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
@@ -16,14 +16,13 @@ import sender_speaker as S
 import sender_state as state
 import sender_supervisor as sup
 from proto import (CAP_HAPTICS, CAP_SPEAKER, HAPT_CHUNK, HAPT_START, SPK_BYTES, SPK_END, SPK_START, T_SPK, Codec, SeqFilter)
+from fakedev import common, crc_ok, new_hidraw, reports
 
-TMP = tempfile.mkdtemp()
 ok = lambda m: print("OK  ", m)
 KEY = b"0123456789abcdef"
 REAL_MONOTONIC = time.monotonic
 PERIOD = S.PERIOD_S
 HAVE_OPUS = O.available()
-SIZES = {0x31: 78, 0x32: 142, 0x36: 398}
 
 
 def frame(n):
@@ -33,33 +32,6 @@ def frame(n):
 def sine(n_frames, hz=440.0, amp=12000):
     count = n_frames * proto.SPK_FRAME
     return struct.pack(f"<{count}h", *[round(amp * math.sin(2 * math.pi * hz * i / proto.SPK_RATE)) for i in range(count)])
-
-
-_files = iter(range(1000))
-
-
-def newpath():
-    path = os.path.join(TMP, f"hidraw{next(_files)}")
-    open(path, "wb").close()
-    return path
-
-
-def reports(path):
-    data = open(path, "rb").read()
-    out, k = [], 0
-    while k < len(data):
-        n = SIZES[data[k]]
-        out.append(data[k:k + n])
-        k += n
-    return out
-
-
-def common(rep):
-    return rep[3:50]
-
-
-def crc_ok(rep):
-    return int.from_bytes(rep[-4:], "little") == zlib.crc32(b"\xa2" + rep[:-4]) & 0xFFFFFFFF
 
 
 def vol_report(seq, volume):
@@ -575,10 +547,10 @@ asyncio.run(fake_clock_scenarios())
 
 # ---------- Rumble: audio mode with a speaker ----------
 async def rumble_scenarios():
-    path = newpath()
+    path = new_hidraw()
     r = R.Rumble(0, Dev(), "hidraw", hidraw=(path, True))
     assert r.bits & CAP_HAPTICS and (r.bits & CAP_SPEAKER == (CAP_SPEAKER if HAVE_OPUS else 0))
-    assert not R.Rumble(0, Dev(), "hidraw", hidraw=(newpath(), False)).bits & CAP_SPEAKER, "a USB pad has no report 0x36"
+    assert not R.Rumble(0, Dev(), "hidraw", hidraw=(new_hidraw(), False)).bits & CAP_SPEAKER, "a USB pad has no report 0x36"
     assert not R.Rumble(0, Dev(), "evdev").bits & CAP_SPEAKER and not R.Rumble(0, Dev(), "off").bits & CAP_SPEAKER
     saved = O._lib, O._tried
     O._lib, O._tried = None, True
@@ -611,7 +583,7 @@ async def rumble_scenarios():
     r.close()
 
     # haptics first, then the speaker, then the haptics end first: audio mode stays until the last stream
-    path = newpath()
+    path = new_hidraw()
     r = R.Rumble(0, Dev(), "hidraw", hidraw=(path, True))
     assert r.haptics_begin() and len(reports(path)) == 1
     assert r.speaker_begin(100) and len(reports(path)) == 2 and reports(path)[1] == vol_report(2, 100), "audio mode is on: only the volume"
@@ -626,14 +598,14 @@ async def rumble_scenarios():
     r.close()
 
     # close() and write errors with a speaker stream
-    path = newpath()
+    path = new_hidraw()
     r = R.Rumble(0, Dev(), "hidraw", hidraw=(path, True))
     r.speaker_begin(100)
     r.close()
     assert not r.speaker and common(reports(path)[-1])[0] & 0x03 == 0x03, "closing the pad leaves audio mode"
     real = os.write
     try:
-        r = R.Rumble(0, Dev(), "hidraw", hidraw=(newpath(), True))
+        r = R.Rumble(0, Dev(), "hidraw", hidraw=(new_hidraw(), True))
         r.speaker_begin(100)
         rep = S.Report3x()
         os.write = lambda fd, buf: (_ for _ in ()).throw(OSError(5, "io")) if buf[0] == 0x36 else real(fd, buf)
@@ -647,7 +619,7 @@ async def rumble_scenarios():
     ok("Rumble: setup + volume at the start, no rumble bits while it plays, volume 0 + normal report at the end, shared audio mode")
 
     # the volume byte is clamped and a report for a vanished pad does not raise
-    path = newpath()
+    path = new_hidraw()
     r = R.Rumble(0, Dev(), "hidraw", hidraw=(path, True))
     r.speaker_begin(1000)
     assert reports(path)[1][3 + 5] == 255
@@ -664,7 +636,7 @@ async def ctrl_scenarios():
     c = sender_ctrl.Ctrl(3, "aa:bb:cc:dd:ee:03", dev, None, None)
     c.on_speaker(0, SPK_START, memoryview(frame(0)))
     assert c.speaker is None, "no rumble backend: ignored"
-    c.rumble = R.Rumble(3, dev, "hidraw", hidraw=(newpath(), False))
+    c.rumble = R.Rumble(3, dev, "hidraw", hidraw=(new_hidraw(), False))
     c.on_speaker(0, SPK_START, memoryview(frame(0)))
     assert c.speaker is None, "a USB pad: ignored"
     ok("a pad without a Bluetooth HID report ignores the speaker frames")
@@ -734,7 +706,7 @@ async def ctrl_scenarios():
     ok("libopus: complexity automatic (1 hybrid / 5 celt) or set, 0-10, larger values count as 10")
 
     # end to end: UDP packets -> sender_net -> supervisor -> Ctrl -> stream -> real libopus -> 0x36 in the HID file
-    path = newpath()
+    path = new_hidraw()
     c = sender_ctrl.Ctrl(3, "aa:bb:cc:dd:ee:03", dev, None, None)
     c.rumble = R.Rumble(3, dev, "hidraw", hidraw=(path, True))
     state.active[c.key] = c
@@ -822,7 +794,7 @@ async def ctrl_scenarios():
     del state.active[c.key]
     # an encoder that cannot be created is logged once, not for every packet
     c2 = sender_ctrl.Ctrl(4, "aa:bb:cc:dd:ee:04", dev, None, None)
-    c2.rumble = R.Rumble(4, dev, "hidraw", hidraw=(newpath(), True))
+    c2.rumble = R.Rumble(4, dev, "hidraw", hidraw=(new_hidraw(), True))
     real_enc = S.OpusEncoder
 
     def broken(size, mode="hybrid", complexity=-1):

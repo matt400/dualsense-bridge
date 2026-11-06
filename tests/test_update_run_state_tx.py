@@ -4,6 +4,7 @@ import asyncio, sys
 sys.path.insert(0, sys.argv[1])
 sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
+import gitupdate
 import proto
 import sender_update as UPD
 
@@ -12,11 +13,11 @@ from chk import check, fails                                  # noqa: E402  (sha
 
 # ---------- sender_update.run(): no stuck "running" ----------
 async def update_cases():
-    real_pull, real_build = proto.git_pull, UPD.send_build
+    real_pull, real_build = gitupdate.git_pull, UPD.send_build
     calls = []
     def boom(*_a):
         raise RuntimeError("git exploded")
-    proto.git_pull = boom
+    gitupdate.git_pull = boom
     UPD.send_build = lambda: calls.append(UPD.status)
     try:
         UPD._last = float("-inf")
@@ -28,11 +29,11 @@ async def update_cases():
         check(UPD.fail_msg == UPD.INTERRUPTED, "the failure reason is set for the window")
         check(calls and calls[-1] == proto.UPD_FAILED, "the final state is sent")
         UPD._last = float("-inf")
-        proto.git_pull = lambda *_a: (proto.UPD_NO_CHANGE, "", "", "", [])
+        gitupdate.git_pull = lambda *_a: (proto.UPD_NO_CHANGE, "", "", "", [])
         await UPD.run()
         check(UPD.status == proto.UPD_NO_CHANGE, "the next update can run")
     finally:
-        proto.git_pull, UPD.send_build = real_pull, real_build
+        gitupdate.git_pull, UPD.send_build = real_pull, real_build
 
 asyncio.run(update_cases())
 

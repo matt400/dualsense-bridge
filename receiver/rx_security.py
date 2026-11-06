@@ -40,7 +40,7 @@ def code_dir() -> str:
 def repo_root() -> str | None:
     """Return the git repository root (the parent of the code folder), or None when the receiver is not in a checkout.
 
-    The update runs git as administrator in this folder (proto.git, cwd=root), so the root and its .git belong to the
+    The update runs git as administrator in this folder (gitupdate.git, cwd=root), so the root and its .git belong to the
     code that has to be protected - not only receiver/. A copy without .git (a zip) has no such parent to protect: its
     parent folder is just some folder (e.g. Downloads) and must not be touched.
     """

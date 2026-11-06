@@ -5,13 +5,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from rxenv import *                                              # noqa
 import rx_buttons as B, rx_config, rx_profiles as P
 
-from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
-
-def wait_for(pred, timeout=2.0):
-    end = time.monotonic() + timeout
-    while time.monotonic() < end and not pred():
-        time.sleep(0.01)
-    return pred()
+from chk import check, fails, wait_for                                  # noqa: E402  (shared helper, tests/chk.py)
 
 
 # ---------- remap.json / API: zły typ nie wywraca receivera ----------

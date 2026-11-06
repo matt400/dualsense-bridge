@@ -2,27 +2,13 @@ import asyncio, os, sys, time, tempfile
 sys.path.insert(0, sys.argv[1])
 sys.path.insert(1, sys.argv[1] + "/../common")
 from evdev import ecodes as ec
+from fakedev import SYN, Dev, Ev, frame
 import sender_config; sender_config.init(["127.0.0.1"])
-from sender_config import C
 import sender_net as net, sender_streams as st, sender_ctrl, sender_supervisor as sup
 from sender_ctrl import Ctrl
 out = []
 def emit(t, i, *v): out.append((time.monotonic(), t, v))
 net.emit = sender_ctrl.net.emit = emit
-class Ev:
-    def __init__(s,t,c,v): s.type,s.code,s.value=t,c,v
-class AI: max = 1919
-class Dev:
-    def __init__(s, evs): s.evs = evs
-    def absinfo(s, c): return AI()
-    async def async_read_loop(s):
-        for dt, e in s.evs:
-            if dt: await asyncio.sleep(dt)
-            yield e
-SYN = Ev(ec.EV_SYN, ec.SYN_REPORT, 0)
-def frame(dt, *pairs):
-    r = [(dt, Ev(ec.EV_ABS, *pairs[0]))] + [(0, Ev(ec.EV_ABS, *p)) for p in pairs[1:]]
-    return r + [(0, SYN)]
 F = lambda s, tid, x, y: [(ec.ABS_MT_SLOT, s), (ec.ABS_MT_TRACKING_ID, tid), (ec.ABS_MT_POSITION_X, x), (ec.ABS_MT_POSITION_Y, y)]
 M = lambda s, x, y: [(ec.ABS_MT_SLOT, s), (ec.ABS_MT_POSITION_X, x), (ec.ABS_MT_POSITION_Y, y)]
 L = lambda s: [(ec.ABS_MT_SLOT, s), (ec.ABS_MT_TRACKING_ID, -1)]

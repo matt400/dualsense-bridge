@@ -127,11 +127,12 @@ U.running = real_running
 ok("kod już pobrany, działa starszy: restart zamiast 'Masz najnowszą wersję'; plakietka liczy od działającej wersji")
 
 calls = []
+import gitupdate
 import proto
-real_git = proto.git
-proto.git = lambda root, *a, **k: calls.append((a, k.get("env"), k.get("timeout"))) or real_git(root, *a, **k)
+real_git = gitupdate.git
+gitupdate.git = lambda root, *a, **k: calls.append((a, k.get("env"), k.get("timeout"))) or real_git(root, *a, **k)
 U.update(work, pip=False)
-proto.git = real_git
+gitupdate.git = real_git
 pull = [c for c in calls if c[0][:1] == ("pull",)]
 assert pull and pull[0][1] == U.QUIET_ENV and pull[0][2] == U.PULL_TIMEOUT_S, pull
 ok("git pull bez okien logowania i z limitem czasu (przycisk nie wisi na 'Aktualizuję…')")

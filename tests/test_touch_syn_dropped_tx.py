@@ -8,6 +8,8 @@ sys.path.insert(0, sys.argv[1])
 sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
 from evdev import ecodes as ec
+from fakedev import SYN, Ev, frame
+from fakedev import Dev as TouchDev
 
 import sender_ctrl
 import sender_net as net
@@ -22,18 +24,6 @@ TMP = tempfile.mkdtemp()
 
 
 # ---------- 1. a tap right after SYN_DROPPED still clicks ----------
-class Ev:
-    def __init__(s, t, c, v): s.type, s.code, s.value = t, c, v
-SYN = Ev(ec.EV_SYN, ec.SYN_REPORT, 0)
-class AI: max, value = 1919, 0
-class TouchDev:
-    def __init__(s, evs): s.evs = evs
-    def absinfo(s, c): return AI()
-    async def async_read_loop(s):
-        for dt, e in s.evs:
-            if dt: await asyncio.sleep(dt)
-            yield e
-def frame(dt, *pairs): return [(dt if k == 0 else 0, Ev(ec.EV_ABS, c, v)) for k, (c, v) in enumerate(pairs)] + [(0, SYN)]
 def taps(evs):
     out.clear()
     async def go():

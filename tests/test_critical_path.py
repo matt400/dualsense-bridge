@@ -5,11 +5,7 @@ from rxenv import *                                              # noqa
 import rx_ds4, rx_master, rx_profiles as P, rx_testmode as TM
 from proto import T_BYE
 from rx_buttons import BUTTON_CODES
-fails = []
-def check(cond, name):
-    print(("PASS " if cond else "FAIL ") + name)
-    if not cond:
-        fails.append(name)
+from chk import check, fails
 
 TRI = BIT[BUTTON_CODES["triangle"]]
 PS = BIT[BUTTON_CODES["ps"]]
