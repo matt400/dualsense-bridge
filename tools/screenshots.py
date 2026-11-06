@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TRIANGLE_FROM = 140               # frame from which the triangle button is held in the animation
 OUT = Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / "docs" / "img").resolve()
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-os.environ["PATH"] = f"{ROOT / 'tests' / 'fakebin'}{os.pathsep}{os.environ['PATH']}"   # bez prawdziwego bluetoothctl
+os.environ["PATH"] = f"{ROOT / 'tests' / 'fakebin'}{os.pathsep}{os.environ['PATH']}"   # no real bluetoothctl
 sys.path.insert(0, str(ROOT / "tests"))
 sys.argv[1:] = [str(ROOT / "receiver")]                          # rxenv bierze katalog receivera z argv[1]
 
@@ -76,7 +76,7 @@ def online() -> None:
     S.sender_batt = (78, True)
 
 
-# ---------- dwa pady, pad 1 master, profil z remapem i efektem spustu ----------
+# ---------- two pads, pad 1 master, a profile with a remap and a trigger effect ----------
 for i, mac in enumerate(PADS):
     feed(T_IDENT, i, mac.encode())
 rx_master.set_master(0)
@@ -106,22 +106,22 @@ def tick() -> None:
     pump()
 
 
-# ---------- 1. the main window: pads, battery, latency, the right panel's remap ----------
+# ---------- the main window: pads, battery, latency, the right panel's remap ----------
 tick()
 win.on_part("cross")
 tick()
 save(win, "main")
 
-# ---------- 2. remap: spust R2 z efektem adaptacyjnym ----------
+# ---------- remap: trigger R2 with an adaptive effect ----------
 win.on_part("r2")
 tick()
 save(win, "remap_trigger")
 
-# ---------- 3. widok Test: wykresy ruchu, touchpad, dryf ----------
+# ---------- Test view: motion charts, touchpad, drift ----------
 win.seg.buttons["test"].click()
 pump()
 panel = win.test_panel
-panel.start_drift()                                               # dryf: pomiar w spoczynku -> propozycja strefy
+panel.start_drift()                                               # drift: measurement at rest -> a zone proposal
 t0 = panel.run.t0
 panel._drift_tick(t0 + D.SETTLE_S)
 for lx, ry in ((130, 128), (127, 128), (131, 129), (129, 128)):
@@ -141,7 +141,7 @@ save(win, "test_view")
 win.seg.buttons["out"].click()
 pump()
 
-# ---------- 3b. Diagnostyka: sieć i łącze Bluetooth każdego pada ----------
+# ---------- Diagnostics: the network and the Bluetooth link of every pad ----------
 for k in range(rx_diag.HISTORY):
     a = k / 7
     rx_diag.net.rtt.add(1.6 + 0.5 * math.sin(a) + (6 if k in (60, 61) else 0))
@@ -171,7 +171,7 @@ save(win, "diagnostics")
 win.diag_btn.click()
 pump()
 
-# ---------- 4. Bluetooth nadajnika: wysuwany panel ----------
+# ---------- sender Bluetooth: the slide-out panel ----------
 devs = [(PADS[0], "DualSense Wireless Controller", -52, BTD_PAIRED | BTD_CONNECTED | BTD_TRUSTED | BTD_PAD),
         (PADS[1], "DualSense Wireless Controller", -61, BTD_PAIRED | BTD_CONNECTED | BTD_TRUSTED | BTD_PAD),
         ("e4:17:d8:90:3a:15", "DualSense Wireless Controller", -74, BTD_PAD),
@@ -188,7 +188,7 @@ save(win, "bt_drawer")
 win.bt_drawer.close_drawer()
 pump(400)
 
-# ---------- 5. ustawienia: tryb konsoli i master ----------
+# ---------- settings: console mode and master ----------
 win.open_settings()
 pump(150)
 dlg = win.settings_dlg

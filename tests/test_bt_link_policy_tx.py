@@ -1,8 +1,8 @@
-"""Sender: kontroler Bluetooth i link policy bez SNIFF.
-  - wybór kontrolera (dongle USB zamiast wbudowanego) i brak SNIFF działały tylko przy działającym receiverze: telefon
-    startujący przy wyłączonym PC (pad budzi PC przez Wake-on-LAN) łączył pady przez wbudowane radio / z SNIFF
-  - jądro przywraca SNIFF przy każdym włączeniu kontrolera (Write Default Link Policy) - jednorazowe ustawienie przy
-    wyborze znikało, gdy BlueZ włączał kontroler chwilę później (odblokowanie rfkill, Powered, restart bluetoothd)
+"""Sender: Bluetooth controller and link policy without SNIFF.
+  - controller choice (USB dongle instead of the built-in one) and no SNIFF worked only with a running receiver: a phone
+    starting while the PC was off (the pad wakes the PC through Wake-on-LAN) connected pads through the built-in radio / with SNIFF
+  - the kernel restores SNIFF every time the controller comes up (Write Default Link Policy) - a one-off setting at
+    selection was lost when BlueZ brought the controller up a moment later (rfkill unblock, Powered, bluetoothd restart)
 python3 tests/test_bt_link_policy_tx.py sender"""
 import asyncio, ctypes, os, sys, tempfile
 from pathlib import Path
@@ -20,7 +20,7 @@ C.BT_FILE = str(TMP / "bt.json")
 SNIFF = A.HCI_LP_RSWITCH | A.HCI_LP_SNIFF
 
 
-# ---------- układ struct hci_dev_info (include/net/bluetooth/hci_sock.h) ----------
+# ---------- struct hci_dev_info layout (include/net/bluetooth/hci_sock.h) ----------
 class HciDevInfo(ctypes.Structure):
     _fields_ = [("dev_id", ctypes.c_uint16), ("name", ctypes.c_char * 8), ("bdaddr", ctypes.c_uint8 * 6),
                 ("flags", ctypes.c_uint32), ("type", ctypes.c_uint8), ("features", ctypes.c_uint8 * 8),
@@ -57,20 +57,20 @@ try:
     assert A.dev_info("hci1") == (True, SNIFF) and asked == [1]
 finally:
     A.socket.socket, A.fcntl.ioctl = real_socket, real_ioctl
-ok("HCIGETDEVINFO: rozmiar i pola struct hci_dev_info (flagi, link policy) jak w jądrze")
+ok("HCIGETDEVINFO: size and fields of struct hci_dev_info (flags, link policy) as in the kernel")
 
-# ---------- ensure_no_sniff: tylko gdy kontroler włączony i ma SNIFF ----------
+# ---------- ensure_no_sniff: only when the controller is up and has SNIFF ----------
 done = []
 sniff = lambda name: done.append(name) or True
 assert A.ensure_no_sniff("hci1", sniff, lambda n: (True, SNIFF)) is True and done == ["hci1"]
-assert A.ensure_no_sniff("hci1", sniff, lambda n: (True, A.HCI_LP_RSWITCH)) is None, "już bez SNIFF"
-assert A.ensure_no_sniff("hci1", sniff, lambda n: (False, SNIFF)) is None, "wyłączony - po włączeniu"
-assert A.ensure_no_sniff("hci1", sniff, lambda n: None) is True and done == ["hci1", "hci1"], "bez odczytu - jak dawniej"
+assert A.ensure_no_sniff("hci1", sniff, lambda n: (True, A.HCI_LP_RSWITCH)) is None, "already without SNIFF"
+assert A.ensure_no_sniff("hci1", sniff, lambda n: (False, SNIFF)) is None, "off - after it comes up"
+assert A.ensure_no_sniff("hci1", sniff, lambda n: None) is True and done == ["hci1", "hci1"], "no reading - as before"
 assert A.ensure_no_sniff("hci1", lambda n: False, lambda n: (True, SNIFF)) is False
-ok("brak SNIFF ustawiany tylko, gdy kontroler działa i jądro przywróciło SNIFF")
+ok("no SNIFF set only when the controller is up and the kernel restored SNIFF")
 
 
-# ---------- pętla bez receivera: wybór kontrolera i SNIFF ----------
+# ---------- loop without a receiver: controller choice and SNIFF ----------
 class Sys:
     def __init__(s):
         s.root = Path(tempfile.mkdtemp())
@@ -118,16 +118,16 @@ async def main():
     SB.IDLE_S = 0.2
     try:
         b = SB.Bluetooth(run=run, emit=lambda *a: sent.append(a), sysfs=fs.cls)
-        net.scfg_t = 0.0                              # receiver nie działa (PC wyłączony)
+        net.scfg_t = 0.0                              # receiver not running (PC off)
         task = asyncio.create_task(b.loop())
         await asyncio.sleep(0.3)
-        assert b.pick is not None and b.pick.name == "hci1", "dongle wybrany bez receivera"
+        assert b.pick is not None and b.pick.name == "hci1", "dongle selected without a receiver"
         assert fs.blocked("hci0") and not fs.blocked("hci1") and policy["hci1"] == A.HCI_LP_RSWITCH
         assert ["set-property", "org.bluez", "/org/bluez/hci1", "org.bluez.Adapter1", "Powered", "b", "true"] in calls
-        assert not sent, "bez receivera nic nie idzie do sieci"
-        policy["hci1"] = SNIFF                        # bluetoothd włączył kontroler od nowa - jądro przywróciło SNIFF
+        assert not sent, "without a receiver nothing goes to the network"
+        policy["hci1"] = SNIFF                        # bluetoothd brought the controller up again - the kernel restored SNIFF
         await asyncio.sleep(0.5)
-        assert policy["hci1"] == A.HCI_LP_RSWITCH, "SNIFF poprawiony przy kolejnym sprawdzeniu"
+        assert policy["hci1"] == A.HCI_LP_RSWITCH, "SNIFF fixed on the next check"
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
     finally:
@@ -136,4 +136,4 @@ async def main():
 
 
 asyncio.run(main())
-ok("bez receivera: dongle wybrany, wbudowany zablokowany, SNIFF wyłączony i pilnowany po ponownym włączeniu")
+ok("without a receiver: dongle selected, built-in blocked, SNIFF off and kept off after the controller comes up again")

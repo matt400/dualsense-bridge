@@ -1,6 +1,6 @@
-"""Okno: panel „Skróty pada” - lista z bieżących ustawień (przycisk trybu konsoli, akcje mastera, długie PS, korona
-przy funkcjach mastera), otwieranie z nagłówka, naraz jeden panel (Bluetooth / skróty) i obsługa padem w trybie TV
-(D-pad przewija, ○ zamyka, fokus wraca na ikonę). Zrzut: tests/keys_drawer.png."""
+"""Window: the "Skróty pada" panel - a list from the current settings (console mode button, master actions, long PS, a crown
+next to master features), opening from the header, one panel at a time (Bluetooth / shortcuts) and pad control in TV mode
+(D-pad scrolls, ○ closes, focus goes back to the icon). Screenshot: tests/keys_drawer.png."""
 import sys, os, time
 from dataclasses import replace
 sys.path.insert(0, os.path.dirname(__file__))
@@ -33,7 +33,7 @@ def flat():
     return {(g.title, sc.keys): sc for g in SC.groups() for sc in g.items}
 
 
-# ---------- dane: z bieżących ustawień ----------
+# ---------- data: from the current settings ----------
 rx_console.ctl = rx_console.Console(rx_console.ConsoleConfig(toggle_button="options", double_click_ms=500))
 cur = rx_settings.cur
 rx_settings.cur = replace(cur, master=replace(cur.master, pad="aa:bb:cc:dd:ee:01", claim_hold=False,
@@ -42,19 +42,19 @@ rx_settings.cur = replace(cur, master=replace(cur.master, pad="aa:bb:cc:dd:ee:01
 C.PS_HOLD_ACTION, C.PS_SHARE_ACTION = "bigpicture", "none"
 f = flat()
 keys = {k for _t, k in f}
-assert ("options", "×2") in keys and "500 ms" in f["Tryb konsoli", ("options", "×2")].text, "przycisk trybu konsoli z ustawień"
-assert ("ps", "+", "options") in keys and ("ps", "+", "square", "1,2 s") in keys, "akcje mastera (groźne z czasem)"
-assert not any("r3" in k for k in keys), "przejęcie mastera wyłączone - nie pokazane"
-assert ("ps", "+", "share") not in keys, "PS + Share = none - nie pokazane"
-assert ("options", "+", "share") in keys, "wyjście z widoku Test: Options + Create"
-assert any(sc.text == "Steam Big Picture" for sc in f.values()), "akcja długiego PS"
+assert ("options", "×2") in keys and "500 ms" in f["Tryb konsoli", ("options", "×2")].text, "console mode button from the settings"
+assert ("ps", "+", "options") in keys and ("ps", "+", "square", "1,2 s") in keys, "master actions (dangerous ones with a hold time)"
+assert not any("r3" in k for k in keys), "master takeover off - not shown"
+assert ("ps", "+", "share") not in keys, "PS + Share = none - not shown"
+assert ("options", "+", "share") in keys, "leaving the Test view: Options + Create"
+assert any(sc.text == "Steam Big Picture" for sc in f.values()), "long PS action"
 assert SC.master_only("console") and SC.master_only("actions") and not SC.master_only("profile")
 C.PS_MODIFIER = False
-assert [sc.keys for sc in SC.groups()[0].items] == [("ps",)] and SC.groups()[0].note, "skróty PS wyłączone"
+assert [sc.keys for sc in SC.groups()[0].items] == [("ps",)] and SC.groups()[0].note, "PS shortcuts off"
 C.PS_MODIFIER = True
-ok("lista z ustawień: przycisk trybu konsoli, akcje mastera, długie PS; wyłączone skróty pominięte")
+ok("list from the settings: console mode button, master actions, long PS; disabled shortcuts skipped")
 
-# ---------- okno ----------
+# ---------- window ----------
 S.peer = ("127.0.0.1", 5005)
 win = rx_qt.create_window(os.path.join(TMP, "ui.ini")); win.resize(1180, 820); win.show(); activate(win)
 d = win.keys_drawer
@@ -70,12 +70,12 @@ assert win.bt_drawer.is_open() and not d.is_open(), "naraz jeden panel"
 win.bt_drawer.close_drawer(); pump(260)
 rx_console.ctl = rx_console.Console(rx_console.ConsoleConfig(toggle_button="r2"))
 win.keys_btn.click(); pump(260)
-assert any(r.shortcut.keys == ("r2", "×2") for r in d.rows), "lista budowana od nowa przy otwarciu"
+assert any(r.shortcut.keys == ("r2", "×2") for r in d.rows), "the list built again on opening"
 QTest.keyClick(d.scroll, Qt.Key.Key_Escape); pump(260)
 assert not d.is_open()
-ok("panel: ikona otwiera, korona przy funkcjach mastera, naraz jeden panel, treść odświeżana, Esc zamyka")
+ok("panel: the icon opens, a crown next to master features, one panel at a time, content refreshed, Esc closes")
 
-# ---------- tryb TV ----------
+# ---------- TV mode ----------
 win.set_fullscreen(True); pump(150); activate(win)
 state(0)
 press_t = [time.monotonic()]
@@ -89,20 +89,20 @@ def press(name):
 
 win.keys_btn.setFocus(Qt.FocusReason.TabFocusReason)
 press("cross"); pump(260)
-assert d.is_open() and QApplication.focusWidget() is d.scroll, "✕ otwiera, fokus na liście"
+assert d.is_open() and QApplication.focusWidget() is d.scroll, "✕ opens, focus on the list"
 bar = d.scroll.verticalScrollBar()
-assert bar.maximum() > 0, "lista dłuższa niż ekran (inaczej nie ma czego przewijać)"
+assert bar.maximum() > 0, "the list is longer than the screen (otherwise there is nothing to scroll)"
 for _k in range(200):
     press("dpad_down")
     if bar.value() == bar.maximum():
         break
-assert bar.value() == bar.maximum() and QApplication.focusWidget() is d.scroll, "D-pad ↓ przewija do końca"
+assert bar.value() == bar.maximum() and QApplication.focusWidget() is d.scroll, "D-pad ↓ scrolls to the end"
 while bar.value() > bar.minimum():
     press("dpad_up")
 press("dpad_up")
-assert QApplication.focusWidget() is d.close_btn, "na górze listy ↑ przechodzi do Zamknij"
+assert QApplication.focusWidget() is d.close_btn, "at the top of the list ↑ moves to Close"
 press("circle"); pump(260)
 assert not d.is_open() and win.fullscreen() and QApplication.focusWidget() is win.keys_btn, "○ zamyka, fokus na ikonie"
-ok("tryb TV: ✕ otwiera, D-pad przewija listę, na górze do Zamknij, ○ zamyka, fokus wraca na ikonę")
+ok("TV mode: ✕ opens, D-pad scrolls the list, at the top to Close, ○ closes, focus goes back to the icon")
 rx_settings.cur = cur
 print("KEYS GUI OK")

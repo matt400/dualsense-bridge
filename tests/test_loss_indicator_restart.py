@@ -1,8 +1,8 @@
-"""Receiver: regresje z osiemnastego przeglądu.
-  - wskaźnik utraty pakietów: przerwa dłuższa niż ~1000 pakietów (1-4 s) liczyła się jako restart nadajnika - 0 % strat
-    właśnie przy największych zanikach; restart (nowy losowy numer) dalej nie jest stratą
-  - szybki restart receivera (< 3 s): pakiety v3 ze znacznikiem zegara starego procesu dawały w dzienniku fałszywe
-    "przeterminowane pakiety (powtórzone nagranie)"; prawdziwe nagranie po synchronizacji zegara dalej ostrzega
+"""Receiver: regressions from the eighteenth review.
+  - packet loss indicator: a gap longer than ~1000 packets (1-4 s) counted as a sender restart - 0 % loss
+    exactly at the biggest dropouts; a restart (a new random number) is still not a loss
+  - a quick receiver restart (< 3 s): v3 packets with the clock token of the old process gave a false
+    "expired packets (replayed recording)" in the log; a real recording after the clock sync still warns
     python3 tests/test_loss_indicator_restart.py receiver"""
 import os, sys
 sys.path.insert(0, os.path.dirname(__file__))
@@ -12,15 +12,15 @@ import rx_events as ev
 from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 
-# ---------- 1. utrata pakietów przy długiej przerwie ----------
+# ---------- packet loss over a long gap ----------
 def run(gap_packets, gap_s, rate=500):
-    """1 s pakietów co 1/rate, cisza gap_s, skok numeru o gap_packets, potem znowu pakiety -> link_loss [%]."""
+    """1 s of packets every 1/rate, silence gap_s, a number jump of gap_packets, then packets again -> link_loss [%]."""
     link = N.LinkStats(2)
     t, sq = 100.0, 1000
     link.t0 = t
     for _ in range(rate):
         link.packet(sq, t); sq += 1; t += 1 / rate
-    link.tick(t + 0.01)                                  # okno 1: rate zmierzony
+    link.tick(t + 0.01)                                  # window 1: rate measured
     t += 0.01
     t += gap_s
     sq = (sq + gap_packets) & 0xFFFF
@@ -31,12 +31,12 @@ def run(gap_packets, gap_s, rate=500):
 
 
 loss = run(gap_packets=1500, gap_s=3.0)
-check(loss is not None and loss > 90, f"przerwa 3 s (1500 pakietów zgubionych) = strata ~97 %, nie 0 % ({loss})")
-check((run(gap_packets=20, gap_s=0.04) or 0) > 20, "krótka luka dalej liczona jak dotąd")
+check(loss is not None and loss > 90, f"a 3 s gap (1500 packets lost) = ~97 % loss, not 0 % ({loss})")
+check((run(gap_packets=20, gap_s=0.04) or 0) > 20, "a short gap still counted as before")
 loss = run(gap_packets=30000, gap_s=2.0)
-check(loss is None or loss < 1, f"restart nadajnika (skok o 30000 po 2 s) to nie strata ({loss})")
+check(loss is None or loss < 1, f"a sender restart (a jump of 30000 after 2 s) is not a loss ({loss})")
 
-# ---------- 2. fałszywe ostrzeżenie o przeterminowanych pakietach po restarcie ----------
+# ---------- false warning about expired packets after a restart ----------
 codec = N.codec
 warned = []
 orig_warn = ev.warn
@@ -45,21 +45,21 @@ try:
     N._first_ping[0] = None
     N._auth_warned["stale"] = float("-inf")
     now = 1000.0
-    codec.stale_t = now - 0.2                            # pakiet v3 ze starym zegarem, zanim przyszedł ping
+    codec.stale_t = now - 0.2                            # a v3 packet with the old clock, before a ping came
     N.check_key(now)
-    check(not warned, "pakiety ze zegarem poprzedniego procesu przed pierwszym pingiem - bez ostrzeżenia")
-    N._first_ping[0] = now                               # pierwszy ping nowego procesu
-    codec.stale_t = now + 0.3                            # nadajnik jeszcze nie dostał pong2
+    check(not warned, "packets with the previous process's clock before the first ping - no warning")
+    N._first_ping[0] = now                               # the first ping of the new process
+    codec.stale_t = now + 0.3                            # the sender has not got a pong2 yet
     N.check_key(now + 0.4)
-    check(not warned, "tuż po pierwszym pingu (nadajnik synchronizuje zegar) - bez ostrzeżenia")
+    check(not warned, "right after the first ping (the sender syncs its clock) - no warning")
     codec.stale_t = now + 5.0                            # po synchronizacji: prawdziwe nagranie
     N.check_key(now + 5.1)
-    check(len(warned) == 1, "przeterminowany pakiet po synchronizacji zegara - ostrzeżenie jak dotąd")
+    check(len(warned) == 1, "an expired packet after the clock sync - a warning as before")
     N._first_ping[0] = None
     N.note_ping(123, 456)
-    check(N._first_ping[0] is not None, "pierwszy ping zapamiętany")
+    check(N._first_ping[0] is not None, "the first ping remembered")
 finally:
     ev.warn = orig_warn
 
-print("WSZYSTKO OK" if not fails else f"FAIL {len(fails)}")
+print("ALL OK" if not fails else f"FAIL {len(fails)}")
 sys.exit(1 if fails else 0)

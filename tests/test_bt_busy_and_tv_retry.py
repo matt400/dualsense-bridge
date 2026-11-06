@@ -10,7 +10,7 @@ import rx_display as D
 from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 
-# 1. a sender that went silent in the middle of an operation does not keep the buttons locked
+# a sender that went silent in the middle of an operation does not keep the buttons locked
 old = BT.status
 BT.status = BT.Status(1, 0, 0, 0, BT.BT_PAIR, BT.BTR_RUNNING, "aa:bb:cc:dd:ee:ff", 100.0)
 check(BT.any_busy(101.0) and BT.busy_op("aa:bb:cc:dd:ee:ff", 101.0) == BT.BT_PAIR, "bt: a fresh running operation is busy")
@@ -18,7 +18,7 @@ check(not BT.any_busy(100.0 + BT.STALE_S + 1) and BT.busy_op("aa:bb:cc:dd:ee:ff"
       "bt: a stale running operation is not busy")
 BT.status = old
 
-# 2. apply_tv retries active_sources() after an OSError instead of aborting the TV switch
+# apply_tv retries active_sources() after an OSError instead of aborting the TV switch
 calls = {"n": 0}
 def flaky():
     calls["n"] += 1

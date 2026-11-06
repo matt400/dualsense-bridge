@@ -6,7 +6,7 @@ from proto import T_STATE, T_INFO, T_CLICK, T_IDENT, T_CMD, CMD_POWER_OFF, RTT_N
 
 from chk import ok
 
-# ---------- 1. kształtowanie ----------
+# ---------- shaping ----------
 assert SH.shape_stick(200, 50, {}) == (200, 50)
 t = SH.normalize_tuning({"left": {"dz": 0.1}})["left"]
 assert SH.shape_stick(128 + 10, 128, t) == (128, 128)                 # w strefie martwej
@@ -18,7 +18,7 @@ assert abs(SH.unit(SH.shape_stick(128 + 64, 128, tc)[0]) - 0.25) < 0.01
 ta = SH.normalize_tuning({"right": {"anti": 0.2}})["right"]
 assert abs(SH.unit(SH.shape_stick(129, 128, ta)[0]) - 0.2) < 0.02     # minimalne wychylenie -> 20%
 to = SH.normalize_tuning({"left": {"outer": 0.8}})["left"]
-assert SH.shape_stick(128 + 104, 128, to)[0] == 255                    # 82% -> pełne
+assert SH.shape_stick(128 + 104, 128, to)[0] == 255                    # 82% -> full
 assert SH.normalize_tuning({"left": {"dz": 0.5, "outer": 0.5}})["left"]["outer"] == 0.55
 tt = SH.normalize_tuning({"l2": {"dz": 50, "max": 200}})["l2"]
 assert [SH.shape_trigger(v, tt) for v in (0, 40, 50, 125, 200, 255)] == [0, 0, 0, 128, 255, 255]
@@ -28,25 +28,25 @@ g = SH.normalize_gyro({"mode": "stick", "hold": "r1", "sens": 99}, ("always", "r
 assert g["sens"] == 5.0 and g["hold"] == "r1"
 assert SH.normalize_gyro({"mode": "bogus"}, ("always",)) == {}
 assert SH.normalize_gyro({"mode": "mouse", "hold": "nope"}, ("always",))["hold"] == "always"
-ok("kształtowanie gałek / spustów, normalizacja gyro")
+ok("stick / trigger shaping, gyro normalization")
 
-# ---------- 2. profile i magazyn ----------
-p = rx_buttons.normalize_profile({"cross": "circle"})                 # stary płaski format
+# ---------- profiles and the store ----------
+p = rx_buttons.normalize_profile({"cross": "circle"})                 # the old flat format
 assert p["buttons"] == {"cross": "circle"} and p["tuning"] == {} and p["gyro"] == {}
 p = rx_buttons.normalize_profile({"buttons": {}, "tuning": {"left": {"dz": 0.1}}, "gyro": {"mode": "mouse"}})
 assert rx_buttons.profile_size(p) == 2
 base = S.profile_key(0)
 store.save(base, {"buttons": {"cross": "circle"}})
-store.save(base + "@game.exe", {})                                     # pusty profil gry też istnieje
+store.save(base + "@game.exe", {})                                     # an empty game profile exists too
 assert store.keys_for(base) == [base, base + "@game.exe"] and store.in_file(base + "@game.exe")
 data = json.load(open(C.REMAP_PATH))
 assert base + "@game.exe" in data["profiles"] and data["version"] == 3
 store2 = rx_buttons.RemapStore(C.REMAP_PATH)
 assert store2.keys_for(base) == [base, base + "@game.exe"]
 store.delete(base + "@game.exe"); assert store.keys_for(base) == [base]
-ok("profile: stary format, tuning+gyro, profile gier (zapis, odczyt, usuwanie)")
+ok("profiles: old format, tuning+gyro, game profiles (write, read, removal)")
 
-# ---------- 3. wybór profilu wg gry i ręcznie ----------
+# ---------- profile choice by game and by hand ----------
 store.save(base + "@elden.exe", {"buttons": {"square": "triangle"}})
 S.reload_profile(0)
 assert S.active[0] == base
@@ -55,65 +55,65 @@ assert S.remap_maps[0]["buttons"] == {"square": "triangle"}
 assert S.set_game("explorer.exe") == [0] and S.active[0] == base
 S.set_game("elden.exe")
 assert S.cycle_profile(0, 1) == base and S.cycle_profile(0, 1) == base + "@elden.exe" and S.cycle_profile(0, -1) == base
-assert S.set_game("other.exe") == [] and S.override[0] is None       # zmiana gry kasuje ręczny wybór
+assert S.set_game("other.exe") == [] and S.override[0] is None       # a game change clears the manual choice
 S.set_game(None)
-ok("profil wg gry na pierwszym planie, przełączanie ręczne")
+ok("profile by the game in the foreground, manual switching")
 
-# ---------- 4. gry: obserwator okna ----------
+# ---------- games: window watcher ----------
 import rx_games
 FG[0] = "elden.exe"; rx_games.poll_once()
 assert S.active[0] == base + "@elden.exe" and rx_games.recent == ["elden.exe"]
 FG[0] = "msedge.exe"; rx_games.poll_once()
-assert S.active[0] == base and rx_games.recent == ["elden.exe"]          # przeglądarka nie jest "grą"
+assert S.active[0] == base and rx_games.recent == ["elden.exe"]          # a browser is not a "game"
 FG[0] = None; rx_games.poll_once(); S.set_game(None)
-ok("obserwator okna: profil gry, lista ostatnich gier bez przeglądarek")
+ok("window watcher: game profile, list of recent games without browsers")
 
-# ---------- 5. skróty PS ----------
+# ---------- PS shortcuts ----------
 store.delete(base + "@elden.exe"); S.reload_profile(0)
 PS, SHARE = BIT[316], BIT[314]
 calls.clear()
-state(0)                         # pad już połączony (PS w pierwszym stanie po połączeniu to włączanie pada, nie skrót)
+state(0)                         # pad already connected (PS in the first state after connecting is the pad power-on, not a shortcut)
 state(0, mask=PS)
-assert not S.states[0]["mask"] & PS, "PS nie może iść do gry od razu"
+assert not S.states[0]["mask"] & PS, "PS must not reach the game at once"
 state(0, mask=0)
-assert S.states[0]["mask"] & PS, "krótkie PS -> impuls PS dla gry"
+assert S.states[0]["mask"] & PS, "short PS -> a PS pulse for the game"
 time.sleep(0.15)
-assert not S.states[0]["mask"] & PS, "impuls PS musi się skończyć"
-# PS + Share = zrzut, Share nie trafia do gry
+assert not S.states[0]["mask"] & PS, "the PS pulse has to end"
+# PS + Share = screenshot, Share does not reach the game
 state(0, mask=PS); state(0, mask=PS | SHARE); time.sleep(0.05)
 assert ("k", 0x5B, 0x2C) in calls and not S.states[0]["mask"] & SHARE
-state(0, mask=SHARE); assert not S.states[0]["mask"] & (SHARE | PS), "share wciąż trzymany po skrócie - stłumiony"
+state(0, mask=SHARE); assert not S.states[0]["mask"] & (SHARE | PS), "share still held after the shortcut - suppressed"
 state(0, mask=0); time.sleep(0.12)
-assert not S.states[0]["mask"] & PS, "po skrócie bez impulsu PS"
-# PS + d-pad: czułość i profil
+assert not S.states[0]["mask"] & PS, "after a shortcut no PS pulse"
+# PS + d-pad: sensitivity and profile
 s0 = M.sens[0]
 state(0, mask=PS); state(0, mask=PS, hat=(0, -1)); time.sleep(0.05)
-assert M.sens[0] > s0 and S.states[0]["hy"] == 0, "d-pad w skrócie nie idzie do gry"
+assert M.sens[0] > s0 and S.states[0]["hy"] == 0, "the d-pad in a shortcut does not reach the game"
 state(0, mask=PS, hat=(0, 0)); state(0, mask=PS, hat=(0, 1)); time.sleep(0.05)
 assert abs(M.sens[0] - s0) < 1e-3
 store.save(base + "@g2.exe", {}); state(0, mask=PS, hat=(0, 0)); state(0, mask=PS, hat=(1, 0)); time.sleep(0.05)
 assert S.active[0] == base + "@g2.exe"
-state(0, mask=0); state(0, hat=(1, 0)); assert S.states[0]["hx"] == 1, "d-pad po puszczeniu działa normalnie"
+state(0, mask=0); state(0, hat=(1, 0)); assert S.states[0]["hx"] == 1, "the d-pad works normally after release"
 state(0)
-# długie PS = Game Bar
+# long PS = Game Bar
 calls.clear(); state(0, mask=PS); time.sleep(C.PS_HOLD_S + 0.15); state(0, mask=0); time.sleep(0.12)
 assert ("k", 0x5B, 0x47) in calls and not any(S.states[0]["mask"] & PS for _ in [0])
-# PS + klik touchpada: zmiana trybu, bez impulsu PS
+# PS + touchpad click: mode change, no PS pulse
 mm = S.mouse_mode[0]
 state(0, mask=PS); feed(T_CLICK, 0, 1); feed(T_CLICK, 0, 0); state(0, mask=0); time.sleep(0.02)
 assert S.mouse_mode[0] != mm and not S.states[0]["mask"] & PS
-# ps_modifier wyłączony: PS od razu
+# ps_modifier off: PS at once
 C.PS_MODIFIER = False; state(0, mask=PS); assert S.states[0]["mask"] & PS; state(0); C.PS_MODIFIER = True
-ok("skróty PS: impuls, zrzut, czułość, profil, Game Bar, przełączanie trybu, wyłączanie modyfikatora")
+ok("PS shortcuts: pulse, screenshot, sensitivity, profile, Game Bar, mode switching, turning the modifier off")
 
-# ---------- 6. gyro ----------
+# ---------- gyro ----------
 store.save(base, {"gyro": {"mode": "stick", "hold": "r1", "sens": 1.0}}); S.override[0] = None; S.reload_profile(0)
-state(0, gyro=(0, -1024 * 75, 0))                                      # 75°/s yaw, bez R1
+state(0, gyro=(0, -1024 * 75, 0))                                      # 75°/s yaw, no R1
 assert S.states[0]["rx"] == 128 and not S.states[0]["gyro_on"]
-state(0, mask=BIT[311], gyro=(0, -1024 * 75, 0))                       # z R1: połowa wychylenia w prawo
+state(0, mask=BIT[311], gyro=(0, -1024 * 75, 0))                       # with R1: half deflection to the right
 assert 185 < S.states[0]["rx"] < 196 and S.states[0]["gyro_on"], S.states[0]["rx"]
 state(0, mask=BIT[311], gyro=(0, -1024 * 75, 0), sticks=(128, 128, 255, 128))
-assert S.states[0]["rx"] == 255, "suma z gałką ograniczona do koła"
+assert S.states[0]["rx"] == 255, "the sum with the stick limited to the circle"
 store.save(base, {"gyro": {"mode": "mouse", "sens": 1.0}}); S.reload_profile(0)
 import rx_gyro
 calls.clear()
@@ -122,51 +122,51 @@ state(0, gyro=(0, -1024 * 100, 0))                                     # 100°/s
 time.sleep(0.3); state(0); time.sleep(0.05)
 moved = sum(c[2] for c in calls if c[0] == "m" and c[1] == 1)
 assert 230 < moved < 330, moved                                       # ~0.3 s * 1000 px/s
-n = len(calls); time.sleep(0.1); assert len(calls) == n, "bez obrotu kursor stoi"
-ok(f"gyro: gałka z aktywacją R1, ograniczenie do koła, mysz ({moved} px w 0.3 s)")
+n = len(calls); time.sleep(0.1); assert len(calls) == n, "no rotation, the cursor stands still"
+ok(f"gyro: stick with R1 activation, limited to the circle, mouse ({moved} px in 0.3 s)")
 store.save(base, {}); S.reload_profile(0)
 
-# ---------- 7. info, statystyki łącza, polecenia ----------
+# ---------- info, link stats, commands ----------
 feed(T_INFO, 0, 12, 540, 538)
 assert S.info[0][:3] == (1.2, 540, 538)
 feed(T_INFO, 0, RTT_NONE, 0, 0); assert S.info[0][0] is None
 ls = N.LinkStats(2)
-for sq in [10, 11, 12, 14, 15, 15, 13, 20]:     # zgubione: 16..19 (4), 13 spóźniony
+for sq in [10, 11, 12, 14, 15, 15, 13, 20]:     # lost: 16..19 (4), 13 late
     ls.packet(sq)
 ls.states[0] = 5; ls.t0 -= 1.0; ls.tick(time.monotonic())
 assert abs(S.link_loss - 100 * (1 - 5 / 10)) < 1e-6 and S.pps[0] > 4, (S.link_loss, S.pps)
 N.send_repeat = ORIG_SEND_REPEAT
 sent.clear(); N.send_cmd(0, CMD_POWER_OFF)
-assert len(sent) == 1, "pierwsza kopia od razu, powtórki później"
+assert len(sent) == 1, "the first copy at once, repeats later"
 time.sleep(N.REPEAT_DELAYS[1] + 0.05)
 assert len(sent) == 3 and all(x[0] == T_CMD and x[1] == 0 for x in sent)
-assert len({x[3] for x in sent}) == 1, "ten sam pakiet (jeden numer) - nadajnik wykona polecenie raz"
-ok("pakiet info, utrata pakietów z numerów sekwencyjnych, polecenie wyłączenia")
+assert len({x[3] for x in sent}) == 1, "the same packet (one number) - the sender runs the command once"
+ok("info packet, packet loss from sequence numbers, power-off command")
 
-# ---------- 8. potwierdzenia na padzie ----------
+# ---------- confirmations on the pad ----------
 fsent = []
 S.alive[0] = True
 th = threading.Thread(target=F.feedback_thread, args=(lambda i, v: fsent.append((time.monotonic(), i, v)),), daemon=True)
 th.start(); time.sleep(0.05)
-assert all(v == (0, 0, *C.IDLE_RGB) for _, _, v in fsent), ("bez gry i potwierdzeń tylko kolor domyślny (pad nie zostaje ze starym kolorem), bez wibracji", fsent)
+assert all(v == (0, 0, *C.IDLE_RGB) for _, _, v in fsent), ("without a game and confirmations only the default colour (the pad does not keep the old colour), no rumble", fsent)
 n0 = len(fsent)
 F.pulse(0, "mouse"); time.sleep(0.35)
 vals = [v for _, _, v in fsent[n0:]]
 assert vals[0] == (0, 150, 0, 90, 255) and vals[-1] == (0, 0, *C.IDLE_RGB), vals
-S.game = "game.exe"                    # kolor z PC obowiązuje tylko w grze
+S.game = "game.exe"                    # the PC colour applies only in a game
 F.fb[0].update(set=True, rgb=True, small=10, large=20, r=1, g=2, b=3, t=time.monotonic()); F.fb_event.set(); time.sleep(0.05)
 F.pulse(0, "up"); time.sleep(0.2)
 vals = [v for _, _, v in fsent]
 assert (160, 0, 1, 2, 3) in vals and vals[-1] == (10, 20, 1, 2, 3), vals[-3:]
-ok("potwierdzenia: impuls nałożony na kolor gry, powrót do koloru gry / bezczynnego")
+ok("confirmations: pulse over the game colour, back to the game / idle colour")
 F.fb[0]["t"] = time.monotonic()
 for exe, want in (("steam.exe", C.IDLE_RGB), ("explorer.exe", C.IDLE_RGB), ("game.exe", (1, 2, 3)), (None, C.IDLE_RGB)):
     S.game = exe; F.fb_event.set(); time.sleep(0.05)
     assert fsent[-1][2][2:] == tuple(want), (exe, fsent[-1])
 F.fb[0].update(small=0, large=0)
-ok("kolor z PC (Steam) poza grą pominięty - własny kolor; w grze kolor gry; powrót do gry = od razu kolor gry")
+ok("PC colour (Steam) outside a game skipped - own colour; in a game the game colour; back in the game = the game colour at once")
 
-# ---------- 9. raport DS4 i DSU nadal działają ----------
+# ---------- DS4 and DSU reports still work ----------
 import rx_report, rx_dsu
 state(0, mask=BIT[304]); rep = rx_report.build_report(S.states[0], 1, False); assert len(rep) == 63 and rep[4] & 0x20
 pkt = rx_dsu.build_data_packet(0, S.states[0], 1); assert len(pkt) == 100 and pkt[37] == 0x40
@@ -181,5 +181,5 @@ except (TimeoutError, BlockingIOError) as e:
     _err = e
 assert _sk.gettimeout() is None and _err is not None and 0.05 < time.monotonic() - _t0 < 1.0, (_sk.gettimeout(), _err)
 _sk.close()
-ok("gniazdo odbioru: limit czasu w jądrze (SO_RCVTIMEO), bez select() przed każdym pakietem")
+ok("receive socket: a timeout in the kernel (SO_RCVTIMEO), no select() before every packet")
 print("RECEIVER CORE OK")

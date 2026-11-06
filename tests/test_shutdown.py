@@ -1,4 +1,4 @@
-"""Ctrl+C / SIGTERM: pad musi wysłać 'bye' zanim gniazdo zostanie zamknięte."""
+"""Ctrl+C / SIGTERM: the pad must send 'bye' before the socket is closed."""
 import asyncio, sys, socket
 sys.path.insert(0, sys.argv[1])
 sys.path.insert(1, sys.argv[1] + "/../common")
@@ -28,7 +28,7 @@ async def runner():
     c = Ctrl(0, "aa:bb:cc:dd:ee:ff", Dev(), None, None); state.active[c.key] = c
     t = asyncio.create_task(sup.run_ctrl(c)); state.bg_tasks.add(t); t.add_done_callback(state.bg_tasks.discard)
     await asyncio.sleep(0.3)
-    task.cancel()                      # jak SIGTERM / Ctrl+C
+    task.cancel()                      # like SIGTERM / Ctrl+C
     try:
         await task
     except asyncio.CancelledError:
@@ -41,5 +41,5 @@ try:
         if p: types.append(p[0])
 except TimeoutError:
     pass
-check(types.count(T_BYE) == 1 + len(net.REPEAT_DELAYS), f"bye z powtórkami przy zamykaniu nadajnika: {types.count(T_BYE)}; gniazdo zamknięte: {net.sock is None}")
+check(types.count(T_BYE) == 1 + len(net.REPEAT_DELAYS), f"bye with repeats when the sender closes: {types.count(T_BYE)}; socket closed: {net.sock is None}")
 sys.exit(1 if fails else 0)

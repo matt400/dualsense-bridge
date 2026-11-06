@@ -17,7 +17,7 @@ def mode(path):
 TMP = tempfile.mkdtemp()
 os.umask(0o022)                                   # the usual umask: a fresh file would be 0644
 
-# ---------- 1. write_file keeps the permissions of the file it replaces ----------
+# ---------- write_file keeps the permissions of the file it replaces ----------
 for want in (0o600, 0o640, 0o664):
     path = os.path.join(TMP, f"f{want:o}.txt")
     with open(path, "w") as f:
@@ -30,7 +30,7 @@ proto.write_file(path, b"bytes")
 check(open(path, "rb").read() == b"bytes" and mode(path) == 0o644, "a new file gets the default permissions")
 check(not [n for n in os.listdir(TMP) if n.endswith(".tmp")], "no .tmp left behind")
 
-# ---------- 2. config migration: sender.toml and its backup stay private ----------
+# ---------- config migration: sender.toml and its backup stay private ----------
 toml = os.path.join(TMP, "sender.toml")
 with open(toml, "w") as f:
     f.write('host = "192.168.1.4"\nkey = "SECRETKEY"\npad_min_dt = 0.004\n')
@@ -44,7 +44,7 @@ check(mode(toml) == 0o600, f"sender.toml stays 0600 after the migration ({mode(t
 check(mode(toml + ".bak") == 0o600 and "SECRETKEY" in open(toml + ".bak").read(),
       f"sender.toml.bak is 0600 too, also when an older wide one existed ({mode(toml + '.bak'):o})")
 
-# ---------- 3. a key in a readable config file is reported ----------
+# ---------- a key in a readable config file is reported ----------
 def start(path):
     out = io.StringIO()
     with contextlib.redirect_stdout(out):

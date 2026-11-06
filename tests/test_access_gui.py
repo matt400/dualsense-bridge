@@ -1,6 +1,6 @@
-"""Okno: panel trybu dostępności (zakładka Dostępność edytora profilu) - przełącznik per pad, suwaki z zapisem, pierścień zasięgu na podglądzie gałek,
-kreator "Dostosuj do ręki" (propozycje trafiają do suwaków i włączają tryb), "Przywróć zalecane", komunikaty o porażce,
-czyszczenie i przełączanie padów."""
+"""Window: accessibility mode panel (Dostępność tab of the profile editor) - per-pad switch, sliders that save, range ring on the stick preview,
+the "Dostosuj do ręki" wizard (proposals go into the sliders and turn the mode on), "Przywróć zalecane", failure messages,
+clearing and switching pads."""
 import math, os, sys
 sys.path.insert(0, os.path.dirname(__file__))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -31,7 +31,7 @@ def circle(r, n=240):
 
 
 def run_wizard(ap, rim, rest=(128, 128, 130, 127)):
-    """Przeprowadza kreator na sztucznym czasie: spoczynek, gotowość, okrążenie gałką po promieniu rim."""
+    """Runs the wizard on fake time: rest, ready, a circle with the stick at radius rim."""
     t = ap.wiz._t0
     state(0, sticks=rest); ap.tick(t + D.SETTLE_S); state(0, sticks=rest); ap.tick(t + D.SETTLE_S + D.MEASURE_S)
     t += D.SETTLE_S + D.MEASURE_S
@@ -50,29 +50,29 @@ win = rx_qt.create_window(os.path.join(TMP, "ui.ini")); win.resize(1180, 900); w
 win.activateWindow(); win.tabs.setCurrentWidget(win.access_scroll); pump()
 panel = win.test_panel
 ap = win.access_page
-assert win.tabs.tabPosition() == QTabWidget.TabPosition.West, "zakładki edytora pionowo po lewej"
+assert win.tabs.tabPosition() == QTabWidget.TabPosition.West, "editor tabs vertical on the left"
 assert [win.tabs.tabText(i) for i in range(win.tabs.count())] == ["Wybrane", "Wibracje", "Gyro", "Dostępność", "Zmiany"]
-assert not hasattr(panel, "access") and ap.isVisible(), "panel dostępności jest w zakładce, nie w widoku Test"
+assert not hasattr(panel, "access") and ap.isVisible(), "accessibility panel is in the tab, not in the Test view"
 
-# ---------- przełącznik i suwaki ----------
+# ---------- switch and sliders ----------
 assert not ap.on.isChecked() and ap.sl["outer"].value() == 100 and not ap.restore.isEnabled() and not ap.clear_btn.isVisible()
 ap.sl["outer"].slider.setValue(30)                                # 40 + 30 = 70 %
-assert ap.sl["outer"].value() == 70 and P.access(0) == {}, "zapis dopiero po chwili od ostatniego ruchu"
+assert ap.sl["outer"].value() == 70 and P.access(0) == {}, "saved only a moment after the last move"
 pump(450)
-assert P.access(0)["right"]["outer"] == 0.7 and "on" not in P.access(0), "suwak zapisał, tryb dalej wyłączony"
+assert P.access(0)["right"]["outer"] == 0.7 and "on" not in P.access(0), "slider saved, mode still off"
 state(0, sticks=(128, 128, 220, 128))
-assert S.states[0]["rx"] == 220, "wyłączony tryb = gra dostaje gałkę bez zmian"
-assert panel.scope.reach == {}, "bez włączenia nie ma pierścienia zasięgu"
+assert S.states[0]["rx"] == 220, "mode off = the game gets the stick unchanged"
+assert panel.scope.reach == {}, "no range ring until turned on"
 ap.on.setChecked(True); pump()
-assert P.access(0)["on"] is True and S.states[0]["rx"] == 255, "włączony: 70% wychylenia = pełne w grze"
+assert P.access(0)["on"] is True and S.states[0]["rx"] == 255, "on: 70% deflection = full in game"
 assert panel.scope.reach == {"right": 0.7} and ap.clear_btn.isVisible()
 ap.which.setCurrentIndex(1); ap.which.activated.emit(1)
-assert ap.stick == "left" and ap.sl["outer"].value() == 100, "suwaki pokazują wybraną gałkę"
+assert ap.stick == "left" and ap.sl["outer"].value() == 100, "sliders show the chosen stick"
 ap.sl["dz"].slider.setValue(8); pump(450)
-assert P.access(0)["left"]["dz"] == 0.08 and P.access(0)["right"]["outer"] == 0.7, "druga gałka zostaje"
+assert P.access(0)["left"]["dz"] == 0.08 and P.access(0)["right"]["outer"] == 0.7, "the other stick stays"
 ap.which.setCurrentIndex(0); ap.which.activated.emit(0)
 assert ap.stick == "right" and ap.sl["outer"].value() == 70
-ok("panel: suwaki zapisują się z opóźnieniem, przełącznik włącza działanie, pierścień zasięgu na podglądzie, gałki niezależne")
+ok("panel: sliders save with a delay, the switch turns the effect on, range ring on the preview, sticks independent")
 
 # ---------- kreator ----------
 sent.clear()
@@ -80,59 +80,59 @@ ap.choice.set_data("right")
 QTest.mouseClick(ap.start, Qt.MouseButton.LeftButton); pump()
 assert ap.wiz is not None and cmds() == [(CMD_RAW_STICKS, D.RAW_S)] * 3 and ap.bar.isVisible() and ap.start.text() == "Przerwij"
 assert "mierzę dryf" in ap.msg.text()
-assert S.states[0]["blocked"], "kreator blokuje wyjście do gry (kręcenie gałką nie rusza gry)"
+assert S.states[0]["blocked"], "wizard locks the game output (circling the stick does not move the game)"
 run_wizard(ap, 0.62)
-assert not S.states[0]["blocked"], "po kreatorze gra dostaje pad z powrotem"
+assert not S.states[0]["blocked"], "after the wizard the game gets the pad back"
 assert ap.wiz is None and not ap.bar.isVisible() and ap.start.text() == "Dostosuj do ręki"
 cfg = P.access(0)
 assert cfg["on"] is True and 0.55 <= cfg["right"]["outer"] <= 0.6 and cfg["right"]["dz"] >= D.MIN_DZ, cfg
 assert "✓" in ap.msg.text() and "Prawa gałka" in ap.msg.text() and cmds()[-1] == (CMD_RAW_STICKS, 0)
 assert ap.sl["outer"].value() == round(cfg["right"]["outer"] * 100) and ap.restore.isEnabled(), "propozycja w suwakach"
-assert cfg["left"]["dz"] == 0.08, "kreator dla prawej gałki nie rusza lewej"
+assert cfg["left"]["dz"] == 0.08, "wizard for the right stick does not touch the left one"
 proposal = ap.sl["outer"].value()
-ap.sl["outer"].slider.setValue(50); pump(450)                       # ręczna zmiana po kreatorze
-assert P.access(0)["right"]["outer"] == 0.9, "dalej można zmienić ręcznie"
+ap.sl["outer"].slider.setValue(50); pump(450)                       # manual change after the wizard
+assert P.access(0)["right"]["outer"] == 0.9, "can still be changed by hand"
 QTest.mouseClick(ap.restore, Qt.MouseButton.LeftButton); pump()
-assert ap.sl["outer"].value() == proposal and P.access(0)["right"]["outer"] == proposal / 100, "Przywróć zalecane"
-ok("kreator: propozycja trafia do suwaków i włącza tryb, ręczna zmiana możliwa, Przywróć zalecane wraca do wyniku")
+assert ap.sl["outer"].value() == proposal and P.access(0)["right"]["outer"] == proposal / 100, "Restore recommended"
+ok("wizard: the proposal goes into the sliders and turns the mode on, manual change possible, Restore recommended goes back to the result")
 
-# porażki i przerwanie
+# failures and abort
 QTest.mouseClick(ap.start, Qt.MouseButton.LeftButton); pump()
 run_wizard(ap, 0.62, rest=(128, 128, 200, 128))
-assert ap.wiz is None and "ruszała" in ap.msg.text() and P.access(0)["right"]["outer"] == proposal / 100, "porażka nie zmienia ustawień"
+assert ap.wiz is None and "ruszała" in ap.msg.text() and P.access(0)["right"]["outer"] == proposal / 100, "a failure does not change the settings"
 QTest.mouseClick(ap.start, Qt.MouseButton.LeftButton); pump()
 QTest.mouseClick(ap.start, Qt.MouseButton.LeftButton); pump()
-assert ap.wiz is None and not ap.msg.isVisible() and S.probe[0] is None and cmds()[-1] == (CMD_RAW_STICKS, 0), "Przerwij sprząta"
+assert ap.wiz is None and not ap.msg.isVisible() and S.probe[0] is None and cmds()[-1] == (CMD_RAW_STICKS, 0), "Abort cleans up"
 ap.choice.set_data("both")
 QTest.mouseClick(ap.start, Qt.MouseButton.LeftButton); pump()
 assert ap.wiz.steps[-1] == ("reach", "right") and len(ap.wiz.steps) == 5
 S.alive[0] = False
 ap.tick(0.0)
-assert ap.wiz is None and "niepodłączony" in ap.msg.text() and S.probe[0] is None, "pad zniknął - kreator przerwany"
+assert ap.wiz is None and "niepodłączony" in ap.msg.text() and S.probe[0] is None, "pad gone - wizard aborted"
 S.alive[0] = True
-ok("kreator: porażka zostawia ustawienia, Przerwij sprząta, obie gałki = 5 kroków, zniknięcie pada przerywa")
+ok("wizard: a failure keeps the settings, Abort cleans up, both sticks = 5 steps, a vanished pad aborts")
 
-# zmiana zakładki przerywa kreator i oddaje pad grze; zaległa zmiana suwaka zostaje zapisana
+# switching the tab aborts the wizard and gives the pad back to the game; a pending slider change is saved
 QTest.mouseClick(ap.start, Qt.MouseButton.LeftButton); pump()
 assert ap.wiz is not None and S.states[0]["blocked"]
 win.tabs.setCurrentWidget(win.gyro_page); pump()
-assert ap.wiz is None and not S.states[0]["blocked"] and S.probe[0] is None, "inna zakładka przerywa kreator"
+assert ap.wiz is None and not S.states[0]["blocked"] and S.probe[0] is None, "another tab aborts the wizard"
 win.tabs.setCurrentWidget(win.access_scroll); pump()
 ap.sl["outer"].slider.setValue(45)
 win.tabs.setCurrentWidget(win.gyro_page); pump(10)
-assert round(P.access(0)["right"]["outer"] * 100) == 40 + 45, "zmiana zakładki zapisuje zaległą zmianę suwaka"
+assert round(P.access(0)["right"]["outer"] * 100) == 40 + 45, "switching the tab saves the pending slider change"
 win.tabs.setCurrentWidget(win.access_scroll); pump()
 proposal = ap.sl["outer"].value()
-ok("zakładki: wyjście z Dostępności przerywa kreator, zdejmuje blokadę i zapisuje suwak")
+ok("tabs: leaving Dostępność aborts the wizard, removes the lock and saves the slider")
 
-# ---------- czyszczenie i przełączanie padów ----------
+# ---------- clearing and switching pads ----------
 win.select_pad(1); pump()
-assert ap.slot == 1 and not ap.on.isChecked() and ap.sl["outer"].value() == 100 and P.access(1) == {}, "ustawienia są per pad"
+assert ap.slot == 1 and not ap.on.isChecked() and ap.sl["outer"].value() == 100 and P.access(1) == {}, "settings are per pad"
 win.select_pad(0); pump()
 assert ap.slot == 0 and ap.on.isChecked() and ap.sl["outer"].value() == proposal
 ap.clear_btn.click(); ap.clear_btn.click(); pump()
 assert P.access(0) == {} and not ap.on.isChecked() and not ap.clear_btn.isVisible() and panel.scope.reach == {}
 state(0, sticks=(128, 128, 220, 128))
-assert S.states[0]["rx"] == 220, "po wyczyszczeniu gra znów dostaje gałkę bez zmian"
+assert S.states[0]["rx"] == 220, "after clearing the game gets the stick unchanged again"
 win.seg.buttons["out"].click(); pump()
-ok("czyszczenie i przełączanie: ustawienia per pad, Wyczyść przywraca zwykłą pracę gałek")
+ok("clearing and switching: settings per pad, Clear restores normal stick behaviour")

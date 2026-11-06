@@ -20,11 +20,11 @@ def run(evs):
 mouse = lambda: [v for _, t, v in out if t == 4]
 clicks = lambda: [v[0] for _, t, v in out if t == 3]
 
-# tap 1 palcem: 3 pakiety, ten sam numer, bit0
+# one-finger tap: 3 packets, the same number, bit0
 run(frame(0, *F(0, 1, 900, 500)) + frame(0.004, *M(0, 902, 501)) + frame(0.05, *L(0)))
 taps = [m for m in mouse() if m[2] & 5]
 assert len(taps) == 3 and len({m[2] for m in taps}) == 1 and taps[0][2] & 1 and taps[0][2] >> 4 == 1, taps
-assert not [m for m in mouse() if not m[2] & 5], "tap nie może ruszać kursorem"
+assert not [m for m in mouse() if not m[2] & 5], "a tap must not move the cursor"
 print("tap 1 palcem:", taps)
 # tap 2 palcami -> bit2
 run(frame(0, *F(0, 2, 500, 500), *F(1, 3, 700, 500)) + frame(0.05, *L(0), *L(1)))
@@ -38,17 +38,17 @@ def click_seq(two):
     run(evs); return clicks()
 c2, c1 = click_seq(True), click_seq(False)
 assert 2 in c2 and 1 not in c2 and c2[-1] == 0 and 1 in c1 and c1[-1] == 0, (c2, c1)
-assert not [m for m in mouse() if m[2] & 5], "klik fizyczny nie może dawać tapu"
+assert not [m for m in mouse() if m[2] & 5], "a physical click must not give a tap"
 print("klik fizyczny: 2 palce ->", sorted(set(c2)), " 1 palec ->", sorted(set(c1)))
 # przewijanie 2 palcami
 run(frame(0, *F(0, 6, 500, 500), *F(1, 7, 700, 500)) + sum((frame(0.008, *M(0, 500, 500 + i*10), *M(1, 700, 500 + i*10)) for i in range(1, 8)), []) + frame(0.008, *L(0), *L(1)))
 assert mouse() and all(m[2] == 2 for m in mouse()), mouse()
-print("scroll OK:", len(mouse()), "pakietów")
+print("scroll OK:", len(mouse()), "packets")
 
-# recykling ścieżki eventN: nie-pad zapamiętany, potem pad na tej samej ścieżce
+# eventN path reuse: a non-pad remembered, then a pad on the same path
 d = tempfile.mkdtemp(); p = os.path.join(d, "event5"); open(p, "w").close()
 nid = sup._node_id(p); sup._not_pads[p] = nid
 os.remove(p); time.sleep(0.01); open(p, "w").close()
-assert sup._node_id(p) != nid, "nowy węzeł musi mieć inny identyfikator"
-print("recykling ścieżki: nowy węzeł rozpoznany")
+assert sup._node_id(p) != nid, "a new node must have another id"
+print("path reuse: the new node recognized")
 print("TOUCHPAD OK")

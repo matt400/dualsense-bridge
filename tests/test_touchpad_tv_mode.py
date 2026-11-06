@@ -1,5 +1,5 @@
-"""Receiver: regresje z siódmego przeglądu - klik touchpada puszczony w widoku Test nie zostaje wciśnięty w grze,
-licznik błędów wątku zerowany po spokojnej pracy, tryb TV: puszczenie PS przed przyciskiem skrótu to nie nawigacja.
+"""Receiver: regressions from the seventh review - a touchpad click released in the Test view does not stay pressed in the game,
+the thread error counter reset after quiet operation, TV mode: releasing PS before the shortcut button is not navigation.
     python3 tests/test_touchpad_tv_mode.py receiver"""
 import contextlib, io, os, sys, time, types
 sys.path.insert(0, os.path.dirname(__file__))
@@ -11,34 +11,34 @@ from proto import T_CLICK
 from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 
-# ---------- klik touchpada a blokada wyjścia (widok Test) ----------
-S.mouse_mode[0] = False                        # touchpad jako dotyk DS4 (klik idzie do gry)
+# ---------- touchpad click and the output lock (Test view) ----------
+S.mouse_mode[0] = False                        # touchpad as DS4 touch (the click goes to the game)
 state(0)
 feed(T_CLICK, 0, 1)
-check(S.states[0]["tp"] and S.output(0)["tp"], "klik touchpada wciśnięty - gra go widzi")
+check(S.states[0]["tp"] and S.output(0)["tp"], "touchpad click pressed - the game sees it")
 S.set_blocked(0, True)
-check(not S.output(0)["tp"], "widok Test: gra dostaje neutralny stan")
+check(not S.output(0)["tp"], "Test view: the game gets a neutral state")
 feed(T_CLICK, 0, 0)                            # puszczony w trakcie testu
 S.set_blocked(0, False)
-check(not S.output(0)["tp"], "po teście klik puszczony w trakcie nie zostaje wciśnięty w grze")
+check(not S.output(0)["tp"], "after the test a click released meanwhile does not stay pressed in the game")
 feed(T_CLICK, 0, 0)
-check(not S.output(0)["tp"], "powtórki 'puszczony' z nadajnika niczego nie zmieniają")
+check(not S.output(0)["tp"], "'released' repeats from the sender change nothing")
 S.set_blocked(0, True)
 feed(T_CLICK, 0, 1)
 S.set_blocked(0, False)
-check(S.output(0)["tp"], "klik trzymany przez koniec testu idzie na żywo (jak przyciski i gałki)")
+check(S.output(0)["tp"], "a click held through the end of the test goes live (like buttons and sticks)")
 feed(T_CLICK, 0, 0)
-check(not S.output(0)["tp"], "... i puszcza się normalnie")
+check(not S.output(0)["tp"], "... and releases normally")
 S.mouse_mode[0] = True
 S.set_blocked(0, True)
 feed(T_CLICK, 0, 1)
 S.set_blocked(0, False)
-check(not S.states[0]["tp"], "tryb myszy: blokada nie ustawia kliku dotyku DS4")
+check(not S.states[0]["tp"], "mouse mode: the lock does not set the DS4 touch click")
 feed(T_CLICK, 0, 0)
 S.mouse_mode[0] = False
 
 
-# ---------- wątek receivera: licznik błędów zeruje się po spokojnej pracy ----------
+# ---------- receiver thread: the error counter resets after quiet operation ----------
 S.STABLE_S = 0.05
 calls = [0]
 
@@ -46,10 +46,10 @@ calls = [0]
 def flaky():
     calls[0] += 1
     if calls[0] <= 2:
-        raise RuntimeError(f"błąd {calls[0]}")
+        raise RuntimeError(f"error {calls[0]}")
     if calls[0] == 3:
-        time.sleep(0.08)                       # dłużej niż STABLE_S bez błędu
-        raise RuntimeError("rzadki błąd")
+        time.sleep(0.08)                       # longer than STABLE_S without an error
+        raise RuntimeError("rare error")
 
 buf = io.StringIO()
 t0 = time.monotonic()
@@ -57,15 +57,15 @@ with contextlib.redirect_stdout(buf):
     S.run_forever("test", flaky)
 log = buf.getvalue()
 check(log.count("thread error - restarting:\n") == 2 and "#3" not in log,
-      "błąd po spokojnej pracy liczony od nowa (pełny ślad, krótka przerwa)")
-check(time.monotonic() - t0 < 1.08, f"przerwy 0.2 + 0.4 + 0.2 s, nie 0.6 s za trzecim razem: {time.monotonic() - t0:.2f} s")
+      "an error after quiet operation counted from scratch (full trace, short pause)")
+check(time.monotonic() - t0 < 1.08, f"pauses 0.2 + 0.4 + 0.2 s, not 0.6 s the third time: {time.monotonic() - t0:.2f} s")
 
 
-# ---------- tryb TV: PS + przycisk to skrót, nie nawigacja (także po puszczeniu PS jako pierwszego) ----------
+# ---------- TV mode: PS + button is a shortcut, not navigation (also when PS is released first) ----------
 try:
     import rx_qt_tv
 except ImportError:
-    print("SKIP  tryb TV (brak PySide6)")
+    print("SKIP  TV mode (no PySide6)")
 else:
     from rx_buttons import BIT, BUTTON_CODES
     PS = BIT[BUTTON_CODES["ps"]]
@@ -90,24 +90,24 @@ else:
         nav.tick(t)
 
     step()
-    step(PS); step(PS, (1, 0))                 # PS + → = następny profil
-    step(0, (1, 0)); step(0, (1, 0))           # PS puszczone przed D-padem
+    step(PS); step(PS, (1, 0))                 # PS + → = next profile
+    step(0, (1, 0)); step(0, (1, 0))           # PS released before the D-pad
     step()
-    check(acts == [], f"PS + →, potem puszczone PS: bez kroku fokusu w oknie: {acts}")
+    check(acts == [], f"PS + →, then PS released: no focus step in the window: {acts}")
     step(PS); step(PS | CROSS); step(CROSS); step()
-    check(acts == [], f"PS + ✕ (akcja mastera), PS puszczone pierwsze: ✕ nie klika w oknie: {acts}")
+    check(acts == [], f"PS + ✕ (master action), PS released first: ✕ does not click in the window: {acts}")
     step(0, (1, 0)); step()
     check(acts == ["dpad_right"], f"samo → dalej przesuwa fokus: {acts}")
     acts.clear()
     step(0, (1, 0))
-    for _k in range(20):                        # przytrzymane -> powtórki
+    for _k in range(20):                        # held -> repeats
         step(0, (1, 0))
     n = len(acts)
     step(PS, (1, 0))
     for _k in range(20):
         step(PS, (1, 0))
-    check(n > 1 and len(acts) == n, f"PS dołożone do trzymanego kierunku zatrzymuje powtórki: {n} -> {len(acts)}")
+    check(n > 1 and len(acts) == n, f"PS added to a held direction stops the repeats: {n} -> {len(acts)}")
     step()
 
-print("WSZYSTKO OK" if not fails else f"BŁĘDY: {len(fails)}")
+print("ALL OK" if not fails else f"FAILURES: {len(fails)}")
 sys.exit(1 if fails else 0)

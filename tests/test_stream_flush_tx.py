@@ -14,7 +14,7 @@ out = []
 def emit(t, idx, *v): out.append((time.monotonic(), t, v))
 net.emit = emit; sender_ctrl.net.emit = emit
 syn = lambda: Ev(ec.EV_SYN, ec.SYN_REPORT, 0)
-def pad_script(n, step):      # drążek zmienia się co 1 ms
+def pad_script(n, step):      # the stick changes every 1 ms
     r = []
     for i in range(n):
         r += [(0.001, Ev(ec.EV_ABS, 0, 100 + (i % 50))), (0, syn())]

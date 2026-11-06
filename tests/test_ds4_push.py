@@ -12,7 +12,7 @@ from chk import check, fails, wait_for                                  # noqa: 
 connected = []
 real_pc = rx_console.pad_connected
 
-# ---------- błąd ViGEm nie udaje ponownego połączenia pada ----------
+# ---------- a ViGEm error does not pose as a pad reconnect ----------
 import threading, rx_ds4
 attempts = []
 class BrokenPad:
@@ -23,22 +23,22 @@ rx_ds4.vg.VDS4Gamepad = BrokenPad
 connected.clear()
 rx_console.pad_connected = lambda i, ident=False: connected.append(i)
 S.ignore_until[1] = 0.0
-S.want[0].clear()                                   # slot 0 nie czeka w kolejce (wait_turn)
+S.want[0].clear()                                   # slot 0 does not wait in the queue (wait_turn)
 from dataclasses import replace as _replace
-rx_settings.apply(_replace(rx_settings.cur, vpad=rx_settings.VpadConfig(fixed_slots=False)))   # bez zastępczego slotu 0
+rx_settings.apply(_replace(rx_settings.cur, vpad=rx_settings.VpadConfig(fixed_slots=False)))   # without the placeholder slot 0
 t = threading.Thread(target=rx_ds4.slot_thread, args=(1,), daemon=True)
 t.start()
 end = time.monotonic() + 2.4
 while time.monotonic() < end:
     state(1); time.sleep(0.05)
 rx_console.pad_connected = real_pc
-check(len(attempts) >= 2, f"ViGEm: kolejne próby utworzenia pada ({len(attempts)})")
-check(connected.count(1) == 1, f"błąd ViGEm nie jest nowym połączeniem pada (pad_connected {connected.count(1)}x)")
+check(len(attempts) >= 2, f"ViGEm: further attempts to create the pad ({len(attempts)})")
+check(connected.count(1) == 1, f"a ViGEm error is not a new pad connection (pad_connected {connected.count(1)}x)")
 S.want[1].clear(); S.stop.set(); S.wake[1].set(); t.join(3); S.stop.clear()
 
-# ---------- raport DS4 od razu w wątku sieci (bez przełączania na wątek slotu), seria zlana bez utraty ----------
+# ---------- DS4 report right on the network thread (no switch to the slot thread), a burst merged without loss ----------
 import threading, rx_ds4
-rx_settings.apply(_replace(rx_settings.cur, vpad=rx_settings.VpadConfig(fixed_slots=False)))   # mechanika jednego slotu
+rx_settings.apply(_replace(rx_settings.cur, vpad=rx_settings.VpadConfig(fixed_slots=False)))   # the mechanics of one slot
 reports = []
 class FastPad:
     def register_notification(self, cb): pass
@@ -60,26 +60,26 @@ me = threading.get_ident()
 t0 = time.perf_counter()
 state(0, sticks=(10, 128, 128, 128))
 check(reports and reports[0][0] == me and reports[0][2] == 10,
-      f"raport z wątku sieci, zanim obsługa pakietu wróciła: {[(r[0] == me, r[2]) for r in reports]}")
-for x in (20, 30, 40):                                    # seria szybsza niż pad_hz (1 ms)
+      f"report from the network thread before packet handling returned: {[(r[0] == me, r[2]) for r in reports]}")
+for x in (20, 30, 40):                                    # a burst faster than pad_hz (1 ms)
     state(0, sticks=(x, 128, 128, 128))
 time.sleep(0.05)
-check(reports[-1][2] == 40, f"seria szybsza niż pad_hz: ostatni stan dosłany przez wątek slotu: {[r[2] for r in reports]}")
-check(len(reports) <= 4, "seria zlana (nie więcej raportów niż zmian)")
+check(reports[-1][2] == 40, f"a burst faster than pad_hz: the last state sent later by the slot thread: {[r[2] for r in reports]}")
+check(len(reports) <= 4, "burst merged (no more reports than changes)")
 import random as _r
 rng = _r.Random(5); reports.clear(); seq = []
-for k in range(300):                                      # zmiany w nieregularnych odstępach wokół limitu pad_hz
+for k in range(300):                                      # changes at irregular intervals around the pad_hz limit
     v = 1 + k % 250
     state(0, sticks=(v, 128, 128, 128)); seq.append(v)
     time.sleep(rng.choice((0, 0, 0.0004, 0.0009, 0.0011, 0.002)))
 time.sleep(0.05)
 vals = [r[2] for r in reports]
 dups = sum(1 for a, b in zip(vals, vals[1:]) if a == b)
-check(dups == 0, f"bez zdublowanych raportów (push + wątek slotu): {dups} duplikatów na {len(vals)}")
-check(vals[-1] == seq[-1], "ostatni stan zawsze dochodzi")
+check(dups == 0, f"no duplicate reports (push + slot thread): {dups} duplicates out of {len(vals)}")
+check(vals[-1] == seq[-1], "the last state always gets through")
 S.want[0].clear(); S.wake[0].set(); t.join(2)
-check(rx_ds4.outs[0] is None and not S.plugged[0], "odłączenie: push nie używa już odłączonego pada")
-state(0, sticks=(50, 128, 128, 128))                      # po odłączeniu tylko budzi wątek slotu, bez wyjątku
+check(rx_ds4.outs[0] is None and not S.plugged[0], "detach: push no longer uses the detached pad")
+state(0, sticks=(50, 128, 128, 128))                      # after detach it only wakes the slot thread, no exception
 S.push = None
 
 sys.exit(1 if fails else 0)

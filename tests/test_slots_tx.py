@@ -1,4 +1,4 @@
-"""Nadajnik: stały przydział pad -> slot (slots.json)."""
+"""Sender: fixed pad -> slot assignment (slots.json)."""
 import json, os, sys, tempfile
 sys.path.insert(0, sys.argv[1])
 sys.path.insert(1, sys.argv[1] + "/../common")
@@ -8,7 +8,7 @@ TMP = tempfile.mkdtemp()
 C.SLOTS_FILE = os.path.join(TMP, "slots.json")
 import sender_state as state, sender_supervisor as sup
 
-# ---------- stały slot pada ----------
+# ---------- fixed pad slot ----------
 A, B, Cc = "aa:aa:aa:aa:aa:01", "bb:bb:bb:bb:bb:02", "cc:cc:cc:cc:cc:03"
 def fresh():
     state.active.clear(); state.slots.clear(); state.saved_slots = None
@@ -16,19 +16,19 @@ fresh()
 assert sup.pick_slot(B) == 0 and sup.pick_slot(A) == 1
 state.active.update({B: 1, A: 1})
 assert json.load(open(C.SLOTS_FILE)) == {B: 0, A: 1}
-fresh()                                                   # restart nadajnika: A włączony pierwszy
-assert sup.pick_slot(A) == 1, "A wraca na swój slot 1, mimo że połączył się pierwszy"
+fresh()                                                   # sender restart: A turned on first
+assert sup.pick_slot(A) == 1, "A gets back its slot 1, even though it connected first"
 state.active[A] = 1
 assert sup.pick_slot(B) == 0
 fresh(); state.active[A] = 1; state.slots[A] = 1
 assert sup.pick_slot(Cc) == 0, "nowy pad: wolny slot"
-assert json.load(open(C.SLOTS_FILE)) == {B: 0, A: 1}, "slot pożyczony od innego pada nie jest zapisywany - właściciel go zachowuje"
+assert json.load(open(C.SLOTS_FILE)) == {B: 0, A: 1}, "a slot borrowed from another pad is not stored - the owner keeps it"
 fresh(); state.active[Cc] = 0; state.slots[Cc] = 0; state.active[A] = 1; state.slots[A] = 1
-assert sup.pick_slot(B) is None, "brak wolnych slotów"
+assert sup.pick_slot(B) is None, "no free slots"
 fresh()
 assert sup.pick_slot("usb-0000:00:14.0-1/input3") == 0
-assert "usb-0000:00:14.0-1/input3" not in json.load(open(C.SLOTS_FILE)), "pad bez MAC nie jest zapamiętywany"
+assert "usb-0000:00:14.0-1/input3" not in json.load(open(C.SLOTS_FILE)), "a pad without a MAC is not remembered"
 open(C.SLOTS_FILE, "w").write("zepsuty"); fresh()
-assert sup.pick_slot(A) == 0, "uszkodzony slots.json -> zwykły przydział"
-print("OK   slots.json: ten sam pad = ten sam slot po restarcie, nowy pad bierze wolny")
+assert sup.pick_slot(A) == 0, "damaged slots.json -> plain assignment"
+print("OK   slots.json: the same pad = the same slot after a restart, a new pad takes a free one")
 print("PASS slots_tx")

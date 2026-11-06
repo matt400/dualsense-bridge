@@ -1,4 +1,4 @@
-"""Nadajnik: aktualizacja na polecenie receivera (git pull + restart), pakiet build z wersją, git jako właściciel repo."""
+"""Sender: update on the receiver's command (git pull + restart), the build packet with the version, git as the repo owner."""
 import asyncio, os, subprocess, sys, tempfile, types
 from unittest import mock
 sys.path.insert(0, sys.argv[1])
@@ -33,21 +33,21 @@ git(origin, "init", "-q", "-b", "main")
 commit(origin, "sender/sender_x.py", "a = 1\n", "Pierwsza wersja nadajnika")
 git(tmp, "clone", "-q", origin, work)
 
-# ---------- wersja ----------
+# ---------- version ----------
 h, ts, subject = gitupdate.git_version(work)
 assert len(h) == 7 and ts > 1_600_000_000 and subject == "Pierwsza wersja nadajnika", (h, ts, subject)
-assert gitupdate.git_version(tmp) == ("", 0, ""), "nie repozytorium -> pusta wersja"
+assert gitupdate.git_version(tmp) == ("", 0, ""), "not a repository -> empty version"
 U.ROOT = work
 U.init()
 sent = []
 net.emit = lambda t, i, *v: sent.append((t, i, *v))
 U.send_build()
 assert sent[-1] == (T_BUILD, 255, h.encode(), ts, 0) and BODY[T_BUILD].size == 12
-ok("wersja kodu (commit, czas, tytuł) i pakiet build")
+ok("code version (commit, time, title) and the build packet")
 
 
 async def main():
-    # ---------- aktualizacja: bez zmian, potem nowa wersja -> restart ----------
+    # ---------- update: no changes, then a new version -> restart ----------
     state.main_task = asyncio.get_running_loop().create_future()
     sent.clear()
     await U.run()
@@ -59,32 +59,32 @@ async def main():
     await U.run()
     assert [v[4] for v in sent][-1] == UPD_DONE and state.restart and state.main_task.cancelled(), sent
     assert open(os.path.join(work, "sender/sender_x.py")).read() == "a = 2\n"
-    ok("polecenie aktualizacji: stan 'trwa' -> wynik; nowy kod -> restart (main anulowany, potem execv)")
+    ok("update command: state 'in progress' -> result; new code -> restart (main cancelled, then execv)")
 
-    # ---------- powtórki polecenia (UDP 3x) są ignorowane ----------
+    # ---------- command repeats (UDP 3x) are ignored ----------
     state.restart = False
     calls = []
     real = gitupdate.git_pull
     U.gitupdate.git_pull = lambda root, **_k: calls.append(root) or (UPD_NO_CHANGE, "", "", "", [])
     await U.run()
-    assert not calls, "drugie polecenie w ciągu 30 s - nic"
+    assert not calls, "a second command within 30 s - nothing"
     U._last = 0.0
     sender_control.on_command(255, CMD_UPDATE, 0); sender_control.on_command(255, CMD_UPDATE, 0)
     await asyncio.sleep(0.3)
-    assert calls == [work], f"3 kopie polecenia = jedna aktualizacja: {calls}"
+    assert calls == [work], f"3 copies of the command = one update: {calls}"
     U.gitupdate.git_pull = real
-    ok("polecenie z receivera (idx 255) uruchamia jedną aktualizację mimo powtórek")
+    ok("a command from the receiver (idx 255) runs one update despite the repeats")
 
-    # ---------- folder bez gita ----------
+    # ---------- folder without git ----------
     U.ROOT, U._last = tmp, 0.0
     sent.clear()
     await U.run()
     assert sent[-1][4] == UPD_NOT_GIT and not state.restart
-    ok("folder nadajnika bez gita: stan NOT_GIT do receivera, bez restartu")
+    ok("sender folder without git: NOT_GIT state to the receiver, no restart")
 
 asyncio.run(main())
 
-# ---------- root uruchamia gita jako właściciel repozytorium ----------
+# ---------- root runs git as the repository owner ----------
 st = types.SimpleNamespace(st_uid=1000, st_gid=1000)
 with mock.patch("os.geteuid", return_value=0), mock.patch("os.stat", return_value=st), \
         mock.patch("gitupdate.ssh_command", return_value=None), \
@@ -95,5 +95,5 @@ assert kw["user"] == 1000 and kw["group"] == 1000 and kw["extra_groups"] == [] a
 with mock.patch("os.geteuid", return_value=1000):
     kw = gitupdate._git_process_kwargs(work)
 assert "user" not in kw and kw["env"]["GIT_TERMINAL_PROMPT"] == "0" and "BatchMode=yes" in kw["env"]["GIT_SSH_COMMAND"], kw
-ok("usługa (root): git jako właściciel repozytorium (bez grup roota); git nigdy nie czeka na hasło")
+ok("service (root): git as the repository owner (without root's groups); git never waits for a password")
 print("UPDATE TX OK")

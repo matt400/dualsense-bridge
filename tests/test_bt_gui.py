@@ -1,6 +1,6 @@
-"""Okno: Bluetooth nadajnika - kropka stanu w nagłówku, wysuwany panel (skan z odliczaniem, lista urządzeń z Sparuj /
-Połącz / Rozłącz / Zapomnij, włączanie adaptera, wynik operacji) i obsługa panelu samym padem w trybie TV (D-pad tylko
-po panelu, ✕ klika, ○ zamyka, fokus wraca na ikonę). Zrzut: tests/bt_drawer.png."""
+"""Window: sender Bluetooth - state dot in the header, slide-out panel (scan with a countdown, device list with Pair /
+Connect / Disconnect / Forget, turning the adapter on, operation result) and driving the panel with the pad alone in TV mode (D-pad only
+inside the panel, ✕ clicks, ○ closes, focus goes back to the icon). Screenshot: tests/bt_drawer.png."""
 import sys, os, time
 sys.path.insert(0, os.path.dirname(__file__))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -41,7 +41,7 @@ def bt_state(st=BTS_OK, flags=0, left=0, conn=1, op=0, res=0, mac=""):
 
 
 def bt_list(devs, st=BTS_OK, flags=0, left=0, op=0, res=0, mac=""):
-    """Runda listy jak z nadajnika: btstate z BTF_LIST, potem urządzenia."""
+    """A list round as from the sender: btstate with BTF_LIST, then the devices."""
     gen[0] += 1
     conn = sum(1 for _m, _n, _r, f in devs if f & BTD_CONNECTED)
     S.last_pkt = time.monotonic()
@@ -75,7 +75,7 @@ S.peer = ("127.0.0.1", 5005)
 win = rx_qt.create_window(os.path.join(TMP, "ui.ini")); win.resize(1180, 820); win.show(); activate(win)
 drawer = win.bt_drawer
 
-# ---------- kropka stanu w nagłówku ----------
+# ---------- state dot in the header ----------
 assert not RB.supported() and not drawer.is_open() and not drawer.isVisible()
 win.slow_tick()
 assert "brak danych" in win.bt_btn.toolTip()
@@ -88,7 +88,7 @@ bt_state(st=BTS_OFF); win.slow_tick()
 assert win.bt_btn.icon().cacheKey() == status_icon("warn").cacheKey()
 bt_state(st=BTS_NO_TOOL); win.slow_tick()
 assert win.bt_btn.icon().cacheKey() == status_icon("bad").cacheKey() and "busctl" in win.bt_btn.toolTip()
-ok("nagłówek: ikona Bluetooth z kropką (szara / zielona / niebieska przy skanie / żółta / czerwona) i opis stanu")
+ok("header: Bluetooth icon with a dot (grey / green / blue while scanning / yellow / red) and a state description")
 
 # ---------- panel: otwieranie, keepalive, lista ----------
 bt_list(DEVS)
@@ -96,28 +96,28 @@ rxenv.sent.clear()
 win.bt_btn.click(); pump(260)
 assert drawer.is_open() and drawer.isVisible() and drawer.scrim.isVisible()
 assert drawer.geometry().right() == win.centralWidget().width() - 1 and drawer.height() == win.centralWidget().height()
-assert (BT_LIST, 0, bytes(6)) in cmds(), "otwarty panel: nadajnik ma wysyłać listę"
+assert (BT_LIST, 0, bytes(6)) in cmds(), "open panel: the sender should send the list"
 rs = rows()
 assert [r.mac for r in rs] == [PAD2, PAD, PHONE]
 assert [r.btn.text() for r in rs] == ["Rozłącz", "Sparuj", "Połącz"]
-assert [r.forget.isVisible() for r in rs] == [False, False, True], "Zapomnij tylko przy sparowanym, niepołączonym"
+assert [r.forget.isVisible() for r in rs] == [False, False, True], "Forget only for a paired, unconnected device"
 assert rs[1].bars.n == 3 and rs[0].bars.n == 0 and "połączony" in rs[0].state.text() and "nowy" in rs[1].state.text()
 assert drawer.scan_btn.text() == f"Skanuj ({BT_SCAN_MAX_S} s)" and not drawer.power_btn.isVisible()
 QTest.qWait(int(RB.KEEPALIVE_S * 1000) + 300)
 assert (BT_LIST, 0, bytes(6)) in cmds(), "keepalive co KEEPALIVE_S"
-ok("panel: wysuwa się z prawej nad oknem, keepalive listy, wiersze z sygnałem, stanem i właściwą akcją")
+ok("panel: slides in from the right over the window, list keepalive, rows with signal, state and the right action")
 
 # ---------- akcje ----------
 rs[1].btn.click()
 assert without_list(cmds()) == [(BT_PAIR, 0, mac_bytes(PAD))] * 3
 drawer.refresh()
 assert rs[1].btn.text() == "Parowanie…" and not rs[1].btn.isEnabled()
-assert not rs[0].btn.isEnabled() and not rs[2].btn.isEnabled(), "inne operacje czekają"
+assert not rs[0].btn.isEnabled() and not rs[2].btn.isEnabled(), "other operations wait"
 bt_list(DEVS, flags=BTF_BUSY, op=BT_PAIR, res=BTR_RUNNING, mac=PAD); drawer.refresh()
 assert "Parowanie" in drawer.result.text()
 devs2 = [DEVS[0], (PAD, "DualSense Wireless Controller", -55, BTD_PAD | BTD_PAIRED | BTD_CONNECTED | BTD_TRUSTED), DEVS[2]]
 bt_list(devs2, op=BT_PAIR, res=BTR_OK, mac=PAD); drawer.refresh()
-assert rows()[1] is rs[1], "wiersz zostaje (fokus z pada nie skacze)"
+assert rows()[1] is rs[1], "the row stays (pad focus does not jump)"
 assert rs[1].btn.text() == "Rozłącz" and rs[1].btn.isEnabled() and "sparowano" in drawer.result.text()
 rs[0].btn.click()
 assert without_list(cmds()) == [(BT_DISCONNECT, 0, mac_bytes(PAD2))] * 3
@@ -130,8 +130,8 @@ assert without_list(cmds()) == [(BT_REMOVE, 0, mac_bytes(PHONE))] * 3, "Zapomnij
 bt_list(devs2[:2], op=BT_REMOVE, res=BTR_OK, mac=PHONE); drawer.refresh(); pump()
 assert [r.mac for r in rows()] == [PAD2, PAD]
 bt_list([devs2[1], devs2[0]]); drawer.refresh()
-assert [r.mac for r in rows()] == [PAD, PAD2], "kolejność jak z nadajnika"
-ok("akcje: Sparuj / Rozłącz / Połącz / Zapomnij (3 pakiety), operacja w toku blokuje resztę, wynik pod listą")
+assert [r.mac for r in rows()] == [PAD, PAD2], "order as from the sender"
+ok("actions: Pair / Disconnect / Connect / Forget (3 packets), an operation in progress blocks the rest, result under the list")
 
 drawer.scan_btn.click()
 assert without_list(cmds()) == [(BT_SCAN_START, BT_SCAN_MAX_S, bytes(6))] * 3
@@ -144,7 +144,7 @@ assert drawer.power_btn.isVisible() and not rows() and "niedostępna" in drawer.
 drawer.power_btn.click()
 assert without_list(cmds()) == [(BT_POWER, 1, bytes(6))] * 3
 bt_list(DEVS); drawer.refresh()
-ok("skan: start / stop z odliczaniem; wyłączony Bluetooth: przycisk Włącz, bez listy")
+ok("scan: start / stop with a countdown; Bluetooth off: Turn on button, no list")
 
 drawer.grab().save(os.path.join(SHOTS, "bt_drawer.png"))
 QTest.keyClick(drawer.scan_btn, Qt.Key.Key_Escape); pump(260)
@@ -153,15 +153,15 @@ win.bt_btn.click(); pump(260)
 QTest.mouseClick(drawer.scrim, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(20, 200)); pump(260)
 assert not drawer.is_open(), "klik obok panelu zamyka"
 rxenv.sent.clear(); pump(int(RB.KEEPALIVE_S * 1000) + 300)
-assert not cmds(), "zamknięty panel nie podtrzymuje listy"
-ok("zamykanie: Esc, klik w przyciemnione tło; zamknięty panel nie wysyła keepalive")
+assert not cmds(), "a closed panel does not keep the list alive"
+ok("closing: Esc, click on the dimmed background; a closed panel sends no keepalive")
 
-# ---------- tryb TV: tylko pad ----------
+# ---------- TV mode: pad only ----------
 win.set_fullscreen(True); pump(150); activate(win)
 state(0)
 press_t = [time.monotonic()]
 def press(name):
-    """Naciśnięcie przycisku pada 0 (fizycznego) i puszczenie - przez PadNav jak w oknie co 33 ms."""
+    """Press and release a button of pad 0 (the physical one) - through PadNav as in the window every 33 ms."""
     t = press_t[0] = press_t[0] + 1.0
     if name.startswith("dpad_"):
         hat = {"dpad_up": (0, -1), "dpad_down": (0, 1), "dpad_left": (-1, 0), "dpad_right": (1, 0)}[name]
@@ -177,32 +177,32 @@ seen = []
 for _k in range(12):
     press("dpad_down")
     fw = QApplication.focusWidget()
-    assert drawer.isAncestorOf(fw), f"D-pad wyszedł z panelu: {fw}"
+    assert drawer.isAncestorOf(fw), f"D-pad left the panel: {fw}"
     seen.append(fw)
 assert {drawer.close_btn, drawer.scan_btn, rows()[0].btn, rows()[1].btn, rows()[2].btn} <= set(seen), seen
-assert drawer.power_btn not in seen, "ukryty przycisk pominięty"
+assert drawer.power_btn not in seen, "hidden button skipped"
 slot = win.ed.slot
 press("r1")
-assert win.ed.slot == slot, "R1 przy otwartym panelu nie zmienia pada"
+assert win.ed.slot == slot, "R1 with the panel open does not switch the pad"
 while QApplication.focusWidget() is not rows()[1].btn:
     press("dpad_down")
 rxenv.sent.clear()
 press("cross")
-assert without_list(cmds()) == [(BT_PAIR, 0, mac_bytes(PAD))] * 3, "✕ klika akcję w wierszu"
+assert without_list(cmds()) == [(BT_PAIR, 0, mac_bytes(PAD))] * 3, "✕ clicks the action in the row"
 bt_list(DEVS, op=BT_PAIR, res=BTR_OK, mac=PAD); drawer.refresh()
 press("circle"); pump(260)
 assert not drawer.is_open() and win.fullscreen() and QApplication.focusWidget() is win.bt_btn, \
-    "○ zamyka panel (nie pełny ekran), fokus wraca na ikonę"
+    "○ closes the panel (not full screen), focus goes back to the icon"
 press("circle"); pump(100)
-assert not win.fullscreen(), "drugie ○ - jak dotąd: wyjście z pełnego ekranu"
-ok("tryb TV: ✕ na ikonie otwiera, D-pad tylko po panelu (ukryte pominięte), ✕ klika, R1 nie zmienia pada, ○ zamyka")
+assert not win.fullscreen(), "second ○ - as before: leaves full screen"
+ok("TV mode: ✕ on the icon opens, D-pad only inside the panel (hidden ones skipped), ✕ clicks, R1 does not switch the pad, ○ closes")
 
-# ---------- kontroler Bluetooth nadajnika (wbudowany / dongle USB) ----------
+# ---------- sender Bluetooth controller (built-in / USB dongle) ----------
 cgen = [0]
 
 
 def bt_ctrls(rows):
-    """Runda btctrl jak z nadajnika: (flagi BTC_*, N, nazwa)."""
+    """A btctrl round as from the sender: (BTC_* flags, N, name)."""
     cgen[0] += 1
     for k, (f, n, name) in enumerate(rows):
         RB.on_packet(T_BTCTRL, N.codec.pack(T_BTCTRL, 255, cgen[0], k, len(rows), f, n, name.encode()))
@@ -210,23 +210,23 @@ def bt_ctrls(rows):
 
 win.bt_btn.click(); pump(260)
 bt_list(DEVS); drawer.refresh()
-assert not drawer.adapter_box.isVisible(), "nadajnik bez wyboru kontrolera - przełącznik ukryty"
+assert not drawer.adapter_box.isVisible(), "sender without controller choice - switch hidden"
 both = BTF_HAS_BUILTIN | BTF_HAS_USB
 QC, TP = "Qualcomm WCN3990", "Realtek TP-Link UB5A Adapter"
 bt_list(DEVS, flags=both | BTF_ON_USB | BTA_AUTO << BTF_MODE_SHIFT)
 bt_ctrls([(BTC_BLOCKED, 0, QC), (BTC_USB | BTC_ACTIVE, 1, TP)]); drawer.refresh(); win.slow_tick(); pump()
 assert drawer.adapter_box.isVisible() and drawer.adapter_seg.value() == str(BTA_AUTO)
 rows_c = list(drawer.ctrl_rows.values())
-assert [r.name.full for r in rows_c] == [QC, TP], "wszystkie moduły z nazwą urządzenia"
+assert [r.name.full for r in rows_c] == [QC, TP], "all modules with the device name"
 assert "wbudowany" in rows_c[0].detail.text() and "hci0" in rows_c[0].detail.text() and "wyłączony" in rows_c[0].detail.text()
 assert "dongle USB" in rows_c[1].detail.text() and "używany" in rows_c[1].detail.text()
-assert rows_c[0].btn.isVisible() and not rows_c[1].btn.isVisible(), "Użyj tylko przy nieużywanym"
-assert TP in win.bt_btn.toolTip(), "kropka stanu: nazwa używanego kontrolera"
+assert rows_c[0].btn.isVisible() and not rows_c[1].btn.isVisible(), "Use only on an unused one"
+assert TP in win.bt_btn.toolTip(), "state dot: name of the controller in use"
 assert "sparuj pady ponownie" in drawer.adapter_info.text()
 drawer.grab().save(os.path.join(SHOTS, "bt_drawer_adapter.png"))
 rxenv.sent.clear()
 rows_c[0].btn.click()
-assert without_list(cmds()) == [(BT_ADAPTER_USE, 0, bytes(6))] * 3, "Użyj = BT_ADAPTER_USE z numerem hciN"
+assert without_list(cmds()) == [(BT_ADAPTER_USE, 0, bytes(6))] * 3, "Use = BT_ADAPTER_USE with the hciN number"
 bt_list(DEVS, flags=both | BTA_PICK << BTF_MODE_SHIFT, op=BT_ADAPTER_USE, res=BTR_OK)
 bt_ctrls([(BTC_ACTIVE | BTC_PICKED, 0, QC), (BTC_USB | BTC_BLOCKED, 1, TP)]); drawer.refresh()
 assert drawer.adapter_seg.value() == str(BTA_PICK) and "wybrany" in rows_c[0].detail.text()
@@ -234,22 +234,22 @@ assert not rows_c[0].btn.isVisible() and rows_c[1].btn.isVisible() and "Zmiana k
 drawer.adapter_seg.buttons[str(BTA_AUTO)].click()
 assert without_list(cmds()) == [(BT_ADAPTER, BTA_AUTO, bytes(6))] * 3
 drawer.refresh()
-assert drawer.adapter_seg.value() == str(BTA_AUTO), "w trakcie zmiany bez mignięcia starym trybem"
+assert drawer.adapter_seg.value() == str(BTA_AUTO), "during the change no flash of the old mode"
 bt_list(DEVS, flags=BTF_HAS_BUILTIN | BTA_AUTO << BTF_MODE_SHIFT)
 bt_ctrls([(BTC_ACTIVE, 0, QC)]); drawer.refresh(); pump()
-assert [r.name.full for r in drawer.ctrl_rows.values()] == [QC], "wyjęty dongle znika z listy"
-assert "Dongle Bluetooth USB zwykle zmniejsza" in drawer.adapter_info.text(), "bez dongla: podpowiedź"
+assert [r.name.full for r in drawer.ctrl_rows.values()] == [QC], "an unplugged dongle disappears from the list"
+assert "Dongle Bluetooth USB zwykle zmniejsza" in drawer.adapter_info.text(), "no dongle: a hint"
 drawer.close_drawer(); pump(260)
-ok("kontrolery: lista wszystkich z nazwą, rodzajem, hciN i stanem; Użyj (BT_ADAPTER_USE), Auto / Wybrany / Ręcznie")
+ok("controllers: list of all with name, kind, hciN and state; Use (BT_ADAPTER_USE), Auto / Picked / Manual")
 
-# ---------- stary / milczący nadajnik ----------
+# ---------- old / silent sender ----------
 RB.reset()
 win.bt_btn.click(); pump(260)
 assert not drawer.scan_btn.isEnabled() and not rows() and "brak danych" in drawer.status.text()
 rxenv.sent.clear(); drawer.scan_btn.click()
-assert not cmds(), "nadajnik bez obsługi Bluetooth - nic nie idzie"
+assert not cmds(), "sender without Bluetooth support - nothing goes out"
 drawer.close_drawer(); pump(260)
-ok("nadajnik bez Bluetooth z okna (starszy / offline): panel wyjaśnia, przyciski nieaktywne")
+ok("sender without Bluetooth from the window (older / offline): the panel explains, buttons disabled")
 
 win.quit()
 print("BT GUI OK")

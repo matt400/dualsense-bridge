@@ -1,4 +1,4 @@
-"""Uruchamia prawdziwe receiver_controller.main() (bez GUI) z zaślepkami Windows i wysyła pakiety przez UDP."""
+"""Runs the real receiver_controller.main() (no GUI) with Windows stubs and sends packets over UDP."""
 import ctypes, sys, types, threading, time, socket, tempfile, os
 RX = sys.argv[1]; sys.path.insert(0, RX)
 sys.path.insert(1, RX + "/../common")
@@ -34,7 +34,7 @@ s.sendto(c.pack(T_IDENT, 0, b"aa:bb:cc:dd:ee:ff"), ("127.0.0.1", 25005))
 for k in range(20):
     s.sendto(c.pack(T_STATE, 0, 200 - (k % 2), 128, 0, 128, 128, 0, 0, 0, 1, 77, 0, 0, 0, 8192, 0, 0, 0), ("127.0.0.1", 25005))
     time.sleep(0.02)
-time.sleep(0.6)   # okno gry: 2 odpytania co 0.5 s
+time.sleep(0.6)   # the game window: 2 polls every 0.5 s
 for k in range(3):
     s.sendto(c.pack(T_STATE, 0, 200 - (k % 2), 128, 0, 128, 128, 0, 0, 0, 1, 77, 0, 0, 0, 8192, 0, 0, 0), ("127.0.0.1", 25005)); time.sleep(0.03)
 print("alive:", S.alive[0], "pad_id:", S.pad_id[0], "game:", S.game, "DS4 reports:", len(REPORTS),
@@ -44,4 +44,4 @@ names = {th.name for th in threading.enumerate()}
 assert "gyro stick" in names, f"the tilt-to-stick thread is not running: {sorted(names)}"   # regression: it was never started
 S.stop.set(); time.sleep(0.5)
 assert not errors, errors
-print("STARTUP OK - main() startuje, wszystkie wątki działają bez wyjątków")
+print("STARTUP OK - main() starts, all threads run without exceptions")

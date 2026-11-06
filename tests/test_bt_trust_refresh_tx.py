@@ -20,7 +20,7 @@ net.emit = sender_ctrl.net.emit = lambda t, i, *v: out.append((t, v))
 TMP = tempfile.mkdtemp()
 
 
-# ---------- 3. trust_pads when a refresh replaced the list during the await ----------
+# ---------- trust_pads when a refresh replaced the list during the await ----------
 async def t_trust():
     d = sender_bt.Device("aa:bb:cc:dd:ee:01", "pad", -50, BTD_PAD | BTD_PAIRED)
     fake = type("F", (), {})()

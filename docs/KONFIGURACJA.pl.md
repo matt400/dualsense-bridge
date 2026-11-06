@@ -108,7 +108,7 @@ forka albo klonu przez SSH: usługa nadajnika działa jako root i nie ma Twojego
 ```
 cd dualsense-bridge/sender
 ./setup-update-key.sh      # tworzy klucz tylko do odczytu w .git/ i wypisuje, co wkleić na GitHubie
-./setup-update-key.sh      # po dodaniu klucza: sprawdza dostęp ("OK - nadajnik ma dostęp")
+./setup-update-key.sh      # po dodaniu klucza: sprawdza dostęp (wypisuje "OK - the sender can reach ...")
 ```
 
 Powód nieudanej aktualizacji nadajnika jest widoczny w oknie na PC (np. `Permission denied (publickey)`).

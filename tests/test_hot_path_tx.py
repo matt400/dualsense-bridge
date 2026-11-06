@@ -16,7 +16,7 @@ from chk import check, fails                                  # noqa: E402  (sha
 TMP = tempfile.mkdtemp()
 
 
-# ---------- 1. pump: one registration of the descriptor, whole batches per wake-up ----------
+# ---------- pump: one registration of the descriptor, whole batches per wake-up ----------
 def make_dev(batches):
     """A real InputDevice object on a pipe: every byte written to the pipe is one wake-up that delivers the next batch."""
     r, w = os.pipe()
@@ -99,7 +99,7 @@ async def t_pump():
 asyncio.run(t_pump())
 
 
-# ---------- 2. after "bye" no delayed repeat sends anything for the released slot ----------
+# ---------- after "bye" no delayed repeat sends anything for the released slot ----------
 out = []
 net.emit = sender_ctrl.net.emit = lambda t, i, *v: out.append(t)
 
@@ -143,7 +143,7 @@ async def t_sealed():
 asyncio.run(t_sealed())
 
 
-# ---------- 3. state files: fsync in a worker thread, in order, text made at call time ----------
+# ---------- state files: fsync in a worker thread, in order, text made at call time ----------
 async def until(cond, limit=5.0):
     """Wait for the worker thread (a slow CI disk can take longer than a fixed sleep)."""
     end = time.monotonic() + limit
@@ -191,7 +191,7 @@ check(err is not None, "without a running loop an OSError reaches the caller (as
 state.flush_writes()
 
 
-# ---------- 4. lightbar: max_brightness read once, a transient error does not switch the lightbar off ----------
+# ---------- lightbar: max_brightness read once, a transient error does not switch the lightbar off ----------
 led = os.path.join(TMP, "led")
 os.mkdir(led)
 for name, text in (("max_brightness", "255\n"), ("multi_intensity", ""), ("brightness", "")):

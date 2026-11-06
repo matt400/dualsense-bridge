@@ -7,7 +7,7 @@ from rxenv import *                                              # noqa
 from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 
-# 5. feedback: a repeated game report does not wake the thread, a change does
+# feedback: a repeated game report does not wake the thread, a change does
 F.fb[0].update(large=0, small=0, set=False, rgb=False)
 F.fb_event.clear()
 F.game(0, large=100, small=0)

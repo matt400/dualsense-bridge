@@ -23,10 +23,10 @@ ok("restart: nowy proces startuje z CREATE_BREAKAWAY_FROM_JOB (zachowuje inne fl
 
 started.clear(); W._spawn(["python", "x.py"], {})
 assert started == [W.CREATE_BREAKAWAY_FROM_JOB], started
-ok("restart z konsoli (bez flag): też z breakaway")
+ok("restart from the console (no flags): with breakaway too")
 
 started.clear(); refuse = True
 W._spawn(["python", "x.py"], {"creationflags": W.DETACHED_PROCESS})
 assert started == [W.DETACHED_PROCESS | W.CREATE_BREAKAWAY_FROM_JOB, W.DETACHED_PROCESS], started
-ok("job nie pozwala na breakaway: ponowna próba bez flagi (receiver nie znika)")
+ok("the job does not allow breakaway: retry without the flag (the receiver does not vanish)")
 print("RELAUNCH JOB OK")
