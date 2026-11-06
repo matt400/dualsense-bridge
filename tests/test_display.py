@@ -1,5 +1,4 @@
 """Rozdzielczość TV przez CCD (rx_display), ciche linki Game Bar (rx_gamebar), kolor przycisku "na pewno?"."""
-import ctypes
 import sys
 import types
 
@@ -8,13 +7,9 @@ sys.path.insert(1, sys.argv[1] + "/../common")
 import rx_display as D  # noqa: E402
 import rx_gamebar as G  # noqa: E402
 
-fails = 0
+from chk import check, fails
 
 
-def check(ok, what):
-    global fails
-    print(("OK  " if ok else "FAIL") + "  " + what)
-    fails += not ok
 
 
 # ---------- czysta logika ----------
@@ -194,5 +189,5 @@ armed = [ln for ln in css.split("}") if 'armed="true"' in ln and "background" in
 check(not ST or armed and all("color: #ffffff" in ln for ln in armed) and all(ST.BG not in ln for ln in armed),
       "przycisk 'na pewno?' (Aktualizować?) - biały napis, nie czarny")
 
-print("WYNIK:", "OK" if not fails else f"{fails} błędów")
+print("WYNIK:", "OK" if not fails else f"{len(fails)} błędów")
 sys.exit(1 if fails else 0)

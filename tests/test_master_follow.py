@@ -7,13 +7,7 @@ import rx_console, rx_master, rx_settings
 from proto import T_BYE, T_IDENT, T_MOUSE
 from rx_settings import MasterConfig, MouseConfig, Settings
 
-from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
-
-def wait_for(pred, timeout=2.0):
-    end = time.monotonic() + timeout
-    while time.monotonic() < end and not pred():
-        time.sleep(0.01)
-    return pred()
+from chk import check, fails, wait_for                                  # noqa: E402  (shared helper, tests/chk.py)
 
 
 # ---------- master: "zamknij grę" zamyka okno, które sprawdził ----------

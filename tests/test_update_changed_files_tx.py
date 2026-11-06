@@ -4,6 +4,7 @@ import os, subprocess, sys, tempfile
 sys.path.insert(0, sys.argv[1])
 sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
+import gitupdate
 import proto
 
 TMP = tempfile.mkdtemp()
@@ -23,7 +24,7 @@ git(origin, "add", "."); git(origin, "commit", "-qm", "a")
 git(TMP, "clone", "-q", origin, work)
 open(os.path.join(origin, "my notes.txt"), "w").write("2")
 git(origin, "add", "."); git(origin, "commit", "-qm", "b")
-st, _msg, _old, _new, files = proto.git_pull(work)
+st, _msg, _old, _new, files = gitupdate.git_pull(work)
 check(st == proto.UPD_DONE and files == ["my notes.txt"], f"zmienione pliki z nazwą ze spacją: {files}")
 
 sys.exit(1 if fails else 0)

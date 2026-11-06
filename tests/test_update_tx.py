@@ -4,6 +4,7 @@ from unittest import mock
 sys.path.insert(0, sys.argv[1])
 sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
+import gitupdate
 import proto, sender_control, sender_net as net, sender_state as state, sender_update as U
 from proto import BODY, CMD_UPDATE, T_BUILD, UPD_DONE, UPD_NO_CHANGE, UPD_NOT_GIT, UPD_RUNNING
 
@@ -33,9 +34,9 @@ commit(origin, "sender/sender_x.py", "a = 1\n", "Pierwsza wersja nadajnika")
 git(tmp, "clone", "-q", origin, work)
 
 # ---------- wersja ----------
-h, ts, subject = proto.git_version(work)
+h, ts, subject = gitupdate.git_version(work)
 assert len(h) == 7 and ts > 1_600_000_000 and subject == "Pierwsza wersja nadajnika", (h, ts, subject)
-assert proto.git_version(tmp) == ("", 0, ""), "nie repozytorium -> pusta wersja"
+assert gitupdate.git_version(tmp) == ("", 0, ""), "nie repozytorium -> pusta wersja"
 U.ROOT = work
 U.init()
 sent = []
@@ -63,15 +64,15 @@ async def main():
     # ---------- powtórki polecenia (UDP 3x) są ignorowane ----------
     state.restart = False
     calls = []
-    real = proto.git_pull
-    U.proto.git_pull = lambda root: calls.append(root) or (UPD_NO_CHANGE, "", "", "", [])
+    real = gitupdate.git_pull
+    U.gitupdate.git_pull = lambda root: calls.append(root) or (UPD_NO_CHANGE, "", "", "", [])
     await U.run()
     assert not calls, "drugie polecenie w ciągu 30 s - nic"
     U._last = 0.0
     sender_control.on_command(255, CMD_UPDATE, 0); sender_control.on_command(255, CMD_UPDATE, 0)
     await asyncio.sleep(0.3)
     assert calls == [work], f"3 kopie polecenia = jedna aktualizacja: {calls}"
-    U.proto.git_pull = real
+    U.gitupdate.git_pull = real
     ok("polecenie z receivera (idx 255) uruchamia jedną aktualizację mimo powtórek")
 
     # ---------- folder bez gita ----------
@@ -86,13 +87,13 @@ asyncio.run(main())
 # ---------- root uruchamia gita jako właściciel repozytorium ----------
 st = types.SimpleNamespace(st_uid=1000, st_gid=1000)
 with mock.patch("os.geteuid", return_value=0), mock.patch("os.stat", return_value=st), \
-        mock.patch("proto.ssh_command", return_value=None), \
+        mock.patch("gitupdate.ssh_command", return_value=None), \
         mock.patch("pwd.getpwuid", return_value=types.SimpleNamespace(pw_dir="/home/user", pw_name="user")):
-    kw = proto._git_process_kwargs(work)
+    kw = gitupdate._git_process_kwargs(work)
 assert kw["user"] == 1000 and kw["group"] == 1000 and kw["extra_groups"] == [] and kw["env"]["HOME"] == "/home/user" \
     and kw["env"]["USER"] == "user", kw
 with mock.patch("os.geteuid", return_value=1000):
-    kw = proto._git_process_kwargs(work)
+    kw = gitupdate._git_process_kwargs(work)
 assert "user" not in kw and kw["env"]["GIT_TERMINAL_PROMPT"] == "0" and "BatchMode=yes" in kw["env"]["GIT_SSH_COMMAND"], kw
 ok("usługa (root): git jako właściciel repozytorium (bez grup roota); git nigdy nie czeka na hasło")
 print("UPDATE TX OK")

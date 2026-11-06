@@ -1,7 +1,7 @@
 """Sender: the mute button LED and the player LEDs (the leds packet, report bytes checked against independent code, the flags of the
 other reports, the way from the UDP packet to the pad's HID file) and the mute button itself (a press seen on the kernel's mute LED
 becomes a short MUTE_BIT pulse in the state packet)."""
-import asyncio, os, sys, tempfile, zlib
+import asyncio, os, sys, tempfile
 sys.path.insert(0, sys.argv[1])
 sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
@@ -13,8 +13,8 @@ import sender_rumble as R
 import sender_state as state
 import sender_supervisor as sup
 from proto import LEDS_MUTE, LEDS_PLAYER, MUTE_BIT, MUTE_OFF, MUTE_ON, MUTE_PULSE, T_FB, T_LEDS, T_STATE, Codec, SeqFilter
+from fakedev import common, crc_ok, new_hidraw, reports
 
-TMP = tempfile.mkdtemp()
 ok = lambda m: print("OK  ", m)
 KEY = b"0123456789abcdef"
 
@@ -22,28 +22,6 @@ KEY = b"0123456789abcdef"
 class Dev:
     def capabilities(self):
         return {}
-
-
-_files = iter(range(1000))
-
-
-def newpath():
-    path = os.path.join(TMP, f"hidraw{next(_files)}")
-    open(path, "wb").close()
-    return path
-
-
-def reports(path):
-    data = open(path, "rb").read()
-    return [data[k:k + 78] for k in range(0, len(data), 78)]
-
-
-def common(rep):
-    return rep[3:50]
-
-
-def crc_ok(rep):
-    return int.from_bytes(rep[-4:], "little") == zlib.crc32(b"\xa2" + rep[:-4]) & 0xFFFFFFFF
 
 
 # ---------- the packet ----------
@@ -106,7 +84,7 @@ assert au[0] == 0 and au[2:4] == bytes(2) and au[1] == 0x11, "haptics / speaker:
 ok("audio mode: the LED flags are not rumble bits")
 
 # ---------- Rumble.set_leds ----------
-path = newpath()
+path = new_hidraw()
 dev = Dev()
 rum = R.Rumble(0, dev, "hidraw", hidraw=(path, True))
 assert rum.leds == (None, None) and not rum.set_leds(None, None), "nothing to say: nothing is written"
@@ -129,7 +107,7 @@ ok("Rumble.set_leds: written on change only, None keeps the other LED, kept in l
 
 # ---------- Ctrl.apply_leds and the whole way UDP -> sender_net -> supervisor -> Ctrl -> HID file ----------
 async def scenarios():
-    path = newpath()
+    path = new_hidraw()
     c = sender_ctrl.Ctrl(5, "aa:bb:cc:dd:ee:05", dev, None, None)
     c.rumble = R.Rumble(5, dev, "hidraw", hidraw=(path, True))
     state.active[c.key] = c
@@ -152,7 +130,7 @@ async def scenarios():
     late = sender_ctrl.Ctrl(6, "aa:bb:cc:dd:ee:06", dev, None, None)
     late.apply_leds(LEDS_MUTE | LEDS_PLAYER, MUTE_PULSE, 4)
     assert late.rumble is None and late.leds == (MUTE_PULSE, 4)
-    path2 = newpath()
+    path2 = new_hidraw()
     late.rumble = R.Rumble(6, dev, "hidraw", hidraw=(path2, True))
     late.rumble.set_leds(*late.leds)
     assert common(reports(path2)[0])[8] == MUTE_PULSE and common(reports(path2)[0])[43] == 4

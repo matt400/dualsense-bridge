@@ -4,24 +4,13 @@ sys.path.insert(0, os.path.dirname(__file__))
 from rxenv import *                                              # noqa
 import rxenv
 import rx_console, rx_master, rx_settings
-from dataclasses import replace
 from proto import T_CLICK, T_IDENT, T_MOUSE
 from rx_console import Console, ConsoleConfig
 from rx_settings import MasterConfig, MouseConfig, Settings
 
 ok = lambda msg: print("OK  ", msg)
-fails = []
-def check(cond, msg):
-    if not cond:
-        fails.append(msg); print("FAIL", msg)
+from chk import check, fails, wait_for
 
-def wait_for(pred, timeout=2.0):
-    end = time.monotonic() + timeout
-    while time.monotonic() < end:
-        if pred():
-            return True
-        time.sleep(0.01)
-    return pred()
 
 PS, SHARE, CROSS, TRI, OPT, R3 = 316, 314, 304, 307, 315, 318
 A, B = "aa:aa:aa:aa:aa:01", "bb:bb:bb:bb:bb:02"

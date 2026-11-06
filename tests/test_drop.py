@@ -1,7 +1,8 @@
-import asyncio, sys, time
+import asyncio, sys
 sys.path.insert(0, sys.argv[1])
 sys.path.insert(1, sys.argv[1] + "/../common")
 from evdev import ecodes as ec
+from fakedev import DROP, SYN, Dev, Ev
 import sender_config; sender_config.init(["127.0.0.1"])
 from sender_config import C
 import sender_net as net, sender_streams as st, sender_ctrl, sender_supervisor as sup, sender_state as state
@@ -10,26 +11,7 @@ out = []
 def emit(t, i, *v): out.append((t, v))
 net.emit = sender_ctrl.net.emit = emit
 sup.emit_repeat = lambda t, i, *v, **k: emit(t, i, *v)
-class Ev:
-    def __init__(s, t, c, v): s.type, s.code, s.value = t, c, v
-class AI:
-    def __init__(s, v=0, mx=1919): s.value, s.max = v, mx
-SYN = Ev(ec.EV_SYN, ec.SYN_REPORT, 0); DROP = Ev(ec.EV_SYN, ec.SYN_DROPPED, 0)
 A = lambda c, v: Ev(ec.EV_ABS, c, v)
-class Dev:
-    path = "/dev/input/event7"; name = "DualSense Wireless Controller"
-    def __init__(s, evs, absv=None, keys=()):
-        s.evs, s.absv, s.keys, s.closed = evs, absv or {}, list(keys), False
-    def absinfo(s, c): return AI(s.absv.get(c, 0), 1 if c == ec.ABS_MT_SLOT else 1919)
-    def active_keys(s): return s.keys
-    def grab(s): pass
-    def ungrab(s): pass
-    def close(s): s.closed = True
-    async def async_read_loop(s):
-        for dt, e in s.evs:
-            if dt: await asyncio.sleep(dt)
-            if isinstance(e, Exception): raise e
-            yield e
 
 # 1) touchpad: palec leży, przepełnienie bufora, palec dalej leży i się rusza -> bez skoku, bez tapu
 st.read_mt = lambda dev, n=2: [(5, 1000, 500), (-1, 0, 0)]      # jądro: slot 0 = palec id 5 na (1000, 500)

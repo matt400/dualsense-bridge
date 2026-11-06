@@ -10,15 +10,8 @@ from dataclasses import replace
 from proto import T_IDENT
 from rx_settings import MasterConfig, MouseConfig, Settings
 
-from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
+from chk import check, fails, wait_for                                  # noqa: E402  (shared helper, tests/chk.py)
 
-def wait_for(pred, timeout=2.0):
-    end = time.monotonic() + timeout
-    while time.monotonic() < end:
-        if pred():
-            return True
-        time.sleep(0.01)
-    return pred()
 
 PS, SQUARE, CROSS, TRIANGLE = 316, 308, 304, 307
 A, B = "aa:aa:aa:aa:aa:01", "bb:bb:bb:bb:bb:02"

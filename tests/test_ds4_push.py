@@ -6,13 +6,7 @@ from rxenv import *                                              # noqa
 import rx_console, rx_settings
 from proto import T_BYE
 
-from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
-
-def wait_for(pred, timeout=2.0):
-    end = time.monotonic() + timeout
-    while time.monotonic() < end and not pred():
-        time.sleep(0.01)
-    return pred()
+from chk import check, fails, wait_for                                  # noqa: E402  (shared helper, tests/chk.py)
 
 
 connected = []

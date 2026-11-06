@@ -7,10 +7,7 @@ from rx_console import Console, ConsoleConfig
 
 PATH = os.path.join(TMP, "console.json"); C.CONSOLE_PATH = PATH
 ok = lambda msg: print("OK  ", msg)
-fails = []
-def check(cond, msg):
-    if not cond:
-        fails.append(msg); print("FAIL", msg)
+from chk import check, fails, wait_for
 
 # ---------- polecenia systemowe zastąpione rejestrem ----------
 calls = []
@@ -19,13 +16,6 @@ rx_console._audio = lambda name: calls.append(("audio", name))
 rx_console._toast = lambda title, msg="": calls.append(("toast", title, msg))
 rx_console._tv_mode = lambda w, h, sc: calls.append(("tv", w, h, sc))
 
-def wait_for(pred, timeout=2.5):
-    end = time.monotonic() + timeout
-    while time.monotonic() < end:
-        if pred():
-            return True
-        time.sleep(0.01)
-    return pred()
 
 def idle(c, timeout=5.0):
     """Czeka, aż wątek roboczy wykona wszystkie zadania z kolejki (zadania idą po kolei)."""
@@ -359,7 +349,7 @@ c.close(restart=True)
 ok("R2: podwójne głębokie naciśnięcie przełącza, drżenie / lekkie / z innym przyciskiem nie")
 
 # ---------- auto-ON po połączeniu pada master, ręczne wyłączenie, restart ----------
-import rx_master, rx_settings
+import rx_settings
 from dataclasses import replace
 from proto import T_IDENT, T_BYE
 MAC = "aa:bb:cc:00:00:01"

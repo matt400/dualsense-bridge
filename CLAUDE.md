@@ -11,7 +11,7 @@ DualSense pad → Bluetooth → **sender** (Linux, evdev) → UDP 5005 → **rec
 ## Layout
 ```
 sender/    sender_controller.py (entry point) + sender_*.py; install-service.sh, service/
-common/    proto.py (wire protocol + git update helpers), cfgspec.py (sender settings changeable from the receiver; ids are append-only), the one copy used by sender and receiver
+common/    proto.py (wire protocol, atomic writes), gitupdate.py (git version + update for both sides), cfgspec.py (sender settings changeable from the receiver; ids are append-only), the one copy used by sender and receiver
 receiver/  receiver_controller.py (entry point) + rx_*.py (logic) + rx_qt*.py (window)
 tests/     Linux tests with Windows/evdev stubs (rxenv.py); fakebin/ = fake bluetoothctl; run_tests.sh = the CI entry
 docs/      EN by default, PL as *.pl.md (user docs, not needed for code work)

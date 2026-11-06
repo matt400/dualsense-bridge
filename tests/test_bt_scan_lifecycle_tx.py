@@ -5,6 +5,7 @@ import asyncio, contextlib, io, json, os, stat, sys, tempfile, time
 sys.path.insert(0, sys.argv[1])
 sys.path.insert(1, sys.argv[1] + "/../common")
 from evdev import ecodes as ec
+from fakedev import SYN, Dev, Ev
 import sender_config; sender_config.init(["127.0.0.1"])
 from sender_config import C
 import sender_bt as SB
@@ -74,32 +75,6 @@ asyncio.run(t_scan())
 # ---------- touchpad: palec leżący już przy podłączeniu ----------
 out = []
 net.emit = sender_ctrl.net.emit = lambda t, i, *v: out.append((t, v))
-
-
-class Ev:
-    def __init__(s, t, c, v):
-        s.type, s.code, s.value = t, c, v
-
-
-class AI:
-    max = 1919
-
-
-class Dev:
-    def __init__(s, evs):
-        s.evs = evs
-
-    def absinfo(s, c):
-        return AI()
-
-    async def async_read_loop(s):
-        for dt, e in s.evs:
-            if dt:
-                await asyncio.sleep(dt)
-            yield e
-
-
-SYN = Ev(ec.EV_SYN, ec.SYN_REPORT, 0)
 
 
 def move(dt, x, y):

@@ -1,7 +1,7 @@
 """Sender: HD haptics - the hapt packet (plain, HMAC v2, v3, old parsers), the bytes of report 0x32 and of the setup report checked
 against independent code, the flags of every other report while a stream runs, the motors policy, write errors, the whole way from
 the UDP packet to the pad's HID file, and the new settings."""
-import asyncio, contextlib, errno, io, os, struct, sys, tempfile, zlib
+import asyncio, contextlib, errno, io, os, struct, sys, zlib
 sys.path.insert(0, sys.argv[1])
 sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
@@ -14,42 +14,14 @@ import sender_state as state
 import sender_supervisor as sup
 from evdev import ecodes as ec
 from proto import CAP_HAPTICS, HAPT_CHUNK, HAPT_END, HAPT_START, T_HAPT, TRIG2_OFF, Codec, SeqFilter
+from fakedev import common, crc_ok, new_hidraw, reports
 
-TMP = tempfile.mkdtemp()
 ok = lambda m: print("OK  ", m)
 KEY = b"0123456789abcdef"
 
 
 def chunk(n):
     return bytes((n * 5 + i) % 100 + 1 for i in range(HAPT_CHUNK))        # never zero: silence can be told from audio
-
-
-_files = iter(range(1000))
-
-
-def newpath():
-    path = os.path.join(TMP, f"hidraw{next(_files)}")
-    open(path, "wb").close()
-    return path
-
-
-def reports(path):
-    """The reports written to a fake hidraw file: 0x31 is 78 B, 0x32 is 142 B."""
-    data = open(path, "rb").read()
-    out, k = [], 0
-    while k < len(data):
-        n = {0x31: 78, 0x32: 142}[data[k]]
-        out.append(data[k:k + n])
-        k += n
-    return out
-
-
-def common(rep):
-    return rep[3:50]
-
-
-def crc_ok(rep):
-    return int.from_bytes(rep[-4:], "little") == zlib.crc32(b"\xa2" + rep[:-4]) & 0xFFFFFFFF
 
 
 class Dev:
@@ -180,8 +152,8 @@ assert crc_ok(R.output_report(True, 1, 0, 0, None, None, None, True)) and len(R.
 ok("output_report(haptics=True): valid_flag0 keeps only the trigger bits, valid_flag2 and the motors are zero; normal reports unchanged")
 
 # ---------- capability ----------
-assert R.Rumble(0, Dev(), "hidraw", hidraw=(newpath(), True)).bits & CAP_HAPTICS
-assert not R.Rumble(0, Dev(), "hidraw", hidraw=(newpath(), False)).bits & CAP_HAPTICS, "a USB pad has no report 0x32"
+assert R.Rumble(0, Dev(), "hidraw", hidraw=(new_hidraw(), True)).bits & CAP_HAPTICS
+assert not R.Rumble(0, Dev(), "hidraw", hidraw=(new_hidraw(), False)).bits & CAP_HAPTICS, "a USB pad has no report 0x32"
 assert not R.Rumble(0, Dev(), "evdev").bits & CAP_HAPTICS and not R.Rumble(0, Dev(), "off").bits & CAP_HAPTICS
 assert proto.SENDER_VERSION >= 13 and CAP_HAPTICS == 64
 ok("CAP_HAPTICS only for a Bluetooth pad with a HID report")
@@ -192,7 +164,7 @@ async def scenarios():
     rep.payload[:] = chunk(1)
 
     # -- policy "haptics": the setup, the flags, the game's motors, the end
-    path = newpath()
+    path = new_hidraw()
     r = R.Rumble(0, Dev(), "hidraw", hidraw=(path, True))
     r.set(0, 0, (10, 20, 30))
     assert common(reports(path)[-1])[0] & 0x03 == 0x03
@@ -229,7 +201,7 @@ async def scenarios():
     ok("stream: setup (twice), no rumble bits in lightbar / trigger / motor reports, motors logged once, normal report at the end")
 
     # -- the kernel driver must not be touched while the haptics play
-    path = newpath()
+    path = new_hidraw()
     d = FFDev()
     r = R.Rumble(0, d, "auto", hidraw=(path, True))
     r.set(10, 20)
@@ -246,7 +218,7 @@ async def scenarios():
     ok("auto mode: the evdev FF path is skipped while haptics play and works again afterwards")
 
     # -- motors that run when the stream starts are stopped first (their stop could not arrive later)
-    path = newpath()
+    path = new_hidraw()
     r = R.Rumble(0, Dev(), "hidraw", hidraw=(path, True))
     r.set(50, 60)
     n = len(reports(path))
@@ -261,7 +233,7 @@ async def scenarios():
     ok("motors running at the start of a stream are stopped, and come back after it")
 
     # -- policy "rumble": the game's motors pause the haptics until they stop
-    path = newpath()
+    path = new_hidraw()
     r = R.Rumble(0, Dev(), "hidraw", hidraw=(path, True), haptics_motors="rumble")
     r.haptics_begin()
     assert r.write_haptics(rep)
@@ -278,7 +250,7 @@ async def scenarios():
     assert common(out[n + 1])[0] == 0 and common(out[n + 1])[1] == 0x62 and not r.ducked, "then the setup report: audio mode again"
     assert r.write_haptics(rep)
     r.close()
-    path = newpath()
+    path = new_hidraw()
     r = R.Rumble(0, Dev(), "hidraw", hidraw=(path, True), haptics_motors="rumble")
     r.set(50, 60)
     n = len(reports(path))
@@ -298,7 +270,7 @@ async def scenarios():
 
     os.write = fake_write
     try:
-        path = newpath()
+        path = new_hidraw()
         r = R.Rumble(0, Dev(), "hidraw", hidraw=(path, True))
         r.haptics_begin()
         mode["err"] = BlockingIOError(errno.EAGAIN, "full")
@@ -316,7 +288,7 @@ async def scenarios():
         r.set(1, 2)
         assert reports(path)[-1][3 + 2:3 + 4] == bytes([1, 2])
         r.close()
-        path = newpath()
+        path = new_hidraw()
         r = R.Rumble(0, Dev(), "hidraw", hidraw=(path, True))
         r.haptics_begin()
         mode["err"] = OSError(errno.ENODEV, "gone")
@@ -329,7 +301,7 @@ async def scenarios():
     ok("write errors: a full queue is ignored, a run of errors ends only the stream, a vanished pad switches the HID way off")
 
     # -- the whole way: UDP packet -> sender_net -> supervisor -> Ctrl -> stream -> HID file
-    path = newpath()
+    path = new_hidraw()
     dev = Dev()
     c = sender_ctrl.Ctrl(3, "aa:bb:cc:dd:ee:03", dev, None, None)
     c.rumble = R.Rumble(3, dev, "hidraw", hidraw=(path, True))
@@ -380,7 +352,7 @@ async def scenarios():
     c2 = sender_ctrl.Ctrl(4, "aa:bb:cc:dd:ee:04", dev, None, None)
     c2.on_haptics(0, HAPT_START, memoryview(chunk(0)))
     assert c2.haptics is None, "no rumble backend: ignored"
-    c2.rumble = R.Rumble(4, dev, "hidraw", hidraw=(newpath(), False))
+    c2.rumble = R.Rumble(4, dev, "hidraw", hidraw=(new_hidraw(), False))
     c2.on_haptics(0, HAPT_START, memoryview(chunk(0)))
     assert c2.haptics is None, "a USB pad: ignored"
     ok("a pad closing ends its stream; a pad without a Bluetooth HID report ignores the chunks")

@@ -28,7 +28,7 @@ from typing import Any, Final
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "common"))   # proto.py is shared, it lives in common/
 
-import proto
+import gitupdate
 import rx_backup
 import rx_events as ev
 from proto import UPD_DONE, UPD_FAILED, UPD_NO_CHANGE, UPD_NO_GIT, UPD_NONE, UPD_NOT_GIT, UPD_RUNNING
@@ -71,15 +71,15 @@ _version: tuple[Any, ...] | None = None
 
 
 def find_git() -> str | None:
-    """Return the git executable (see proto.find_git) or None."""
-    return proto.find_git()
+    """Return the git executable (see gitupdate.find_git) or None."""
+    return gitupdate.find_git()
 
 
 def version() -> tuple[Any, ...]:
     """Return the receiver code version (commit, time, title) - computed once, the code changes only with a restart."""
     global _version
     if _version is None:
-        _version = proto.git_version(ROOT)
+        _version = gitupdate.git_version(ROOT)
     return _version
 
 
@@ -122,7 +122,7 @@ def sender_text(build: Sequence[Any] | None, msg: str = "", old_commit: str = ""
     state = _state_of(build, old_commit)
     if state == UPD_FAILED and msg:
         text = _("nadajnik: git pull nie powiódł się: {msg}").format(msg=msg)
-        if proto.is_auth_error(msg):
+        if gitupdate.is_auth_error(msg):
             text += " · " + _("usługa na telefonie nie ma dostępu do prywatnego repozytorium - na telefonie raz: "
                               "sender/setup-update-key.sh (klucz tylko do odczytu, instrukcja w skrypcie)")
         return text
@@ -174,16 +174,16 @@ def _check(root: str, git: str) -> Available | None:
     Available(0) when up to date, None on any failure.
     """
     try:
-        if proto.git(root, "fetch", "--quiet", git_exe=git, timeout=FETCH_TIMEOUT_S, env=QUIET_ENV).returncode:
+        if gitupdate.git(root, "fetch", "--quiet", git_exe=git, timeout=FETCH_TIMEOUT_S, env=QUIET_ENV).returncode:
             return None
         # from the RUNNING version, not from HEAD: code downloaded but not started is still an update to do
-        p = proto.git(root, "rev-list", "--count", f"{running(root) or 'HEAD'}..@{{u}}", git_exe=git)
+        p = gitupdate.git(root, "rev-list", "--count", f"{running(root) or 'HEAD'}..@{{u}}", git_exe=git)
         if p.returncode:
             return None
         behind = int(p.stdout.strip() or 0)
         if not behind:
             return Available(0)
-        head = proto.git(root, "log", "-1", "--format=%h%x00%s", f"--abbrev={SHORT_HASH}", "@{u}", git_exe=git).stdout.strip()
+        head = gitupdate.git(root, "log", "-1", "--format=%h%x00%s", f"--abbrev={SHORT_HASH}", "@{u}", git_exe=git).stdout.strip()
         commit, _sep, subject = head.partition("\0")
         return Available(behind, subject, commit[:SHORT_HASH])
     except (OSError, ValueError, subprocess.SubprocessError):
@@ -230,7 +230,7 @@ def update(root: str = ROOT, git: str | None = None, pip: bool = True, progress:
         return Result(False, False, _("Nie znaleziono git - zainstaluj Git for Windows (git-scm.com)"))
     report(PCT_PULL)
     with _git_lock:                            # not during a background check of GitHub
-        state, msg, old, new, files = proto.git_pull(root, git, env=QUIET_ENV, timeout=PULL_TIMEOUT_S)
+        state, msg, old, new, files = gitupdate.git_pull(root, git, env=QUIET_ENV, timeout=PULL_TIMEOUT_S)
     report(PCT_PULLED)
     if state == UPD_FAILED:
         return Result(False, False, _("git pull nie powiódł się: {msg}").format(msg=msg), old, old)
@@ -239,10 +239,10 @@ def update(root: str = ROOT, git: str | None = None, pip: bool = True, progress:
         if not (cur and new and not new.startswith(cur)):
             return Result(True, False, _("Masz najnowszą wersję"), old, new)
         # the new code is already on disk but the old one is running (e.g. the previous restart failed) - start the new one
-        old = proto.git(root, "rev-parse", cur, git_exe=git).stdout.strip() or cur
-        files = proto.git(root, "diff", "--name-only", old, new, git_exe=git).stdout.splitlines()
+        old = gitupdate.git(root, "rev-parse", cur, git_exe=git).stdout.strip() or cur
+        files = gitupdate.git(root, "diff", "--name-only", old, new, git_exe=git).stdout.splitlines()
         print(f"Update: code {new[:SHORT_HASH]} already downloaded, running {cur} - restart needed")
-    count = proto.git(root, "rev-list", "--count", f"{old}..{new}", git_exe=git).stdout.strip() or "?"
+    count = gitupdate.git(root, "rev-list", "--count", f"{old}..{new}", git_exe=git).stdout.strip() or "?"
     text = _("Zaktualizowano ({n} zmian): {old} → {new}").format(n=count, old=old[:SHORT_HASH], new=new[:SHORT_HASH])
     text += " · " + _backup(old, new)
     report(PCT_BACKED_UP)

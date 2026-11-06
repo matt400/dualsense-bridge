@@ -11,6 +11,7 @@ sys.path.insert(0, sys.argv[1])
 sys.path.insert(1, sys.argv[1] + "/../common")
 TX = os.path.abspath(sys.argv[1])
 import sender_config; sender_config.init(["127.0.0.1"])
+import gitupdate
 import proto, sender_net as net, sender_state as state, sender_update as U
 from proto import BODY, T_BUILD, T_UPDMSG, UPD_DONE, UPD_FAILED
 
@@ -67,9 +68,9 @@ def setup():
 # ---------- czytelny powód błędu ----------
 generic = ("git@github.com: Permission denied (publickey).\nfatal: Could not read from remote repository.\n\n"
            "Please make sure you have the correct access rights\nand the repository exists.\n")
-check(proto.git_error(generic) == "git@github.com: Permission denied (publickey).",
-      f"powód błędu bez ogólnego 'Could not read from remote repository': {proto.git_error(generic)!r}")
-check(proto.is_auth_error(proto.git_error(generic)) and not proto.is_auth_error("Could not resolve host: github.com"),
+check(gitupdate.git_error(generic) == "git@github.com: Permission denied (publickey).",
+      f"powód błędu bez ogólnego 'Could not read from remote repository': {gitupdate.git_error(generic)!r}")
+check(gitupdate.is_auth_error(gitupdate.git_error(generic)) and not gitupdate.is_auth_error("Could not resolve host: github.com"),
       "błąd dostępu rozpoznany (sieć to nie dostęp)")
 
 # ---------- skrypt: klucz, adres SSH, instrukcja ----------
@@ -87,9 +88,9 @@ check(not any(".git/" in x for x in git(work, "status", "--porcelain", "--ignore
 
 # ---------- usługa przed dodaniem klucza: czytelny błąd, bez czekania na hasło ----------
 open(log, "w").close()
-st, msg, *_ = proto.git_pull(work)
+st, msg, *_ = gitupdate.git_pull(work)
 calls = open(log).read()
-check(st == UPD_FAILED and "Permission denied (publickey)" in msg and proto.is_auth_error(msg), f"brak dostępu: {st} {msg!r}")
+check(st == UPD_FAILED and "Permission denied (publickey)" in msg and gitupdate.is_auth_error(msg), f"brak dostępu: {st} {msg!r}")
 check("BatchMode=yes" in calls and f"'-i', '{key}'" in calls and "IdentitiesOnly=yes" in calls,
       "git z usługi: ssh bez pytania o hasło, tylko klucz wdrożeniowy")
 
@@ -99,7 +100,7 @@ r = setup()
 check(r.returncode == 0 and r.stdout.startswith("OK"), f"drugie uruchomienie: dostęp potwierdzony: {r.returncode} {r.stdout}{r.stderr}")
 open(os.path.join(seed, "a.txt"), "w").write("2")
 git(seed, "commit", "-qam", "nowa wersja"); git(seed, "push", "-q", "origin", "main")
-st, msg, old, new, files = proto.git_pull(work)
+st, msg, old, new, files = gitupdate.git_pull(work)
 check(st == UPD_DONE and files == ["a.txt"] and open(os.path.join(work, "a.txt")).read() == "2",
       f"git pull z usługi przez klucz wdrożeniowy: {st} {msg!r} {files}")
 
@@ -144,12 +145,12 @@ git(loc, "remote", "set-url", "origin", origin)
 open(os.path.join(seed, "a.txt"), "w").write("3")
 git(seed, "commit", "-qam", "v3"); git(seed, "push", "-q", "origin", "main")
 open(os.path.join(loc, "a.txt"), "w").write("lokalnie")
-st, msg, *_ = proto.git_pull(loc)
+st, msg, *_ = gitupdate.git_pull(loc)
 check(st == UPD_FAILED and msg.startswith("error: Your local changes") and "a.txt" in msg and "From " not in msg,
       f"lokalne zmiany: powód z nazwą pliku, bez postępu pobierania: {msg!r}")
 git(loc, "checkout", "-q", "a.txt")
 open(os.path.join(loc, "b.txt"), "w").write("x"); git(loc, "add", "."); git(loc, "commit", "-qm", "lokalny commit")
-st, msg, *_ = proto.git_pull(loc)
+st, msg, *_ = gitupdate.git_pull(loc)
 check(st == UPD_FAILED and "Not possible to fast-forward" in msg and "hint:" not in msg,
       f"rozjechane gałęzie: właściwy komunikat zamiast podpowiedzi hint: {msg!r}")
 
@@ -162,7 +163,7 @@ check(r.returncode == 1 and "Could not resolve hostname" in r.stderr and "settin
 
 # ---------- własne GIT_SSH_COMMAND użytkownika ma pierwszeństwo ----------
 os.environ["GIT_SSH_COMMAND"] = "ssh -F /dev/null"
-check(proto.ssh_command(work) is None, "GIT_SSH_COMMAND z otoczenia nie jest nadpisywany")
+check(gitupdate.ssh_command(work) is None, "GIT_SSH_COMMAND z otoczenia nie jest nadpisywany")
 del os.environ["GIT_SSH_COMMAND"]
 
 print("WSZYSTKO OK" if not fails else f"FAIL: {fails}")

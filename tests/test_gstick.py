@@ -7,10 +7,7 @@ from dataclasses import replace
 import rx_gstick as G
 import rx_gstick_io as IO
 
-fails = []
-def check(cond, text):
-    print(("OK    " if cond else "FAIL  ") + text)
-    if not cond: fails.append(text)
+from chk import check, fails
 
 def acc(pitch=0.0, roll=0.0):
     """Wektor grawitacji [g] dla pada przechylonego (przód w dół = pitch +, prawa strona w dół = roll +)."""

@@ -11,6 +11,7 @@ import os
 import socket
 import time
 
+import gitupdate
 import proto
 import sender_batt
 import sender_net as net
@@ -35,7 +36,7 @@ _last = float("-inf")           # time of the last update; -inf = never (monoton
 def init() -> None:
     """Read the current git version of the sender's checkout once at startup and log it."""
     global version
-    version = proto.git_version(ROOT)
+    version = gitupdate.git_version(ROOT)
     if version[0]:
         print(f"Sender version {version[0]} ({time.strftime('%Y-%m-%d', time.localtime(version[1]))}): {version[2]}")
 
@@ -95,11 +96,11 @@ async def _pull_and_report() -> None:
     global status, fail_msg
     print("Update requested from PC - git pull")
     send_build()
-    st, msg, old, new, files = await asyncio.to_thread(proto.git_pull, ROOT)
+    st, msg, old, new, files = await asyncio.to_thread(gitupdate.git_pull, ROOT)
     status, fail_msg = st, msg if st == proto.UPD_FAILED else ""
     detail = msg or (f"{old[:7]} -> {new[:7]}" if st == UPD_DONE else ROOT if st == proto.UPD_NOT_GIT else "")
     print(f"Update: {TEXT.get(st, st)}" + (f" ({detail})" if detail else ""))
-    if st == proto.UPD_FAILED and proto.is_auth_error(msg):
+    if st == proto.UPD_FAILED and gitupdate.is_auth_error(msg):
         print("Update: no access to the private repository from the service - run once on the phone: "
               f"{os.path.join(ROOT, 'sender', 'setup-update-key.sh')}")
     if st == UPD_DONE and REQUIREMENTS in files:
