@@ -10,7 +10,8 @@ sender/     Linux:   sender_controller.py (entry), sender_*.py (modules)
 tests/      tests on Linux with Windows and evdev device stubs
 ```
 
-`proto.py` (packet format) lives in `common/` and is shared by `receiver/` and `sender/`; there is only one copy.
+`proto.py` (packet format) and `gitupdate.py` (the git update both sides run) live in `common/` and are shared by `receiver/` and
+`sender/`; there is only one copy.
 
 ## Screenshots
 
