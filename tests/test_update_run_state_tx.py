@@ -15,7 +15,7 @@ from chk import check, fails                                  # noqa: E402  (sha
 async def update_cases():
     real_pull, real_build = gitupdate.git_pull, UPD.send_build
     calls = []
-    def boom(*_a):
+    def boom(*_a, **_k):
         raise RuntimeError("git exploded")
     gitupdate.git_pull = boom
     UPD.send_build = lambda: calls.append(UPD.status)
@@ -29,7 +29,7 @@ async def update_cases():
         check(UPD.fail_msg == UPD.INTERRUPTED, "the failure reason is set for the window")
         check(calls and calls[-1] == proto.UPD_FAILED, "the final state is sent")
         UPD._last = float("-inf")
-        gitupdate.git_pull = lambda *_a: (proto.UPD_NO_CHANGE, "", "", "", [])
+        gitupdate.git_pull = lambda *_a, **_k: (proto.UPD_NO_CHANGE, "", "", "", [])
         await UPD.run()
         check(UPD.status == proto.UPD_NO_CHANGE, "the next update can run")
     finally:

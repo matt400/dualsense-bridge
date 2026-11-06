@@ -65,7 +65,7 @@ async def main():
     state.restart = False
     calls = []
     real = gitupdate.git_pull
-    U.gitupdate.git_pull = lambda root: calls.append(root) or (UPD_NO_CHANGE, "", "", "", [])
+    U.gitupdate.git_pull = lambda root, **_k: calls.append(root) or (UPD_NO_CHANGE, "", "", "", [])
     await U.run()
     assert not calls, "drugie polecenie w ciągu 30 s - nic"
     U._last = 0.0
