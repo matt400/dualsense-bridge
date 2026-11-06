@@ -17,6 +17,7 @@ k32 = ctypes.windll.kernel32
 user32 = ctypes.windll.user32
 _mutex: int | None = None
 
+NO_WINDOW: Final = getattr(subprocess, "CREATE_NO_WINDOW", 0)   # creationflags: a console program without a console window
 # What a failing WinAPI call through ctypes raises: a missing export (older Windows / the Linux stubs), a failed call, a bad argument.
 _WINAPI_ERRORS: Final = (AttributeError, OSError, TypeError, ctypes.ArgumentError)
 
@@ -456,7 +457,7 @@ def shutdown_pc(delay_s: int = 10) -> None:
     """A delayed shutdown - until then "shutdown /a" in a console aborts it."""
     exe = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "shutdown.exe")
     subprocess.run([exe, "/s", "/t", str(int(delay_s))], timeout=15, check=False,
-                   creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                   creationflags=NO_WINDOW)
 
 
 def send_click(down_flag: int, up_flag: int) -> None:
@@ -568,7 +569,7 @@ def harden_dir(path: str) -> tuple[bool, str]:
     for args in steps:
         try:
             r = subprocess.run([icacls, *args], capture_output=True, text=True, timeout=300,
-                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                               creationflags=NO_WINDOW)
         except (OSError, subprocess.SubprocessError) as e:
             return False, repr(e)
         if r.returncode:

@@ -42,9 +42,9 @@ from typing import Final
 
 from proto import HAPT_CHUNK, HAPT_FRAMES, HAPT_RATE, SPK_BYTES, SPK_END, SPK_FRAME, SPK_START, UINT32_MASK
 from sender_haptics import (BUFFER_AT, BUFFER_BYTES, COUNTER_AT, CRC_AT, DATA_AT, HEADER, PAD_BUFFER_DEFAULT, REPORT_LEN, SEQ_AT,
-                            LATE_S, RESYNC_S, RETRY_S, LogCounters, Playout, frame_delta, on_clock)
+                            LATE_S, RESYNC_S, RETRY_S, SEED_CRC, LogCounters, Playout, frame_delta, on_clock)
 from sender_opus import COMPLEXITY_AUTO, DEFAULT_MODE, OpusEncoder
-from sender_rumble import BT_SEQ_MASK, BT_SEQ_SHIFT, BYTE_MASK, CRC_LEN, CRC_SEED, Rumble
+from sender_rumble import BT_SEQ_MASK, BT_SEQ_SHIFT, BYTE_MASK, CRC_LEN, Rumble
 from sender_tick import TickTimer
 
 # ---- report 0x36 (measured on the real pad, P3a) ----
@@ -54,7 +54,6 @@ HAPT_END_AT: Final = DATA_AT + HAPT_CHUNK   # 77: the byte after the haptics sam
 SPK_SUB_ID: Final = 0x93                    # speaker sub-packet: 0x13 | "sized" bit, then its length, then the Opus packet
 OPUS_AT: Final = HAPT_END_AT + 2
 CRC36_AT: Final = REPORT36_LEN - CRC_LEN
-_SEED_CRC: Final = zlib.crc32(CRC_SEED)     # zlib.crc32(data, _SEED_CRC) == zlib.crc32(CRC_SEED + data)
 
 # ---- jitter buffer and timing (all in whole 10 ms frames) ----
 PERIOD_S: Final = HAPT_FRAMES / HAPT_RATE   # the pad's report clock: 10.667 ms
@@ -152,10 +151,10 @@ class Report3x:
         self._counter = (self._counter + 1) & BYTE_MASK
         buf[COUNTER_AT] = self._counter
         if self._fill is None:
-            struct.pack_into("<I", buf, CRC_AT, zlib.crc32(self._short[:CRC_AT], _SEED_CRC))
+            struct.pack_into("<I", buf, CRC_AT, zlib.crc32(self._short[:CRC_AT], SEED_CRC))
             return self._short
         self._fill()
-        struct.pack_into("<I", buf, CRC36_AT, zlib.crc32(self._view[:CRC36_AT], _SEED_CRC))
+        struct.pack_into("<I", buf, CRC36_AT, zlib.crc32(self._view[:CRC36_AT], SEED_CRC))
         return self._view
 
 

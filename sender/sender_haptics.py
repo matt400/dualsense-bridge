@@ -54,7 +54,7 @@ HEADER: Final = bytes([REPORT_ID, 0x00, 0x91, 0x07, 0xFE, 0x10, 0x10, 0x10, 0x10
 BUFFER_AT, BUFFER_BYTES = 5, 5              # the pad's audio buffer length: 16 (least delay) .. 128 (most resistant to Bluetooth jitter)
 PAD_BUFFER_DEFAULT: Final = 0x10            # what the sender always sent; the haptics-only report keeps it
 CRC_AT: Final = REPORT_LEN - CRC_LEN        # the CRC32 is little endian, seeded with 0xA2 (like 0x31), over bytes 0..CRC_AT-1
-_SEED_CRC: Final = zlib.crc32(CRC_SEED)     # zlib.crc32(data, _SEED_CRC) == zlib.crc32(CRC_SEED + data) without building the sum
+SEED_CRC: Final = zlib.crc32(CRC_SEED)     # zlib.crc32(data, SEED_CRC) == zlib.crc32(CRC_SEED + data) without building the sum
 
 # ---- jitter buffer and timing ----
 FRAME_BYTES: Final = 2                      # one stereo frame: left grip, right grip (signed 8-bit)
@@ -132,7 +132,7 @@ class Report32:
         buf[SEQ_AT] = (seq & BT_SEQ_MASK) << BT_SEQ_SHIFT
         self._counter = (self._counter + 1) & BYTE_MASK
         buf[COUNTER_AT] = self._counter
-        struct.pack_into("<I", buf, CRC_AT, zlib.crc32(self._view[:CRC_AT], _SEED_CRC))
+        struct.pack_into("<I", buf, CRC_AT, zlib.crc32(self._view[:CRC_AT], SEED_CRC))
         return self._view
 
 

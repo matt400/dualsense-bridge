@@ -56,7 +56,7 @@ from sender_ioctl import IOC_READ, IOC_WRITE, ioc
 from proto import (CAP_HAPTICS, CAP_SPEAKER, CAP_TRIG_FX, CAP_TRIG_RAW, CAP_TRIGGERS, PLAYER_LEDS_MASK, RFX_GAIN_MAX, RFX_HOLD_S,
                    RFX_ON, RUMBLE_EVDEV, RUMBLE_HIDRAW, TFX_CLICK, TFX_OFF, TFX_RES, TFX_VIB, TRG3_L2, TRG3_R2, TRIG2_OFF,
                    TRIG_AMP_MAX, TRIG_CLICK_MAX, TRIG_CLICK_MIN, TRIG_FORCE_MAX, TRIG_FREQ_MAX, TRIG_START_MAX, WHY_ACCESS,
-                   WHY_NO_HIDRAW, WHY_NOT_FOUND, WHY_OFF, WHY_OK, WHY_OPEN, trig2_from_legacy)
+                   UINT32_MASK, WHY_NO_HIDRAW, WHY_NOT_FOUND, WHY_OFF, WHY_OK, WHY_OPEN, trig2_from_legacy)
 
 # Rumble modes (sender.toml) and the ways a rumble can actually be delivered.
 MODE_AUTO: Final = "auto"
@@ -75,7 +75,6 @@ BT_SEQ_SHIFT: Final = 4                     # the sequence number is the high ni
 BT_SEQ_MASK: Final = 0x0F
 CRC_SEED: Final = b"\xa2"                   # the CRC32 of a Bluetooth report is seeded with this byte
 CRC_LEN: Final = 4
-UINT32_MASK: Final = 0xFFFFFFFF
 BYTE_MASK: Final = 0xFF
 VALID_FLAG0_AT, VALID_FLAG1_AT = 0, 1       # "valid_flag" bytes: which parts of the report the pad should apply
 MOTOR_RIGHT_AT, MOTOR_LEFT_AT = 2, 3        # the right (weak) and the left (strong) motor

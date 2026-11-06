@@ -28,13 +28,12 @@ C.cfg["tray"] = False
 C.CONSOLE_PATH = os.path.join(TMP, "console.json")
 
 import rx_audio, rx_bt as RB, rx_console, rx_diag, rx_drift as D, rx_latency, rx_master, rx_qt   # noqa: E402,E401
-from proto import (BTD_CONNECTED, BTD_PAD, BTD_PAIRED, BTD_TRUSTED, BTS_OK, CAP_CALIB,   # noqa: E402
+from proto import (BTD_CONNECTED, BTD_PAD, BTD_PAIRED, BTD_TRUSTED, BTF_LIST, BTS_OK, CAP_CALIB,   # noqa: E402
                    RUMBLE_HIDRAW, T_BTDEV, T_BTSTATE, T_IDENT, T_TOUCH, mac_bytes)
 from rx_console import Console, ConsoleConfig                     # noqa: E402
 from PySide6.QtTest import QTest                                  # noqa: E402
 from PySide6.QtWidgets import QWidget                               # noqa: E402
 
-BTF_LIST = 4                                                      # sender_bt.BTF_LIST: a device list round
 PADS = "a0:5a:5c:8e:12:41", "a0:5a:5c:3b:77:c2"
 SIZE = 1180, 760
 pump = lambda ms=60: QTest.qWait(ms)                              # noqa: E731

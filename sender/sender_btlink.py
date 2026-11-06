@@ -35,9 +35,8 @@ from pathlib import Path
 from typing import Final, Protocol
 
 from proto import mac_bytes
+from sender_btadapter import AF_BLUETOOTH, BTPROTO_HCI
 
-AF_BLUETOOTH: Final = getattr(socket, "AF_BLUETOOTH", 31)
-BTPROTO_HCI: Final = 1
 SOL_HCI, HCI_FILTER = 0, 2
 HCI_CHANNEL_RAW: Final = 0
 HCIGETCONNLIST: Final = 0x800448D4        # _IOR('H', 212, int) -> struct hci_conn_list_req

@@ -57,7 +57,7 @@ from rx_display import DPI_VALUES
 from rx_i18n import LANGS
 from rx_qt_icons import icon
 from rx_qt_padscope import PadScope
-from rx_qt_screens import parse_size
+from rx_qt_screens import FIT_MARGIN, parse_size
 from rx_qt_sendercfg import SenderCfgPanel
 from rx_qt_style import set_prop
 from rx_qt_widgets import (Combo, ConfirmButton, SideTabs, SliderRow, button, field, group, icon_button, icon_label, input_items,
@@ -74,7 +74,6 @@ WINDOW_RESOLUTIONS = ((1280, 720), (1366, 768), (1600, 900), (1920, 1080), (2560
 STARTUP_LABELS = {"extend": "Rozszerz: oba ekrany aktywne", "internal": "Tylko monitor"}
 PREF_SIZE = QSize(1060, 780)  # the settings window size on a big screen (a smaller screen -> a smaller one, with scrolling)
 FRAME_GUESS = QSize(16, 40)   # the Windows frame and title bar, before the window is shown
-FIT_MARGIN = 24
 RESTORE_RESTART_MS = 1500     # after restoring a backup: the message is visible this long, then the receiver restarts
 
 

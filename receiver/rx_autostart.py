@@ -26,10 +26,11 @@ import tempfile
 from xml.sax.saxutils import escape, unescape
 from typing import Final
 
+import rx_winapi
+
 NAME: Final = "DualSenseBridge"
 ADMIN_NAME: Final = "DualSenseBridgeAdmin"     # start on demand as administrator (no UAC) - no trigger
 RUN_KEY: Final = r"Software\Microsoft\Windows\CurrentVersion\Run"
-NO_WINDOW: Final = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 # what a failing schtasks / registry call raises: the program is missing or not allowed to run
 _TASK_ERRORS: Final = (OSError, subprocess.SubprocessError)
@@ -82,8 +83,8 @@ def task_xml(exe: str, args: str, workdir: str, user: str, elevated: bool = Fals
 
 def _schtasks(*args: str) -> subprocess.CompletedProcess[str]:
     """Run schtasks.exe with the arguments, without a console window; returns the CompletedProcess."""
-    return subprocess.run(["schtasks", *args], capture_output=True, text=True, timeout=SCHTASKS_TIMEOUT_S, creationflags=NO_WINDOW,
-                          check=False)
+    return subprocess.run(["schtasks", *args], capture_output=True, text=True, timeout=SCHTASKS_TIMEOUT_S,
+                          creationflags=rx_winapi.NO_WINDOW, check=False)
 
 
 def _run_value() -> str | None:

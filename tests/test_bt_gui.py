@@ -22,7 +22,7 @@ ok = lambda msg: print("OK  ", msg)
 pump = lambda ms=40: QTest.qWait(ms)
 SHOTS = os.environ.get("SHOTS") or os.path.dirname(__file__)
 PAD, PAD2, PHONE = "aa:bb:cc:dd:ee:01", "aa:bb:cc:dd:ee:02", "11:22:33:44:55:66"
-LIST = 4                                                          # sender_bt.BTF_LIST
+from proto import BTF_LIST as LIST
 gen = [0]
 
 

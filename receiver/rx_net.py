@@ -28,7 +28,7 @@ import rx_testmode as testmode
 from proto import (BATT_CHARGING, BATT_UNKNOWN, BODY, CAL_MOVED, CAL_OK, CLICK_PRESSED, CLICK_TWO_FINGERS, HEADER_LEN, LAT_NONE, MUTE_BIT,
                    NO_PAD, PAD_KEYS, RTT_NONE, SCFG_BATT, SCFG_EVENTS, SCFG_WOL, STATE_CHARGING, STATE_FIELDS, UINT32_MASK, WIRE, Codec,
                    EpochClock, T_BTCTRL, T_BTDEV, T_BTLINK, T_BTSTATE, T_BUILD, T_BUILD2, T_BUILD3, T_BYE, T_CALRES, T_CFGVAL, T_CLICK,
-                   T_CMD, T_EVENT, T_FB, T_HAPT, T_IDENT, T_INFO, T_LEDS,
+                   T_CMD, T_EVENT, T_FB, T_HAPT, T_IDENT, T_INFO, T_LEDS, SEQ_MASK,
                    T_MOUSE, T_PING, T_PONG, T_PONG2, T_SCFG, T_SPK, T_STATE, T_STATE2, T_TOUCH, T_TRIG, T_TRIG2, T_TRIG3, T_UPDMSG,
                    T_VERSION, TRIG2_OFF, clamp, cstr, mac_bytes, mac_text)
 from rx_buttons import BUTTON_CODES, MASK_ALL, PS_BIT, TRIG_ON
@@ -50,7 +50,6 @@ WSAEMSGSIZE: Final = 10040             # a foreign, too large datagram
 WSAECONNRESET: Final = 10054           # ICMP port unreachable
 RECV_SIZE: Final = 2048
 CHECK_EVERY_S: Final = 0.1             # the periodic checks run this often
-SEQ_MASK: Final = 0xFFFF               # the packet sequence number is 16-bit
 SEQ_HALF: Final = 0x8000
 # state fields before the motion block: sticks + triggers (6), hat (2), buttons, battery, flags
 STATE_HEAD: Final = 11

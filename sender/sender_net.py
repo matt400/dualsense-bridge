@@ -16,11 +16,10 @@ import sender_events as events
 import sender_state as state
 from proto import (BODY, E_NET_DOWN, E_NO_RECEIVER, HAPT_CHUNK, HAPT_DATA_AT, NS_PER_MS, RTT_NONE, SCFG_BATT, SPK_BYTES, SPK_DATA_AT,
                    UINT32_MASK, VER3, VER_SHIFT, Codec, EpochClock, SeqFilter, T_BTCMD, T_CFGSET, T_CMD, T_FB, T_HAPT, T_LEDS, T_PING,
-                   T_PONG, T_PONG2, T_SCFG, T_SPK, T_TRIG, T_TRIG2, T_TRIG3)
+                   T_PONG, T_PONG2, T_SCFG, T_SPK, T_TRIG, T_TRIG2, T_TRIG3, HEADER_LEN)
 from sender_config import C
 
 # the packet header is 4 bytes (see proto.HDR); the body of every received packet is unpacked right after it
-HEADER_LEN: Final = 4
 HAPT_HEAD: Final = struct.Struct("!IB")     # the hapt body before the samples: the first frame's number, flags
 HAPT_AT: Final = HEADER_LEN + HAPT_DATA_AT   # where the samples of a hapt packet start
 SPK_AT: Final = HEADER_LEN + SPK_DATA_AT     # where the samples of a spk packet start

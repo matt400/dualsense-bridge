@@ -20,12 +20,12 @@ import rx_access as A
 import rx_profiles as P
 import rx_reach as R
 import rx_state as S
+from rx_editor import STICK_NAME
 from rx_i18n import _
 from rx_qt_style import ACCENT, LINE, px, set_prop
 from rx_qt_widgets import Combo, ConfirmButton, SegmentBar, SliderRow, button, field, label
 
 SAVE_MS = 300                      # a slider edit is saved this long after the last move (one write per drag)
-STICK_NAME = {"left": "Lewa gałka", "right": "Prawa gałka"}
 CHOICES = (("right", "Prawa gałka"), ("left", "Lewa gałka"), ("both", "Obie gałki"))
 
 

@@ -303,8 +303,9 @@ BTA_AUTO, BTA_PICK, BTA_MANUAL = 1, 2, 3
 BTC_USB, BTC_FIXED, BTC_ACTIVE, BTC_BLOCKED, BTC_PICKED = 1, 2, 4, 8, 16
 # adapter state: works, off, blocked (rfkill), no adapter, no bluetoothd, no permission, no busctl, another error
 BTS_OK, BTS_OFF, BTS_BLOCKED, BTS_NO_ADAPTER, BTS_NO_SERVICE, BTS_DENIED, BTS_NO_TOOL, BTS_ERROR = range(8)
-BTF_SCANNING, BTF_BUSY = 1, 2                           # btstate flags: a scan is running, an operation is running
-# (4 = the sender's BTF_LIST) there is a built-in controller, there is a USB dongle, the dongle is in use; the BTA_* mode in bits 6-7
+# btstate flags: a scan is running, an operation is running, a device list round follows right after this packet,
+# there is a built-in controller, there is a USB dongle, the dongle is in use; the BTA_* mode in bits 6-7
+BTF_SCANNING, BTF_BUSY, BTF_LIST = 1, 2, 4
 BTF_HAS_BUILTIN, BTF_HAS_USB, BTF_ON_USB, BTF_MODE_SHIFT = 8, 16, 32, 6
 # operation result: none, running, succeeded, failed, time exceeded, unknown device, pairing rejected, no permission,
 # adapter off / blocked, adapter busy (another operation)
