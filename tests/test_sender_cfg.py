@@ -6,7 +6,8 @@ from rxenv import *                                              # noqa
 import cfgspec
 import rx_sender_cfg as SC
 import rx_settings
-from proto import (BODY, HEADER_LEN, CFG_ALL, CFG_GET, CFG_RESET, CFG_SET, CFGF_REMOTE, CFGR_NO_KEY, CFGR_OK, T_CFGSET, T_CFGVAL, Codec)
+from proto import (BODY, HEADER_LEN, CFG_ALL, CFG_GET, CFG_RESET, CFG_SET, CFGF_REMOTE, CFGR_NO_KEY, CFGR_OK, CFGR_UNKNOWN, T_CFGSET, T_CFGVAL,
+                   Codec)
 from chk import check, fails                                  # noqa: E402
 
 # ---------- settings.json: sekcja "sender" ----------
@@ -145,5 +146,22 @@ rx_settings.apply(rx_settings.Settings())
 check(requests()[0][:2] == (CFG_RESET, cfgspec.BY_KEY["gestures"]), "usunięty wpis = RESET tego ustawienia")
 rx_settings.apply(rx_settings.Settings(mouse=rx_settings.MouseConfig(sens=0.7)))
 check(not wire, "zmiana innej sekcji nie rusza nadajnika")
+
+# ---------- zgodność wersji: nowszy nadajnik (więcej ustawień) i starszy (nie zna ustawienia) ----------
+def raw_cfgval(key, result, value=1.0):
+    data = tx.pack(T_CFGVAL, 255, key, result, 9, 0, value, value)
+    p = N.codec.parse(data)
+    N._on_control(p[0], p[1], p[2], data, S.peer, time.monotonic(), 0)
+
+S.sender_cfg.clear(); S.sender_cfg_result = None
+cfgval("max_pads", 2, 2)
+raw_cfgval(len(cfgspec.SPECS), CFGR_OK)                  # an id added in a newer sender, sent as part of its normal answer
+check(S.sender_cfg_result == CFGR_OK, "nowszy nadajnik: nieznane ustawienie w odpowiedzi to nie odmowa całego odczytu")
+check(len(S.sender_cfg) == 1, "nieznane ustawienie nie tworzy wiersza")
+raw_cfgval(cfgspec.BY_KEY["max_pads"], CFGR_UNKNOWN, 0.0)   # an older sender that does not know a setting this receiver asked for
+check("max_pads" not in S.sender_cfg and S.sender_cfg_result == CFGR_OK,
+      "starszy nadajnik nie zna ustawienia: bez wiersza z zerami, reszta działa")
+raw_cfgval(CFG_ALL, CFGR_NO_KEY)
+check(S.sender_cfg_result == CFGR_NO_KEY, "odmowa całego żądania (CFG_ALL) nadal działa")
 
 sys.exit(1 if fails else 0)

@@ -111,10 +111,16 @@ def _value(spec: cfgspec.Spec, number: float) -> cfgspec.Value:
 def on_packet(data: bytes, now: float) -> None:
     """Handle a cfgval: remember the row, or the reason the sender refuses all of it (no key / not v3 / switched off)."""
     key, result, _echo, flags, number, base = BODY[T_CFGVAL].unpack_from(data, HEADER_LEN)
-    if key >= len(cfgspec.SPECS):
+    if key == CFG_ALL:                  # an answer about the whole request: the sender refuses it
         S.sender_cfg_result = result if result in (CFGR_NO_KEY, CFGR_NO_V3, CFGR_OFF, CFGR_UNKNOWN) else CFGR_UNKNOWN
         return
+    if key >= len(cfgspec.SPECS):
+        return                          # a newer sender's setting this receiver does not know (the ids are append-only): skip it
     spec = cfgspec.SPECS[key]
+    if result == CFGR_UNKNOWN:          # an older sender that does not know this setting: no row (its numbers are zeros, not values)
+        S.sender_cfg.pop(spec.key, None)
+        S.sender_cfg_gen += 1
+        return
     S.sender_cfg_result = CFGR_OK
     S.sender_cfg[spec.key] = Row(_value(spec, number), _value(spec, base), bool(flags & CFGF_REMOTE), result, now)
     if result == CFGR_INVALID:

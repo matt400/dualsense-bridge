@@ -101,14 +101,17 @@ class NetDiag:
         """
         now = time.monotonic() if now is None else now
         prev = self._prev
-        self._prev = (sent_ns, arrived_ns)
         restart = now - self._last_ping > PING_RESTART_S
         self._last_ping = now
         if prev is None or restart:
+            self._prev = (sent_ns, arrived_ns)
             self.jitter_ms = None
             return
         if sent_ns <= prev[0]:
-            return                                         # a repeated or replayed ping: no spacing to measure
+            # a repeated, reordered or replayed ping: no spacing to measure, and it must not become the reference either - a
+            # replayed old ping (sent long ago, arrived now) would make the next real spacing look like a jitter of seconds
+            return
+        self._prev = (sent_ns, arrived_ns)
         d = abs((arrived_ns - prev[1]) - (sent_ns - prev[0])) / NS_PER_MS
         self.jitter_ms = d if self.jitter_ms is None else self.jitter_ms + (d - self.jitter_ms) / JITTER_GAIN
 

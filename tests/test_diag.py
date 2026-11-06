@@ -41,6 +41,8 @@ n.ping(300 * NS, 1300 * NS, now=10.35)
 j = n.jitter_ms
 n.ping(250 * NS, 1400 * NS, now=10.4)
 assert n.jitter_ms == j, "a repeated / replayed ping does not count"
+n.ping(400 * NS, 1400 * NS, now=10.45)     # the next real ping, evenly spaced from the last real one (300 -> 1300)
+assert abs(n.jitter_ms - j * 15 / 16) < 1e-9, ("a replayed ping must not become the reference of the next spacing", n.jitter_ms)
 n.ping(400 * NS, 1500 * NS, now=12.0)
 assert n.jitter_ms is None, "a silence longer than PING_RESTART_S restarts the estimate"
 ok("jitter: RFC 3550 estimate, replay ignored, restart after a gap")

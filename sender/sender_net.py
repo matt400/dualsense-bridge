@@ -42,6 +42,7 @@ REPEAT_DELAYS: Final = (0.01, 0.03)   # emit_repeat repeats [s]
 PROBE_EVERY: Final = 4                # with a key, before switching to v3: an extra v3 ping every this many pings (1/s)
 # send errors that only mean "this packet did not go": a full device queue, a neighbour that does not answer (the PC is off)
 DROP_ERRNO: Final = frozenset({errno.ENOBUFS, errno.EHOSTUNREACH})
+MAX_RTT_NS: Final = 1_000_000_000     # a pong later than this answers a stale (replayed) ping, not a measurement
 RTT_HISTORY: Final = 64
 RTT_RECENT: Final = 8
 
@@ -240,7 +241,12 @@ def emit_repeat(ptype: int, idx: int, *vals: int | float | bytes, delays: tuple[
 def _on_pong(data: bytes) -> None:
     """Record the RTT of a plain pong (the receiver's answer to our ping) and note that the receiver is alive."""
     global pongs, last_pong
-    rtt = (clock.ns() - BODY[T_PONG].unpack_from(data, HEADER_LEN)[0]) / NS_PER_MS
+    rtt_ns = clock.ns() - BODY[T_PONG].unpack_from(data, HEADER_LEN)[0]
+    if not 0 <= rtt_ns <= MAX_RTT_NS:
+        # the answer to a replayed old ping (a ping is exempt from the v3 freshness check, the pong is fresh) or to a ping of a
+        # previous process (another clock base): not a round trip, it must not reach the statistics or the info packet
+        return
+    rtt = rtt_ns / NS_PER_MS
     rtts.append(rtt)
     recent_rtt.append(rtt)
     last_pong = time.monotonic()
