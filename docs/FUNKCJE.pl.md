@@ -9,6 +9,21 @@
   opublikuje później, nie instaluje się samo; przypięcie przesuwa się razem z aktualizacją receivera (tylko DLL i jej zależności z zipa wydania, przez HTTP Range), a
   receiver uruchamia się jako administrator (UAC; zadanie autostartu z najwyższymi uprawnieniami). Zmiana działa od razu (pady powstają od nowa). Błąd HIDMaestro przy tworzeniu pada = ten pad przez
   ViGEmBus i ostrzeżenie w dzienniku. Karta pada (ikona touchpada) pokazuje, jakim padem jest slot.
+
+  Co działa z którym backendem (reszta mostu od niego nie zależy):
+
+  | | HIDMaestro (DualSense) | ViGEmBus (DS4) |
+  |---|:---:|:---:|
+  | Przyciski, gałki, spusty, touchpad, żyroskop | ✅ | ✅ |
+  | Wibracje z gry | ✅ | ✅ |
+  | Kolor lightbara ustawiony przez grę | ✅ | ✅ |
+  | Efekty spustów adaptacyjnych ustawione przez grę | ✅ | ❌ (tylko z profilu, ustawia je nadajnik) |
+  | Diody graczy i dioda mute ustawione przez grę | ✅ | ❌ |
+  | Przycisk mute jako przycisk dla gry | ✅ | ❌ |
+  | Haptyka HD z gry i głośnik pada | ✅ (opcjonalnie, wymaga pada złożonego) | ❌ |
+  | Serwer DSU, touchpad jako mysz, profile, remap, skróty | ✅ | ✅ |
+  | Wymaga | administratora, .NET 10, sterownika HIDMaestro | sterownika ViGEmBus; bez administratora |
+  | Rozwój | aktywny | porzucony przez autora, bez aktualizacji - zapas |
 - **Serwer DSU (Cemuhook)** z ruchem i dotykiem dla emulatorów (Cemu, Yuzu/Ryujinx, Dolphin) na tym komputerze;
   emulator na innym urządzeniu wymaga `dsu_bind = "0.0.0.0"`.
 - **Touchpad jako mysz:** kursor, tap = lewy przycisk, przewijanie dwoma palcami, tap dwoma palcami = prawy przycisk.

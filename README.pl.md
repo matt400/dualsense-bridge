@@ -83,7 +83,8 @@ python receiver_controller.py
   zadanie Harmonogramu z najwyższymi uprawnieniami (`DualSenseBridgeAdmin`, autostart tak samo). `--no-elevate`
   wyłącza samo podnoszenie uprawnień.
 - Zapas: instalator `vgamepad` zaproponuje sterownik **ViGEmBus** (pad PS4). Zainstaluj go. Bez HIDMaestro albo bez
-  uprawnień administratora receiver użyje ViGEmBus. Wybór: Ustawienia → Pady.
+  uprawnień administratora receiver użyje ViGEmBus. Wybór: Ustawienia → Pady. ViGEmBus jest porzucony przez autora (bez
+  aktualizacji) i potrafi mniej niż HIDMaestro - zobacz tabelę w [docs/FUNKCJE.pl.md](docs/FUNKCJE.pl.md).
 - Przy pierwszym starcie zapora Windows zapyta o dostęp do sieci. Zezwól w **sieciach prywatnych** (UDP 5005).
 - `--autostart on` uruchamia receiver zaraz po zalogowaniu do Windows (`--autostart off` wyłącza).
 - Receiver działa w zasobniku. Kliknij jego ikonę, żeby otworzyć okno.
