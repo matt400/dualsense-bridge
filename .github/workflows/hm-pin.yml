@@ -1,0 +1,22 @@
+name: hm-pin
+on:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - receiver/hm_pin.json
+      - receiver/rx_hm_update.py
+      - tools/hm_pin.py
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: The pinned HIDMaestro release still matches the pin
+        run: python3 tools/hm_pin.py --check

@@ -32,7 +32,6 @@ Most often changed:
 | `haptics_motors` | sender | haptics | when a game rumbles during haptics: `haptics` (motors ignored, logged once) or `rumble` (motors pause the haptics) |
 | `key` | both | "" | shared HMAC key: signed packets and replay protection ([SECURITY.md](SECURITY.md)) |
 | `dsu_bind` | receiver | 127.0.0.1 | DSU server address; `0.0.0.0` = emulator on another device |
-| `hm_min_age_days` | receiver | 7 | unused while HIDMaestro is pinned to a version (the default); without a pin a new release waits this many days after publishing; `0` = immediately |
 | `mouse_sens`, `scroll_sens` | receiver | 0.5, 0.6 | touchpad mouse and scroll sensitivity |
 | `ps_modifier` | receiver | true | PS as the shortcut key (PS goes to the game on release) |
 | `ps_hold_action` | receiver | gamebar | long PS: `gamebar`, `bigpicture`, `none` |
@@ -59,8 +58,8 @@ defaults (the file is created and fixed, a corrupted one is kept as `console.jso
 
 Touchpad mouse, master pad, lightbar, game haptics, Wake-on-LAN, event log settings and virtual pads are in `receiver/settings.json`
 (window → Settings, takes effect immediately). Virtual pads (`vpad`): `backend` = `auto` | `hidmaestro` | `vigem`,
-`fixed_slots` = fixed player order (placeholder pad in an empty lower slot), `hm_auto` = download and update
-HIDMaestro from GitHub (once a day, to `receiver/hidmaestro/vX.Y.Z/`; a new version takes effect after a restart when
+`fixed_slots` = fixed player order (placeholder pad in an empty lower slot), `hm_auto` = download the
+HIDMaestro version pinned in `receiver/hm_pin.json` from GitHub (to `receiver/hidmaestro/vX.Y.Z/`; a new version takes effect after a restart when
 an older one is already in use), `hm_dll` = a custom `HIDMaestro.Core.dll` or its folder (then no download). Window preferences (`ui`): `lang` = `pl` | `en`, `pads_mode` = `dynamic` (the left column shows
 only connected pads) | `fixed`, `pads_count` = how many pads `fixed` always shows (1-4). The number of slots is `pads` in
 `receiver.toml` (4 by default, max 4). The

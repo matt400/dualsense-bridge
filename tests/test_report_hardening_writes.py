@@ -1,5 +1,5 @@
 """Receiver: regressions from the code review - a neutral first report of the virtual DualSense, hardening the repository
-root (with .git), blocking the HIDMaestro update on an unreadable publish date, writing remap.json outside the lock,
+root (with .git), writing remap.json outside the lock,
 atomic writes, settings unchanged after a failed write, SO_EXCLUSIVEADDRUSE.
     python3 tests/test_report_hardening_writes.py receiver"""
 import ctypes, json, os, socket, sys, tempfile, threading, time, types
@@ -33,29 +33,6 @@ check(r[7] & 0x0F == 8, f"D-pad neutral (8), not 'up' (0): {r[7] & 0x0F}")
 check(r[4] == 0 and r[5] == 0 and r[7] & 0xF0 == 0 and r[8] == 0 and r[9] == 0, "no buttons and no triggers")
 check(bytes(pad.buf) == r, "the pad buffer (fixed address) holds the same report")
 pad.close()
-
-
-# ---------- HIDMaestro: an unreadable publish date blocks the update ----------
-real_save_state = U._save_state                                    # the atomic writes section below checks the real function
-U.root = lambda: TMP
-U._save_state = lambda *a: None
-installs = []
-U.install = lambda tag, url, opener=None: installs.append(tag)
-U.cleanup = lambda keep: None
-U.refresh_status = lambda: U.status
-U.status = U.Status(version="v1.0.0")
-U.latest_release = lambda: ("v1.1.0", "https://example/zip", 0.0)
-st = U.check(force=True)
-check(not installs and "publication date" in st.error and st.version == "v1.0.0",
-      f"unreadable date: no install, a clear error: {st.error!r}")
-now = time.time()
-U.latest_release = lambda: ("v1.1.0", "https://example/zip", now - 8 * 86400)
-st = U.check(force=True)
-check(installs == ["v1.1.0"] and not st.error, "on the next check with a valid date: install")
-installs.clear(); U.status = U.Status()
-U.latest_release = lambda: ("v1.2.0", "https://example/zip", 0.0)
-U.check(force=True)
-check(installs == ["v1.2.0"], "the first install does not depend on the date (nothing to protect)")
 
 
 # ---------- RemapStore: write (fsync) outside the lock, the last write wins ----------
@@ -103,21 +80,10 @@ ok, _msg = rx_settings.update(None, mouse=before.mouse)
 check(ok and rx_settings.cur.mouse.sens == before.mouse.sens, "no path: only applied (as before)")
 
 
-# ---------- atomic writes: HIDMaestro state, backup meta.json ----------
-state_dir = tempfile.mkdtemp()
-U.root = lambda: state_dir
+# ---------- atomic writes: backup meta.json ----------
 real_replace = os.replace
 def broken_replace(a, b):
     raise OSError("przerwane")
-real_save_state(1.0, "v1")
-state_file = os.path.join(state_dir, "state.json")
-os.replace = broken_replace
-try:
-    real_save_state(2.0, "v2")                                      # the I/O error is ignored, the old file stays whole
-finally:
-    os.replace = real_replace
-check(json.load(open(state_file, encoding="utf-8")) == {"checked": 1.0, "latest": "v1"}, "state.json: an interrupted write does not break the file")
-check(os.listdir(state_dir) == ["state.json"], f"no leftover .tmp: {os.listdir(state_dir)}")
 
 bk_dir = tempfile.mkdtemp()
 src = os.path.join(bk_dir, "settings.json")

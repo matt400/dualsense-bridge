@@ -5,8 +5,8 @@
 - **Wirtualny DualSense** (HIDMaestro) albo **DS4** (ViGEmBus) z przyciskami, gałkami, spustami, touchpadem,
   żyroskopem, wibracjami i kolorem lightbara z gry. Ustawienia → Pady: `auto` (HIDMaestro, gdy jest DLL i receiver
   działa jako administrator, inaczej ViGEmBus), `hidmaestro` (to samo, ale brak HIDMaestro to ostrzeżenie w dzienniku)
-  albo `vigem`. HIDMaestro pobiera się sam z GitHuba - przypięta wersja (`PINNED_TAG`, stały link, sprawdzany SHA-256), więc wydanie, które autor
-  opublikuje później, nie instaluje się samo; przypięcie przesuwa się razem z aktualizacją receivera (tylko DLL z zipa wydania, przez HTTP Range), a
+  albo `vigem`. HIDMaestro pobiera się sam z GitHuba - wersja przypięta w `receiver/hm_pin.json` (stały link, sprawdzany SHA-256 każdego pliku), więc wydanie, które autor
+  opublikuje później, nie instaluje się samo; przypięcie przesuwa się razem z aktualizacją receivera (tylko DLL i jej zależności z zipa wydania, przez HTTP Range), a
   receiver uruchamia się jako administrator (UAC; zadanie autostartu z najwyższymi uprawnieniami). Zmiana działa od razu (pady powstają od nowa). Błąd HIDMaestro przy tworzeniu pada = ten pad przez
   ViGEmBus i ostrzeżenie w dzienniku. Karta pada (ikona touchpada) pokazuje, jakim padem jest slot.
 - **Serwer DSU (Cemuhook)** z ruchem i dotykiem dla emulatorów (Cemu, Yuzu/Ryujinx, Dolphin) na tym komputerze;

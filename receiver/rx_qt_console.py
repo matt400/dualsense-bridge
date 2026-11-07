@@ -24,7 +24,6 @@ saves console.json and asks the window owner to restart the receiver (the saved 
 startup_mode applies as with autostart.
 """
 import threading
-import time
 from collections.abc import Iterable, Sequence
 from dataclasses import replace
 from typing import Any
@@ -268,14 +267,11 @@ class ConsoleSettings(QDialog):
         self.vpad_admin.setIcon(icon("shield"))
         self.vpad_admin.clicked.connect(self.elevate.emit)
         self.vpad_fixed = QCheckBox(_("Stała kolejność graczy"))
-        self.vpad_auto = QCheckBox(_("Pobieraj i aktualizuj HIDMaestro automatycznie (GitHub, raz na dobę)"))
+        self.vpad_auto = QCheckBox(_("Pobieraj HIDMaestro automatycznie (GitHub, przypięta wersja)"))
         self.vpad_auto.toggled.connect(lambda _on: self._vpad_state())
         self.vpad_check = button(_("Sprawdź teraz"), small=True)
         self.vpad_check.setIcon(icon("update"))
         self.vpad_check.clicked.connect(lambda: self._hm_check())
-        self.vpad_skip = button(_("Zainstaluj teraz"), small=True)       # shown only while a newer release is waiting
-        self.vpad_skip.setIcon(icon("update"))
-        self.vpad_skip.clicked.connect(lambda: self._hm_check(skip_wait=True))
         self.vpad_net = button(_("Zainstaluj .NET 10"), small=True)
         self.vpad_net.setIcon(icon("update"))
         self.vpad_net.clicked.connect(self._net_install)
@@ -293,7 +289,7 @@ class ConsoleSettings(QDialog):
                         field(_("Backend"), self.vpad_backend),
                         self.vpad_auto,
                         field(_("Własna HIDMaestro.Core.dll (plik albo folder; puste = pobrana automatycznie)"), self.vpad_dll),
-                        self.vpad_now, row_of(self.vpad_check, self.vpad_skip, self.vpad_net, self.vpad_admin))
+                        self.vpad_now, row_of(self.vpad_check, self.vpad_net, self.vpad_admin))
         self.pads_mode = Combo([("dynamic", _("Dynamiczna: tylko podłączone pady")), ("fixed", _("Stała: zawsze te same sloty"))])
         self.pads_mode.changed.connect(lambda _v: self._pads_view_state())
         self.pads_count = spinbox(PADS_COUNT[0], min(PADS_COUNT[1], C.NUM_PADS))
@@ -333,14 +329,10 @@ class ConsoleSettings(QDialog):
         """The number of pads is asked for only in the fixed mode."""
         self.pads_count_row.setVisible(self.pads_mode.currentData() == "fixed")
 
-    def _hm_check(self, skip_wait: bool = False) -> None:
-        """Check and possibly download in the background (up to several minutes - ~56 MB); the state is refreshed every 0.5 s.
-
-        skip_wait ("Install now") installs a release that is still inside the security wait.
-        """
+    def _hm_check(self) -> None:
+        """Download the pinned HIDMaestro in the background if it is not on disk (minutes); the state is refreshed every 0.5 s."""
         import threading
-        threading.Thread(target=rx_hm_update.check, kwargs={"force": True, "skip_wait": skip_wait},
-                         name="hidmaestro check", daemon=True).start()
+        threading.Thread(target=rx_hm_update.check, name="hidmaestro check", daemon=True).start()
         self._hm_timer.start()
         self._vpad_state(busy=True)
 
@@ -369,18 +361,12 @@ class ConsoleSettings(QDialog):
         lines = [_("Teraz: {kinds}").format(kinds=", ".join(used)) if used else _("Teraz: żaden wirtualny pad nie jest podłączony")]
         st = rx_hm_update.refresh_status() if not rx_hm_update.status.busy else rx_hm_update.status
         busy = busy or st.busy
-        waiting = False                           # a newer release is held back by the security wait
         if busy:
             lines.append(_("HIDMaestro: sprawdzanie / pobieranie…"))
         elif st.version:
             newer = st.latest and rx_hm_update.version_tuple(st.latest) > rx_hm_update.version_tuple(st.version)
             lines.append(_("HIDMaestro {v} pobrany").format(v=st.version)
-                         + (_(" (na GitHubie jest {v})").format(v=st.latest) if newer else ""))
-            if newer and st.held_until > time.time():
-                waiting = True
-                lines.append(_("Wersja {v} zainstaluje się {when} - nowe wydania czekają kilka dni (bezpieczeństwo)").format(
-                    v=st.latest, when=time.strftime("%d.%m %H:%M", time.localtime(st.held_until))))
-        self.vpad_skip.setVisible(waiting and backend != "vigem")
+                         + (_(" (przypięta wersja: {v})").format(v=st.latest) if newer else ""))
         if st.error and not busy:
             lines.append(_("Pobieranie HIDMaestro: {err}").format(err=st.error))
         need_net = backend != "vigem" and rx_hm.need_dotnet()
@@ -396,7 +382,6 @@ class ConsoleSettings(QDialog):
             self._hm_timer.stop()
         self.sender_cfg.stop()
         self.vpad_check.setEnabled(not busy and backend != "vigem")
-        self.vpad_skip.setEnabled(not busy)
         if backend != "vigem" and rx_ds4.hm_note:
             lines.append(_("HIDMaestro nieużywany: {why}").format(why=rx_ds4.hm_note))
         need_admin = backend != "vigem" and not rx_winapi.is_admin()
