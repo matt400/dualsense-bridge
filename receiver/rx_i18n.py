@@ -697,6 +697,10 @@ EN: Final[dict[str, str]] = {
     "HIDMaestro {v} pobrany - pady przejdą na DualSense przy następnym połączeniu":
         "HIDMaestro {v} downloaded - pads switch to DualSense on their next connection",
     "HIDMaestro {v} pobrany - zadziała po restarcie receivera": "HIDMaestro {v} downloaded - takes effect after a receiver restart",
+    "Uruchom ponownie, by użyć HIDMaestro {v}": "Restart to use HIDMaestro {v}",
+    "Pierwszy start z nową wersją HIDMaestro instaluje jej sterownik - trwa to chwilę.":
+        "The first start with a new HIDMaestro version installs its driver - it takes a moment.",
+    "Wersje HIDMaestro, które nie zadziałały: {v}": "HIDMaestro versions that did not work: {v}",
     "Sprawdź teraz": "Check now",
     "KOLEJNOŚĆ GRACZY": "PLAYER ORDER",
     "Gry i Steam numerują pady wg kolejności podłączenia. Gdy pad 2 włączy się pierwszy, pad 1 dostaje najpierw pad "

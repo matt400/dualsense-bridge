@@ -15,12 +15,18 @@ from the zip, and a file that does not match is refused. A newer HIDMaestro arri
 (tools/hm_pin.py computes it); a receiver that pulls that commit installs the new version at its next check. To try another
 version on one machine, point Settings -> Pads at its DLL.
 
+Rollback: the previous version stays on disk next to the new one (KEEP = 2). When the new one fails to load (and there is an older
+one to fall back to) it is written to hidmaestro/state.json as bad: candidates() skips it, the updater does not download it
+again, and after a restart the previous version loads. Delete state.json to try the version again.
+
   receiver/hm_pin.json                              the pin: {"tag": "v2.1.0", "files": {name: sha256}}
   receiver/hidmaestro/v2.1.0/HIDMaestro.Core.dll    a version in its own folder: a newer one does not overwrite a DLL loaded
                                                     in the running process (the CLR holds the file) - it works after a restart
 
   read_pin(path)    parse and validate a pin file
-  newest_dll()      the DLL of the newest downloaded version or None (rx_hm.candidates)
+  newest_dll()      the DLL of the newest usable (not marked bad) downloaded version or None (rx_hm.candidates)
+  mark_bad()        a version that failed to load: skipped from now on, the previous one takes over after a restart
+  restart_tag()     the version a receiver restart would load instead of the one in use (the window offers the restart)
   check()           make sure the pinned version is on disk (download it when it is not) -> Status
   thread()          the receiver thread: a check after startup and then hourly (a failed download is retried)
 """
@@ -28,6 +34,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import json
 import os
 import posixpath
 import re
@@ -39,7 +46,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, replace
 from typing import Any, Final
 
-from proto import read_json_object
+from proto import read_json_object, write_json
 from rx_config import HERE
 
 REPO: Final = "hifihedgehog/HIDMaestro"
@@ -51,6 +58,8 @@ LICENSE: Final = "LICENSE"
 NOTICES: Final = "THIRD-PARTY-NOTICES.txt"
 EXTRAS: Final = (LICENSE, NOTICES)
 PIN_FILE: Final = "hm_pin.json"
+STATE_FILE: Final = "state.json"            # in hidmaestro/: {"bad": {tag: why}} - versions that failed to load
+KEEP: Final = 2                             # versions kept on disk: the newest and the one to roll back to
 START_DELAY_S: Final = 20                   # after the receiver starts: pads and the window first, then the network
 TIMEOUT_S: Final = 30
 CHUNK: Final = 1 << 16
@@ -77,6 +86,8 @@ class Status:
 
 status = Status()
 _lock = threading.Lock()
+_lock_state = threading.Lock()
+failed_tag = ""                              # the version that failed to load in this process (set by rx_hm), "" = none
 # fn(version) after a new version is downloaded (rx_ds4: HIDMaestro from the next pad connection)
 on_installed: Callable[[str], None] | None = None
 
@@ -155,10 +166,67 @@ def installed() -> list[tuple[str, str]]:
     return sorted(found, key=lambda t: version_tuple(t[0]), reverse=True)
 
 
+def _state_path() -> str:
+    """Return the file with the versions marked bad."""
+    return os.path.join(root(), STATE_FILE)
+
+
+def bad_versions() -> dict[str, str]:
+    """Return {tag: reason} of the versions that failed to load; an unreadable state file means none."""
+    try:
+        with open(_state_path(), encoding="utf-8") as f:
+            bad = json.load(f).get("bad")
+    except (OSError, ValueError, AttributeError):
+        return {}
+    return {str(k): str(v) for k, v in bad.items()} if isinstance(bad, dict) else {}
+
+
+def usable() -> list[tuple[str, str]]:
+    """Return the downloaded versions that are not marked bad as (tag, folder), the newest first."""
+    bad = bad_versions()
+    return [(t, p) for t, p in installed() if t not in bad]
+
+
 def newest_dll() -> str | None:
-    """Return the path of the DLL of the newest downloaded version, or None."""
-    found = installed()
+    """Return the path of the DLL of the newest usable downloaded version, or None."""
+    found = usable()
     return os.path.join(found[0][1], DLL) if found else None
+
+
+def mark_bad(path: str, why: str) -> str | None:
+    """Mark the downloaded version that owns the DLL at `path` as bad, when an older usable one can take over.
+
+    Without a version to fall back to nothing is written: a version that fails for a reason of this computer (a blocked driver
+    install, say) is still better than none.
+
+    Returns:
+        The tag marked bad, or None (the DLL is not from the downloaded versions, or there is nothing to fall back to).
+    """
+    folder = os.path.normcase(os.path.dirname(os.path.abspath(path)))
+    mine = next((t for t, p in usable() if os.path.normcase(os.path.abspath(p)) == folder), None)
+    if mine is None or not any(version_tuple(t) < version_tuple(mine) for t, _p in usable()):
+        return None
+    with _lock_state:
+        bad = bad_versions()
+        bad[mine] = why[:200]
+        write_json(_state_path(), {"bad": bad}, indent=2)
+    return mine
+
+
+def restart_tag() -> str:
+    """Return the version a receiver restart would load instead of the one in this process, or "" when it would be the same.
+
+    A newer version downloaded while an older one is loaded, or the rollback after a version failed to load.
+    """
+    found = usable()
+    if not found:
+        return ""
+    import rx_hm
+    b = rx_hm.loaded()
+    if b is None:
+        return found[0][0] if failed_tag else ""
+    here = in_use()
+    return found[0][0] if here and os.path.normcase(os.path.abspath(found[0][1])) != here else ""
 
 
 def in_use() -> str | None:
@@ -174,16 +242,18 @@ def in_use() -> str | None:
 
 
 def cleanup(keep: str) -> None:
-    """Remove older versions and leftovers of interrupted downloads.
+    """Remove old versions, bad ones and leftovers of interrupted downloads; the newest `KEEP` usable versions stay.
 
-    The folder of the version loaded in this process stays until a restart: rmtree would remove its unlocked DLL
-    dependencies (loaded lazily), and the HIDMaestro already loaded would crash on the next pad connection.
-    Locked files stay until next time.
+    `keep` and the version just below it stay, so a version that fails to load can roll back. The folder of the version
+    loaded in this process stays until a restart: rmtree would remove its unlocked DLL dependencies (loaded lazily), and
+    the HIDMaestro already loaded would crash on the next pad connection. Locked files stay until next time.
     """
     busy = in_use()
+    older = [t for t, _p in usable() if version_tuple(t) < version_tuple(keep)]
+    stay = {keep, *older[:KEEP - 1]}
     for n in os.listdir(root()) if os.path.isdir(root()) else ():
         p = os.path.join(root(), n)
-        if (os.path.isdir(p) and n != keep and (version_key(n) or n.startswith("."))
+        if (os.path.isdir(p) and n not in stay and (version_key(n) or n.startswith("."))
                 and os.path.normcase(os.path.abspath(p)) != busy):
             shutil.rmtree(p, ignore_errors=True)
 
@@ -377,7 +447,7 @@ def _set(**kw: Any) -> None:
 
 def refresh_status() -> Status:
     """Refresh the status from disk: the downloaded version and the pinned one."""
-    have = installed()
+    have = usable()
     _set(version=have[0][0] if have else "", latest=PINNED_TAG)
     return status
 
@@ -405,6 +475,8 @@ def _check() -> None:
     refresh_status()
     _set(error="")
     tag, url = pinned_release()
+    if tag in (bad := bad_versions()):
+        raise OSError(f"HIDMaestro {tag} did not load here ({bad[tag]}) - waiting for a newer pin")
     if status.version and version_tuple(status.version) >= version_tuple(tag):
         return                                # nothing to do, and a pin older than the downloaded version is no downgrade
     _set(busy=True)

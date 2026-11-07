@@ -81,6 +81,7 @@ class ConsoleSettings(QDialog):
     """The settings dialog: tabs built by the _*_tab methods, the Test / Cancel / Save row and the status line."""
     saved = Signal()            # console.json saved - the window owner restarts the receiver
     elevate = Signal()          # Pads: restart the receiver as administrator (HIDMaestro)
+    restart = Signal()          # Pads: restart the receiver to load another HIDMaestro version (a newer one, or the rollback)
     applied = Signal()          # mouse / master saved and in effect (no restart) - the window refreshes the pad cards
     captured = Signal(str)      # the button name from the network thread (Qt queues it to the window thread)
     outputs_listed = Signal(object)     # (generation, tv, pc, names, error) from the audio listing thread
@@ -266,6 +267,10 @@ class ConsoleSettings(QDialog):
         self.vpad_admin = button(_("Uruchom ponownie jako administrator"), small=True)
         self.vpad_admin.setIcon(icon("shield"))
         self.vpad_admin.clicked.connect(self.elevate.emit)
+        self.vpad_restart = button("", small=True)
+        self.vpad_restart.setIcon(icon("update"))
+        self.vpad_restart.setToolTip(_("Pierwszy start z nową wersją HIDMaestro instaluje jej sterownik - trwa to chwilę."))
+        self.vpad_restart.clicked.connect(self.restart.emit)
         self.vpad_fixed = QCheckBox(_("Stała kolejność graczy"))
         self.vpad_auto = QCheckBox(_("Pobieraj HIDMaestro automatycznie (GitHub, przypięta wersja)"))
         self.vpad_auto.toggled.connect(lambda _on: self._vpad_state())
@@ -289,7 +294,7 @@ class ConsoleSettings(QDialog):
                         field(_("Backend"), self.vpad_backend),
                         self.vpad_auto,
                         field(_("Własna HIDMaestro.Core.dll (plik albo folder; puste = pobrana automatycznie)"), self.vpad_dll),
-                        self.vpad_now, row_of(self.vpad_check, self.vpad_net, self.vpad_admin))
+                        self.vpad_now, row_of(self.vpad_check, self.vpad_net, self.vpad_admin, self.vpad_restart))
         self.pads_mode = Combo([("dynamic", _("Dynamiczna: tylko podłączone pady")), ("fixed", _("Stała: zawsze te same sloty"))])
         self.pads_mode.changed.connect(lambda _v: self._pads_view_state())
         self.pads_count = spinbox(PADS_COUNT[0], min(PADS_COUNT[1], C.NUM_PADS))
@@ -369,6 +374,8 @@ class ConsoleSettings(QDialog):
                          + (_(" (przypięta wersja: {v})").format(v=st.latest) if newer else ""))
         if st.error and not busy:
             lines.append(_("Pobieranie HIDMaestro: {err}").format(err=st.error))
+        if backend != "vigem" and (bad := rx_hm_update.bad_versions()):
+            lines.append(_("Wersje HIDMaestro, które nie zadziałały: {v}").format(v=", ".join(sorted(bad))))
         need_net = backend != "vigem" and rx_hm.need_dotnet()
         if self._net_busy:
             lines.append(_("Instalowanie .NET 10 (winget)…"))
@@ -390,6 +397,9 @@ class ConsoleSettings(QDialog):
         self.vpad_now.setText("\n".join(lines))
         set_prop(self.vpad_now, "level", "warn" if need_admin or (backend == "hidmaestro" and rx_ds4.hm_note) else "")
         self.vpad_admin.setVisible(need_admin)
+        again = rx_hm_update.restart_tag() if backend != "vigem" else ""
+        self.vpad_restart.setVisible(bool(again))
+        self.vpad_restart.setText(_("Uruchom ponownie, by użyć HIDMaestro {v}").format(v=again))
 
     def _collect_vpad(self) -> VpadConfig:
         """-> the VpadConfig described by the Pads tab."""

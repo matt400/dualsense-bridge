@@ -955,6 +955,7 @@ class MainWindow(ScreenPlacement):
             self.settings_dlg = ConsoleSettings(self)
             self.settings_dlg.saved.connect(self.restart)
             self.settings_dlg.elevate.connect(lambda: self.restart(admin=True))
+            self.settings_dlg.restart.connect(self.restart)
             self.settings_dlg.applied.connect(self.slow_tick)
         self.settings_dlg.present()
 
