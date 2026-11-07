@@ -344,6 +344,10 @@ zf = zip_with(("HIDMaestro.Core.dll", b"MZ"), ("HIDMaestroTest\\LICENSE", b"othe
 check([U._name(i) for i in U.pick(zf.infolist())] == ["HIDMaestro.Core.dll"], "a foreign LICENSE from a subfolder is not taken")
 zf = zip_with(("HIDMaestro.Core.dll", b"MZ"))
 check([U._name(i) for i in U.pick(zf.infolist())] == ["HIDMaestro.Core.dll"], "release without LICENSE: no error")
+zf = zip_with(("HIDMaestro.Core.dll", b"MZ"), ("THIRD-PARTY-NOTICES.txt", b"BSD"), ("LICENSE", b"MIT"),
+              ("HIDMaestroTest\\THIRD-PARTY-NOTICES.txt", b"other"))
+check([U._name(i) for i in U.pick(zf.infolist())] == ["HIDMaestro.Core.dll", "LICENSE", "THIRD-PARTY-NOTICES.txt"],
+      "THIRD-PARTY-NOTICES.txt from the DLL folder goes with the version, a foreign one does not")
 
 class HMResourceInUseException(Exception): pass
 class Plain(Exception): pass

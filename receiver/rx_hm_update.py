@@ -1,7 +1,8 @@
 r"""Receiver: the pinned HIDMaestro (hifihedgehog/HIDMaestro), downloaded from GitHub Releases when it is not on disk yet.
 
 A release is a ~160 MB zip (SDK + test applications), and the receiver needs only HIDMaestro.Core.dll (the driver is inside it)
-and two Windows SDK projection DLLs (plus LICENSE from its folder - the licence travels with every version).
+and two Windows SDK projection DLLs (plus LICENSE and THIRD-PARTY-NOTICES.txt from its folder - the licence and the
+BSD notices of the bundled drivers travel with every version).
 The zip is read through HTTP Range: the zip directory from the end of the file, then only those entries, each in one request
 (prefetch): GitHub's signed link to the storage expires after ~5 min, so a request per 64 KiB block (~900 TLS connections)
 would not make it on a slow link.
@@ -44,8 +45,11 @@ from rx_config import HERE
 REPO: Final = "hifihedgehog/HIDMaestro"
 DLL: Final = "HIDMaestro.Core.dll"
 DEPS: Final = ("Microsoft.Windows.SDK.NET.dll", "WinRT.Runtime.dll")   # Windows SDK projections (TFM net10.0-windows10.0.26100)
-# the HIDMaestro licence from the DLL folder in the zip (optional - older releases may not have it)
+# licence files from the DLL folder in the zip (optional - older releases may not have them): the HIDMaestro licence, and the
+# notices of the third-party drivers embedded in the DLL (usbip-win2, DsHidMini: BSD asks for the notice to travel with them)
 LICENSE: Final = "LICENSE"
+NOTICES: Final = "THIRD-PARTY-NOTICES.txt"
+EXTRAS: Final = (LICENSE, NOTICES)
 PIN_FILE: Final = "hm_pin.json"
 START_DELAY_S: Final = 20                   # after the receiver starts: pads and the window first, then the network
 TIMEOUT_S: Final = 30
@@ -296,8 +300,9 @@ def pick(infos: Iterable[zipfile.ZipInfo]) -> list[zipfile.ZipInfo]:
     picked = [by_name[n] for n in (DLL, *DEPS) if n in by_name]
     folder = posixpath.dirname(_name(picked[0]))
     # only from the DLL folder, not someone else's from a subfolder
-    lic = next((i for i in files if _name(i) == posixpath.join(folder, LICENSE)), None)
-    return picked + ([lic] if lic else [])
+    wanted = {posixpath.join(folder, n): n for n in EXTRAS}
+    extras = {wanted[_name(i)]: i for i in files if _name(i) in wanted}
+    return picked + [extras[n] for n in EXTRAS if n in extras]
 
 
 def entry_span(info: zipfile.ZipInfo) -> tuple[int, int]:
