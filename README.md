@@ -83,7 +83,8 @@ python receiver_controller.py
   after that the receiver starts through a Task Scheduler task with highest privileges (`DualSenseBridgeAdmin`, same
   for autostart). `--no-elevate` turns off just the elevation.
 - Fallback: the `vgamepad` installer will offer the **ViGEmBus** driver (PS4 pad). Install it. Without HIDMaestro or
-  without administrator rights the receiver uses ViGEmBus. Choice: Settings → Pads.
+  without administrator rights the receiver uses ViGEmBus. Choice: Settings → Pads. ViGEmBus is retired by its author (no
+  updates) and does less than HIDMaestro - see the table in [docs/FEATURES.md](docs/FEATURES.md).
 - On the first start Windows Firewall asks for network access. Allow it on **private networks** (UDP 5005).
 - `--autostart on` starts the receiver right after you log in to Windows (`--autostart off` turns it off).
 - The receiver lives in the system tray. Click its icon to open the window.

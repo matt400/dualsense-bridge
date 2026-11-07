@@ -10,6 +10,21 @@
   HTTP Range), and the receiver starts as administrator (UAC; autostart task with highest privileges). The change takes
   effect immediately (pads are recreated). A HIDMaestro error while creating a pad = that pad goes through ViGEmBus
   and a warning in the event log. The pad card (touchpad icon) shows what kind of pad the slot is.
+
+  What works with which backend (the rest of the bridge does not depend on it):
+
+  | | HIDMaestro (DualSense) | ViGEmBus (DS4) |
+  |---|:---:|:---:|
+  | Buttons, sticks, triggers, touchpad, gyro | ✅ | ✅ |
+  | Game rumble | ✅ | ✅ |
+  | Lightbar colour set by the game | ✅ | ✅ |
+  | Adaptive trigger effects set by the game | ✅ | ❌ (only from the profile, set by the sender) |
+  | Player LEDs and mute LED set by the game | ✅ | ❌ |
+  | Mute button as a button for the game | ✅ | ❌ |
+  | Game HD haptics and the pad's speaker | ✅ (opt-in, needs the composite pad) | ❌ |
+  | DSU server, touchpad as mouse, profiles, remap, shortcuts | ✅ | ✅ |
+  | Needs | administrator, .NET 10, the HIDMaestro driver | the ViGEmBus driver; no administrator needed |
+  | Maintenance | active | retired by its author, no updates - a fallback |
 - **DSU server (Cemuhook)** with motion and touch for emulators (Cemu, Yuzu/Ryujinx, Dolphin) on this PC; an emulator
   on another device needs `dsu_bind = "0.0.0.0"`.
 - **Touchpad as mouse:** cursor, tap = left button, two-finger scrolling, two-finger tap = right button.
