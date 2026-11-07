@@ -15,8 +15,8 @@ common/    proto.py (wire protocol, atomic writes), gitupdate.py (git version + 
 receiver/  receiver_controller.py (entry point) + rx_*.py (logic) + rx_qt*.py (window)
 tests/     Linux tests with Windows/evdev stubs (rxenv.py); fakebin/ = fake bluetoothctl; run_tests.sh = the CI entry
 docs/      EN by default, PL as *.pl.md (user docs, not needed for code work)
-tools/     screenshots.py (offscreen window screenshots -> docs/img)
-update.bat, .github/workflows/tests.yml
+tools/     screenshots.py (offscreen window screenshots -> docs/img), hm_pin.py (move / check the HIDMaestro pin, receiver/hm_pin.json)
+update.bat, .github/workflows/tests.yml, hm-pin.yml (weekly check of the pinned release)
 ```
 Modules import each other by flat name (no packages): run things from inside `receiver/` or `sender/`.
 
@@ -34,7 +34,7 @@ Every module has a docstring with its role; find the file here before opening an
 **Receiver** (`receiver/`)
 - Core: `receiver_controller` (main), `rx_config` (DEFAULTS + CLI), `rx_state` (`S.xxx`, `run_forever`), `rx_net` (packet receive, events, silence),
   `rx_winapi` (timer, SendInput, single instance, UDP sockets), `rx_settings` (settings.json, changed without restart).
-- Virtual pads: `rx_ds4` (pads on demand, backend choice), `rx_hm` (HIDMaestro), `rx_hm_update` (downloads the pinned HIDMaestro), `rx_report` (DS4 / DualSense
+- Virtual pads: `rx_ds4` (pads on demand, backend choice), `rx_hm` (HIDMaestro), `rx_hm_update` (downloads the HIDMaestro pinned in `hm_pin.json`), `rx_report` (DS4 / DualSense
   reports), `rx_feedback` (game rumble, lightbar, triggers back to the pad), `rx_haptics` (game HD haptics: composite pad audio → 3 kHz → `T_HAPT`, default audio guard), `rx_speaker` (game sound → mono, equalizer, resampled 48 → 45 kHz → `T_SPK` frames, second reader of the haptics audio ring), `rx_eq` (the speaker's 5-band equalizer: biquads, presets, no Qt), `rx_lightbar`, `rx_dsu` (Cemuhook server).
 - Input processing: `rx_buttons` (tables, remap, remap.json), `rx_profiles` + `rx_editor` (profile model, no Qt), `rx_shape` (sticks / triggers),
   `rx_gyro` (gyro mouse), `rx_gstick` + `rx_gstick_io` (tilt → stick), `rx_mouse` (touchpad mouse), `rx_padcal` + `rx_drift` (drift deadzone), `rx_access` + `rx_reach` (accessibility mode: range / deadzone / curve / tremor damping of the physical sticks + wizard),

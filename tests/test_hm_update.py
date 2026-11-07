@@ -1,15 +1,16 @@
-"""Receiver: HIDMaestro downloaded by itself from GitHub Releases - reading the zip over HTTP Range (only the needed entries),
-versions in separate folders, a check once a day, network errors; self-elevation to administrator.
+"""Receiver: the pinned HIDMaestro downloaded by itself from GitHub Releases - reading the zip over HTTP Range (only the needed
+entries), versions in separate folders, the pin file with SHA-256 of every file, network errors; self-elevation to administrator.
     python3 tests/test_hm_update.py receiver"""
-import io, json, os, sys, tempfile, time, zipfile
+import hashlib, io, json, os, sys, tempfile, time, zipfile
 sys.path.insert(0, os.path.dirname(__file__))
 from rxenv import *                                              # noqa
 import rx_hm, rx_hm_update as U
 
 REAL_PIN = (U.PINNED_TAG, dict(U.PINNED_SHA256))
-U.PINNED_TAG = ""                      # the sections below follow the newest release (through the API); the pinned version has its own section
 
 from chk import check, fails, ok                              # noqa: E402  (shared helper, tests/chk.py)
+
+sha = lambda b: hashlib.sha256(b).hexdigest()
 
 
 DLL_BYTES = b"MZ" + os.urandom(200_000)
@@ -41,8 +42,6 @@ SERVED = {}
 calls = []
 def opener(url, headers=None, timeout=0):
     calls.append((url, dict(headers or {})))
-    if url == U.API:
-        return Resp(json.dumps(RELEASE[0]).encode())
     data = SERVED[url.replace("github.com", "storage")]
     rng = (headers or {}).get("Range")
     if not rng:
@@ -54,122 +53,159 @@ def opener(url, headers=None, timeout=0):
 ROOT = tempfile.mkdtemp()
 U.root = lambda: ROOT
 U._get = opener
-def release(tag, data):
-    url = f"https://github.com/r/{tag}/HIDMaestro-{tag}.zip"
-    SERVED[url.replace("github.com", "storage")] = data
-    return {"tag_name": tag, "published_at": "2020-01-01T00:00:00Z", "assets": [{"name": f"HIDMaestro-{tag}-arm64.zip", "browser_download_url": url + "arm"},
-                                        {"name": f"HIDMaestro-{tag}.zip", "browser_download_url": url}]}
+def pin(tag, dll=DLL_BYTES):
+    """Pin version `tag`, whose zip (make_zip) has DLL `dll`; the hashes match its content."""
+    SERVED[U.zip_url(tag).replace("github.com", "storage")] = make_zip(dll)
+    U.PINNED_TAG = tag
+    U.PINNED_SHA256 = {U.DLL: sha(dll), U.DEPS[0]: sha(b"MZsdk"), U.DEPS[1]: sha(b"MZwinrt")}
 
-# ---------- first download: only the DLL and dependencies, through Range ----------
-z1 = make_zip()
-RELEASE = [release("v1.12.0", z1)]
+# ---------- first download: only the DLL and dependencies, through Range, from the link that follows from the pin ----------
+pin("v1.12.0")
+z1 = SERVED[U.zip_url("v1.12.0").replace("github.com", "storage")]
 got = []
 U.on_installed = got.append
 st = U.check()
 d = os.path.join(ROOT, "v1.12.0")
-check(st.version == "v1.12.0" and not st.error and got == ["v1.12.0"], f"downloaded version: {st}")
+check(st.version == "v1.12.0" and st.latest == "v1.12.0" and not st.error and got == ["v1.12.0"], f"downloaded version: {st}")
 check(sorted(os.listdir(d)) == sorted([U.DLL, *U.DEPS]), f"only the DLL and dependencies, flat: {os.listdir(d)}")
 check(open(os.path.join(d, U.DLL), "rb").read() == DLL_BYTES, "the root DLL, byte for byte")
 ranged = [h["Range"] for u, h in calls if "Range" in h]
 total = sum(int(r[6:].split("-")[1]) - int(r[6:].split("-")[0]) + 1 for r in ranged)
 check(total < len(z1) * 0.5, f"only part of the zip downloaded ({total} of {len(z1)} B)")
-check(all("arm" not in u for u, _ in calls), "x64 zip, not arm64")
+check(all(u == U.zip_url("v1.12.0") or "storage" in u for u, _ in calls) and not any("api.github.com" in u for u, _ in calls),
+      "the fixed x64 zip link, no GitHub API request")
 check(not any(n.startswith(".") for n in os.listdir(ROOT)), "no temp folder")
 check(U.newest_dll() == os.path.join(d, U.DLL) and rx_hm.find_dll("") == os.path.join(d, U.DLL),
       "rx_hm takes the downloaded version when it has no path of its own")
 
-# ---------- once a day; force; the same version is not downloaded twice ----------
+# ---------- the pinned version already on disk: no request at all ----------
 calls.clear()
-U.check()
-check(not calls, "within a day no request to GitHub")
-U.check(force=True)
-check(len(calls) == 1 and calls[0][0] == U.API and got == ["v1.12.0"], "force: only the request, the same version not downloaded")
+st = U.check()
+check(not calls and st.version == "v1.12.0" and not st.error, "pinned version present: a check is local, no request")
 
-# ---------- new version: new folder, the old one removed ----------
-z2 = make_zip(b"MZ" + b"new" * 1000)
-RELEASE[0] = release("v1.13.0", z2)
-st = U.check(force=True)
-check(st.version == "v1.13.0" and got[-1] == "v1.13.0" and os.listdir(ROOT) == ["state.json", "v1.13.0"] or
-      sorted(os.listdir(ROOT)) == ["state.json", "v1.13.0"], f"new version, the old one removed: {os.listdir(ROOT)}")
+# ---------- a moved pin: installed at once, the old folder removed ----------
+pin("v1.13.0", b"MZ" + b"new" * 1000)
+st = U.check()
+check(st.version == "v1.13.0" and got[-1] == "v1.13.0" and sorted(os.listdir(ROOT)) == ["v1.13.0"],
+      f"moved pin: new version at once, the old one removed: {os.listdir(ROOT)}")
 check(U.version_key("v1.10.0") > U.version_key("v1.9.2"), "versions compared numerically")
 
 # ---------- errors: damaged zip, no DLL, network - the downloaded version stays ----------
-bad = bytearray(make_zip(b"MZ" + os.urandom(50_000)))
-RELEASE[0] = release("v1.14.0", b"")
+pin("v1.14.0", b"MZ" + os.urandom(50_000))
+url14 = U.zip_url("v1.14.0").replace("github.com", "storage")
+bad = bytearray(SERVED[url14])
 ent = next(i for i in zipfile.ZipFile(io.BytesIO(bytes(bad))).infolist() if i.filename == "HIDMaestro.Core.dll")
 mid = ent.header_offset + 30 + len(ent.filename) + ent.compress_size // 2      # middle of the root DLL data
 bad[mid:mid + 64] = bytes(x ^ 0xFF for x in bad[mid:mid + 64])
-SERVED[next(k for k in SERVED if "v1.14.0" in k)] = bytes(bad)
-st = U.check(force=True)
+SERVED[url14] = bytes(bad)
+st = U.check()
 check(st.error and st.version == "v1.13.0" and not os.path.exists(os.path.join(ROOT, "v1.14.0")),
       f"damaged zip: error, version unchanged, no half-made folder: {st.error}")
 check(not any(n.startswith(".") for n in os.listdir(ROOT)), "temp folder cleaned up after the error")
 b = io.BytesIO()
 with zipfile.ZipFile(b, "w") as zz:
     zz.writestr("README.md", "x")
-RELEASE[0] = release("v1.15.0", b.getvalue())
-st = U.check(force=True)
+pin("v1.15.0")
+SERVED[U.zip_url("v1.15.0").replace("github.com", "storage")] = b.getvalue()
+st = U.check()
 check("not in the release zip" in st.error and st.version == "v1.13.0", "zip without the DLL: a clear error")
 def offline(url, headers=None, timeout=0):
     raise OSError("network down")
 U._get = offline
-st = U.check(force=True)
+pin("v1.15.1")
+st = U.check()
 check("network down" in st.error and st.version == "v1.13.0" and not st.busy, "no network: error, the version stays")
 U._get = opener
+st = U.check()
+check(st.version == "v1.15.1" and not st.error, f"the next check after the network is back installs the pin and clears the error: {st}")
 
 # ---------- the version loaded in the process stays until a restart (the CLR loads DLL dependencies only on use) ----------
 import types
-rx_hm._loaded = types.SimpleNamespace(path=os.path.join(ROOT, "v1.13.0", U.DLL))
-RELEASE[0] = release("v1.16.0", make_zip(b"MZ" + b"16" * 1000))
-st = U.check(force=True)
-old = os.path.join(ROOT, "v1.13.0")
+rx_hm._loaded = types.SimpleNamespace(path=os.path.join(ROOT, "v1.15.1", U.DLL))
+pin("v1.16.0", b"MZ" + b"16" * 1000)
+st = U.check()
+old = os.path.join(ROOT, "v1.15.1")
 check(st.version == "v1.16.0" and os.path.isdir(old) and sorted(os.listdir(old)) == sorted([U.DLL, *U.DEPS]),
-      f"new version downloaded, the loaded one (v1.13.0) stays with its dependencies: {sorted(os.listdir(ROOT))}")
+      f"new version downloaded, the loaded one (v1.15.1) stays with its dependencies: {sorted(os.listdir(ROOT))}")
 rx_hm._loaded = None
 U.cleanup(keep="v1.16.0")
 check(not os.path.exists(old) and os.path.isdir(os.path.join(ROOT, "v1.16.0")), "after a restart the old version removed")
 
-# ---------- pinned version: fixed link, no API, no waiting, SHA-256 of the files, no downgrade ----------
-import hashlib
-sha = lambda b: hashlib.sha256(b).hexdigest()
+# ---------- SHA-256 of the files, no downgrade ----------
 check(U.version_key(REAL_PIN[0]) is not None and set(REAL_PIN[1]) == {U.DLL, *U.DEPS}
-      and all(len(h) == 64 and int(h, 16) >= 0 for h in REAL_PIN[1].values()), f"pin in the code: tag and SHA-256 of the DLL + dependencies: {REAL_PIN[0]}")
+      and all(len(h) == 64 and int(h, 16) >= 0 for h in REAL_PIN[1].values()), f"pin in hm_pin.json: tag and SHA-256 of the DLL + dependencies: {REAL_PIN[0]}")
 check(U.zip_url("v2.1.0") == "https://github.com/hifihedgehog/HIDMaestro/releases/download/v2.1.0/HIDMaestro-v2.1.0.zip",
       "fixed link to the x64 zip")
-real_root = U.root
 ROOT_PIN = tempfile.mkdtemp()
 U.root = lambda: ROOT_PIN
-def pin(tag, dll):
-    """Pin version `tag`, whose zip (make_zip) has DLL `dll`; the hashes match its content."""
-    SERVED[U.zip_url(tag).replace("github.com", "storage")] = make_zip(dll)
-    U.PINNED_TAG = tag
-    U.PINNED_SHA256 = {U.DLL: sha(dll), U.DEPS[0]: sha(b"MZsdk"), U.DEPS[1]: sha(b"MZwinrt")}
-DLL_P1, DLL_P2 = b"MZ" + b"pin1" * 500, b"MZ" + b"pin2" * 500
-pin("v1.20.0", DLL_P1)
-RELEASE[0] = release("v9.9.9", z1)                           # a newer release on GitHub has no effect
-calls.clear()
-st = U.check(force=True)
-check(st.version == "v1.20.0" and not st.error and st.latest == "v1.20.0", f"the pinned version installed, not the newest from GitHub: {st}")
-check(all(u != U.API for u, _ in calls) and any(u == U.zip_url("v1.20.0") for u, _ in calls), "no API request, download from the fixed link")
-check(open(os.path.join(ROOT_PIN, "v1.20.0", U.DLL), "rb").read() == DLL_P1, "the pinned version's DLL")
-pin("v1.21.0", DLL_P2)                                       # a receiver update moved the pin; the last check a moment ago
-st = U.check()
-check(st.version == "v1.21.0" and not st.error, f"moved pin: installed at once (no waiting and no daily interval): {st}")
-check(sorted(os.listdir(ROOT_PIN)) == ["state.json", "v1.21.0"], f"the old version removed: {os.listdir(ROOT_PIN)}")
+pin("v1.21.0", b"MZ" + b"pin2" * 500)
+U.check()
 U.PINNED_SHA256 = {**U.PINNED_SHA256, U.DLL: sha(b"MZ" + b"good" * 500)}      # zip replaced: a different DLL than the pin
 SERVED[U.zip_url("v1.22.0").replace("github.com", "storage")] = make_zip(b"MZ" + b"evil" * 500)
 U.PINNED_TAG = "v1.22.0"
-st = U.check(force=True)
+st = U.check()
 check("does not match the pinned SHA-256" in st.error and st.version == "v1.21.0" and not os.path.exists(os.path.join(ROOT_PIN, "v1.22.0")),
       f"replaced file: refusal, version unchanged: {st.error}")
 check(not any(n.startswith(".") for n in os.listdir(ROOT_PIN)), "after a refusal the temp folder cleaned up")
-U.verify(os.path.join(ROOT_PIN, "v1.21.0"), "v1.0.1")
-ok("a release other than the pinned one is not checked (the 'newest' mode)")
+U.PINNED_SHA256 = {}
+st = U.check()
+check("no pinned SHA-256" in st.error and st.version == "v1.21.0", f"no hashes in the pin: nothing is installed unchecked: {st.error}")
 calls.clear()
 U.PINNED_TAG = "v1.0.0"                                      # pin older than the downloaded version: no downgrade
-st = U.check(force=True)
-check(st.version == "v1.21.0" and not any(u.endswith(".zip") for u, _ in calls), "pin older than the downloaded version: no download")
-U.PINNED_TAG, U.PINNED_SHA256, U.root = "", REAL_PIN[1], real_root
+pin("v1.0.0")
+st = U.check()
+check(st.version == "v1.21.0" and not st.error and not calls, "pin older than the downloaded version: no download")
+U.root = lambda: ROOT
+
+# ---------- the pin file ----------
+PF = os.path.join(tempfile.mkdtemp(), "hm_pin.json")
+def write_pin(obj):
+    with open(PF, "w", encoding="utf-8") as f:
+        f.write(obj if isinstance(obj, str) else json.dumps(obj))
+H = "ab" * 32
+GOOD = {"tag": "v3.0.0", "files": {U.DLL: H, U.DEPS[0]: H, U.DEPS[1]: H}}
+write_pin(GOOD)
+pn = U.read_pin(PF)
+check(pn.tag == "v3.0.0" and pn.sha256 == GOOD["files"], "a valid pin file")
+write_pin({**GOOD, "files": {**GOOD["files"], "THIRD-PARTY-NOTICES.txt": H}})
+check(U.read_pin(PF).sha256["THIRD-PARTY-NOTICES.txt"] == H, "extra files may be pinned too")
+def refused(obj, text):
+    write_pin(obj)
+    try:
+        U.read_pin(PF)
+    except ValueError as e:
+        check(text in str(e), f"{text}: {e}")
+    else:
+        check(False, f"a pin file must be refused: {text}")
+refused("[1, 2]", "JSON object")
+refused("{not json", "")
+refused({**GOOD, "tag": "latest"}, "not a version")
+refused({"files": GOOD["files"]}, "not a version")
+refused({"tag": "v3.0.0"}, "files must list")
+refused({"tag": "v3.0.0", "files": {U.DLL: H}}, "files must list")
+refused({**GOOD, "files": {**GOOD["files"], U.DLL: H.upper()}}, "not a SHA-256")
+refused({**GOOD, "files": {**GOOD["files"], U.DLL: "abc"}}, "not a SHA-256")
+refused({**GOOD, "files": {**GOOD["files"], U.DLL: 7}}, "not a SHA-256")
+refused({**GOOD, "files": {**GOOD["files"], "..\\evil.dll": H}}, "plain file name")
+refused({**GOOD, "files": {**GOOD["files"], "sub/evil.dll": H}}, "plain file name")
+try:
+    U.read_pin(PF + ".missing")
+    check(False, "a missing pin file: OSError")
+except OSError:
+    ok("a missing pin file: OSError")
+real_here, real_vars = U.HERE, (U.PINNED_TAG, U.PINNED_SHA256, U.PIN_ERROR)
+U.HERE = os.path.dirname(PF)
+os.remove(PF)
+tag, hashes, err = U._load_pin()
+check(tag == "" and hashes == {} and "hm_pin.json" in err, f"no pin file: no pin and a readable reason, no exception: {err}")
+U.PINNED_TAG, U.PINNED_SHA256, U.PIN_ERROR = tag, hashes, err
+real_calls = len(calls)
+st = U.check()
+check("hm_pin.json" in st.error and st.version == "v1.16.0" and len(calls) == real_calls, f"no pin: a clear error, nothing downloaded: {st.error}")
+U.HERE = real_here
+check(U._load_pin() == (REAL_PIN[0], REAL_PIN[1], ""), "the hm_pin.json shipped in the repo loads")
+U.PINNED_TAG, U.PINNED_SHA256, U.PIN_ERROR = real_vars
+U.PINNED_TAG, U.PINNED_SHA256 = REAL_PIN
 
 # ---------- receiver: turning auto-download on / off, backend change after the download ----------
 import rx_ds4, rx_settings

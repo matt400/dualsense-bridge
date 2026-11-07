@@ -2,7 +2,7 @@
 running as administrator (a marker in the temp folder, a second copy without the UAC prompt, the administrator lock
 seen from an unprivileged process), autostart tasks with their own arguments.
     python3 tests/test_hm_download_elevation.py receiver"""
-import io, json, os, sys, tempfile, time, types, zipfile
+import hashlib, io, json, os, sys, tempfile, time, types, zipfile
 sys.path.insert(0, os.path.dirname(__file__))
 from rxenv import *                                              # noqa
 import rx_autostart as A
@@ -48,6 +48,10 @@ def opener(url, headers=None, timeout=0):
 
 ROOT = tempfile.mkdtemp()
 U.root = lambda: ROOT
+_zip = zipfile.ZipFile(io.BytesIO(ZIP))                           # the install checks the files against the pin: pin this zip
+U.PINNED_SHA256 = {U.DLL: hashlib.sha256(_zip.read("HIDMaestro.Core.dll")).hexdigest(),
+                   U.DEPS[0]: hashlib.sha256(_zip.read("HIDMaestroTest\\Microsoft.Windows.SDK.NET.dll")).hexdigest(),
+                   U.DEPS[1]: hashlib.sha256(_zip.read("HIDMaestroTest\\WinRT.Runtime.dll")).hexdigest()}
 folder, fetched = U.install("v2.0.0", "https://example/zip", opener)
 names = sorted(os.listdir(folder))
 check(names == sorted([U.DLL, *U.DEPS]), f"pliki: {names}")
@@ -66,17 +70,6 @@ except OSError as e:
     check("Range" in str(e) and not os.path.exists(os.path.join(ROOT, "v2.0.1")),
           f"a 200 reply to a Range request = an error, not the start of the file as the entry: {e}")
 ignore_range[0] = False
-
-U.status = U.Status(version="v2.0.0")
-real_load, real_latest = U._load_state, U.latest_release
-U._load_state = lambda: (time.time() + 10 * 24 * 3600, "v2.0.0")   # clock set back: the last check is "in the future"
-asked = []
-U.latest_release = lambda: asked.append(1) or ("v2.0.0", "https://example/zip", 0.0)
-try:
-    U.check()
-    check(asked, "clock set back: the check is not suspended until a date in the future")
-finally:
-    U._load_state, U.latest_release = real_load, real_latest
 
 
 # ---------- single instance: the lock of an administrator receiver seen from an unprivileged process ----------

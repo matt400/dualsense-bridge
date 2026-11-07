@@ -1,5 +1,5 @@
 """Receiver: security review - protocol v3 with a key (tokens, recordings, the ping as the source of the sender clock,
-warnings), DSU local only with a client limit, HIDMaestro waits after a release, the problem list in Settings,
+warnings), DSU local only with a client limit, only the pinned HIDMaestro installs, the problem list in Settings,
 plain text in window labels.
     python3 tests/test_security.py receiver"""
 import os, socket, struct, sys, time
@@ -84,40 +84,28 @@ time.sleep(0.5)
 check(len(rx_dsu.dsu_clients) == 4, f"DSU client limit (spoofed addresses): {len(rx_dsu.dsu_clients)}")
 S.stop.set(); time.sleep(0.3); S.stop.clear()
 
-# ---------- HIDMaestro: nowe wydanie czeka ----------
+# ---------- HIDMaestro: only the pinned version is installed ----------
 U.root = lambda: TMP
-U._save_state = lambda *a: None
 installs = []
-U.install = lambda tag, url, opener=None: installs.append(tag)
+U.install = lambda tag, url, opener=None: installs.append((tag, url))
 U.cleanup = lambda keep: None
 U.refresh_status = lambda: U.status
-now = time.time()
+real_pin = (U.PINNED_TAG, U.PIN_ERROR)
+U.PINNED_TAG, U.PIN_ERROR = "v1.1.0", ""
 U.status = U.Status(version="v1.0.0")
-U.latest_release = lambda: ("v1.1.0", "https://example/zip", now - 3600)
-st = U.check(force=True)
-check(not installs and st.held_until > now + 6 * 86400 and st.latest == "v1.1.0",
-      f"a release from an hour ago: waits {C.HM_MIN_AGE_DAYS:g} days (also on 'Check now')")
-U.latest_release = lambda: ("v1.1.0", "https://example/zip", now - 8 * 86400)
-U.check(force=True)
-check(installs == ["v1.1.0"], "wydanie sprzed 8 dni: instalacja")
-installs.clear(); U.status = U.Status(version="v1.0.0")
-U.latest_release = lambda: ("v1.1.0", "https://example/zip", now - 3600)
-U.check(force=True)
-check(not installs, "a release from an hour ago waits after another check too")
-U.check(skip_wait=True)
-check(installs == ["v1.1.0"], "'Install now': install without waiting")
-installs.clear(); U.status = U.Status(version="v1.0.0")
-U.latest_release = lambda: ("v1.1.0", "https://example/zip", 0.0)
-U.check(skip_wait=True)
-check(installs == ["v1.1.0"], "'Install now': also without a readable publish date")
+U.check()
+check(installs == [("v1.1.0", U.zip_url("v1.1.0"))], f"the pinned release installs from its fixed link: {installs}")
 installs.clear(); U.status = U.Status(version="v1.1.0")
-U.check(skip_wait=True)
-check(not installs, "'Install now': nothing to do when the version is already current")
-installs.clear(); U.status = U.Status()
-U.latest_release = lambda: ("v1.2.0", "https://example/zip", now - 60)
-U.check(force=True)
-check(installs == ["v1.2.0"], "the first install (no version at all) does not wait")
-check(U._published({"published_at": "2026-10-01T12:00:00Z"}) > 0 and U._published({}) == 0.0, "publish time from the API")
+U.check()
+check(not installs, "the pinned version is already there: nothing to install")
+U.status = U.Status(version="v1.2.0")
+U.check()
+check(not installs, "a downloaded version newer than the pin is no reason to downgrade")
+U.PINNED_TAG, U.PIN_ERROR = "", "hm_pin.json: missing"
+U.status = U.Status(version="v1.0.0")
+st = U.check()
+check(not installs and "hm_pin.json" in st.error, f"no usable pin: nothing is installed, the reason is shown: {st.error!r}")
+U.PINNED_TAG, U.PIN_ERROR = real_pin
 
 # ---------- problem list (Settings -> Security, log at start) ----------
 codes = {i.code for i in rx_security.issues()}

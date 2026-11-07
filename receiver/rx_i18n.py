@@ -138,8 +138,6 @@ EN: Final[dict[str, str]] = {
     "✓ Nie wykryto problemów.": "✓ No problems found.",
     "✓ Nowy klucz w schowku - wpisz go jako key w receiver.toml i w sender.toml, potem uruchom oba programy ponownie.":
         "✓ New key in the clipboard - put it as key in receiver.toml and in sender.toml, then restart both programs.",
-    "Wersja {v} zainstaluje się {when} - nowe wydania czekają kilka dni (bezpieczeństwo)":
-        "Version {v} will be installed on {when} - new releases wait a few days (security)",
     "Odrzucono przeterminowane pakiety nadajnika (powtórzone nagranie albo problem z zegarem)":
         "Expired sender packets rejected (a replayed recording or a clock problem)",
     # ---------- main window ----------
@@ -683,11 +681,11 @@ EN: Final[dict[str, str]] = {
         "is no longer developed and stays as a fallback.",
     "Własna HIDMaestro.Core.dll (plik albo folder; puste = pobrana automatycznie)":
         "Own HIDMaestro.Core.dll (file or folder; empty = downloaded automatically)",
-    "Pobieraj i aktualizuj HIDMaestro automatycznie (GitHub, raz na dobę)":
-        "Download and update HIDMaestro automatically (GitHub, once a day)",
+    "Pobieraj HIDMaestro automatycznie (GitHub, przypięta wersja)":
+        "Download HIDMaestro automatically (GitHub, pinned version)",
     "HIDMaestro: sprawdzanie / pobieranie…": "HIDMaestro: checking / downloading…",
     "HIDMaestro {v} pobrany": "HIDMaestro {v} downloaded",
-    " (na GitHubie jest {v})": " ({v} is on GitHub)",
+    " (przypięta wersja: {v})": " (pinned version: {v})",
     "Pobieranie HIDMaestro: {err}": "HIDMaestro download: {err}",
     "automatycznie": "automatic",
     "Zainstaluj .NET 10": "Install .NET 10",
@@ -700,7 +698,6 @@ EN: Final[dict[str, str]] = {
         "HIDMaestro {v} downloaded - pads switch to DualSense on their next connection",
     "HIDMaestro {v} pobrany - zadziała po restarcie receivera": "HIDMaestro {v} downloaded - takes effect after a receiver restart",
     "Sprawdź teraz": "Check now",
-    "Zainstaluj teraz": "Install now",
     "KOLEJNOŚĆ GRACZY": "PLAYER ORDER",
     "Gry i Steam numerują pady wg kolejności podłączenia. Gdy pad 2 włączy się pierwszy, pad 1 dostaje najpierw pad "
     "zastępczy, więc pad 2 zawsze zostaje graczem 2. Który fizyczny pad to pad 1 / 2, pamięta nadajnik (slots.json, "
