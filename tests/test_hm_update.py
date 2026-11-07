@@ -86,8 +86,8 @@ check(not calls and st.version == "v1.12.0" and not st.error, "pinned version pr
 # ---------- a moved pin: installed at once, the old folder removed ----------
 pin("v1.13.0", b"MZ" + b"new" * 1000)
 st = U.check()
-check(st.version == "v1.13.0" and got[-1] == "v1.13.0" and sorted(os.listdir(ROOT)) == ["v1.13.0"],
-      f"moved pin: new version at once, the old one removed: {os.listdir(ROOT)}")
+check(st.version == "v1.13.0" and got[-1] == "v1.13.0" and sorted(os.listdir(ROOT)) == ["v1.12.0", "v1.13.0"],
+      f"moved pin: new version at once, the previous one stays for a rollback: {os.listdir(ROOT)}")
 check(U.version_key("v1.10.0") > U.version_key("v1.9.2"), "versions compared numerically")
 
 # ---------- errors: damaged zip, no DLL, network - the downloaded version stays ----------
@@ -129,7 +129,7 @@ check(st.version == "v1.16.0" and os.path.isdir(old) and sorted(os.listdir(old))
       f"new version downloaded, the loaded one (v1.15.1) stays with its dependencies: {sorted(os.listdir(ROOT))}")
 rx_hm._loaded = None
 U.cleanup(keep="v1.16.0")
-check(not os.path.exists(old) and os.path.isdir(os.path.join(ROOT, "v1.16.0")), "after a restart the old version removed")
+check(sorted(os.listdir(ROOT)) == ["v1.15.1", "v1.16.0"], f"after a restart: the new version and the one before it, older ones removed: {sorted(os.listdir(ROOT))}")
 
 # ---------- SHA-256 of the files, no downgrade ----------
 check(U.version_key(REAL_PIN[0]) is not None and set(REAL_PIN[1]) == {U.DLL, *U.DEPS}
@@ -348,6 +348,66 @@ zf = zip_with(("HIDMaestro.Core.dll", b"MZ"), ("THIRD-PARTY-NOTICES.txt", b"BSD"
               ("HIDMaestroTest\\THIRD-PARTY-NOTICES.txt", b"other"))
 check([U._name(i) for i in U.pick(zf.infolist())] == ["HIDMaestro.Core.dll", "LICENSE", "THIRD-PARTY-NOTICES.txt"],
       "THIRD-PARTY-NOTICES.txt from the DLL folder goes with the version, a foreign one does not")
+
+# ---------- rollback: a version that fails to load is marked bad, the previous one takes over after a restart ----------
+import rx_winapi
+R2 = tempfile.mkdtemp()
+U.root = lambda: R2
+def fake_version(tag):
+    os.makedirs(os.path.join(R2, tag))
+    open(os.path.join(R2, tag, U.DLL), "wb").write(b"MZ" + tag.encode())
+    return os.path.join(R2, tag, U.DLL)
+old_dll, new_dll = fake_version("v1.0.0"), fake_version("v1.1.0")
+rx_hm._loaded = None
+U.failed_tag = ""
+check([t for t, _p in U.usable()] == ["v1.1.0", "v1.0.0"] and U.newest_dll() == new_dll, "no bad marks: the newest version is used")
+check(U.mark_bad(os.path.join(R2, "elsewhere", U.DLL), "x") is None and not os.path.exists(os.path.join(R2, U.STATE_FILE)),
+      "a DLL outside the downloaded versions: nothing marked")
+check(U.mark_bad(old_dll, "x") is None, "the oldest version has nothing to fall back to: not marked")
+check(U.mark_bad(new_dll, "driver install: boom") == "v1.1.0", "the newest version marked bad (an older one can take over)")
+check(U.bad_versions() == {"v1.1.0": "driver install: boom"}, f"state.json: {U.bad_versions()}")
+check([t for t, _p in U.usable()] == ["v1.0.0"] and U.newest_dll() == old_dll and rx_hm.find_dll("") == old_dll,
+      "candidates skip the bad version: the previous one is used")
+check(U.mark_bad(old_dll, "y") is None and list(U.bad_versions()) == ["v1.1.0"], "the last usable version is never marked")
+U.PINNED_TAG = "v1.1.0"
+U._get = lambda *a, **k: (_ for _ in ()).throw(AssertionError("a bad version must not be downloaded again"))
+st = U.check()
+check("did not load here" in st.error and "driver install: boom" in st.error and st.version == "v1.0.0",
+      f"a pin on the bad version: no download, an explanation: {st.error!r}")
+open(os.path.join(R2, U.STATE_FILE), "w").write("{broken")
+check(U.bad_versions() == {} and U.newest_dll() == new_dll, "an unreadable state file means no bad versions")
+os.remove(os.path.join(R2, U.STATE_FILE))
+
+rx_hm._loaded = types.SimpleNamespace(path=old_dll)
+check(U.restart_tag() == "v1.1.0", "an older version is loaded and a newer one is on disk: the restart would load the newer")
+rx_hm._loaded = types.SimpleNamespace(path=new_dll)
+check(U.restart_tag() == "", "the newest version is loaded: nothing to restart for")
+rx_hm._loaded = None
+check(U.restart_tag() == "", "nothing loaded: nothing to restart for")
+
+real_admin = rx_winapi.is_admin
+rx_winapi.is_admin = lambda: True
+try:
+    plain = rx_hm.HMError("driver install: boom")
+    out = rx_hm._load_failed(new_dll, plain)
+    check(out is not plain and "marked as not working" in str(out) and "driver install: boom" in str(out) and U.failed_tag == "v1.1.0",
+          f"a failed load: marked bad and the error says so: {out}")
+    check(U.restart_tag() == "v1.0.0", "after the failure (nothing loaded) the restart offers the previous version")
+    rx_hm.reset()
+    for flags in ({"need_dotnet": True}, {"missing": True}):
+        err = rx_hm.HMError("no .NET", **flags)
+        check(rx_hm._load_failed(old_dll, err) is err, f"{flags}: not the fault of the version, not marked")
+    rx_winapi.is_admin = lambda: False
+    fresh = fake_version("v1.2.0")
+    err = rx_hm.HMError("administrator rights required")
+    check(rx_hm._load_failed(fresh, err) is err and "v1.2.0" not in U.bad_versions(), "no administrator rights: not the fault of the version")
+finally:
+    rx_winapi.is_admin = real_admin
+U.failed_tag = ""
+
+fake_version("v1.3.0")
+U.cleanup(keep="v1.3.0")
+check(sorted(os.listdir(R2)) == [U.STATE_FILE, "v1.2.0", "v1.3.0"], f"cleanup keeps the new version and the one before it (bad ones go): {sorted(os.listdir(R2))}")
 
 class HMResourceInUseException(Exception): pass
 class Plain(Exception): pass

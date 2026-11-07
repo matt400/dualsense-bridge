@@ -112,6 +112,22 @@ def reset() -> None:
         _runtimes = None
 
 
+def _load_failed(path: str, err: HMError) -> HMError:
+    """A downloaded version failed to load: roll back to the previous one (after a restart) and say so in the error.
+
+    Not a fault of the version: no DLL, no .NET 10, no administrator rights. The CLR cannot take a second copy of the
+    assembly into this process, so the older version loads only after a restart (rx_hm_update.restart_tag).
+    """
+    if err.missing or err.need_dotnet or not rx_winapi.is_admin():
+        return err
+    import rx_hm_update
+    tag = rx_hm_update.mark_bad(path, str(err))
+    if tag is None:
+        return err
+    rx_hm_update.failed_tag = tag
+    return HMError(f"{err} - HIDMaestro {tag} marked as not working, the previous version loads after a restart")
+
+
 def get(cfg_path: str = "") -> "Backend":
     """-> Backend; raises HMError. Loading (CoreCLR + driver) happens once - the first slot thread pays ~0.5-1 s."""
     global _loaded
@@ -128,10 +144,13 @@ def get(cfg_path: str = "") -> "Backend":
             try:
                 hit = Backend(path)
             except HMError as e:
-                _cache[path] = e
-                raise
+                err = _load_failed(path, e)
+                _cache[path] = err
+                if err is e:
+                    raise
+                raise err from e
             except Exception as e:            # pythonnet / .NET: any exception becomes a readable backend error
-                err = HMError(f"{type(e).__name__}: {e}")
+                err = _load_failed(path, HMError(f"{type(e).__name__}: {e}"))
                 _cache[path] = err
                 raise err from e
             _cache[path] = _loaded = hit
