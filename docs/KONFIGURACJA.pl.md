@@ -60,7 +60,7 @@ Mysz touchpada, pad master, lightbar, haptyka gry, Wake-on-LAN, ustawienia dzien
 (okno → Ustawienia, działa od razu). Wirtualne pady (`vpad`): `backend` = `auto` | `hidmaestro` | `vigem`,
 `fixed_slots` = stała kolejność graczy, `slot_mode` = sposób: `placeholder` (domyślnie; pad 2 czeka ~1 s na pad 1, potem neutralny pad zajmuje pusty niższy slot) | `hold` (czeka do 6 s, bez pada zastępczego), `slot_grace_ms` = czekanie przed padem zastępczym w ms (0-5000, domyślnie 1000), `mirror` = wirtualny pad taki jak fizyczny (DualShock 4 → DS4, Xbox / inny → Xbox 360; `false` = zawsze DualSense), `hm_auto` = pobieranie wersji HIDMaestro
 przypiętej w `receiver/hm_pin.json` z GitHuba (do `receiver/hidmaestro/vX.Y.Z/`; nowa wersja działa po restarcie, gdy starsza jest
-już w użyciu), `hm_dll` = własna `HIDMaestro.Core.dll` albo jej folder (wtedy bez pobierania). Preferencje okna (`ui`): `lang` = `pl` | `en`, `pads_mode` = `dynamic` (kolumna po lewej pokazuje
+już w użyciu; poprzednia wersja zostaje na dysku, a wersja, która się nie załaduje, trafia do `receiver/hidmaestro/state.json` jako zła - po restarcie ładuje się poprzednia, usuń plik, żeby spróbować jeszcze raz; w Ustawienia → Pady jest do tego przycisk restartu), `hm_dll` = własna `HIDMaestro.Core.dll` albo jej folder (wtedy bez pobierania). Preferencje okna (`ui`): `lang` = `pl` | `en`, `pads_mode` = `dynamic` (kolumna po lewej pokazuje
 tylko podłączone pady) | `fixed`, `pads_count` = ile padów zawsze pokazuje `fixed` (1-4). Liczbę slotów ustawia `pads` w
 `receiver.toml` (domyślnie 4, max 4). Nadajnik zapisuje ustawienia Wake-on-LAN z okna w `sender/wol.json`.
 Nadajnik zapisuje stały przydział pad → slot w `sender/slots.json` (`slots_file = ""` wyłącza).

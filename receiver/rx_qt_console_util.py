@@ -68,6 +68,7 @@ class TabBase:
     save_btn: Any                           # the Save button, the signals below and the Sender tab: created / declared by the window
     saved: Any
     elevate: Any
+    restart: Any
     outputs_listed: Any
     sender_cfg: SenderCfgPanel
 
