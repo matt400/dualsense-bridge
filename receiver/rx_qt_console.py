@@ -29,7 +29,7 @@ from dataclasses import replace
 from typing import Any
 
 from rx_i18n import _
-from PySide6.QtCore import QPoint, QRect, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QPoint, QRect, QSettings, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QHideEvent, QPixmap
 from PySide6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QDialog, QGridLayout, QHBoxLayout, QLayout, QLineEdit,
                                QPlainTextEdit, QScrollArea, QVBoxLayout, QWidget)
@@ -66,6 +66,7 @@ from rx_settings import (ABSENT, COMBO_BUTTONS, DEFAULT_PAD, HAPTICS_GAIN, LIGHT
                          MOUSE_LIMITS, PADS_COUNT, SPEAKER_GAIN, VPAD_BACKENDS, WOL_BUTTONS, WOL_HOLD_MS, HapticsConfig, LightbarConfig,
                          MasterConfig, MouseConfig, PadHaptics, PadLight, PadSpeaker, SpeakerConfig, UiConfig, VpadConfig, WolConfig)
 
+SCOPE_HAPTICS, SCOPE_LIGHT = "scope_haptics", "scope_lightbar"     # receiver_ui.ini keys: the entry each per-pad tab showed last
 CAPTURE_TIMEOUT_MS = 15000
 LUMA_DARK_TEXT = 380      # R + G + B above this (of 765) is a light colour: the button text turns black
 NO_AUDIO = "— nie zmieniaj dźwięku —"
@@ -93,6 +94,9 @@ class ConsoleSettings(QDialog):
         self.setMinimumWidth(720)
         self.resize(PREF_SIZE)
         self._frame: QSize | None = None    # the window frame (title bar), known after the first showing
+        # the main window's receiver_ui.ini: remembers which pad / "Default settings" entry the per-pad tabs showed last
+        ui = getattr(parent, "settings", None)
+        self._ui: QSettings | None = ui if isinstance(ui, QSettings) else None
         self.toggle_button = ConsoleConfig().toggle_button
         self.captured.connect(self._on_captured)
         self._cap_timer = QTimer(self, singleShot=True, interval=CAPTURE_TIMEOUT_MS)
@@ -570,10 +574,10 @@ class ConsoleSettings(QDialog):
     def _haptics_tab(self) -> list[QWidget | QLayout]:
         """The Haptics tab: game HD haptics and the pad's speaker per pad (opt-in), the strength / volume and the test buttons."""
         self._haptics: dict[str, PadHaptics] = {}
-        self._haptics_key, self._haptics_loading = DEFAULT_PAD, False
+        self._haptics_key, self._haptics_loading = self._saved_scope(SCOPE_HAPTICS), False
         self._speaker: dict[str, PadSpeaker] = {}
         self.hap_scope = PadScope()
-        self.hap_scope.changed.connect(self._pick_haptics_pad)
+        self.hap_scope.changed.connect(self._haptics_scope_changed)
         self.hap_scope.reset.connect(self._reset_haptics_pad)
         self.hap_on = QCheckBox(_("Haptyka gry (HD haptics) na tym padzie"))
         self.hap_on.toggled.connect(self._haptics_edited)
@@ -617,6 +621,28 @@ class ConsoleSettings(QDialog):
                                 "własne / domyślne co pad. Test głośnika gra z pokazanymi ustawieniami."), "dim", wrap=True),
                         label(_("Zmiana włączenia działa po ponownym połączeniu pada; głośność - od razu."), "dim", wrap=True))
         return [group("", self.hap_scope), box, speaker]
+
+    def _saved_scope(self, name: str) -> str:
+        """The entry (DEFAULT_PAD or a pad key) a per-pad tab showed when it was last used; DEFAULT_PAD without a saved one."""
+        if self._ui is None:
+            return DEFAULT_PAD
+        return str(self._ui.value(name, DEFAULT_PAD)) or DEFAULT_PAD
+
+    def _remember_scope(self, name: str, key: str) -> None:
+        """Keep the entry the user picked in receiver_ui.ini, so the tab opens on it after a restart as well."""
+        if self._ui is not None:
+            self._ui.setValue(name, key)
+            self._ui.sync()
+
+    def _haptics_scope_changed(self, key: str) -> None:
+        """The user flipped "Default settings" or picked another pad on the Haptics tab: remember it and show that entry."""
+        self._remember_scope(SCOPE_HAPTICS, key)
+        self._pick_haptics_pad(key)
+
+    def _light_scope_changed(self, key: str) -> None:
+        """The same for the Lightbar tab."""
+        self._remember_scope(SCOPE_LIGHT, key)
+        self._pick_light_pad(key)
 
     def _scope_items(self, remembered: Iterable[str]) -> list[tuple[str, str]]:
         """The pads for a PadScope list: connected ones first, then the saved ones that are not connected (no default entry)."""
@@ -730,14 +756,14 @@ class ConsoleSettings(QDialog):
     def _light_tab(self) -> list[QWidget | QLayout]:
         """The Lightbar tab: the low battery threshold and the per-pad colour / mode / blinking / game override."""
         self._lights: dict[str, PadLight] = {}
-        self._color, self._light_key, self._loading = "", DEFAULT_PAD, False
+        self._color, self._light_key, self._loading = "", self._saved_scope(SCOPE_LIGHT), False
         self.low_pct = spinbox(*LOW_PCT, 1, " %")
         low = group(_("NISKA BATERIA"),
                     field(_("Próg niskiej baterii"), self.low_pct),
                     label(_("Ten sam próg ma ostrzeżenie na karcie pada i powiadomienie z zasobnika. Ładujący się pad "
                             "nie miga."), "dim", wrap=True))
         self.light_scope = PadScope()
-        self.light_scope.changed.connect(self._pick_light_pad)
+        self.light_scope.changed.connect(self._light_scope_changed)
         self.light_scope.reset.connect(self._reset_light_pad)
         self.light_mode =Combo([(k, _(v), "lightbar") for k, v in LIGHT_MODES.items()])
         self.light_mode.changed.connect(self._light_edited)
