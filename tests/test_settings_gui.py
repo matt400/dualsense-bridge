@@ -8,7 +8,7 @@ from PySide6.QtWidgets import QApplication
 
 C.cfg["tray"] = False
 C.CONSOLE_PATH = os.path.join(TMP, "console.json")
-import rx_audio, rx_console, rx_master, rx_qt, rx_qt_screens, rx_settings
+import rx_audio, rx_console, rx_master, rx_qt, rx_qt_screens, rx_qt_update, rx_qt_console_safety, rx_settings
 from proto import T_IDENT
 from rx_console import Console, ConsoleConfig
 from chk import ok
@@ -295,7 +295,7 @@ ok("Restart: two clicks, receiver restart; application icon set")
 
 # ---------- Aktualizuj: git pull w tle, komunikat, restart po pobraniu ----------
 import rx_update
-rx_qt.UPDATE_RESTART_MS = 50
+rx_qt_update.UPDATE_RESTART_MS = 50
 results = iter([rx_update.Result(True, False, "Masz najnowszą wersję"),
                 rx_update.Result(True, True, "Zaktualizowano (2 zmian): aaaaaaa → bbbbbbb", "a", "b")])
 rx_update.update = lambda **_: (time.sleep(0.1), next(results))[1]
@@ -329,7 +329,7 @@ assert "2222222" in win.sender.text() and win.sender.property("level") == "warn"
 build(b"1111111", 0); win.slow_tick(); pump()
 assert win.sender.property("level") == "ok", "same version - green"
 rx_update.update = lambda **_: rx_update.Result(True, True, "Zaktualizowano (1 zmian): 1111111 → 3333333")
-rx_qt.UPDATE_RESTART_MS = 50
+rx_qt_update.UPDATE_RESTART_MS = 50
 sent.clear(); S.restart = False; closed.clear(); btn.setEnabled(True)   # po poprzedniej aktualizacji czeka na restart
 btn.click(); btn.click(); pump(150)
 cmds = [p for p in sent if p[0] == T_CMD]
@@ -341,14 +341,14 @@ S.restart = False
 ok("version in the header, sender version (different = yellow), Update: command to the sender, waiting for its result")
 
 # the sender does not finish: a countdown in the window, then a restart without it (its version shows later at "Nadajnik online")
-rx_qt.UPDATE_WAIT_S = 1.0
+rx_qt_update.UPDATE_WAIT_S = 1.0
 S.last_pkt = time.monotonic(); build(b"1111111", 0)
 sent.clear(); S.restart = False; closed.clear(); btn.setEnabled(True)
 btn.click(); btn.click(); pump(300)
 assert S.restart is False and "Czekam na nadajnik" in win.status.text(), win.status.text()
 pump(1500)
 assert S.restart is True and "jeszcze pobiera" in btn.toolTip(), btn.toolTip()
-S.restart = False; rx_qt.UPDATE_WAIT_S = 20.0
+S.restart = False; rx_qt_update.UPDATE_WAIT_S = 20.0
 
 # "no response": the pip stage gets its own limit, the git stage does not
 def slow_update(stage):
@@ -356,7 +356,7 @@ def slow_update(stage):
         win.update_progress.emit(stage); time.sleep(0.7)
         return rx_update.Result(True, False, "Masz najnowszą wersję")
     return run
-rx_qt.UPDATE_STUCK_S = 0.2
+rx_qt_update.UPDATE_STUCK_S = 0.2
 S.sender_build = None; S.last_pkt = 0.0      # no sender: the receiver result ends the update at once
 S.restart = False; btn.setEnabled(True)
 rx_update.update = slow_update(rx_update.PCT_BACKED_UP)
@@ -367,7 +367,7 @@ rx_update.update = slow_update(rx_update.PCT_PULL)
 btn.click(); btn.click(); pump(450)
 assert btn.isEnabled() and "nie odpowiada (git)" in win.status.text(), win.status.text()
 pump(700)
-rx_qt.UPDATE_STUCK_S = 150.0
+rx_qt_update.UPDATE_STUCK_S = 150.0
 ok("Update: countdown while waiting for the sender; a hang counted from the last stage, pip has its own limit")
 offs = []
 rx_console.power_off = lambda why: offs.append(why) or True
@@ -380,7 +380,7 @@ assert offs == ["wyłączanie Windows"] * 2, "WM_QUERYENDSESSION -> console mode
 ok("the end of the Windows session turns console mode off")
 # ---------- Settings -> Backups: list, backup now, restore (2 clicks) -> restart ----------
 import rx_backup, rx_qt_console
-rx_qt_console.RESTORE_RESTART_MS = 50
+rx_qt_console_safety.RESTORE_RESTART_MS = 50
 with open(C.SETTINGS_PATH, "w") as f: f.write('{"mouse": {"sens": 2.0}}')
 dlg = win.settings_dlg; dlg.hide(); dlg.present(); pump()
 dlg.tabs.setCurrentIndex(9); pump()

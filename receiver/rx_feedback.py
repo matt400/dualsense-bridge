@@ -121,17 +121,42 @@ def make_cb(i: int):  # noqa: ANN201 - the return type would only be the unannot
             f["large"], f["small"] = int(large_motor), int(small_motor)
             f["t"] = time.monotonic()
             if hasattr(led_number, "Red"):
-                rgb = (int(led_number.Red), int(led_number.Green), int(led_number.Blue))
-                changed = changed or not f["rgb"] or (f["r"], f["g"], f["b"]) != rgb
-                f["r"], f["g"], f["b"] = rgb
-                f["note"] = f["note"] or not f["rgb"]
-                f["rgb"] = True
+                changed = _merge_rgb(f, (led_number.Red, led_number.Green, led_number.Blue)) or changed
             f["set"] = True
         except Exception:  # noqa: BLE001 - driver thread: a malformed callback must never raise into ViGEm
             changed = True
         if changed:
             fb_event.set()
     return cb
+
+
+def _merge_leds(f: FeedbackState, leds: Sequence[int | None]) -> bool:
+    """Take the LED bytes the game set (None = unchanged); True when they differ from the stored ones."""
+    new_leds = tuple(old if v is None else int(v) for v, old in zip(leds, f["leds"], strict=True))
+    if new_leds == f["leds"]:
+        return False
+    f["leds"] = new_leds                # the whole tuple is replaced - the feedback thread reads a consistent one
+    return True
+
+
+def _merge_trig(f: FeedbackState, trig: Sequence[bytes | None]) -> bool:
+    """Take the trigger effects the game set (None = that trigger unchanged); True when they differ from the stored ones."""
+    new = tuple(bytes(t) if t is not None else old for t, old in zip(trig, f["trig"], strict=True))
+    if new == f["trig"]:
+        return False
+    f["trig_note"] = f["trig_note"] or f["trig"] == NO_GAME_TRIG
+    f["trig"], f["trig_owner"] = new, S.game     # the whole tuple is replaced - the feedback thread reads a consistent one
+    return True
+
+
+def _merge_rgb(f: FeedbackState, rgb: Sequence[int]) -> bool:
+    """Take the lightbar colour the game set; True when it is the first one or differs from the stored colour."""
+    new_rgb = (int(rgb[0]), int(rgb[1]), int(rgb[2]))
+    changed = not f["rgb"] or (f["r"], f["g"], f["b"]) != new_rgb
+    f["r"], f["g"], f["b"] = new_rgb
+    f["note"] = f["note"] or not f["rgb"]
+    f["rgb"] = True
+    return changed
 
 
 def game(i: int, large: int | None = None, small: int | None = None, rgb: Sequence[int] | None = None,
@@ -148,16 +173,9 @@ def game(i: int, large: int | None = None, small: int | None = None, rgb: Sequen
         return
     changed = not f["set"]                      # only a real change wakes the feedback thread (games repeat reports every frame)
     if leds is not None:
-        new_leds = tuple(old if v is None else int(v) for v, old in zip(leds, f["leds"], strict=True))
-        if new_leds != f["leds"]:
-            f["leds"] = new_leds                # the whole tuple is replaced - the feedback thread reads a consistent one
-            changed = True
+        changed = _merge_leds(f, leds) or changed
     if trig is not None and any(t is not None for t in trig):
-        new = tuple(bytes(t) if t is not None else old for t, old in zip(trig, f["trig"], strict=True))
-        if new != f["trig"]:
-            f["trig_note"] = f["trig_note"] or f["trig"] == NO_GAME_TRIG
-            f["trig"], f["trig_owner"] = new, S.game     # the whole tuple is replaced - the feedback thread reads a consistent one
-            changed = True
+        changed = _merge_trig(f, trig) or changed
     if large is not None:
         motors = (int(large), int(small or 0))
         changed = changed or (f["large"], f["small"]) != motors
@@ -167,11 +185,7 @@ def game(i: int, large: int | None = None, small: int | None = None, rgb: Sequen
         f["t_other"] = time.monotonic()        # a game report without motors (GAME_RUMBLE_GAP_S)
         changed = changed or bool(f["large"] or f["small"])   # rumble running: the gap timer must be re-evaluated
     if rgb is not None:
-        new_rgb = tuple(int(c) for c in rgb)
-        changed = changed or not f["rgb"] or (f["r"], f["g"], f["b"]) != new_rgb
-        f["r"], f["g"], f["b"] = new_rgb
-        f["note"] = f["note"] or not f["rgb"]
-        f["rgb"] = True
+        changed = _merge_rgb(f, rgb) or changed
     f["set"] = True
     if changed:
         fb_event.set()

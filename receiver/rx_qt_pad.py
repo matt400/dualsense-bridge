@@ -239,6 +239,10 @@ class PadView(QWidget):
 
         Button remaps, stick source / inversion, tuning, trigger effects and the gyro mode.
         """
+        return [*self._button_badges(prof), *self._stick_badges(prof), *self._trigger_badges(prof), *self._gyro_badges(prof)]
+
+    def _button_badges(self, prof: Profile) -> list[Badge]:
+        """One badge under (a trigger: above) every remapped button: where it goes now, or "∅" when it is off."""
         out: list[Badge] = []
         for src, dst in prof["buttons"].items():
             name = src if src in self.by_name else next((s for s, b in L3_OF.items() if b == src), None)
@@ -247,6 +251,11 @@ class PadView(QWidget):
             r = self.by_name[name].path.boundingRect()
             cy = r.top() - 10 if src in B.TRIGGERS else r.bottom() + 12
             out.append((r.center().x(), cy, "→ " + ("∅" if dst is None else SHORT[dst]), dst is None))
+        return out
+
+    def _stick_badges(self, prof: Profile) -> list[Badge]:
+        """Stick source / inversion above each stick, and a "∿" beside a stick that has tuning."""
+        out: list[Badge] = []
         for out_name, e in prof["sticks"].items():
             r = self.by_name[out_name + "_stick"].path.boundingRect()
             tag = "" if e["src"] == out_name else "∅" if e["src"] == "none" else "← " + e["src"][0].upper()
@@ -257,9 +266,14 @@ class PadView(QWidget):
             if out_name in prof["tuning"]:
                 r = self.by_name[out_name + "_stick"].path.boundingRect()
                 out.append((r.left() - 16 if out_name == "left" else r.right() + 16, r.center().y(), "∿", False))
+        return out
+
+    def _trigger_badges(self, prof: Profile) -> list[Badge]:
+        """A DualSense trigger effect (and the game rumble on the triggers) next to the trigger, on the outside."""
+        out: list[Badge] = []
         trig = prof.get("triggers", {})
         game_rv = (trig.get("rumble") or {}).get("on")
-        for name in B.TRIGGERS:                           # a DualSense trigger effect: next to the trigger, on the outside
+        for name in B.TRIGGERS:
             e = trig.get(name)
             tag = {"res": _("opór {n}"), "click": _("klik {n}"), "vib": _("drgania {n}"), "off": _("bez efektu")}.get(
                 (e or {}).get("mode", ""), "").format(n=(e or {}).get("force", (e or {}).get("amp")))
@@ -268,11 +282,15 @@ class PadView(QWidget):
             if tag:
                 r = self.by_name[name].path.boundingRect()
                 out.append((r.left() - 20 if name == "l2" else r.right() + 20, r.center().y() + 8, tag, "fx"))
-        mode = prof["gyro"].get("mode", "off")
-        if mode != "off":
-            r = self.by_name["right_stick"].path.boundingRect()
-            out.append((r.center().x(), r.bottom() + 30, "gyro · mouse" if mode == "mouse" else "gyro → R", False))
         return out
+
+    def _gyro_badges(self, prof: Profile) -> list[Badge]:
+        """The gyro mode below the right stick (none while it is off)."""
+        mode = prof["gyro"].get("mode", "off")
+        if mode == "off":
+            return []
+        r = self.by_name["right_stick"].path.boundingRect()
+        return [(r.center().x(), r.bottom() + 30, "gyro · mouse" if mode == "mouse" else "gyro → R", False)]
 
     # ---------- mouse ----------
     def _hit(self, pos: QPointF) -> str | None:

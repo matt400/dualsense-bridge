@@ -161,23 +161,32 @@ def parse_objects(text: str, prefer: str = "", info: dict[str, Any] | None = Non
     a = adapters[path]
     if info is not None:
         info["address"] = str(_val(a, "Address", "") or "").upper()
-    if _val(a, "Powered", False):
-        st = BTS_OK
-    else:
-        st = BTS_BLOCKED if _val(a, "PowerState") == "off-blocked" else BTS_OFF
     devices = []
     for p, ifaces in objects.items():
         d = ifaces.get(DEVICE)
-        if d is None or not p.startswith(path + "/") or not (mac := mac_bytes(_val(d, "Address", ""))):
-            continue
-        paired, name = bool(_val(d, "Paired", False)), _val(d, "Name") or ""
-        if not (name or paired):
-            continue
-        flags = ((BTD_PAIRED if paired else 0) | (BTD_CONNECTED if _val(d, "Connected", False) else 0)
-                 | (BTD_TRUSTED if _val(d, "Trusted", False) else 0) | (BTD_PAD if is_pad(d) else 0))
-        devices.append(Device(mac_text(mac), _val(d, "Alias") or name or mac_text(mac), _val(d, "RSSI"), flags))
+        if d is not None and p.startswith(path + "/") and (dev := _parse_device(d)) is not None:
+            devices.append(dev)
     devices.sort(key=lambda d: d.sort_key)
-    return st, path, devices[:BT_DEV_MAX]
+    return _adapter_state(a), path, devices[:BT_DEV_MAX]
+
+
+def _adapter_state(adapter: dict[str, Any]) -> int:
+    """The BTS_* state of an adapter: powered (OK), blocked by rfkill or simply off."""
+    if _val(adapter, "Powered", False):
+        return BTS_OK
+    return BTS_BLOCKED if _val(adapter, "PowerState") == "off-blocked" else BTS_OFF
+
+
+def _parse_device(d: dict[str, Any]) -> Device | None:
+    """One BlueZ device; None without a usable address or when it has neither a name nor a pairing (beacons, phones nearby)."""
+    if not (mac := mac_bytes(_val(d, "Address", ""))):
+        return None
+    paired, name = bool(_val(d, "Paired", False)), _val(d, "Name") or ""
+    if not (name or paired):
+        return None
+    flags = ((BTD_PAIRED if paired else 0) | (BTD_CONNECTED if _val(d, "Connected", False) else 0)
+             | (BTD_TRUSTED if _val(d, "Trusted", False) else 0) | (BTD_PAD if is_pad(d) else 0))
+    return Device(mac_text(mac), _val(d, "Alias") or name or mac_text(mac), _val(d, "RSSI"), flags)
 
 
 async def _scan_feed(proc: asyncio.subprocess.Process, address: str, wait_s: float = 3.0) -> None:

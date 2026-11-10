@@ -22,63 +22,55 @@ Nine tabs, in a column on the left (horizontal text, one under another):
 "Save": mouse, master, lightbar, Wake-on-LAN and pads take effect at once (settings.json, no restart). A console mode change
 saves console.json and asks the window owner to restart the receiver (the saved signal) - after the restart
 startup_mode applies as with autostart.
+
+ConsoleSettings itself holds the dialog, the Console / Mouse / Master / Window tabs and Save; the other tabs are mixins in their own
+modules (rx_qt_console_vpad, _haptics, _light, _safety; rx_qt_console_util has the shared base and helpers).
 """
 import threading
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 from dataclasses import replace
 from typing import Any
 
 from rx_i18n import _
-from PySide6.QtCore import QPoint, QRect, QSettings, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QHideEvent, QPixmap
-from PySide6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QDialog, QGridLayout, QHBoxLayout, QLayout, QLineEdit,
-                               QPlainTextEdit, QScrollArea, QVBoxLayout, QWidget)
+from PySide6.QtCore import QPoint, QRect, QSettings, QSize, QTimer, Signal
+from PySide6.QtGui import QHideEvent, QPixmap
+from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog, QGridLayout, QHBoxLayout, QLayout, QPlainTextEdit, QVBoxLayout, QWidget)
 
 import rx_audio
-import rx_backup
 import rx_console
-import rx_ds4
-import rx_eq
-import rx_haptics
-import rx_speaker
-import rx_hm
-import rx_hm_update
-import rx_lightbar
-import rx_security
-import rx_update
 import rx_settings
 import rx_state as S
-import rx_winapi
-from rx_backup import Backup
 from rx_buttons import LABELS
 from rx_config import C
 from rx_console import DEFAULT_APPS, STARTUP_MODES, ConsoleConfig
 from rx_display import DPI_VALUES
 from rx_i18n import LANGS
 from rx_qt_icons import icon
-from rx_qt_padscope import PadScope
 from rx_qt_screens import FIT_MARGIN, parse_size
 from rx_qt_sendercfg import SenderCfgPanel
 from rx_qt_style import set_prop
-from rx_qt_widgets import (Combo, ConfirmButton, SideTabs, SliderRow, button, field, group, icon_button, icon_label, input_items,
+from rx_qt_widgets import (Combo, SideTabs, SliderRow, button, field, group, icon_label, input_items,
                            label, left, pair, spinbox)
-from rx_settings import (ABSENT, COMBO_BUTTONS, DEFAULT_PAD, HAPTICS_GAIN, LIGHT_MODES, LOW_PCT, MASTER_ACTIONS, MASTER_FEATURES,
-                         MOUSE_LIMITS, PADS_COUNT, SPEAKER_GAIN, VPAD_BACKENDS, WOL_BUTTONS, WOL_HOLD_MS, HapticsConfig, LightbarConfig,
-                         MasterConfig, MouseConfig, PadHaptics, PadLight, PadSpeaker, SpeakerConfig, UiConfig, VpadConfig, WolConfig)
+from rx_settings import (ABSENT, COMBO_BUTTONS, MASTER_ACTIONS, MASTER_FEATURES,
+                         MOUSE_LIMITS, HapticsConfig, LightbarConfig,
+                         MasterConfig, MouseConfig, SpeakerConfig)
+from rx_qt_console_haptics import HapticsTab
+from rx_qt_console_light import LightWolTabs
+from rx_qt_console_safety import SafetyTabs
+from rx_qt_console_util import page, wrap
+from rx_qt_console_vpad import VpadTab
 
-SCOPE_HAPTICS, SCOPE_LIGHT = "scope_haptics", "scope_lightbar"     # receiver_ui.ini keys: the entry each per-pad tab showed last
+
 CAPTURE_TIMEOUT_MS = 15000
-LUMA_DARK_TEXT = 380      # R + G + B above this (of 765) is a light colour: the button text turns black
 NO_AUDIO = "— nie zmieniaj dźwięku —"
 TV_RESOLUTIONS = ((0, 0), (1920, 1080), (2560, 1440), (3840, 2160))
 WINDOW_RESOLUTIONS = ((1280, 720), (1366, 768), (1600, 900), (1920, 1080), (2560, 1440))   # presets for the window size
 STARTUP_LABELS = {"extend": "Rozszerz: oba ekrany aktywne", "internal": "Tylko monitor"}
 PREF_SIZE = QSize(1060, 780)  # the settings window size on a big screen (a smaller screen -> a smaller one, with scrolling)
 FRAME_GUESS = QSize(16, 40)   # the Windows frame and title bar, before the window is shown
-RESTORE_RESTART_MS = 1500     # after restoring a backup: the message is visible this long, then the receiver restarts
 
 
-class ConsoleSettings(QDialog):
+class ConsoleSettings(SafetyTabs, VpadTab, HapticsTab, LightWolTabs, QDialog):
     """The settings dialog: tabs built by the _*_tab methods, the Test / Cancel / Save row and the status line."""
     saved = Signal()            # console.json saved - the window owner restarts the receiver
     elevate = Signal()          # Pads: restart the receiver as administrator (HIDMaestro)
@@ -110,19 +102,19 @@ class ConsoleSettings(QDialog):
         lay.setContentsMargins(18, 12, 18, 12)
         lay.setSpacing(8)
         self.tabs = SideTabs()
-        self.tabs.addTab(_page(self._console_tab()), icon("tv"), _("Tryb konsoli"))
-        self.tabs.addTab(_page(self._mouse_tab()), icon("mouse"), _("Mysz"))
-        self.tabs.addTab(_page(self._master_tab()), icon("crown"), _("Master"))
-        self.tabs.addTab(_page(self._light_tab()), icon("lightbar"), _("Lightbar"))
-        self.tabs.addTab(_page(self._haptics_tab()), icon("rumble"), _("Haptyka i głośnik"))
-        self.wol_page = _page(self._wol_tab())
+        self.tabs.addTab(page(self._console_tab()), icon("tv"), _("Tryb konsoli"))
+        self.tabs.addTab(page(self._mouse_tab()), icon("mouse"), _("Mysz"))
+        self.tabs.addTab(page(self._master_tab()), icon("crown"), _("Master"))
+        self.tabs.addTab(page(self._light_tab()), icon("lightbar"), _("Lightbar"))
+        self.tabs.addTab(page(self._haptics_tab()), icon("rumble"), _("Haptyka i głośnik"))
+        self.wol_page = page(self._wol_tab())
         self.tabs.addTab(self.wol_page, icon("wake"), _("Wake-on-LAN"))
-        self.tabs.addTab(_page(self._vpad_tab()), icon("ps"), _("Pady"))
+        self.tabs.addTab(page(self._vpad_tab()), icon("ps"), _("Pady"))
         self.sender_cfg = SenderCfgPanel()
-        self.tabs.addTab(_page(self.sender_cfg.sections()), icon("phone"), _("Nadajnik"))
-        self.tabs.addTab(_page(self._window_tab()), icon("window"), _("Okno"))
-        self.tabs.addTab(_page(self._backup_tab()), icon("backup"), _("Kopie"))
-        self.tabs.addTab(_page(self._security_tab()), icon("shield"), _("Bezpieczeństwo"))
+        self.tabs.addTab(page(self.sender_cfg.sections()), icon("phone"), _("Nadajnik"))
+        self.tabs.addTab(page(self._window_tab()), icon("window"), _("Okno"))
+        self.tabs.addTab(page(self._backup_tab()), icon("backup"), _("Kopie"))
+        self.tabs.addTab(page(self._security_tab()), icon("shield"), _("Bezpieczeństwo"))
         lay.addWidget(self.tabs, 1)
 
         self.status = label("", wrap=True)      # in the button row - a separate line left an empty strip above Save
@@ -166,7 +158,7 @@ class ConsoleSettings(QDialog):
                           label(_("Podwójne kliknięcie wybranego przycisku pada przełącza ekran i dźwięk między monitorem "
                                   "a telewizorem. Brak sygnału z pada przez ustawiony czas wraca do trybu rozszerzonego (oba ekrany)."),
                                 "dim", wrap=True),
-                          field(_("Przycisk pada (podwójne kliknięcie)"), _wrap(pick)),
+                          field(_("Przycisk pada (podwójne kliknięcie)"), wrap(pick)),
                           pair(field(_("Odstęp między kliknięciami"), self.dbl),
                                field(_("Auto-OFF po braku sygnału z pada"), self.timeout)),
                           self.auto_on,
@@ -260,255 +252,6 @@ class ConsoleSettings(QDialog):
         """The resolution list matters only for the fixed-size window mode."""
         self.win_res.setEnabled(self.win_mode.currentData() == "size")
 
-    def _vpad_tab(self) -> list[QWidget | QLayout]:
-        """The Pads tab: the backend, HIDMaestro download / path, the current state and the fixed player order."""
-        self.vpad_backend = Combo([(k, _(v)) for k, v in VPAD_BACKENDS.items()])
-        self.vpad_backend.changed.connect(lambda _v: self._vpad_state())
-        self.vpad_dll = QLineEdit()
-        self.vpad_dll.setPlaceholderText(_("automatycznie"))
-        self.vpad_now = label("", "dim", wrap=True)
-        self.vpad_admin = button(_("Uruchom ponownie jako administrator"), small=True)
-        self.vpad_admin.setIcon(icon("shield"))
-        self.vpad_admin.clicked.connect(self.elevate.emit)
-        self.vpad_fixed = QCheckBox(_("Stała kolejność graczy"))
-        self.vpad_auto = QCheckBox(_("Pobieraj HIDMaestro automatycznie (GitHub, przypięta wersja)"))
-        self.vpad_auto.toggled.connect(lambda _on: self._vpad_state())
-        self.vpad_check = button(_("Sprawdź teraz"), small=True)
-        self.vpad_check.setIcon(icon("update"))
-        self.vpad_check.clicked.connect(lambda: self._hm_check())
-        self.vpad_net = button(_("Zainstaluj .NET 10"), small=True)
-        self.vpad_net.setIcon(icon("update"))
-        self.vpad_net.clicked.connect(self._net_install)
-        self._net_busy = False
-        self._net_msg = ""
-        self._audio_gen = 0         # the newest audio listing; an older one that finishes late is dropped
-        self.outputs_listed.connect(self._outputs_ready)
-        self._hm_timer = QTimer(self, interval=500)
-        self._hm_timer.timeout.connect(self._vpad_state)
-        backend = group(_("WIRTUALNE PADY"),
-                        label(_("HIDMaestro tworzy natywny DualSense (gry widzą pada PS5) sterownikiem w trybie użytkownika - "
-                                "jest rozwijany. Receiver pobiera go sam i uruchamia się jako administrator (tego wymaga "
-                                "tworzenie padów). ViGEmBus (DualShock 4) nie jest już rozwijany, zostaje jako zapas."),
-                              "dim", wrap=True),
-                        field(_("Backend"), self.vpad_backend),
-                        self.vpad_auto,
-                        field(_("Własna HIDMaestro.Core.dll (plik albo folder; puste = pobrana automatycznie)"), self.vpad_dll),
-                        self.vpad_now, row_of(self.vpad_check, self.vpad_net, self.vpad_admin))
-        self.pads_mode = Combo([("dynamic", _("Dynamiczna: tylko podłączone pady")), ("fixed", _("Stała: zawsze te same sloty"))])
-        self.pads_mode.changed.connect(lambda _v: self._pads_view_state())
-        self.pads_count = spinbox(PADS_COUNT[0], min(PADS_COUNT[1], C.NUM_PADS))
-        self.pads_count_row = field(_("Liczba padów, które są zawsze widoczne"), self.pads_count)
-        shown = group(_("PADY W OKNIE"),
-                      label(_("Dynamiczna: kolumna po lewej pokazuje tylko podłączone pady. Stała: zawsze widać pierwsze pady "
-                              "z listy (także rozłączone); podłączony pad spoza tej liczby też się pojawia. Działa od razu po "
-                              "zapisaniu."), "dim", wrap=True),
-                      field(_("Liczba padów"), self.pads_mode),
-                      self.pads_count_row)
-        if PADS_COUNT[1] > C.NUM_PADS:
-            shown.layout().addWidget(label(_("Liczba slotów w receiverze: {n} (opcja pads w receiver.toml albo --pads) - "
-                                             "więcej wymaga zmiany tej wartości i restartu.").format(n=C.NUM_PADS), "dim", wrap=True))
-        order = group(_("KOLEJNOŚĆ GRACZY"),
-                      self.vpad_fixed,
-                      label(_("Gry i Steam numerują pady wg kolejności podłączenia. Gdy pad 2 włączy się pierwszy, pad 1 "
-                              "dostaje najpierw pad zastępczy, więc pad 2 zawsze zostaje graczem 2. Który fizyczny pad to "
-                              "pad 1 / 2, pamięta nadajnik (slots.json, wg MAC). Zastępczy pad znika razem z padem 2."),
-                            "dim", wrap=True))
-        return [shown, backend, order]
-
-    def _load_vpad(self, v: VpadConfig) -> None:
-        """Fill the Pads tab from a VpadConfig."""
-        self.vpad_backend.set_data(v.backend)
-        self.vpad_dll.setText(v.hm_dll)
-        self.vpad_fixed.setChecked(v.fixed_slots)
-        self.vpad_auto.setChecked(v.hm_auto)
-        self._vpad_state()
-
-    def _load_pads_view(self, ui: UiConfig) -> None:
-        """Fill the "pads in the window" group from the UI settings (the count field only matters for the fixed mode)."""
-        self.pads_mode.set_data(ui.pads_mode)
-        self.pads_count.setValue(ui.pads_count)
-        self._pads_view_state()
-
-    def _pads_view_state(self) -> None:
-        """The number of pads is asked for only in the fixed mode."""
-        self.pads_count_row.setVisible(self.pads_mode.currentData() == "fixed")
-
-    def _hm_check(self) -> None:
-        """Download the pinned HIDMaestro in the background if it is not on disk (minutes); the state is refreshed every 0.5 s."""
-        import threading
-        threading.Thread(target=rx_hm_update.check, name="hidmaestro check", daemon=True).start()
-        self._hm_timer.start()
-        self._vpad_state(busy=True)
-
-    def _net_install(self) -> None:
-        """.NET 10 through winget in the background (several minutes); after the install HIDMaestro works from the next pad connection."""
-        import threading
-
-        def run() -> None:
-            ok, msg = rx_hm.install_dotnet()
-            self._net_msg = _("✓ .NET 10 zainstalowany - HIDMaestro zadziała przy następnym połączeniu pada") if ok \
-                else _("Instalacja .NET 10 nie udała się: {err}").format(err=msg)
-            self._net_busy = False
-        self._net_busy, self._net_msg = True, ""
-        threading.Thread(target=run, name="dotnet install", daemon=True).start()
-        self._hm_timer.start()
-        self._vpad_state()
-
-    def _vpad_state(self, busy: bool = False) -> None:
-        """What works now: the kind of plugged pads.
-
-        The HIDMaestro version (downloaded / newest / downloading / error), the reason for working without HIDMaestro, the
-        restart-as-administrator button.
-        """
-        backend = self.vpad_backend.currentData()
-        used = sorted({rx_ds4.LABELS[k] for k in rx_ds4.kinds if k})
-        lines = [_("Teraz: {kinds}").format(kinds=", ".join(used)) if used else _("Teraz: żaden wirtualny pad nie jest podłączony")]
-        st = rx_hm_update.refresh_status() if not rx_hm_update.status.busy else rx_hm_update.status
-        busy = busy or st.busy
-        if busy:
-            lines.append(_("HIDMaestro: sprawdzanie / pobieranie…"))
-        elif st.version:
-            newer = st.latest and rx_hm_update.version_tuple(st.latest) > rx_hm_update.version_tuple(st.version)
-            lines.append(_("HIDMaestro {v} pobrany").format(v=st.version)
-                         + (_(" (przypięta wersja: {v})").format(v=st.latest) if newer else ""))
-        if st.error and not busy:
-            lines.append(_("Pobieranie HIDMaestro: {err}").format(err=st.error))
-        need_net = backend != "vigem" and rx_hm.need_dotnet()
-        if self._net_busy:
-            lines.append(_("Instalowanie .NET 10 (winget)…"))
-        elif self._net_msg:
-            lines.append(self._net_msg)
-        elif need_net:
-            lines.append(_("Brakuje .NET 10 - HIDMaestro go wymaga."))
-        self.vpad_net.setVisible(need_net or self._net_busy)
-        self.vpad_net.setEnabled(not self._net_busy)
-        if not busy and not self._net_busy:
-            self._hm_timer.stop()
-        self.sender_cfg.stop()
-        self.vpad_check.setEnabled(not busy and backend != "vigem")
-        if backend != "vigem" and rx_ds4.hm_note:
-            lines.append(_("HIDMaestro nieużywany: {why}").format(why=rx_ds4.hm_note))
-        need_admin = backend != "vigem" and not rx_winapi.is_admin()
-        if need_admin:
-            lines.append(_("Receiver działa bez uprawnień administratora - HIDMaestro nie utworzy padów."))
-        self.vpad_now.setText("\n".join(lines))
-        set_prop(self.vpad_now, "level", "warn" if need_admin or (backend == "hidmaestro" and rx_ds4.hm_note) else "")
-        self.vpad_admin.setVisible(need_admin)
-
-    def _collect_vpad(self) -> VpadConfig:
-        """-> the VpadConfig described by the Pads tab."""
-        return VpadConfig(backend=self.vpad_backend.currentData(), fixed_slots=self.vpad_fixed.isChecked(),
-                          hm_dll=self.vpad_dll.text().strip(), hm_auto=self.vpad_auto.isChecked())
-
-    def _backup_tab(self) -> list[QWidget | QLayout]:
-        """The Backups tab: the list of copies and a make-a-copy-now button."""
-        self.backup_rows = QVBoxLayout()
-        self.backup_rows.setSpacing(6)
-        now = button(_("Zrób kopię teraz"), small=True)
-        now.setIcon(icon("backup"))
-        now.clicked.connect(self._backup_now)
-        box = group(_("KOPIE USTAWIEŃ"),
-                    label(_("Przed każdą aktualizacją receiver kopiuje settings.json, console.json, remap.json i padcal.json "
-                            "(zostaje {n} ostatnich). Przywrócenie najpierw zapisuje kopię bieżących plików - też da się "
-                            "je cofnąć - a potem uruchamia receiver od nowa.").format(n=rx_backup.KEEP), "dim", wrap=True),
-                    self.backup_rows, left(now))
-        return [box]
-
-    def _security_tab(self) -> list[QWidget | QLayout]:
-        """The Security tab: the findings of rx_security, the harden-folder button and a new HMAC key to the clipboard."""
-        self.sec_now = label("", wrap=True)
-        self.sec_harden = button(_("Zabezpiecz folder"), small=True)
-        self.sec_harden.setIcon(icon("shield"))
-        self.sec_harden.setToolTip(_("Zapis w folderze receivera tylko dla administratorów (receiver dalej zapisuje "
-                                     "ustawienia i się aktualizuje)"))
-        self.sec_harden.clicked.connect(self._sec_harden)
-        key = button(_("Kopiuj nowy klucz"), small=True)
-        key.setIcon(icon("copy"))
-        key.setToolTip(_("Losowy klucz HMAC do schowka - wpisz go jako key w receiver.toml i w sender.toml"))
-        key.clicked.connect(self._sec_key)
-        box = group(_("BEZPIECZEŃSTWO"),
-                    label(_("Receiver działa jako administrator i przyjmuje polecenia z sieci. Klucz HMAC (key, ten sam "
-                            "po obu stronach) podpisuje pakiety i chroni przed powtórzeniem nagranych; bez niego każdy "
-                            "w sieci lokalnej może sterować myszą i akcjami pada master. Szczegóły: docs/SECURITY.md."),
-                          "dim", wrap=True),
-                    self.sec_now, row_of(key, self.sec_harden))
-        self._sec_state()
-        return [box]
-
-    def _sec_state(self) -> None:
-        """Show the current security findings (or that none were found) and the harden button only when the folder issue exists."""
-        found = rx_security.issues()
-        self.sec_now.setText("\n".join("• " + i.text for i in found) if found else _("✓ Nie wykryto problemów."))
-        set_prop(self.sec_now, "level", "warn" if found else "ok")
-        self.sec_harden.setVisible(any(i.code == "folder" for i in found))
-
-    def _sec_key(self) -> None:
-        """Copy a freshly generated HMAC key to the clipboard."""
-        from proto import generate_key
-        QApplication.clipboard().setText(generate_key())
-        self._status(_("✓ Nowy klucz w schowku - wpisz go jako key w receiver.toml i w sender.toml, potem uruchom "
-                       "oba programy ponownie."), "ok")
-
-    def _sec_harden(self) -> None:
-        """Harden the receiver folder and show the result."""
-        ok, msg = rx_security.harden()
-        self._status(("✓ " if ok else "") + msg, "ok" if ok else "bad")
-        self._sec_state()
-
-    def _load_backups(self) -> None:
-        """The list of backups from the newest: the date, where it came from, the files; "Restore" needs a second click."""
-        while self.backup_rows.count():
-            w = self.backup_rows.takeAt(0).widget()
-            if w is not None:
-                w.hide()
-                w.setParent(None)
-                w.deleteLater()
-        backups = rx_backup.list_backups()
-        if not backups:
-            self.backup_rows.addWidget(label(_("Nie ma jeszcze żadnej kopii."), "dim"))
-        for b in backups:
-            self.backup_rows.addWidget(self._backup_row(b))
-
-    def _backup_row(self, b: Backup) -> QWidget:
-        """One backup row: its time, origin and files, and a Restore button that needs a confirming click."""
-        from PySide6.QtWidgets import QFrame
-        row = QFrame()
-        row.setObjectName("row")
-        hl = QHBoxLayout(row)
-        hl.setContentsMargins(12, 8, 8, 8)
-        hl.setSpacing(10)
-        text = QVBoxLayout()
-        text.setSpacing(2)
-        text.addWidget(label(rx_backup.describe_time(b.time), "val"))
-        text.addWidget(label(_backup_reason(b) + "  ·  " + ", ".join(b.files), "dim", wrap=True))
-        hl.addLayout(text, 1)
-        restore = ConfirmButton(_("Przywróć"), _("Przywrócić?"), small=True)
-        restore.setToolTip(_("Zastępuje bieżące ustawienia tymi z kopii i uruchamia receiver od nowa"))
-        restore.confirmed.connect(lambda name=b.name: self._restore(name))
-        hl.addWidget(restore, 0, Qt.AlignmentFlag.AlignVCenter)
-        return row
-
-    def _backup_now(self) -> None:
-        """Make a manual backup and refresh the list."""
-        try:
-            b = rx_backup.create("manual", rx_update.version()[0] or "")
-        except OSError as e:
-            self._status(_("Nie udało się zrobić kopii: {err}").format(err=e), "bad")
-            return
-        self._load_backups()
-        self._status(_("✓ Kopia zapisana.") if b else _("Nie ma jeszcze plików ustawień do skopiowania."),
-                     "ok" if b else "warn")
-
-    def _restore(self, name: str) -> None:
-        """Restore a backup; on success disable Save and restart the receiver shortly."""
-        ok, msg = rx_backup.restore(name, rx_update.version()[0] or "")
-        self._status(("✓ " if ok else "") + msg, "ok" if ok else "bad")
-        self._load_backups()
-        if ok:
-            self._stop_capture()
-            self.save_btn.setEnabled(False)       # Save before the restart would overwrite the files just restored
-            QTimer.singleShot(RESTORE_RESTART_MS, self.saved.emit)   # the settings are read at startup
-
     def _load_screens(self) -> None:
         """Fill the screen choice with the connected screens (and the stored one if it is not connected now)."""
         from PySide6.QtGui import QGuiApplication
@@ -571,353 +314,9 @@ class ConsoleSettings(QDialog):
                                 "(krótka wibracja = trzymaj dalej). Wyłączenie PC daje 10 s na \"shutdown /a\"."), "dim", wrap=True))
         return [who, rights, actions]
 
-    def _haptics_tab(self) -> list[QWidget | QLayout]:
-        """The Haptics tab: game HD haptics and the pad's speaker per pad (opt-in), the strength / volume and the test buttons."""
-        self._haptics: dict[str, PadHaptics] = {}
-        self._haptics_key, self._haptics_loading = self._saved_scope(SCOPE_HAPTICS), False
-        self._speaker: dict[str, PadSpeaker] = {}
-        self.hap_scope = PadScope()
-        self.hap_scope.changed.connect(self._haptics_scope_changed)
-        self.hap_scope.reset.connect(self._reset_haptics_pad)
-        self.hap_on = QCheckBox(_("Haptyka gry (HD haptics) na tym padzie"))
-        self.hap_on.toggled.connect(self._haptics_edited)
-        self.hap_gain = spinbox(*HAPTICS_GAIN, 5, " %")
-        self.hap_gain.valueChanged.connect(self._haptics_edited)
-        self.hap_test = button(_("Test haptyki"))
-        self.hap_test.clicked.connect(self._test_haptics)
-        self.hap_note = label("", "dim", wrap=True)
-        self.spk_on = QCheckBox(_("Głośnik pada (dźwięk gry) na tym padzie"))
-        self.spk_on.toggled.connect(self._haptics_edited)
-        self.spk_gain = spinbox(*SPEAKER_GAIN, 5, " %")
-        self.spk_gain.valueChanged.connect(self._haptics_edited)
-        self.spk_test = button(_("Test głośnika"))
-        self.spk_test.clicked.connect(self._test_speaker)
-        self.spk_note = label("", "dim", wrap=True)
-        self.eq_preset = Combo([("flat", _("Płaski")), ("voice", _("Głos")), ("bass", _("Bas")), ("custom", _("Własny"))])
-        self.eq_preset.changed.connect(self._eq_preset_picked)
-        self.eq_rows = [SliderRow(rx_eq.band_name(hz), *rx_eq.GAIN_DB, 1, fmt=rx_eq.db_text) for hz, _kind in rx_eq.BANDS]
-        for row in self.eq_rows:
-            row.changed.connect(self._eq_moved)
-        box = group(_("HAPTYKA GRY"),
-                    label(_("Gry z haptyką DualSense (dźwięk z kanałów 3-4) wysyłają ją do pada przez nadajnik. Wymaga "
-                            "wirtualnego pada USB (profil composite) i nadajnika w wersji z haptyką. Jest wyłączona domyślnie: "
-                            "pierwsze włączenie instaluje sterownik jądra (usbip-win2), a Windows dodaje urządzenie dźwiękowe "
-                            "„Wireless Controller” (domyślne wyjście dźwięku zostaje bez zmian)."), "dim", wrap=True),
-                    self.hap_on,
-                    pair(field(_("Siła"), self.hap_gain), field(_("Próba"), self.hap_test)),
-                    self.hap_note,
-                    label(_("Zmiana włączenia działa po ponownym połączeniu pada; siła - od razu."), "dim", wrap=True))
-        speaker = group(_("GŁOŚNIK PADA"),
-                        label(_("Dźwięk gry z wyjścia „Wireless Controller” (kanały 1-2) gra na głośniku pada przez nadajnik "
-                                "(Bluetooth, kodek Opus). Potrzebuje tego samego wirtualnego pada USB co haptyka, nadajnika w wersji "
-                                "z głośnikiem i biblioteki libopus na nadajniku. Jest wyłączony domyślnie. Ustawienia pada wyżej "
-                                "(własne lub domyślne) dotyczą też głośnika."), "dim", wrap=True),
-                        self.spk_on,
-                        pair(field(_("Głośność"), self.spk_gain), field(_("Próba"), self.spk_test)),
-                        self.spk_note,
-                        field(_("Korektor (equalizer)"), self.eq_preset),
-                        *self.eq_rows,
-                        label(_("Korektor działa na dźwięk gry przed wysłaniem na głośnik pada i ma to samo ustawienie "
-                                "własne / domyślne co pad. Test głośnika gra z pokazanymi ustawieniami."), "dim", wrap=True),
-                        label(_("Zmiana włączenia działa po ponownym połączeniu pada; głośność - od razu."), "dim", wrap=True))
-        return [group("", self.hap_scope), box, speaker]
-
-    def _saved_scope(self, name: str) -> str:
-        """The entry (DEFAULT_PAD or a pad key) a per-pad tab showed when it was last used; DEFAULT_PAD without a saved one."""
-        if self._ui is None:
-            return DEFAULT_PAD
-        return str(self._ui.value(name, DEFAULT_PAD)) or DEFAULT_PAD
-
-    def _remember_scope(self, name: str, key: str) -> None:
-        """Keep the entry the user picked in receiver_ui.ini, so the tab opens on it after a restart as well."""
-        if self._ui is not None:
-            self._ui.setValue(name, key)
-            self._ui.sync()
-
-    def _haptics_scope_changed(self, key: str) -> None:
-        """The user flipped "Default settings" or picked another pad on the Haptics tab: remember it and show that entry."""
-        self._remember_scope(SCOPE_HAPTICS, key)
-        self._pick_haptics_pad(key)
-
-    def _light_scope_changed(self, key: str) -> None:
-        """The same for the Lightbar tab."""
-        self._remember_scope(SCOPE_LIGHT, key)
-        self._pick_light_pad(key)
-
-    def _scope_items(self, remembered: Iterable[str]) -> list[tuple[str, str]]:
-        """The pads for a PadScope list: connected ones first, then the saved ones that are not connected (no default entry)."""
-        items: list[tuple[str, str]] = []
-        known = {DEFAULT_PAD}
-        for i in range(C.NUM_PADS):
-            key = S.profile_key(i)
-            if key not in known and S.pad_id[i] and (S.alive[i] or S.want[i].is_set()):
-                known.add(key)
-                items.append((key, _("Pad {n}  ·  {key}").format(n=i + 1, key=key)))
-        items += [(k, _("{key}  (niepodłączony)").format(key=k)) for k in remembered if k not in known]
-        return items
-
     # ---------- haptics ----------
-    def _load_haptics(self, cfg: HapticsConfig, speaker: SpeakerConfig) -> None:
-        """Fill the Haptics tab: the pad list (connected, remembered) and the values of the entry that was shown last."""
-        self._haptics = dict(cfg.pads)
-        self._speaker = dict(speaker.pads)
-        # reopening the window keeps the entry that was picked last (it would look like its setting was lost otherwise)
-        self.hap_scope.set_pads(self._scope_items({**self._haptics, **self._speaker}), self._haptics_key)
-        self._pick_haptics_pad(self.hap_scope.key())
-
-    def _pick_haptics_pad(self, key: str) -> None:
-        """Show the haptics settings of the chosen entry (a pad without its own one shows the defaults); loading is not an edit."""
-        self._haptics_key = key
-        cfg = self._haptics.get(key) or self._haptics.get(DEFAULT_PAD) or PadHaptics()
-        spk = self._speaker.get(key) or self._speaker.get(DEFAULT_PAD) or PadSpeaker()
-        self._haptics_loading = True
-        self.hap_on.setChecked(cfg.enabled)
-        self.hap_gain.setValue(cfg.gain)
-        self.spk_on.setChecked(spk.enabled)
-        self.spk_gain.setValue(spk.gain)
-        self._show_eq(spk.eq)
-        self._haptics_loading = False
-        self.hap_scope.show_state(key in self._haptics or key in self._speaker)
-        self._haptics_enable()
-
-    def _reset_haptics_pad(self) -> None:
-        """Drop the chosen pad's own haptics / speaker entry: it uses the defaults again."""
-        key = self._haptics_key
-        if key != DEFAULT_PAD:
-            self._haptics.pop(key, None)
-            self._speaker.pop(key, None)
-            self._pick_haptics_pad(key)
-
-    def _haptics_pad_slot(self) -> int | None:
-        """The slot of the pad chosen in the combo (None for the default entry or a pad that is not connected)."""
-        for i in range(C.NUM_PADS):
-            if S.pad_id[i] and S.alive[i] and S.profile_key(i) == self._haptics_key:
-                return i
-        return None
-
-    def _haptics_enable(self) -> None:
-        """Enable the test buttons only for a connected pad; say when its sender is too old."""
-        slot = self._haptics_pad_slot()
-        self.hap_test.setEnabled(slot is not None)
-        self.spk_test.setEnabled(slot is not None)
-        old = slot is not None and not rx_haptics.sender_haptics(slot)
-        self.hap_note.setText(_("Nadajnik tego pada jest w starszej wersji i nie przekaże haptyki (kliknij Aktualizuj).") if old else "")
-        old = slot is not None and not rx_speaker.sender_speaker(slot)
-        self.spk_note.setText(_("Nadajnik tego pada jest w starszej wersji i nie przekaże dźwięku na głośnik (kliknij Aktualizuj).")
-                              if old else "")
-
-    def _haptics_edited(self, *_args: Any) -> None:
-        """Record the edited fields under the current entry: for a pad without one this is the copy of the defaults plus the change."""
-        if self._haptics_loading:
-            return
-        key = self._haptics_key
-        self._haptics[key] = PadHaptics(enabled=self.hap_on.isChecked(), gain=self.hap_gain.value())
-        self._speaker[key] = PadSpeaker(enabled=self.spk_on.isChecked(), gain=self.spk_gain.value(), eq=self._eq_values())
-        self.hap_scope.show_state(True)
-        self._haptics_enable()
-
-    def _eq_values(self) -> tuple[int, ...]:
-        """The equalizer gains (dB per band) the sliders show."""
-        return tuple(round(row.value()) for row in self.eq_rows)
-
-    def _show_eq(self, gains: tuple[int, ...]) -> None:
-        """Put gains on the sliders and the matching preset name in the list (no signals: loading is not an edit)."""
-        for row, db in zip(self.eq_rows, gains, strict=True):
-            row.set(db)
-        self.eq_preset.set_data(rx_eq.preset_of(gains))
-
-    def _eq_preset_picked(self, name: str) -> None:
-        """A preset was chosen: its gains go to the sliders ("custom" keeps what the sliders show)."""
-        if name in rx_eq.PRESETS:
-            self._show_eq(rx_eq.PRESETS[name])
-        self._haptics_edited()
-
-    def _eq_moved(self, _value: float) -> None:
-        """A slider was moved: the preset list follows (a preset whose numbers match, else "custom")."""
-        self.eq_preset.set_data(rx_eq.preset_of(self._eq_values()))
-        self._haptics_edited()
-
-    def _test_haptics(self) -> None:
-        """Send a short tone through the haptics path to the chosen pad (with the strength shown, not the saved one)."""
-        slot = self._haptics_pad_slot()
-        if slot is None:
-            return
-        why = rx_haptics.test(slot, self.hap_gain.value() / 100)
-        self._status(why or _("Ton próbny wysłany do pada."), "warn" if why else "ok")
-
-    def _test_speaker(self) -> None:
-        """Send the test jingle through the speaker path to the chosen pad (with the volume shown, not the saved one)."""
-        slot = self._haptics_pad_slot()
-        if slot is None:
-            return
-        why = rx_speaker.test(slot, self.spk_gain.value() / 100, self._eq_values())
-        self._status(why or _("Jingiel wysłany do pada."), "warn" if why else "ok")
-
-    def _light_tab(self) -> list[QWidget | QLayout]:
-        """The Lightbar tab: the low battery threshold and the per-pad colour / mode / blinking / game override."""
-        self._lights: dict[str, PadLight] = {}
-        self._color, self._light_key, self._loading = "", self._saved_scope(SCOPE_LIGHT), False
-        self.low_pct = spinbox(*LOW_PCT, 1, " %")
-        low = group(_("NISKA BATERIA"),
-                    field(_("Próg niskiej baterii"), self.low_pct),
-                    label(_("Ten sam próg ma ostrzeżenie na karcie pada i powiadomienie z zasobnika. Ładujący się pad "
-                            "nie miga."), "dim", wrap=True))
-        self.light_scope = PadScope()
-        self.light_scope.changed.connect(self._light_scope_changed)
-        self.light_scope.reset.connect(self._reset_light_pad)
-        self.light_mode =Combo([(k, _(v), "lightbar") for k, v in LIGHT_MODES.items()])
-        self.light_mode.changed.connect(self._light_edited)
-        self.light_color = button("", small=True)
-        self.light_color.setToolTip(_("Wybierz kolor"))
-        self.light_color.clicked.connect(self._pick_color)
-        reset_color = icon_button("reset", _("Kolor domyślny (idle_lightbar z receiver.toml)"), 16)
-        reset_color.clicked.connect(lambda: self._set_color(""))
-        colors = QHBoxLayout()
-        colors.setSpacing(8)
-        colors.addWidget(self.light_color, 1)
-        colors.addWidget(reset_color)
-        self.light_blink = QCheckBox(_("Miganie na czerwono przy niskiej baterii (także w grze)"))
-        self.light_blink.toggled.connect(self._light_edited)
-        self.light_game = QCheckBox(_("Gra może zmienić kolor (tylko w trakcie gry; wyłączone = zawsze ten kolor)"))
-        self.light_game.toggled.connect(self._light_edited)
-        pad = group(_("KOLOR LIGHTBARA"),
-                    label(_("Poza grą (pulpit, Steam, launchery - lista w Trybie konsoli) zawsze świeci ten kolor. W grze "
-                            "może go zastąpić kolor gry, chyba że wyłączysz „Gra może zmienić kolor”. Miganie przy niskiej "
-                            "baterii działa zawsze, a potwierdzenia (np. złoty błysk mastera) są na wierzchu."), "dim", wrap=True),
-                    pair(field(_("Tryb"), self.light_mode), field(_("Kolor"), _wrap(colors))),
-                    self.light_game, self.light_blink)
-        return [group("", self.light_scope), pad, low]
-
-    def _wol_tab(self) -> list[QWidget | QLayout]:
-        """The Wake-on-LAN tab: enable, the pad combination and hold time, and the MAC / broadcast addresses."""
-        self.wol_on = QCheckBox(_("Budzenie komputera z pada"))
-        self.wol_on.setIcon(icon("wake"))
-        self.wol_btn = Combo(input_items(WOL_BUTTONS, text=True))
-        self.wol_hold = spinbox(*WOL_HOLD_MS, 100, " ms")
-        combo = QHBoxLayout()
-        combo.setSpacing(8)
-        combo.addWidget(icon_label("ps"))
-        combo.addWidget(label("+"))
-        combo.addWidget(self.wol_btn, 1)
-        self.wol_mac, self.wol_bcast = QLineEdit(), QLineEdit()
-        self.wol_mac.setPlaceholderText("auto")
-        self.wol_bcast.setPlaceholderText("auto")
-        self.wol_seen = label("", "dim", wrap=True)
-        how = group(_("WAKE-ON-LAN"),
-                    label(_("Gdy komputer nie odpowiada (wyłączony / uśpiony), przytrzymanie tej kombinacji na padzie wysyła "
-                            "z telefonu magic packet. Przy działającym komputerze kombinacja idzie do receivera jak zwykle "
-                            "(np. pauza mastera), więc nic nie koliduje. Pad potwierdza wysłanie białym błyskiem, błąd - czerwonym."),
-                          "dim", wrap=True),
-                    self.wol_on,
-                    pair(field(_("Kombinacja na padzie"), _wrap(combo)), field(_("Przytrzymanie"), self.wol_hold)))
-        addr = group(_("ADRESY"),
-                     pair(field(_("MAC karty sieciowej komputera"), self.wol_mac), field(_("Adres broadcast"), self.wol_bcast)),
-                     self.wol_seen,
-                     label(_("Puste = automatycznie: nadajnik zapamiętuje MAC komputera z tablicy ARP telefonu, póki komputer "
-                             "działa, i wysyła na broadcast swojej sieci. Komputer musi mieć włączony Wake-on-LAN w BIOS / UEFI "
-                             "i we właściwościach karty sieciowej (najlepiej przewodowej)."), "dim", wrap=True))
-        return [how, addr]
-
     # ---------- lightbar ----------
-    def _load_light(self, cfg: LightbarConfig) -> None:
-        """Fill the Lightbar tab from a LightbarConfig.
-
-        The pad list (connected pads, remembered ones) and the values of the entry that was shown last.
-        """
-        self.low_pct.setValue(cfg.low_pct)
-        self._lights = dict(cfg.pads)
-        # reopening the window keeps the entry that was picked last (it would look like its setting was lost otherwise)
-        self.light_scope.set_pads(self._scope_items(self._lights), self._light_key)
-        self._pick_light_pad(self.light_scope.key())
-
-    def _pick_light_pad(self, key: str) -> None:
-        """Show the lightbar settings of the chosen entry (a pad without its own one shows the defaults); loading is not an edit."""
-        self._light_key = key
-        light = self._lights.get(key) or self._lights.get(DEFAULT_PAD) or PadLight()
-        self._loading = True
-        self.light_mode.set_data(light.mode)
-        self.light_blink.setChecked(light.blink)
-        self.light_game.setChecked(light.game)
-        self._set_color(light.color, store=False)
-        self._loading = False
-        self.light_scope.show_state(key in self._lights)
-        self._light_enable()
-
-    def _reset_light_pad(self) -> None:
-        """Drop the chosen pad's own lightbar entry: it uses the defaults again."""
-        key = self._light_key
-        if key != DEFAULT_PAD:
-            self._lights.pop(key, None)
-            self._pick_light_pad(key)
-
-    def _light_enable(self) -> None:
-        """The colour button works only in the solid mode."""
-        self.light_color.setEnabled(self.light_mode.currentData() == "solid")
-
-    def _set_color(self, hex_color: str, store: bool = True) -> None:
-        """Set the chosen colour (empty = the default) and paint the button with it; store=False skips recording the edit."""
-        self._color = hex_color
-        rgb = rx_lightbar.hex_rgb(hex_color) if hex_color else C.IDLE_RGB
-        text = rx_lightbar.rgb_hex(rgb) + ("" if hex_color else _("  (domyślny)"))
-        fg = "#000000" if sum(rgb) > LUMA_DARK_TEXT else "#ffffff"
-        self.light_color.setText(text)
-        self.light_color.setStyleSheet(f"background: {rx_lightbar.rgb_hex(rgb)}; color: {fg};")
-        if store:
-            self._light_edited()
-
-    def _pick_color(self) -> None:
-        """Open the colour dialog and apply the picked colour."""
-        start = QColor(*(rx_lightbar.hex_rgb(self._color) if self._color else C.IDLE_RGB))
-        c = QColorDialog.getColor(start, self, _("Kolor lightbara"))
-        if c.isValid():
-            self._set_color(c.name())
-
-    def _light_edited(self, *_args: Any) -> None:
-        """Record the edited fields under the current entry: for a pad without one this is the copy of the defaults plus the change."""
-        if self._loading:
-            return
-        key = self._light_key
-        self._lights[key] = PadLight(mode=self.light_mode.currentData(), color=self._color,
-                                     blink=self.light_blink.isChecked(), game=self.light_game.isChecked())
-        self.light_scope.show_state(True)
-        self._light_enable()
-
     # ---------- Wake-on-LAN ----------
-    def _load_wol(self, w: WolConfig) -> None:
-        """Fill the Wake-on-LAN tab from a WolConfig."""
-        self.wol_on.setChecked(w.enabled)
-        self.wol_btn.set_data(w.button)
-        self.wol_hold.setValue(w.hold_ms)
-        self.wol_mac.setText(w.mac)
-        self.wol_bcast.setText(w.bcast)
-        self._wol_seen()
-
-    def _wol_seen(self) -> None:
-        """What the sender detected by itself (the build2 packet) - a hint in the empty fields."""
-        seen = S.sender_wol
-        mac, bcast = seen if seen else ("", "")
-        self.wol_mac.setPlaceholderText(_("auto: {v}").format(v=mac) if mac else "auto")
-        self.wol_bcast.setPlaceholderText(_("auto: {v}").format(v=bcast) if bcast else "auto")
-        if seen is None:
-            self.wol_seen.setText(_("Nadajnik nie podał jeszcze adresów (offline albo starsza wersja - Aktualizuj)."))
-        else:
-            self.wol_seen.setText(_("Nadajnik użyje: MAC {mac}, broadcast {bcast}.").format(
-                mac=mac or _("nieznany - wpisz go albo uruchom receiver, gdy nadajnik działa"), bcast=bcast or "255.255.255.255"))
-        set_prop(self.wol_seen, "level", "warn" if seen is not None and not mac else "")
-
-    def _collect_wol(self) -> WolConfig:
-        """-> WolConfig, or a ValueError naming the field."""
-        try:
-            mac = rx_settings.WolConfig.V["mac"](self.wol_mac.text().strip())
-        except ValueError:
-            raise ValueError(_("Zły adres MAC - wpisz np. aa:bb:cc:dd:ee:ff albo zostaw puste.")) from None
-        try:
-            bcast = rx_settings.WolConfig.V["bcast"](self.wol_bcast.text().strip())
-        except ValueError:
-            raise ValueError(_("Zły adres broadcast - wpisz np. 192.168.1.255 albo zostaw puste.")) from None
-        return WolConfig(enabled=self.wol_on.isChecked(), mac=mac, bcast=bcast, button=self.wol_btn.currentData(),
-                         hold_ms=self.wol_hold.value())
-
     # ---------- data ----------
     def present(self) -> None:
         """Show the window; a freshly opened one holds the running configuration's values (not a previous, cancelled edit)."""
@@ -1210,46 +609,9 @@ class ConsoleSettings(QDialog):
             self._stop_capture()
         self._hm_timer.stop()
 
-
-def _backup_reason(b: Backup) -> str:
-    """Where a backup came from: an update (old -> new version), before restoring another, manual."""
-    if b.reason == "update":
-        ver = f"{b.commit} → {b.new}" if b.commit and b.new else b.commit or b.new
-        return _("przed aktualizacją") + (f" ({ver})" if ver else "")
-    return _("przed przywróceniem kopii") if b.reason == "restore" else _("zrobiona ręcznie")
-
-
 def _res_items(resolutions: Iterable[tuple[int, int]]) -> list[tuple[str, str]]:
     """Combo items ("WxH" value, "W × H" text) for the TV resolutions; (0, 0) means unchanged."""
     return [("{}x{}".format(*r), f"{r[0]} × {r[1]}" if r[0] else _("— bez zmiany —")) for r in resolutions]
-
-
-def _page(items: Sequence[QWidget | QLayout]) -> QScrollArea:
-    """A tab: sections one under another, scrolling vertically only (the width is always the window's width)."""
-    w = QWidget()
-    lay = QVBoxLayout(w)
-    lay.setContentsMargins(0, 12, 6, 4)
-    lay.setSpacing(12)
-    for it in items:
-        if isinstance(it, QWidget):
-            lay.addWidget(it)
-        else:
-            lay.addLayout(it)
-    lay.addStretch(1)
-    return _scroll(w)
-
-
-def _scroll(w: QWidget) -> QScrollArea:
-    """Wrap a widget in a frameless scroll area without a horizontal bar."""
-    from PySide6.QtCore import Qt
-    from PySide6.QtWidgets import QFrame, QScrollArea
-    sa = QScrollArea()
-    sa.setWidgetResizable(True)
-    sa.setFrameShape(QFrame.Shape.NoFrame)
-    sa.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-    sa.setWidget(w)
-    return sa
-
 
 def _claim_s() -> str:
     """The master claim hold time in seconds as text (imported lazily)."""
@@ -1263,21 +625,3 @@ def _hidpi(name: str, size: int) -> QPixmap:
     pm = pixmap(name, size * 2)
     pm.setDevicePixelRatio(2)
     return pm
-
-
-def row_of(*widgets: Any) -> QHBoxLayout:
-    """Buttons in a row, to the left."""
-    row = QHBoxLayout()
-    row.setSpacing(8)
-    for w in widgets:
-        row.addWidget(w)
-    row.addStretch(1)
-    return row
-
-
-def _wrap(layout: QLayout) -> QWidget:
-    """Wrap a layout in a plain widget so it can be used as a field."""
-    w = QWidget()
-    layout.setContentsMargins(0, 0, 0, 0)
-    w.setLayout(layout)
-    return w
