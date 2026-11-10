@@ -4,7 +4,7 @@ DualSense pad → Bluetooth → **sender** (Linux, evdev) → UDP 5005 → **rec
 (HIDMaestro) or DS4 (ViGEmBus) + DSU server (127.0.0.1:26760). Feedback (rumble, lightbar, triggers) flows back.
 
 ## Stack
-- Python 3.11+ (CI: 3.12), no framework, no build step.
+- Python 3.11+ (CI: 3.12 and 3.13, plus an import check on Windows), no framework, no build step.
 - Sender: `evdev`, asyncio, BlueZ (`busctl` / `bluetoothctl`), systemd; also works on musl (postmarketOS, `doas`).
 - Receiver: PySide6 (window + tray), `pythonnet` + HIDMaestro (.NET 10), `vgamepad` (ViGEm), `pycaw`, `winotify`, ctypes WinAPI.
 
@@ -15,7 +15,8 @@ common/    proto.py (wire protocol, atomic writes), gitupdate.py (git version + 
 receiver/  receiver_controller.py (entry point) + rx_*.py (logic) + rx_qt*.py (window)
 tests/     Linux tests with Windows/evdev stubs (rxenv.py); fakebin/ = fake bluetoothctl; run_tests.sh = the CI entry
 docs/      EN by default, PL as *.pl.md (user docs, not needed for code work)
-tools/     screenshots.py (offscreen window screenshots -> docs/img), hm_pin.py (move / check the HIDMaestro pin, receiver/hm_pin.json)
+tools/     screenshots.py (offscreen window screenshots -> docs/img), hm_pin.py (move / check the HIDMaestro pin, receiver/hm_pin.json),
+           import_smoke.py (imports every receiver module without stubs; the Windows CI job)
 update.bat, .github/workflows/tests.yml, hm-pin.yml (weekly check of the pinned release)
 ```
 Modules import each other by flat name (no packages): run things from inside `receiver/` or `sender/`.
@@ -30,6 +31,9 @@ Every module has a docstring with its role; find the file here before opening an
   `sender_control` (PC commands, idle power-off, info), `sender_events` (event packets), `sender_batt`, `sender_update`.
 - System: `sender_bt` + `sender_btadapter` (BlueZ driven from the receiver window, several adapters), `sender_btlink` (RSSI / link quality of connected pads over raw HCI, the `btlink` packet), `sender_rt` (low-latency mode, needs root),
   `sender_migrate` (sender.toml migration), `sender_ioctl`.
+
+**Common** (`common/`, used by both sides)
+- `proto` (wire protocol: packet codec, HMAC, atomic file writes), `gitupdate` (git version + update), `cfgspec` (sender settings changeable from the receiver; ids are append-only).
 
 **Receiver** (`receiver/`)
 - Core: `receiver_controller` (main), `rx_config` (DEFAULTS + CLI), `rx_state` (`S.xxx`, `run_forever`), `rx_net` (packet receive, events, silence),
@@ -48,7 +52,7 @@ Every module has a docstring with its role; find the file here before opening an
   `rx_qt_sidebar` (the vertical icon menu), `rx_qt_diag` (Diagnostics tab: tiles, charts), `rx_qt_bt`, `rx_qt_sendercfg` (Sender tab of the settings window), `rx_qt_tv` (pad control in TV mode), `rx_qt_drawer`, `rx_qt_keys`, `rx_qt_log`, `rx_qt_gstick`, `rx_qt_gyro` (gyro aim preview), `rx_qt_screens` (screen / fullscreen placement),
   `rx_qt_style`, `rx_qt_icons`, `rx_qt_widgets`.
 
-**Large files** – grep or read by range, never whole: `rx_i18n` (~1000, translation dicts), `proto` (~1000, in `common/`), `rx_qt`, `rx_qt_console`,
+**Large files** – grep or read by range, never whole: `rx_i18n` (translation dicts), `proto` (in `common/`), `rx_qt`, `rx_qt_console`,
 `sender_rumble`, `sender_bt`, `rx_net`.
 
 **Runtime files** (gitignored, never commit, no need to read): `*.toml` except `*.example.toml`, `remap.json`, `settings.json`, `console.json`, `slots.json`,

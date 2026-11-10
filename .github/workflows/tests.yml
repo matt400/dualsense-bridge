@@ -8,11 +8,16 @@ jobs:
   tests:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.12 runs the call_at fallback of sender_tick, 3.13 the timerfd path (os.timerfd_* exist from 3.13)
+        python-version: ["3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
       - name: System libraries for Qt (offscreen)
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libegl1 libxkbcommon0 libfontconfig1 libdbus-1-3 libopus0
       - name: Python packages
@@ -28,3 +33,19 @@ jobs:
             grep -v '^OK' test-output.txt | tail -c 3500 | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g' | sed 's/^/::error title=tests::/'
             exit 1
           }
+
+  windows-imports:
+    # the Linux tests replace ctypes / pythonnet / COM with stubs; this imports every receiver module against the real packages
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Receiver requirements
+        run: pip install -r receiver/requirements.txt
+      - name: Import every receiver module
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python tools/import_smoke.py
