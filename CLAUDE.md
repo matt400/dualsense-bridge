@@ -45,9 +45,9 @@ Every module has a docstring with its role; find the file here before opening an
   `rx_hotkeys` + `rx_shortcuts` (PS-modifier shortcuts), `rx_master` (master pad), `rx_swap` (temporary P1 <-> P2 swap), `rx_testmode` (Test view, emergency exit).
 - Windows integration: `rx_console` (console mode monitor ↔ TV), `rx_display`, `rx_audio` (pycaw), `rx_games` (foreground program → profile, stop rumble),
   `rx_gamebar`, `rx_autostart` (Task Scheduler).
-- Support: `rx_i18n` (PL texts in code + EN dict), `rx_status`, `rx_events` (log model), `rx_latency`, `rx_security`, `rx_backup`, `rx_update` (git pull),
+- Support: `rx_i18n` (PL texts in code + EN dict), `rx_status` (texts and levels for the window, `BatteryWatch`), `rx_events` (log model), `rx_latency`, `rx_security`, `rx_backup`, `rx_update` (git pull),
   `rx_bt` (sender Bluetooth model), `rx_diag` (network / Bluetooth link numbers for the Diagnostics tab, no Qt), `rx_sender_cfg` (the sender's own settings: cfgval table, push on online, no Qt), `rx_icon`.
-- Window (PySide6): `rx_qt` (main window, the foldable pad column), `rx_qt_pad` (pad drawing), `rx_qt_panels` (right column), `rx_qt_console` (settings window, tabs in a left column), `rx_qt_test`, `rx_qt_access` (the accessibility tab of the profile editor),
+- Window (PySide6): `rx_qt` (main window, the foldable pad column), `rx_qt_update` (the Update button flow, a mixin of the window), `rx_qt_pad` (pad drawing), `rx_qt_panels` (right column), `rx_qt_console` (settings window, tabs in a left column; the other tabs are mixins: `rx_qt_console_vpad` / `_haptics` / `_light` (+ Wake-on-LAN) / `_safety` (backups, security), shared base in `_util`), `rx_qt_test`, `rx_qt_access` (the accessibility tab of the profile editor),
   `rx_qt_padscope` (the pad picker bar on top of the per-pad settings tabs: "Default settings" checkbox, pad list, reset),
   `rx_qt_sidebar` (the vertical icon menu), `rx_qt_diag` (Diagnostics tab: tiles, charts), `rx_qt_bt`, `rx_qt_sendercfg` (Sender tab of the settings window), `rx_qt_tv` (pad control in TV mode), `rx_qt_drawer`, `rx_qt_keys`, `rx_qt_log`, `rx_qt_gstick`, `rx_qt_gyro` (gyro aim preview), `rx_qt_screens` (screen / fullscreen placement),
   `rx_qt_style`, `rx_qt_icons`, `rx_qt_widgets`.

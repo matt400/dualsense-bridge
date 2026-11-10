@@ -8,7 +8,7 @@ from rxenv import *                                              # noqa
 from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QApplication, QWidget
 
-import rx_qt_console
+import rx_qt_console, rx_qt_console_haptics
 import rx_settings
 from proto import T_IDENT
 from rx_settings import DEFAULT_PAD, PadHaptics, PadLight, PadSpeaker
@@ -76,7 +76,7 @@ check(d.light_scope.use_default.isChecked() and d.light_scope.key() == DEFAULT_P
 d = rx_qt_console.ConsoleSettings()
 d.reload()
 d.hap_scope.use_default.setChecked(False)
-check(d._ui is None and d._saved_scope(rx_qt_console.SCOPE_HAPTICS) == DEFAULT_PAD, "without an owner window the entry is not stored")
+check(d._ui is None and d._saved_scope(rx_qt_console_haptics.SCOPE_HAPTICS) == DEFAULT_PAD, "without an owner window the entry is not stored")
 
 # ---------- every per-pad value survives settings.json ----------
 s = rx_settings.Settings(

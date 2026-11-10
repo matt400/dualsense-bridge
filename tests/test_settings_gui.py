@@ -8,7 +8,7 @@ from PySide6.QtWidgets import QApplication
 
 C.cfg["tray"] = False
 C.CONSOLE_PATH = os.path.join(TMP, "console.json")
-import rx_audio, rx_console, rx_master, rx_qt, rx_qt_screens, rx_qt_update, rx_settings
+import rx_audio, rx_console, rx_master, rx_qt, rx_qt_screens, rx_qt_update, rx_qt_console_safety, rx_settings
 from proto import T_IDENT
 from rx_console import Console, ConsoleConfig
 from chk import ok
@@ -380,7 +380,7 @@ assert offs == ["wyłączanie Windows"] * 2, "WM_QUERYENDSESSION -> console mode
 ok("the end of the Windows session turns console mode off")
 # ---------- Settings -> Backups: list, backup now, restore (2 clicks) -> restart ----------
 import rx_backup, rx_qt_console
-rx_qt_console.RESTORE_RESTART_MS = 50
+rx_qt_console_safety.RESTORE_RESTART_MS = 50
 with open(C.SETTINGS_PATH, "w") as f: f.write('{"mouse": {"sens": 2.0}}')
 dlg = win.settings_dlg; dlg.hide(); dlg.present(); pump()
 dlg.tabs.setCurrentIndex(9); pump()
