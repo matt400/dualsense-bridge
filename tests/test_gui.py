@@ -75,9 +75,9 @@ assert not c0.btn_row.isVisible() and rx_latency.buttons(0) is None, "reset z ka
 ok("pad card: pad -> game latency (mean, p95, max) with segments, button -> game with reset, ping before the measurement")
 assert "online" in win.sender.text() and "192.168.1.50" in win.sender.toolTip()   # address in the tooltip (narrow window)
 S.batt_info[0] = (10, 0); win.slow_tick()
-assert c0.property("low") is True and win.windowTitle().endswith("LOW BATTERY") and win.warned[0]
+assert c0.property("low") is True and win.windowTitle().endswith("LOW BATTERY") and win.battery.warned[0]
 S.batt_info[0] = (64, 0); win.slow_tick()
-assert c0.property("low") is False and win.windowTitle() == "DualSense bridge" and not win.warned[0]
+assert c0.property("low") is False and win.windowTitle() == "DualSense bridge" and not win.battery.warned[0]
 sent.clear()
 c0.off.click(); assert c0.off.text() == "Turn off?" and not sent, "the first click only arms the button"
 c0.off.click(); assert sum(1 for x in sent if x[0] == T_CMD) == 3 and c0.off.text() == "", "icon without text after the confirmation"

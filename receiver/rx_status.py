@@ -171,3 +171,32 @@ def triggers_status(i: int, fx: bool = False) -> tuple[str, str]:
     if not rx_master.allowed(i, "triggers"):
         return _("Efekty spustów są tylko dla pada master (Ustawienia -> Master)."), "warn"
     return "", ""
+
+
+def battery_tip(i: int, pct: int, flags: int) -> str:
+    """Return the pad's line of the tray tooltip: its number, the level and a note while charging ("n/a" for an unknown level)."""
+    if pct > PCT_MAX:
+        level = _("b/d")
+    else:
+        level = f"{pct}%" + (_(" (ładuje się)") if flags & STATE_CHARGING else "")
+    return _("Pad {n}").format(n=i + 1) + ": " + level
+
+
+class BatteryWatch:
+    """The low-battery state of every pad: one warning per discharge (no Qt, so the rule can be tested without a window)."""
+
+    HYSTERESIS_PCT: Final = 5       # the level must climb this far above the threshold (or the pad must charge) to warn again
+
+    def __init__(self, n: int) -> None:
+        """Start with no pad warned."""
+        self.warned = [False] * n
+
+    def check(self, i: int, pct: int, flags: int) -> bool:
+        """Update pad i with its battery reading; return True when the low-battery warning must be raised now."""
+        low = low_pct()
+        if is_low(i, low) and not self.warned[i]:
+            self.warned[i] = True
+            return True
+        if self.warned[i] and (flags & STATE_CHARGING or (pct <= PCT_MAX and pct > low + self.HYSTERESIS_PCT)):
+            self.warned[i] = False
+        return False

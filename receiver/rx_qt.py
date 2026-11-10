@@ -9,13 +9,11 @@ changed; the rest (cards, tray) every 400 ms, with a hidden window too (the tray
 Profile changes reach the pad live 150 ms after the last slider move, saving to remap.json is separate (Save).
 """
 from rx_i18n import _
-import math
 import os
 import signal
 from collections.abc import Iterable, Sequence
 from functools import cache
 import sys
-import threading
 import time
 import traceback
 from typing import Any
@@ -35,13 +33,11 @@ import rx_latency
 import rx_master
 import rx_profiles as P
 import rx_state as S
-import rx_net
 import rx_settings
 import rx_update
 import rx_status as ST
 import rx_testmode
 import rx_winapi as W
-from proto import CMD_UPDATE, UPD_RUNNING
 from rx_config import C
 from rx_editor import Editor
 from rx_icon import ICON_LOW, ICON_OK, icon_png, render_icon
@@ -60,15 +56,12 @@ from rx_qt_screens import ScreenPlacement, parse_size
 from rx_qt_sidebar import SideMenu
 from rx_qt_style import DIM, LEVEL, SEGMENT, TV_SCALE, apply_theme, px, set_prop
 from rx_qt_test import TestPanel
+from rx_qt_update import UpdateFlow
 from rx_qt_tv import PadNav
 from rx_qt_widgets import (PREVIEW_GAP, BatteryBar, BatteryPill, ConfirmButton, ProgressRing, Segmented, SegmentBar, button, icon_button,
                            icon_label, label)
 
 LIVE_MS, SLOW_MS, APPLY_MS = 33, 400, 150
-UPDATE_WAIT_S = 20.0       # at most this long after the receiver is done we wait for the sender's result (a countdown is shown)
-UPDATE_RESTART_MS = 2500   # after a successful update: the message is visible this long, then the receiver restarts
-UPDATE_STUCK_S = 150.0     # no progress for this long (git hung despite its limits) -> the button returns, the result still works
-UPDATE_PIP_GRACE_S = 30.0  # added to pip's own time limit before the libraries stage counts as stuck
 NOTE_S = 6.0           # for this many seconds a message (e.g. "Saved") covers the profile status
 TAB_EDGE = 5            # [px] the editor tabs sit this close to the left edge of the right column; the rest is indented by the difference
 TAB_INDENT = 14 - TAB_EDGE
@@ -90,7 +83,6 @@ VIEWS = (("out", "Wynik"), ("in", "Fizycznie"), ("test", "Test"))
 EXIT_HOLD_S = 1.0      # the Test view in TV mode: how long ○ of the pad under test must be held to leave the test
 DEFAULT_SIZE = QSize(1160, 720)
 LEFT_W, LEFT_COLLAPSED_W = 248, 56       # the pad column: expanded (cards) and collapsed (a strip with the pad numbers) [px]
-BATT_UNKNOWN = 100     # a battery level above this (as a percentage) means the pad did not report one
 
 
 @cache
@@ -389,7 +381,7 @@ class PadCard(QFrame):
 
     def _show_battery(self, pct: int, charging: bool, low: bool) -> None:
         """The battery bar and percentage ("b/d" when the pad reports no level)."""
-        if pct > BATT_UNKNOWN:               # the battery level is unknown
+        if pct > ST.PCT_MAX:                 # the battery level is unknown
             self.bar.set(None, LEVEL["ok"])
             self.pct.setText(_("b/d"))
         else:
@@ -411,7 +403,7 @@ class PadCard(QFrame):
         self.profile.setText(_("profil: {name}").format(name=_profile_label(S.active[i])) + (f" ({n})" if n else ""))
 
 
-class MainWindow(ScreenPlacement):
+class MainWindow(UpdateFlow, ScreenPlacement):
     """The main window.
 
     The pad cards, the pad drawing, the profile editor, the Test view, the drawers (Bluetooth, shortcuts), the log and
@@ -421,7 +413,6 @@ class MainWindow(ScreenPlacement):
     update_progress = Signal(int)         # the update stage (percent) from the update thread
     test_escaped = Signal()               # Options + Create on the pad ended the Test view (the network thread, rx_testmode)
     _bar_state: tuple[Any, ...] | None    # what the profile bar shows (update_profile_bar skips an unchanged state)
-    _upd_result: rx_update.Result | None  # the receiver's own update result, while waiting for the sender's
 
     def __init__(self, settings: QSettings) -> None:
         """Restore the saved state (pad, view, geometry), create the timers, build the UI and the tray.
@@ -442,7 +433,7 @@ class MainWindow(ScreenPlacement):
         self.edit_view = self.view             # the last Result / Physical view - leaving the test returns to it
         self.exit_hold = None                  # the Test view in TV mode: since when ○ has been held
         self.part: str | None = None           # the selected pad part (name) or None
-        self.warned = [False] * C.NUM_PADS     # a low battery notification sent once per discharge
+        self.battery = ST.BatteryWatch(C.NUM_PADS)     # a low battery notification sent once per discharge
         self.note_text, self.note_until = None, 0.0
         self.low_any, self.tip, self.online, self._bar_state = False, None, None, None
         # the update banner state and the percent shown while updating (never goes back)
@@ -994,124 +985,6 @@ class MainWindow(ScreenPlacement):
         self.sender.setToolTip((_("Adres nadajnika: {ip}").format(ip=src) + "\n" if src else "") + tip)
         set_prop(self.sender, "level", "warn" if stale else "ok")
 
-    def start_update(self) -> None:
-        """Update both sides.
-
-        A command to the sender (git pull on the phone, it restarts itself) and the receiver's git pull in a separate
-        thread; the result returns by a signal to the window thread, then we wait for the sender's result.
-        """
-        if not self.update_btn.isEnabled():
-            return
-        self.update_btn.setEnabled(False)
-        self.update_ring.start()
-        self._upd_pct = 0
-        self._set_progress(0)
-        self.note(_("Pobieranie aktualizacji…"), "")
-        self._upd_sender = S.sender_online() and S.sender_build is not None   # a new sender answers with a result
-        self._upd_seen = time.monotonic()
-        self._upd_wait_t0 = 0.0
-        self._upd_left: int | None = None      # seconds left on the sender countdown shown
-        self._upd_result = None
-        self._upd_run = run = self._upd_run + 1
-        QTimer.singleShot(int(UPDATE_STUCK_S * 1000), lambda: self._update_stuck(run))
-        self._upd_commit = S.sender_build[0] if S.sender_build else ""   # a new commit after the restart = updated
-        S.sender_update_msg = ""                 # the reason from the previous attempt must not describe this one
-        if S.sender_build is not None:
-            S.sender_build = (*S.sender_build[:2], UPD_RUNNING, time.monotonic())
-        if S.sender_online():
-            rx_net.send_cmd(255, CMD_UPDATE)
-        threading.Thread(target=self._update_thread, name="update", daemon=True).start()
-
-    def _update_thread(self) -> None:
-        """An exception (git hung, no access to the folder) must not leave the button stuck forever on "Updating…"."""
-        try:
-            r = rx_update.update(progress=self.update_progress.emit)
-        except Exception as e:      # noqa: BLE001 - any failure (git, disk) becomes the result text
-            r = rx_update.Result(False, False, _("Aktualizacja nie powiodła się: {err}").format(err=repr(e)))
-        self.update_done.emit(r)
-
-    def _set_progress(self, pct: int) -> None:
-        """Show the update stage as "Updating… 40%" next to the turning ring (a late signal after the update ended is ignored).
-
-        The percent never goes back: the stages of the receiver and the wait for the sender report independently.
-        """
-        if not self.update_ring.running():
-            return
-        self._upd_pct = max(self._upd_pct, pct)
-        self._upd_seen = time.monotonic()
-        self.update_btn.set_label(f"{_('Aktualizuję…')} {self._upd_pct}%")
-        self.update_ring.set_value(self._upd_pct)
-
-    def _update_stuck(self, run: int) -> None:
-        """The update thread made no progress for too long - the button must not hang on "Updating…" until the receiver restarts.
-
-        The time is counted from the last stage change, not from the click. The libraries stage (75%, pip) may legitimately run
-        for minutes, so it gets pip's own limit; declaring it stuck earlier blamed git and let a second update start over
-        a running pip. A late result still works (a restart after the code is fetched).
-        """
-        if run != self._upd_run or self._upd_result is not None:
-            return
-        pip = self._upd_pct == rx_update.PCT_BACKED_UP
-        limit = rx_update.PIP_TIMEOUT_S + UPDATE_PIP_GRACE_S if pip else UPDATE_STUCK_S
-        idle = time.monotonic() - self._upd_seen
-        if idle < limit:                                   # a stage ended meanwhile: check again when the new one has had its time
-            QTimer.singleShot(int((limit - idle) * 1000) + 100, lambda: self._update_stuck(run))
-            return
-        print(f"Update: no progress for {idle:.0f}s at {self._upd_pct}%")
-        text = (_("Instalacja bibliotek (pip) trwa zbyt długo - uruchom update.bat") if pip else
-                _("Aktualizacja nie odpowiada (git) - spróbuj ponownie albo uruchom update.bat"))
-        ev.error(text)
-        self.update_ring.stop()
-        self.update_btn.disarm()
-        self.update_btn.setEnabled(True)
-        self.note(text, "bad")
-
-    def _update_finished(self, r: rx_update.Result) -> None:
-        """The receiver is ready - we wait (UPDATE_WAIT_S at most) for the sender's result, then a message and a restart."""
-        print(f"Update: {r.text}")
-        self._upd_result = r
-        self._upd_wait_t0 = time.monotonic()               # the sender's time starts now, not at the click (our pull took part of it)
-        self._update_poll()
-
-    def _update_poll(self) -> None:
-        """Wait (polling every 250 ms) for the sender to finish updating, then show the combined result.
-
-        Notify the log and restart when the code changed.
-        """
-        r = self._upd_result
-        if r is None:
-            return
-        waiting = (self._upd_sender and rx_update.sender_state(S.sender_build, self._upd_commit) == UPD_RUNNING
-                   and time.monotonic() - self._upd_wait_t0 < UPDATE_WAIT_S)
-        if waiting:
-            self._set_progress(rx_update.PCT_INSTALLED + 2)       # the receiver is done, the sender is still pulling
-            left = math.ceil(UPDATE_WAIT_S - (time.monotonic() - self._upd_wait_t0))
-            if left != self._upd_left:                            # a countdown, redrawn once a second (not on every 250 ms poll)
-                self._upd_left = left
-                self.note(_("Czekam na nadajnik… {n} s").format(n=left), "")
-            QTimer.singleShot(250, self._update_poll)
-            return
-        parts = [r.text]
-        if S.sender_online() or S.sender_build is not None:
-            parts.append(rx_update.sender_text(S.sender_build, S.sender_update_msg, self._upd_commit))
-        else:
-            parts.append(_("nadajnik niepołączony - zaktualizuje się następnym razem"))
-        text = " · ".join(parts)
-        print(f"Update: {text}")
-        (ev.info if r.ok else ev.error)(_("Aktualizacja: {text}").format(text=text))
-        if r.changed:
-            self._set_progress(100)                # the full ring stays until the restart replaces the window
-        else:
-            self.update_ring.stop()
-            self.update_btn.disarm()               # the icon only (the "Updating…" label existed only during the update)
-        self.update_btn.setEnabled(not r.changed)
-        self.update_btn.setToolTip(text)
-        self.note(text, "ok" if r.ok else "bad")
-        if r.ok and not r.changed:
-            rx_update.available = rx_update.Available(0)      # checked a moment ago: nothing new
-        if r.changed:
-            QTimer.singleShot(UPDATE_RESTART_MS, self.restart)
-
     def restart(self, admin: bool = False) -> None:
         """A restart (the button, the tray, saved settings).
 
@@ -1430,33 +1303,47 @@ class MainWindow(ScreenPlacement):
         if self.diag_btn.isChecked() and self.isVisible():
             self.diag_page.refresh(now)
         online = S.sender_online(now)
+        self._refresh_sender_label(now, online)
+        self._refresh_banner()
+        self._bt_refresh(now)
+        low_any, tips = self._refresh_cards(now)
+        title = _("DualSense bridge - NISKA BATERIA") if low_any else "DualSense bridge"
+        if title != self.windowTitle():
+            self.setWindowTitle(title)
+        self._refresh_editor()
+        self._refresh_tray(online, tips, low_any)
+        self.log_panel.tick()
+
+    def _refresh_sender_label(self, now: float, online: bool) -> None:
+        """Redraw the sender label when its online state, build or battery changed."""
         build = S.sender_build[:2] if S.sender_build else None
         batt = S.sender_batt if online else None
         if (online, build, batt) != self.online:
             self.online = (online, build, batt)
             self._sender_label(online, build, batt)
-        self._refresh_banner()
-        self._bt_refresh(now)
+
+    def _refresh_cards(self, now: float) -> tuple[bool, list[str]]:
+        """Update every pad card; return (some pad is low, the tooltip lines of the pads that are wanted or connected)."""
         low_any, tips = False, []
         for c in self.cards:
             i = c.slot
             low_any = c.update_state(now) or low_any
             pct, flags = S.batt_info[i]
-            charging, known = bool(flags & 1), pct <= BATT_UNKNOWN
             if S.want[i].is_set() or S.alive[i]:
-                tips.append(_("Pad {n}").format(n=i + 1) + ": "
-                            + (f"{pct}%" + (_(" (ładuje się)") if charging else "") if known else _("b/d")))
-            if ST.is_low(i, ST.low_pct()) and not self.warned[i]:
-                self.warned[i] = True
-                ev.warn(_("{pad}: niska bateria ({pct}%)").format(pad=ev.pad_name(i), pct=pct))
-                if self.tray and C.cfg["low_batt_notify"]:
-                    self.tray.showMessage(_("Niska bateria"), _("Pad {n}").format(n=i + 1) + f": {pct}%",
-                                          QSystemTrayIcon.MessageIcon.Warning, 8000)
-            elif self.warned[i] and (charging or (known and pct > ST.low_pct() + 5)):
-                self.warned[i] = False
-        title = _("DualSense bridge - NISKA BATERIA") if low_any else "DualSense bridge"
-        if title != self.windowTitle():
-            self.setWindowTitle(title)
+                tips.append(ST.battery_tip(i, pct, flags))
+            if self.battery.check(i, pct, flags):
+                self._warn_low_battery(i, pct)
+        return low_any, tips
+
+    def _warn_low_battery(self, i: int, pct: int) -> None:
+        """The first low reading of a discharge: a log line and (if enabled) a tray notification."""
+        ev.warn(_("{pad}: niska bateria ({pct}%)").format(pad=ev.pad_name(i), pct=pct))
+        if self.tray and C.cfg["low_batt_notify"]:
+            self.tray.showMessage(_("Niska bateria"), _("Pad {n}").format(n=i + 1) + f": {pct}%",
+                                  QSystemTrayIcon.MessageIcon.Warning, 8000)
+
+    def _refresh_editor(self) -> None:
+        """Sync the profile editor with the pad ids; otherwise refresh the bars that depend on the sender."""
         if self.ed.sync():                     # e.g. the pad id arrived - the pad's profile changed its key
             self.refresh_all()
         else:
@@ -1464,13 +1351,15 @@ class MainWindow(ScreenPlacement):
             self.update_status()
             self.part_page.update_caps()       # the sender arrived / updated - the trigger resistance warning
             self.rumble_page.update_caps()
+
+    def _refresh_tray(self, online: bool, tips: list[str], low_any: bool) -> None:
+        """Update the tray tooltip and icon when they changed."""
         tip = (f"DualSense bridge\n{_('Nadajnik')}: " + ("online" if online else "offline") + "\n"
                + ("\n".join(tips) if tips else _("Brak podłączonych padów")))
         if self.tray and (tip != self.tip or low_any != self.low_any):
             self.tray.setToolTip(tip)
             self.tray.setIcon(self.icons[low_any])
         self.tip, self.low_any = tip, low_any
-        self.log_panel.tick()
 
 
 def _int(v: Any, default: int) -> int:
