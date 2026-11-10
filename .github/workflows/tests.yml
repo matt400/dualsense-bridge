@@ -44,7 +44,11 @@ jobs:
         with:
           python-version: "3.12"
       - name: Receiver requirements
-        run: pip install -r receiver/requirements.txt
+        # without vgamepad: its sdist runs the ViGEmBus installer (msiexec), which hangs on a runner; rx_ds4 imports it optionally
+        shell: pwsh
+        run: |
+          Get-Content receiver/requirements.txt | Where-Object { $_ -notmatch '^vgamepad' } | Set-Content "$env:RUNNER_TEMP/requirements.txt"
+          pip install -r "$env:RUNNER_TEMP/requirements.txt"
       - name: Import every receiver module
         env:
           QT_QPA_PLATFORM: offscreen
