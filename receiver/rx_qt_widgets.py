@@ -120,6 +120,25 @@ def group(title: str, *items: QWidget | QLayout) -> QFrame:
     return box
 
 
+def section(icon_name: str, title: str, frame: QFrame | None = None) -> tuple[QFrame, QVBoxLayout]:
+    """A card of a narrow side panel: an icon + heading row, then the content added to the returned layout.
+
+    `frame` lets the caller keep its own widget as the card (e.g. a block that is shown or hidden as a whole). The margins are
+    small so a section still fits the right panel without a horizontal scroll.
+    """
+    box = frame if frame is not None else QFrame()
+    box.setObjectName("group")
+    lay = QVBoxLayout(box)
+    lay.setContentsMargins(12, 10, 12, 12)
+    lay.setSpacing(8)
+    head = QHBoxLayout()
+    head.setSpacing(6)
+    head.addWidget(icon_label(icon_name, px(16)))
+    head.addWidget(label(title, "h2"), 1)
+    lay.addLayout(head)
+    return box, lay
+
+
 def pair(a: QWidget, b: QWidget) -> QHBoxLayout:
     """Two fields side by side, equal width."""
     row = QHBoxLayout()

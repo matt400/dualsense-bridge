@@ -853,6 +853,7 @@ EN: Final[dict[str, str]] = {
     "dotyku albo ten przycisk (myszą).":
         "The cursor stands - touch the touchpad, the fingers and the click show on the pad drawing. To finish: the PS "
         "button on the pad, {s} s without a touch, or this button (with a mouse).",
+    "BLOKADA": "OUTPUT LOCK",
     "RUCH": "MOTION",
     "Ruch pada": "Pad motion",
     "Akcelerometr": "Accelerometer",
