@@ -326,6 +326,7 @@ class SelfTest:
         self._tap_lock = threading.Lock()
         self._ref = 1
         self._began = False
+        self._bt_keep = float("-inf")    # when the sender was last asked to keep reporting the radio link (btlink)
 
     # ----- control -----
     @staticmethod
@@ -459,9 +460,22 @@ class SelfTest:
         self.finished = True
 
     # ----- 1. meta -----
+    def _keep_link_alive(self) -> None:
+        """Ask the sender to keep sending btlink (RSSI, link quality of the pads).
+
+        The sender reports the radio link only for BT_ACTIVE_S after the last BT_LIST, which an open Diagnostics tab or Bluetooth panel
+        renews; the Test view does neither, so without this the idle step got no RSSI and no link quality at all.
+        """
+        import rx_bt
+        now = time.monotonic()
+        if now - self._bt_keep >= rx_bt.KEEPALIVE_S:
+            self._bt_keep = now
+            rx_bt.keepalive()           # does nothing (False) while the sender has not answered a Bluetooth request
+
     def _step_meta(self, r: StepResult) -> None:
         """Versions, the pad, the backend, the rumble ways; asks the sender to start collecting and waits for its first answer."""
         i = self.slot
+        self._keep_link_alive()         # the first reading arrives while the rest of the step runs
         info = S.sender_info[i]
         ver, ways, why = info if info else (0, 0, 0)
         kind = S.pad_kind[i]
@@ -515,6 +529,7 @@ class SelfTest:
 
         def sample() -> None:
             now = time.monotonic()
+            self._keep_link_alive()
             link = rx_diag.link_of(i, now)
             info = S.info[i]
             vals = (rx_diag.rtt_ms(), n0.jitter_ms, n0.loss_pct, info[1] if info else None, S.pps[i],
@@ -529,10 +544,18 @@ class SelfTest:
         for _ in range(steps):
             self._wait(self.plan.idle_s / steps, sample)
             sample()
+        self._fill_link_hci(rx_diag.link_of(i))
         r.data = {"seconds": self.plan.idle_s, "series": {k: series_stats(v) for k, v in series.items()},
                   "lost": n0.lost - lost0, "late": n0.late - late0, "duplicated": n0.dup - dup0}
         if not series["rtt_ms"]:
             r.status, r.note = NO_DATA, "no round trip measured (the sender is silent or too old)"
+
+    def _fill_link_hci(self, link: Any) -> None:
+        """The first reading came after the meta step was written: put the controller it came from into the meta data."""
+        meta = next((x for x in self.results if x.id == "meta"), None)
+        bt = meta.data.get("bluetooth") if meta is not None else None
+        if link is not None and isinstance(bt, dict) and bt.get("link_hci") is None:
+            bt["link_hci"] = link.hci
 
     # ----- 3. latency -----
     def _step_latency(self, r: StepResult) -> None:

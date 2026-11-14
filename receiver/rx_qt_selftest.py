@@ -11,6 +11,7 @@ Refresh: tick() from the Test panel (30 Hz, only while the view is visible).
 """
 from __future__ import annotations
 
+import re
 from typing import Final
 
 from PySide6.QtCore import QSize, Signal
@@ -36,10 +37,20 @@ STEP_TEXT: Final = {
     "cpu": "Procesor i zapisy nadajnika",
     "mic": "Mikrofon (nieobsługiwany)",
 }
+ZWSP: Final = "\u200b"          # a zero-width space: where a long path in a label may wrap
 REFUSAL_TEXT: Final = {
     "pad": "Pad nie jest podłączony.",
     "block": "Wyjście do gry nie jest zablokowane - self-test działa w aktywnym oknie, w widoku Test.",
 }
+
+
+def wrappable(path: str) -> str:
+    """The path with a wrap point after every separator.
+
+    A QLabel cannot break a word without spaces, and a path as one word is wider than the side panel (the panel then scrolls
+    sideways). The added characters are invisible; the text is for the window only.
+    """
+    return re.sub(r"([\\/_-])", rf"\1{ZWSP}", path)
 
 
 class SelfTestBox(QFrame):
@@ -189,8 +200,8 @@ class SelfTestBox(QFrame):
             self.text = R.render(data)
             self.path = R.save(self.text, run.started_at)
             aborted = data["result"] != "complete"
-            self._show(_("Raport zapisany: {path}").format(path=self.path) if not aborted
-                       else _("Test przerwany - raport z tego, co zdążono zmierzyć: {path}").format(path=self.path),
+            self._show(_("Raport zapisany: {path}").format(path=wrappable(self.path)) if not aborted
+                       else _("Test przerwany - raport z tego, co zdążono zmierzyć: {path}").format(path=wrappable(self.path)),
                        "warn" if aborted else "ok")
         except OSError as e:
             self._show(_("Nie udało się zapisać raportu ({err}) - można go skopiować.").format(err=e), "bad")
@@ -200,4 +211,4 @@ class SelfTestBox(QFrame):
         """Put the report on the clipboard."""
         if self.text:
             QApplication.clipboard().setText(self.text)
-            self._show(_("Raport skopiowany do schowka (plik: {path}).").format(path=self.path or "-"), "ok")
+            self._show(_("Raport skopiowany do schowka (plik: {path}).").format(path=wrappable(self.path) if self.path else "-"), "ok")
