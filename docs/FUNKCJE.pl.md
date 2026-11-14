@@ -18,7 +18,7 @@
   (HIDMaestro, a bez niego DS4), **DualShock 4 → DS4** (ViGEmBus), **Xbox / inny → Xbox 360** (ViGEmBus), więc gra pokazuje właściwe ikony
   przycisków. Bez ViGEmBus pad Xbox lub DS4 jest obsługiwany jako DualSense. Ustawienia → Pady → „Rodzaj pada w grze” wyłącza to (zawsze
   DualSense). Czego pad nie ma, tego nie ma: pady Xbox i inne nie mają żyroskopu, touchpada, lightbara, spustów adaptacyjnych, haptyki ani
-  głośnika; DualShock 4 ma żyroskop, touchpad i wibracje (jego lightbar nie jest jeszcze sterowany). Wibracje tych padów idą przez sterownik
+  głośnika; DualShock 4 ma żyroskop, touchpad i wibracje (jego lightbar działa tylko ze sterownikiem hid-playstation, który wystawia go jako diodę RGB). Wibracje tych padów idą przez sterownik
   jądra (evdev), nigdy przez raport HID DualSense.
 - **Serwer DSU (Cemuhook)** z ruchem i dotykiem dla emulatorów (Cemu, Yuzu/Ryujinx, Dolphin) na tym komputerze;
   emulator na innym urządzeniu wymaga `dsu_bind = "0.0.0.0"`.

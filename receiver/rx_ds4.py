@@ -238,9 +238,13 @@ def wait_turn(idx: int, timeout: float = PLUG_ORDER_WAIT) -> bool:
 
 
 def backend_changed(old: rx_settings.Settings, new: rx_settings.Settings) -> None:
-    """Settings: another backend / DLL -> pads are created again; another order -> the slot threads check it at once."""
+    """Settings: another backend / DLL -> pads are created again; another order / mirror -> the slot threads check it at once.
+
+    The mirror switch does not bump ``gen``: _pump re-plugs only the slots whose virtual pad really changes (an Xbox / DS4 pad);
+    a DualSense keeps its virtual pad.
+    """
     global gen, _hm_warned
-    if (old.vpad.backend, old.vpad.hm_dll, old.vpad.mirror) != (new.vpad.backend, new.vpad.hm_dll, new.vpad.mirror):
+    if (old.vpad.backend, old.vpad.hm_dll) != (new.vpad.backend, new.vpad.hm_dll):
         rx_hm.reset()
         _hm_warned = None
         gen += 1
@@ -360,10 +364,11 @@ def create_pad(idx: int) -> tuple[Any, str]:
     this pad through ViGEm (log), the next connection tries HIDMaestro again (PnP errors can be transient).
     """
     family = virtual_family(idx)
-    if vg is not None and family == PK_DS4:
-        return vigem_pad(idx), "vigem"
-    if vg is not None and family in (PK_XBOX, PK_OTHER):
-        return xbox_pad(idx), "x360"
+    if vg is not None and family in (PK_DS4, PK_XBOX, PK_OTHER):
+        try:
+            return (vigem_pad(idx), "vigem") if family == PK_DS4 else (xbox_pad(idx), "x360")
+        except Exception as e:  # noqa: BLE001 - ViGEmBus refused (driver gone, no free target): the pad still works as a DualSense
+            print(f"Controller {idx}: virtual {'DS4' if family == PK_DS4 else 'Xbox 360'} failed ({e!r}) - using a DualSense")
     hm = hm_backend()
     if hm is not None:
         def on_fb(motors: tuple[int, int] | None, rgb: Sequence[int] | None, trig: Any = None,

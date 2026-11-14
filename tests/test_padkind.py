@@ -126,6 +126,22 @@ except RuntimeError:
     check(True, "without ViGEmBus and HIDMaestro there is no virtual pad (an error the slot thread reports)")
 rx_ds4.vg = real_vg
 
+
+class BrokenX360:
+    def __init__(self):
+        raise OSError("vigem_target_add failed")
+
+rx_ds4.vg.VX360Gamepad = BrokenX360
+S.pad_kind[0] = (PK_XBOX, PF_RUMBLE)
+pad, label = rx_ds4.create_pad(0)
+check(label == "vigem", f"a failing Xbox 360 target falls back to the DualSense path (here ViGEm DS4), no error loop ({label})")
+rx_ds4.close_pad(pad)
+rx_ds4.vg.VX360Gamepad = X360
+g = rx_ds4.gen
+vpad(backend="vigem", mirror=False)
+vpad(backend="vigem")
+check(rx_ds4.gen == g, "the mirror switch does not re-plug every pad (gen unchanged)")
+
 # ---------- a pad's virtual pad: plugged, driven, replaced when another kind arrives ----------
 S.pad_kind[0] = None
 S.sender_info[0] = (PADKIND_SENDER - 1, 0, 0)               # an older sender never sends the packet: no waiting for it

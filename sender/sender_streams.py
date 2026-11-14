@@ -19,6 +19,7 @@ from evdev import InputDevice, InputEvent
 from evdev import ecodes as ec
 
 import sender_calib as calib
+import sender_padtype as padtype
 import sender_state as state
 import sender_wol as wol
 from proto import (BATT_UNKNOWN, CAL_RUNNING, CLICK_PRESSED, CLICK_RELEASED, CLICK_TWO_FINGERS, KEY_BIT, LAT_NONE,
@@ -865,12 +866,17 @@ async def stream_touch(c: Ctrl) -> None:
 async def stream_battery(c: Ctrl) -> None:
     """Poll the kernel power-supply entry of the pad every BATT_POLL_S: battery percentage and charging flag.
 
-    The sysfs name contains the pad's MAC. When the entry cannot be read (USB pad, no driver support) the level is
-    reported as BATT_UNKNOWN.
+    The sysfs name of a DualSense's entry contains the pad's MAC. Other pads' drivers name it their own way, so their entry is
+    looked up under the pad's device (sender_padtype.battery_dir) until it is found - an Xbox pad's battery can appear only
+    after the first report. When the entry cannot be read (USB pad, no driver support) the level is reported as BATT_UNKNOWN.
     """
-    path = f"{BATTERY_PATH}{(c.key or '').lower()}"
+    path: str | None = f"{BATTERY_PATH}{(c.key or '').lower()}" if c.plan is None else None
     while True:
+        if path is None:
+            path = await asyncio.to_thread(padtype.battery_dir, c.pad_dev)     # a sysfs walk: not on the loop
         try:
+            if path is None:
+                raise FileNotFoundError("no battery entry")
             with open(path + "/capacity") as f:
                 percent = int(f.read().strip())
             with open(path + "/status") as f:

@@ -19,7 +19,7 @@
   (HIDMaestro, else DS4), **DualShock 4 → DS4** (ViGEmBus), **Xbox / other → Xbox 360** (ViGEmBus), so a game shows the right button icons.
   Without ViGEmBus an Xbox or DS4 pad is served as a DualSense. Settings → Pads → "Pad type in the game" turns it off (always a DualSense).
   What a pad does not have simply does not exist: Xbox and other pads have no gyro, touchpad, lightbar, adaptive triggers, haptics or speaker;
-  a DualShock 4 has gyro, touchpad and rumble (its lightbar is not driven yet). Rumble of these pads goes through the kernel driver (evdev),
+  a DualShock 4 has gyro, touchpad and rumble (its lightbar follows only with the hid-playstation driver, which exposes it as an RGB LED). Rumble of these pads goes through the kernel driver (evdev),
   never through the DualSense HID report.
 - **DSU server (Cemuhook)** with motion and touch for emulators (Cemu, Yuzu/Ryujinx, Dolphin) on this PC; an emulator
   on another device needs `dsu_bind = "0.0.0.0"`.

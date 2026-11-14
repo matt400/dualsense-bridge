@@ -93,6 +93,8 @@ check(pt.classify(xpadneo()).family == PK_XBOX, "Xbox One over Bluetooth -> Xbox
 check(pt.classify(ds4()).family == PK_DS4, "DualShock 4 v2 -> DS4")
 check(pt.classify(ds4(0x05C4)).family == PK_DS4, "DualShock 4 v1 -> DS4")
 check(pt.classify(ds4(0x09CC, "Wireless Controller Motion Sensors")).family == PK_DS4, "its motion node classifies the same (grouped by uniq)")
+check(pt.classify(ds4(0x0BA0, "Sony Interactive Entertainment DUALSHOCK\u00ae4 USB Wireless Adaptor")).family == PK_DS4,
+      "the DS4 USB adaptor (no 'Wireless Controller' in its name) is a DS4")
 check(pt.classify(Pad(0x054C, 0x0CE6, "DualSense Wireless Controller", {}, [])).family == PK_DUALSENSE, "DualSense stays a DualSense")
 check(pt.classify(switch_pro()).family == PK_OTHER, "Switch Pro -> other")
 check(pt.classify(Pad(0x054C, 0x0CE6, "Some Keyboard", {}, [])) is None, "a Sony id without the pad name is no pad")
@@ -119,6 +121,20 @@ p = pt.plan_for(switch_pro(), pt.classify(switch_pro()))
 check(not p.hat_axes and p.dpad_keys[pt.BTN_DPAD_UP] == (1, -1) and p.trig_keys == {pt.BTN_TL2: pt.L2, pt.BTN_TR2: pt.R2},
       "Switch Pro: the D-pad and the triggers are buttons")
 check(p.scale(ec.ABS_Z, 5) is None, "an axis the plan does not know is ignored")
+w360 = Pad(0x045E, 0x0719, "Xbox 360 Wireless Receiver", {ec.ABS_X: S16, ec.ABS_Y: S16, ec.ABS_RX: S16, ec.ABS_RY: S16,
+                                                          ec.ABS_Z: U8, ec.ABS_RZ: U8}, FACE + [pt.BTN_HAPPY1, pt.BTN_HAPPY2, pt.BTN_HAPPY3, pt.BTN_HAPPY4])
+p = pt.plan_for(w360, pt.classify(w360))
+check(not p.hat_axes and p.dpad_keys == {pt.BTN_HAPPY3: (1, -1), pt.BTN_HAPPY4: (1, 1), pt.BTN_HAPPY1: (0, -1), pt.BTN_HAPPY2: (0, 1)},
+      "xpad dpad_to_buttons: BTN_TRIGGER_HAPPY1-4 are the D-pad")
+
+# ---------- battery entry through sysfs (any driver's name) ----------
+import os, tempfile
+root = tempfile.mkdtemp()
+bat = os.path.join(root, "class/input/event9/device/device/power_supply/sony_controller_battery_aa")
+os.makedirs(bat)
+open(os.path.join(bat, "capacity"), "w").write("80")
+check(pt.battery_dir(xpad(), root) == bat, "battery_dir finds the pad's battery under its device, whatever its name")
+check(pt.battery_dir(xpad(), tempfile.mkdtemp()) is None and pt.battery_dir(None, root) is None, "no entry / no device = None")
 
 # ---------- Ctrl: state from a device, the padkind packet ----------
 sent = []

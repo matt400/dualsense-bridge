@@ -12,10 +12,11 @@ Quirks:
   - The Xbox drivers label buttons (BTN_X = 0x133 = BTN_NORTH is the button that sits on the *left*), a DualSense driver names
     them by position (BTN_NORTH = triangle, the top one). The Xbox plan therefore swaps 0x133 and 0x134, so Y (top) lands on
     triangle and X (left) on square.
-  - hid-sony (the old DS4 driver) reports the right stick as ABS_Z / ABS_RZ and the triggers as ABS_RX / ABS_RY.
+  - xpad with dpad_to_buttons (wireless 360 pads) reports the D-pad as BTN_TRIGGER_HAPPY1-4 (left, right, up, down), not a hat.
 """
 from __future__ import annotations
 
+import glob
 import os
 from dataclasses import dataclass, field
 from typing import Any, Final
@@ -33,13 +34,15 @@ XBOX_PRODUCTS: Final = frozenset({0x028E, 0x028F, 0x0291, 0x02D1, 0x02DD, 0x02E0
                                   0x0B00, 0x0B05, 0x0B12, 0x0B13, 0x0B20, 0x0B22})   # 360, One, One S, Elite (2), Series X|S, receivers
 SWITCH_PRODUCTS: Final = frozenset({0x2009})                            # Switch Pro Controller
 XBOX_NAME_MARKS: Final = ("xbox", "x-box")                              # third-party pads that announce themselves as an Xbox pad
-SONY_NAME_MARK: Final = "Wireless Controller"                           # all evdev nodes of a DualSense / DualShock 4 contain this
+SONY_NAME_MARKS: Final = ("wireless controller", "dualshock")           # every evdev node of a DualSense / DS4 (the DS4 USB adaptor
+# is named "... DUALSHOCK®4 USB Wireless Adaptor") contains one of these
 BTN_DPAD_UP, BTN_DPAD_DOWN, BTN_DPAD_LEFT, BTN_DPAD_RIGHT = 0x220, 0x221, 0x222, 0x223
+BTN_HAPPY1, BTN_HAPPY2, BTN_HAPPY3, BTN_HAPPY4 = 0x2C0, 0x2C1, 0x2C2, 0x2C3          # xpad dpad_to_buttons: left, right, up, down
 BTN_TL2, BTN_TR2 = 0x138, 0x139
 L2, R2 = ec.ABS_Z, ec.ABS_RZ
 FEATURES: Final = {
     PK_DUALSENSE: PF_MOTION | PF_TOUCHPAD | PF_LIGHTBAR | PF_ADAPTIVE | PF_RUMBLE,
-    PK_DS4: PF_MOTION | PF_TOUCHPAD | PF_RUMBLE,        # the kernel lightbar of a DS4 is not driven yet
+    PK_DS4: PF_MOTION | PF_TOUCHPAD | PF_RUMBLE,        # the lightbar only through hid-playstation's RGB LED (sysfs)
     PK_XBOX: PF_RUMBLE,
     PK_OTHER: PF_RUMBLE,
 }
@@ -97,13 +100,13 @@ def _is_gamepad(caps: dict[int, list[Any]]) -> bool:
 def classify(dev: Any) -> Kind | None:
     """Return the kind of pad an evdev device belongs to, or None when it is not a pad we serve.
 
-    Sony devices must carry the "Wireless Controller" mark in the name: a DualSense / DualShock 4 shows up as three nodes (pad,
+    Sony devices must carry one of SONY_NAME_MARKS in the name: a DualSense / DualShock 4 shows up as three nodes (pad,
     motion sensors, touchpad) and all of them classify the same way. Xbox and Switch Pro pads are one node and must look like a
     gamepad by their capabilities. An unknown pad that calls itself an Xbox pad is treated as one.
     """
     vendor, product, name = _ids(dev)
     if vendor == SONY_VENDOR:
-        if SONY_NAME_MARK not in name:
+        if not any(m in name.lower() for m in SONY_NAME_MARKS):
             return None
         if product in DUALSENSE_PRODUCTS:
             return Kind(PK_DUALSENSE, vendor, product)
@@ -158,15 +161,6 @@ class Plan:
         return canon, 0 if v < 0 else AXIS_MAX if v > AXIS_MAX else v
 
 
-def _driver(dev: Any) -> str:
-    """The kernel HID driver bound to the pad ("sony", "playstation", "xpadneo" ...); empty when it cannot be told."""
-    try:
-        node = os.path.basename(os.fsdecode(dev.path))
-        return os.path.basename(os.path.realpath(f"/sys/class/input/{node}/device/device/driver"))
-    except (OSError, AttributeError, TypeError):
-        return ""
-
-
 def _range(dev: Any, code: int) -> tuple[int, int]:
     """The (min, max) of an axis as the device reports it; (0, 255) when unknown."""
     try:
@@ -176,22 +170,24 @@ def _range(dev: Any, code: int) -> tuple[int, int]:
         return 0, AXIS_MAX
 
 
-def _axis_plan(dev: Any, caps: dict[int, list[Any]], legacy_sony: bool) -> dict[int, tuple[int, int, int]]:
-    """Axes of a pad from what it has: left stick X / Y, then wherever the right stick and the triggers are."""
+def _axis_plan(dev: Any, caps: dict[int, list[Any]]) -> dict[int, tuple[int, int, int]]:
+    """Axes of a pad from what it has: left stick X / Y, then wherever the right stick and the triggers are.
+
+    Decided by the capabilities, never by the driver name: hid-sony (since 4.10), hid-playstation, xpad and hid-nintendo put the
+    right stick on RX / RY and the triggers on Z / RZ; hid-microsoft / hid-generic (an Xbox pad over Bluetooth) put the right
+    stick on Z / RZ and the triggers on BRAKE / GAS.
+    """
     have = _codes(caps, ec.EV_ABS)
-    if legacy_sony:
-        pairs = {ec.ABS_X: ec.ABS_X, ec.ABS_Y: ec.ABS_Y, ec.ABS_Z: ec.ABS_RX, ec.ABS_RZ: ec.ABS_RY, ec.ABS_RX: L2, ec.ABS_RY: R2}
+    pairs = {ec.ABS_X: ec.ABS_X, ec.ABS_Y: ec.ABS_Y}
+    if {ec.ABS_RX, ec.ABS_RY} <= have:
+        pairs.update({ec.ABS_RX: ec.ABS_RX, ec.ABS_RY: ec.ABS_RY})
+        trig = {ec.ABS_Z: L2, ec.ABS_RZ: R2}
     else:
-        pairs = {ec.ABS_X: ec.ABS_X, ec.ABS_Y: ec.ABS_Y}
-        if {ec.ABS_RX, ec.ABS_RY} <= have:          # xpad, hid-playstation, hid-nintendo: right stick RX / RY, triggers Z / RZ
-            pairs.update({ec.ABS_RX: ec.ABS_RX, ec.ABS_RY: ec.ABS_RY})
-            trig = {ec.ABS_Z: L2, ec.ABS_RZ: R2}
-        else:                                       # hid-microsoft, xpadneo: right stick Z / RZ, triggers BRAKE / GAS
-            pairs.update({ec.ABS_Z: ec.ABS_RX, ec.ABS_RZ: ec.ABS_RY})
-            trig = {}
-        if {ec.ABS_BRAKE, ec.ABS_GAS} <= have:
-            trig = {ec.ABS_BRAKE: L2, ec.ABS_GAS: R2}
-        pairs.update(trig)
+        pairs.update({ec.ABS_Z: ec.ABS_RX, ec.ABS_RZ: ec.ABS_RY})
+        trig = {}
+    if {ec.ABS_BRAKE, ec.ABS_GAS} <= have:
+        trig = {ec.ABS_BRAKE: L2, ec.ABS_GAS: R2}
+    pairs.update(trig)
     return {src: (dst, *_range(dev, src)) for src, dst in pairs.items() if src in have}
 
 
@@ -206,15 +202,34 @@ def plan_for(dev: Any, kind: Kind) -> Plan | None:
         return None
     caps = _caps(dev)
     keys_have = _codes(caps, ec.EV_KEY)
-    plan = Plan(axes=_axis_plan(dev, caps, kind.family == PK_DS4 and _driver(dev) == "sony"))
+    plan = Plan(axes=_axis_plan(dev, caps))
     base = {BTN_SOUTH: BTN_SOUTH, BTN_EAST: BTN_EAST, BTN_NORTH: BTN_NORTH, BTN_WEST: BTN_WEST, BTN_TL: BTN_TL, BTN_TR: BTN_TR,
             BTN_SELECT: BTN_SELECT, BTN_START: BTN_START, BTN_MODE: BTN_MODE, BTN_THUMBL: BTN_THUMBL, BTN_THUMBR: BTN_THUMBR}
     if kind.family == PK_XBOX:
         base[BTN_NORTH], base[BTN_WEST] = BTN_WEST, BTN_NORTH      # labelled by the Xbox drivers, positional on a DualSense
     plan.keys = base
-    if ec.ABS_HAT0X not in _codes(caps, ec.EV_ABS) and BTN_DPAD_UP in keys_have:
-        plan.hat_axes = False
-        plan.dpad_keys = {BTN_DPAD_UP: (1, -1), BTN_DPAD_DOWN: (1, 1), BTN_DPAD_LEFT: (0, -1), BTN_DPAD_RIGHT: (0, 1)}
+    if ec.ABS_HAT0X not in _codes(caps, ec.EV_ABS):
+        if BTN_DPAD_UP in keys_have:
+            plan.hat_axes = False
+            plan.dpad_keys = {BTN_DPAD_UP: (1, -1), BTN_DPAD_DOWN: (1, 1), BTN_DPAD_LEFT: (0, -1), BTN_DPAD_RIGHT: (0, 1)}
+        elif BTN_HAPPY3 in keys_have:
+            plan.hat_axes = False
+            plan.dpad_keys = {BTN_HAPPY3: (1, -1), BTN_HAPPY4: (1, 1), BTN_HAPPY1: (0, -1), BTN_HAPPY2: (0, 1)}
     if L2 not in {dst for dst, _lo, _hi in plan.axes.values()} and BTN_TL2 in keys_have:     # triggers that are only buttons
         plan.trig_keys = {BTN_TL2: L2, BTN_TR2: R2}
     return plan
+
+
+def battery_dir(dev: Any, sys_root: str = "/sys") -> str | None:
+    """The power-supply folder of a pad's battery found through sysfs, whatever the driver names it.
+
+    hid-playstation calls it ps-controller-battery-<mac>, hid-sony sony_controller_battery_<mac>, hid-nintendo, xpadneo, xpad and
+    hid-generic have names of their own - but every one of them registers the battery under the device the evdev node hangs off
+    (``eventN/device`` = inputN, its ``device`` = the HID device or the USB interface). None when there is no battery entry.
+    """
+    try:
+        node = os.path.basename(os.fsdecode(dev.path))
+    except (AttributeError, TypeError):
+        return None
+    found = sorted(glob.glob(f"{sys_root}/class/input/{node}/device/device/power_supply/*/capacity"))
+    return os.path.dirname(found[0]) if found else None
