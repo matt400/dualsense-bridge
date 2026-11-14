@@ -6,6 +6,7 @@ sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
 import proto
 import sender_events as events
+import sender_report as RP
 import sender_rumble as R
 from proto import BODY, T_EVENT, T_PING, T_STATE, T_STATE2, T_TRIG, T_TRIG2, TFX_CLICK, TFX_RES, TRIG2_OFF, Codec, cstr
 
@@ -23,8 +24,8 @@ def last_trig(path):
     data = open(path, "rb").read()
     for k in range(len(data) - 78, -1, -78):
         c = data[k + 3:k + 78]
-        if c[0] & (R.FLAG0_LEFT_TRIGGER | R.FLAG0_RIGHT_TRIGGER):
-            return bytes(c[R.LEFT_TRIGGER_AT:R.LEFT_TRIGGER_AT + 11]), bytes(c[R.RIGHT_TRIGGER_AT:R.RIGHT_TRIGGER_AT + 11])
+        if c[0] & (RP.FLAG0_LEFT_TRIGGER | RP.FLAG0_RIGHT_TRIGGER):
+            return bytes(c[RP.LEFT_TRIGGER_AT:RP.LEFT_TRIGGER_AT + 11]), bytes(c[RP.RIGHT_TRIGGER_AT:RP.RIGHT_TRIGGER_AT + 11])
     return None
 
 
@@ -36,13 +37,13 @@ async def main():
     r = R.Rumble(0, Dev(), "hidraw", hidraw=(path, True))
     fx = (TFX_RES, 2, 5, 0, TFX_CLICK, 5, 7, 0, 0, 0, 0, 0)
     r.set_triggers(fx)
-    check(last_trig(path) == (R.trigger_effect(2, 5), R.weapon_effect(5, 7)), "trigger effects set")
+    check(last_trig(path) == (RP.trigger_effect(2, 5), RP.weapon_effect(5, 7)), "trigger effects set")
     await asyncio.sleep(0.2)
     r.set_triggers(fx)                                       # refresh from the PC before the watchdog time
     await asyncio.sleep(0.2)
     check(r.fx == fx, "refreshed effects persist")
     await asyncio.sleep(0.25)
-    check(r.fx == TRIG2_OFF and last_trig(path) == (R.OFF_EFFECT, R.OFF_EFFECT),
+    check(r.fx == TRIG2_OFF and last_trig(path) == (RP.OFF_EFFECT, RP.OFF_EFFECT),
           "no refreshes from the PC (receiver closed, PC asleep) -> the triggers go back to normal")
     n = os.path.getsize(path)
     await asyncio.sleep(0.4)

@@ -7,6 +7,7 @@ import sender_config; sender_config.init(["127.0.0.1"])
 import sender_ctrl
 import sender_net as net
 net.clock.base = 0   # pings and the PC clock on perf_counter (the test gives the pong2 times)
+import sender_report as RP
 import sender_rumble as R
 from proto import BODY, CAP_TRIGGERS, LAT_NONE, T_PONG2, T_STATE, T_STATE2, T_TRIG, Codec
 from sender_ctrl import Ctrl
@@ -16,23 +17,23 @@ TMP = tempfile.mkdtemp()
 from chk import ok
 
 # ---------- efekt spustu ----------
-off = R.trigger_effect(0, 0)
-assert off == bytes([R.TRIG_OFF]) + bytes(10)
-fx = R.trigger_effect(2, 6)
+off = RP.trigger_effect(0, 0)
+assert off == bytes([RP.TRIG_OFF]) + bytes(10)
+fx = RP.trigger_effect(2, 6)
 assert len(fx) == 11 and fx[0] == 0x21
 zones = int.from_bytes(fx[1:3], "little")
 forces = int.from_bytes(fx[3:7], "little")
 assert zones == sum(1 << z for z in range(2, 10)), bin(zones)
 assert all((forces >> (3 * z)) & 7 == (5 if z >= 2 else 0) for z in range(10)), "strength 6 -> 5 (3 bits) in zones 2-9"
-assert not any(fx[7:]) and R.trigger_effect(0, 8)[1:3] == b"\xff\x03" and R.trigger_effect(10, 3)[0] == R.TRIG_OFF
+assert not any(fx[7:]) and RP.trigger_effect(0, 8)[1:3] == b"\xff\x03" and RP.trigger_effect(10, 3)[0] == RP.TRIG_OFF
 ok("Feedback effect 0x21: zones from the start, 3 strength bits per zone; strength 0 / bad zone = Off")
 
-rep = R.output_report(True, 2, 0, 0, None, None, (R.trigger_effect(0, 0), fx))
+rep = RP.output_report(True, 2, 0, 0, None, None, (RP.trigger_effect(0, 0), fx))
 c = rep[3:]
-assert c[0] & (R.FLAG0_LEFT_TRIGGER | R.FLAG0_RIGHT_TRIGGER) == 0x0C and c[0] & 0x03
-assert c[R.RIGHT_TRIGGER_AT:R.RIGHT_TRIGGER_AT + 11] == fx and c[R.LEFT_TRIGGER_AT] == R.TRIG_OFF
+assert c[0] & (RP.FLAG0_LEFT_TRIGGER | RP.FLAG0_RIGHT_TRIGGER) == 0x0C and c[0] & 0x03
+assert c[RP.RIGHT_TRIGGER_AT:RP.RIGHT_TRIGGER_AT + 11] == fx and c[RP.LEFT_TRIGGER_AT] == RP.TRIG_OFF
 assert int.from_bytes(rep[-4:], "little") == zlib.crc32(b"\xa2" + rep[:-4]) & 0xFFFFFFFF
-plain = R.output_report(True, 2, 0, 0)[3:]
+plain = RP.output_report(True, 2, 0, 0)[3:]
 assert plain[0] & 0x0C == 0 and not any(plain[10:32]), "a report without triggers does not touch the effect on the pad"
 ok("report: trigger flags, R2 from byte 10, L2 from 21, CRC; plain rumble without trigger flags")
 
@@ -52,12 +53,12 @@ async def rumble():
     assert r.set_triggers((0, 0, 3, 7))
     data = open(path, "rb").read()
     last = data[-78:][3:]
-    assert last[R.RIGHT_TRIGGER_AT] == 0x21 and last[2:4] == bytes([10, 20]) and last[44:47] == bytes([1, 2, 3]), \
+    assert last[RP.RIGHT_TRIGGER_AT] == 0x21 and last[2:4] == bytes([10, 20]) and last[44:47] == bytes([1, 2, 3]), \
         "resistance in the report together with the current rumble and colour (does not zero them)"
     size = len(open(path, "rb").read())
     r.close()
     tail = open(path, "rb").read()[size:]
-    assert tail and tail[-78:][3:][R.RIGHT_TRIGGER_AT] == R.TRIG_OFF, "closing the sender removes the resistance"
+    assert tail and tail[-78:][3:][RP.RIGHT_TRIGGER_AT] == RP.TRIG_OFF, "closing the sender removes the resistance"
     assert all(rep[3:][2:4] == b"\0\0" for rep in (tail[k:k + 78] for k in range(0, len(tail), 78))), \
         "reports on close without rumble - removing the resistance must not start the motors again (the pad keeps the power)"
     ev = R.Rumble(1, Dev(), "off")

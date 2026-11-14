@@ -4,6 +4,7 @@ sys.path.insert(0, sys.argv[1])
 sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
 import sender_hidwrite as HW
+import sender_report as RP
 import sender_rumble as R
 from sender_haptics import REPORT_LEN, Report32
 
@@ -100,7 +101,7 @@ async def main():
     r.set(10, 20)
     await settle(r._writer)
     got = reports(path, 78)
-    check(got and got[0][0] == R.BT_REPORT_ID and got[0][3 + R.MOTOR_LEFT_AT] == 20, "the rumble report reaches hidraw")
+    check(got and got[0][0] == RP.BT_REPORT_ID and got[0][3 + RP.MOTOR_LEFT_AT] == 20, "the rumble report reaches hidraw")
 
     check(r.haptics_begin(), "haptics start on a Bluetooth pad")
     await settle(r._writer)
@@ -147,7 +148,7 @@ async def main():
     w = r._writer
     r.close()
     got = reports(path, 78)
-    check(got and got[-1][3 + R.MOTOR_LEFT_AT] == 0 and got[-1][3 + R.MOTOR_RIGHT_AT] == 0 and not w._thread.is_alive(),
+    check(got and got[-1][3 + RP.MOTOR_LEFT_AT] == 0 and got[-1][3 + RP.MOTOR_RIGHT_AT] == 0 and not w._thread.is_alive(),
           "close() waits for the stop report, then the writer ends")
 
 
