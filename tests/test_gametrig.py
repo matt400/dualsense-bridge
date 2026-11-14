@@ -9,7 +9,7 @@ import rx_events as ev
 import rx_games
 import rx_settings
 from dataclasses import replace
-from proto import (BODY, CAP_TRIG_FX, CAP_TRIG_RAW, RFX_ON, T_TRIG2, T_TRIG3, TFX_OFF, TFX_RES, TRG3_L2, TRG3_R2,
+from proto import (BODY, TRIG_RAW_LEN, CAP_TRIG_FX, CAP_TRIG_RAW, RFX_ON, T_TRIG2, T_TRIG3, TFX_OFF, TFX_RES, TRG3_L2, TRG3_R2,
                    TRIG2_OFF, Codec)
 from rx_buttons import normalize_profile
 
@@ -104,7 +104,7 @@ F.reset(0)
 assert F.fb[0]["trig"] == F.NO_GAME_TRIG and F.fb[0]["trig_owner"] is None, "a new virtual pad - no game effects"
 ok("a program change does not release the effects; closing the program and detaching the pad do")
 # ---------- an all-zero effect (raw bytes too) is no effect ----------
-assert not F._has_effect((0, 0, bytes(F.TRIG_RAW_LEN), bytes(F.TRIG_RAW_LEN), 0)), "all zeros (raw bytes too) - no effect"
+assert not F._has_effect((0, 0, bytes(TRIG_RAW_LEN), bytes(TRIG_RAW_LEN), 0)), "all zeros (raw bytes too) - no effect"
 assert F._has_effect((0, 3, 0)) and F._has_effect((0, bytes(3) + b"\1")), "a non-zero number or byte - an effect"
 ok("empty trigger bytes are no effect")
 print("GAME TRIGGERS OK")
