@@ -7,6 +7,7 @@ import tempfile
 sys.path.insert(0, sys.argv[1])
 sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
+import sender_hidfind as H
 import sender_rumble as R
 
 from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
@@ -18,25 +19,25 @@ def fake_ioctl(fd, request, buf, mutate):
     """The pad's answer to HIDIOCGFEATURE: report id + the version (little endian) at its offset, or an error."""
     if isinstance(answer.get("error"), OSError):
         raise answer["error"]
-    assert request == R._hidiocgfeature(R.FW_SIZE) and mutate and len(buf) == R.FW_SIZE and buf[0] == R.FW_REPORT
+    assert request == H._hidiocgfeature(H.FW_SIZE) and mutate and len(buf) == H.FW_SIZE and buf[0] == H.FW_REPORT
     buf[0] = answer["id"]
-    buf[R.FW_VERSION_AT], buf[R.FW_VERSION_AT + 1] = answer["ver"] & 0xFF, answer["ver"] >> 8
+    buf[H.FW_VERSION_AT], buf[H.FW_VERSION_AT + 1] = answer["ver"] & 0xFF, answer["ver"] >> 8
     return 0
 
 
-R.fcntl.ioctl = fake_ioctl
+H.fcntl.ioctl = fake_ioctl
 
 
-def fw(major, minor, report_id=R.FW_REPORT):
+def fw(major, minor, report_id=H.FW_REPORT):
     answer.clear(); answer.update(id=report_id, ver=(major << 8) | minor)
-    return R.firmware_version(3)
+    return H.firmware_version(3)
 
 
 check(fw(2, 21) == 0x0215, "version read little endian from its offset (2.21 = 0x0215)")
 check(fw(2, 20) == 0x0214 and fw(3, 0) == 0x0300, "other versions read the same way")
 check(fw(2, 21, report_id=0x05) is None, "another report id in the answer (another pad) -> unknown")
 answer.clear(); answer["error"] = OSError(13, "EACCES")
-check(R.firmware_version(3) is None, "ioctl fails (no access) -> unknown")
+check(H.firmware_version(3) is None, "ioctl fails (no access) -> unknown")
 
 
 class Pad:
