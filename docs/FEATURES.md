@@ -301,10 +301,11 @@
   missing in kernel / pad not found / old sender). The rumble button on the pad card checks whether rumble reaches
   the pad.
 - **Fixed player order:** the sender remembers which pad (MAC) was in which slot (`slots.json`), and the receiver
-  plugs in virtual pads in slot order. When pad 2 connects first, its virtual pad **waits up to 6 s for pad 1** and
-  then both are created in order (default, "Wait for pad 1"). No extra device exists, so it does not clash with Steam
-  Input; if pad 1 never comes, pad 2 is plugged in alone. The older method, a **placeholder pad** (a neutral virtual pad
-  in the empty slot 1 that pad 1 takes over later), is still selectable, but Steam Input counts it as a player.
+  plugs in virtual pads in slot order. When pad 2 connects first, it waits ~1 s for pad 1: pads switched on together are
+  created in order with no extra device, so Steam Input sees nothing unusual. Only if pad 1 is late, slot 1 gets a
+  **placeholder pad** (a neutral virtual pad) that pad 1 takes over later without replugging; it goes away together with
+  the last pad from a higher slot. The alternative "wait" mode (Settings → Pads → Method) waits up to 6 s and never
+  creates a placeholder, but pad 2 can then end up as player 1.
   Disabling: Settings → Pads → "Fixed player order". HIDMaestro also creates pads with a fixed slot identity (the same
   device paths after every plug-in).
 - **Sender settings from the window:** Settings → Sender changes the settings of `sender.toml` (pad limit, deadzones,

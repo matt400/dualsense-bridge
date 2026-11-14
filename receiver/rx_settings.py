@@ -315,8 +315,8 @@ VPAD_BACKENDS: Final = {"auto": "Automatycznie: HIDMaestro, gdy jest, inaczej Vi
 
 
 # how the fixed player order is kept (VpadConfig.slot_mode)
-SLOT_MODES: Final = {"hold": "Czekaj na pad 1 (bez pada zastępczego, zgodne ze Steam Input)",
-                     "placeholder": "Pad zastępczy w pustym slocie 1"}
+SLOT_MODES: Final = {"placeholder": "Pad zastępczy tylko gdy pad 1 nie dołączy w ~1 s",
+                     "hold": "Czekaj do 6 s na pad 1 (bez pada zastępczego)"}
 
 
 def _path(v: Any) -> str:
@@ -332,7 +332,7 @@ class VpadConfig:
 
     backend: str = "auto"         # auto | hidmaestro | vigem
     fixed_slots: bool = True      # keep the player order: pad 2 never becomes player 1 just because it connected first
-    slot_mode: str = "hold"       # hold = pad 2's virtual pad waits for pad 1 | placeholder = a neutral pad holds slot 1
+    slot_mode: str = "placeholder"   # placeholder = a neutral pad holds slot 1 if pad 1 is late | hold = pad 2 waits for pad 1
     # path to HIDMaestro.Core.dll (or its folder); "" = downloaded automatically / hidmaestro\ next to the script
     hm_dll: str = ""
     hm_auto: bool = True          # download and update HIDMaestro from GitHub (only without an own hm_dll path)

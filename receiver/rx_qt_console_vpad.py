@@ -75,11 +75,11 @@ class VpadTab(TabBase):
         order = group(_("KOLEJNOŚĆ GRACZY"),
                       self.vpad_fixed,
                       field(_("Sposób"), self.vpad_mode),
-                      label(_("Gry i Steam numerują pady wg kolejności podłączenia. Gdy pad 2 włączy się pierwszy, jego "
-                              "wirtualny pad czeka do 6 s na pad 1 i dopiero wtedy oba powstają po kolei - bez dodatkowego "
-                              "urządzenia, więc nie koliduje ze Steam Input. Pad zastępczy tworzy dodatkowy kontroler (Steam "
-                              "Input liczy go jako gracza). Który fizyczny pad to pad 1 / 2, pamięta nadajnik (slots.json, "
-                              "wg MAC)."),
+                      label(_("Gry i Steam numerują pady wg kolejności podłączenia. Gdy pad 2 włączy się pierwszy, "
+                              "czeka ~1 s na pad 1: pady włączone razem powstają po kolei bez żadnego dodatkowego urządzenia "
+                              "(Steam Input nic nie widzi). Dopiero gdy pad 1 jest spóźniony, slot 1 dostaje pad zastępczy, "
+                              "który pad 1 potem przejmuje. Tryb „czekaj” nie tworzy zastępczego, ale pad 2 może wtedy "
+                              "zostać graczem 1. Który fizyczny pad to pad 1 / 2, pamięta nadajnik (slots.json, wg MAC)."),
                             "dim", wrap=True))
         return [shown, backend, order]
 

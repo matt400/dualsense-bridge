@@ -699,17 +699,17 @@ EN: Final[dict[str, str]] = {
     "HIDMaestro {v} pobrany - zadziała po restarcie receivera": "HIDMaestro {v} downloaded - takes effect after a receiver restart",
     "Sprawdź teraz": "Check now",
     "KOLEJNOŚĆ GRACZY": "PLAYER ORDER",
-    "Gry i Steam numerują pady wg kolejności podłączenia. Gdy pad 2 włączy się pierwszy, jego wirtualny pad czeka do 6 s "
-    "na pad 1 i dopiero wtedy oba powstają po kolei - bez dodatkowego urządzenia, więc nie koliduje ze Steam Input. Pad "
-    "zastępczy tworzy dodatkowy kontroler (Steam Input liczy go jako gracza). Który fizyczny pad to pad 1 / 2, pamięta "
-    "nadajnik (slots.json, wg MAC).":
-        "Games and Steam number pads in the order they connect. When pad 2 turns on first, its virtual pad waits up to "
-        "6 s for pad 1, then both are created in order - no extra device, so it does not clash with Steam Input. A "
-        "placeholder pad adds an extra controller (Steam Input counts it as a player). The sender remembers which "
-        "physical pad is pad 1 / 2 (slots.json, by MAC).",
+    "Gry i Steam numerują pady wg kolejności podłączenia. Gdy pad 2 włączy się pierwszy, czeka ~1 s na pad 1: pady "
+    "włączone razem powstają po kolei bez żadnego dodatkowego urządzenia (Steam Input nic nie widzi). Dopiero gdy pad 1 "
+    "jest spóźniony, slot 1 dostaje pad zastępczy, który pad 1 potem przejmuje. Tryb „czekaj” nie tworzy zastępczego, ale "
+    "pad 2 może wtedy zostać graczem 1. Który fizyczny pad to pad 1 / 2, pamięta nadajnik (slots.json, wg MAC).":
+        "Games and Steam number pads in the order they connect. When pad 2 turns on first, it waits ~1 s for pad 1: pads "
+        "switched on together are created in order with no extra device (Steam Input sees nothing). Only if pad 1 is late "
+        "does slot 1 get a placeholder pad, which pad 1 takes over later. The wait mode never creates a placeholder, but "
+        "pad 2 may then become player 1. The sender remembers which physical pad is pad 1 / 2 (slots.json, by MAC).",
     "Sposób": "Method",
-    "Czekaj na pad 1 (bez pada zastępczego, zgodne ze Steam Input)": "Wait for pad 1 (no placeholder pad, Steam Input friendly)",
-    "Pad zastępczy w pustym slocie 1": "Placeholder pad in the empty slot 1",
+    "Pad zastępczy tylko gdy pad 1 nie dołączy w ~1 s": "Placeholder pad only if pad 1 does not join within ~1 s",
+    "Czekaj do 6 s na pad 1 (bez pada zastępczego)": "Wait up to 6 s for pad 1 (no placeholder pad)",
     "Teraz: {kinds}": "Now: {kinds}",
     "Teraz: żaden wirtualny pad nie jest podłączony": "Now: no virtual pad is plugged in",
     "HIDMaestro nieużywany: {why}": "HIDMaestro not used: {why}",

@@ -39,7 +39,8 @@ class VPad:
 
 rx_ds4.vg.VDS4Gamepad = VPad
 rx_ds4.init()
-vpad(backend="vigem", slot_mode="placeholder")
+rx_ds4.PLACEHOLDER_GRACE = 0.3
+vpad(backend="vigem")
 threads = [threading.Thread(target=rx_ds4.slot_thread, args=(i,), daemon=True) for i in range(2)]
 for t in threads:
     t.start()
@@ -79,13 +80,24 @@ vpad(backend="vigem", fixed_slots=False)
 S.want[1].set(); S.wake[1].set()
 check(wait(lambda: S.plugged[1]) and not S.plugged[0], "fixed_slots=false: only slot 1 (the old behaviour)")
 # turning the fixed order on midway: slot 0 gets the placeholder at once (the slot thread checks needed)
-vpad(backend="vigem", fixed_slots=True, slot_mode="placeholder")
+vpad(backend="vigem", fixed_slots=True)
 check(wait(lambda: S.plugged[0]), "fixed_slots turned on midway: placeholder slot 0")
 S.want[1].clear(); S.wake[1].set()
 check(wait(lambda: not S.plugged[0] and not S.plugged[1]), "cleanup")
 
-# hold mode (default): no placeholder device; pad 2 waits for pad 1, then both are plugged in slot order
-vpad(backend="vigem")
+# placeholder mode, pad 1 joins within the grace period: no placeholder device is ever created
+created.clear()
+S.want[1].set(); S.wake[1].set()
+time.sleep(0.1)
+S.want[0].set(); S.wake[0].set()
+check(wait(lambda: S.plugged[0] and S.plugged[1]), "grace: both pads plugged in")
+check(len(created) == 2 and created.index(pad_id(0)) < created.index(pad_id(1)), f"grace: exactly two devices, slot 0 first: {created}")
+S.want[0].clear(); S.want[1].clear(); S.wake[0].set(); S.wake[1].set()
+check(wait(lambda: not S.plugged[0] and not S.plugged[1]), "grace: cleanup")
+check(not rx_ds4.holding, "grace: nothing left in holding")
+
+# hold mode: no placeholder device ever; pad 2 waits for pad 1, then both are plugged in slot order
+vpad(backend="vigem", slot_mode="hold")
 created.clear()
 S.want[1].set(); S.wake[1].set()
 time.sleep(0.5)
@@ -105,13 +117,10 @@ time.sleep(0.3)
 check(not S.plugged[1], "hold: pad 2 left while waiting - nothing plugged")
 # the wait is bounded: pad 1 never comes -> pad 2 plugs in alone
 rx_ds4.HOLD_WAIT = 0.4
-hold_ds4 = rx_ds4.hold_for_lower
-rx_ds4.hold_for_lower = lambda idx, timeout=0.4: hold_ds4(idx, timeout)
 S.want[1].set(); S.wake[1].set()
 check(wait(lambda: S.plugged[1]) and not S.plugged[0], "hold: pad 1 never came - pad 2 plugs in alone after the timeout")
 S.want[1].clear(); S.wake[1].set()
 check(wait(lambda: not S.plugged[1]), "hold: cleanup 2")
-rx_ds4.hold_for_lower = hold_ds4
 
 
 # ---------- HIDMaestro (backend stub): DualSense report, feedback, backend change ----------

@@ -58,7 +58,7 @@ Tryb konsoli ma własny plik `receiver/console.json` (obok skryptu). Brak pliku 
 
 Mysz touchpada, pad master, lightbar, haptyka gry, Wake-on-LAN, ustawienia dziennika i wirtualne pady są w `receiver/settings.json`
 (okno → Ustawienia, działa od razu). Wirtualne pady (`vpad`): `backend` = `auto` | `hidmaestro` | `vigem`,
-`fixed_slots` = stała kolejność graczy, `slot_mode` = sposób: `hold` (domyślnie; wirtualny pad 2 czeka do 6 s na pad 1) | `placeholder` (neutralny pad w pustym niższym slocie), `hm_auto` = pobieranie wersji HIDMaestro
+`fixed_slots` = stała kolejność graczy, `slot_mode` = sposób: `placeholder` (domyślnie; pad 2 czeka ~1 s na pad 1, potem neutralny pad zajmuje pusty niższy slot) | `hold` (czeka do 6 s, bez pada zastępczego), `hm_auto` = pobieranie wersji HIDMaestro
 przypiętej w `receiver/hm_pin.json` z GitHuba (do `receiver/hidmaestro/vX.Y.Z/`; nowa wersja działa po restarcie, gdy starsza jest
 już w użyciu), `hm_dll` = własna `HIDMaestro.Core.dll` albo jej folder (wtedy bez pobierania). Preferencje okna (`ui`): `lang` = `pl` | `en`, `pads_mode` = `dynamic` (kolumna po lewej pokazuje
 tylko podłączone pady) | `fixed`, `pads_count` = ile padów zawsze pokazuje `fixed` (1-4). Liczbę slotów ustawia `pads` w
