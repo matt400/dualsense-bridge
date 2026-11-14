@@ -12,8 +12,12 @@ administrator, otherwise ViGEm; hidmaestro = like auto, but a missing / failing 
 still serves as a fallback); vigem = always ViGEm. Changing the backend in the window unplugs and recreates the pads (no restart).
 
 Fixed player order (fixed_slots): games, Steam and Windows number pads by the order in which devices appear.
-When the pad of slot 2 connects and slot 1 is empty, slot 1 first gets a placeholder pad (a neutral state), so pad 2
-never becomes player 1. The placeholder disappears together with the last pad of a higher slot.
+When the pad of slot 2 connects while slot 1 is empty, slot_mode decides how pad 2 stays player 2:
+- placeholder (default): pad 2 first waits the grace time (vpad.slot_grace_ms, 1 s) for pad 1 (two pads switched on together never need a
+  placeholder, so Steam Input sees no extra device). Only if pad 1 is still missing, slot 1 gets a neutral virtual pad
+  that pad 1 later takes over. It disappears together with the last pad of a higher slot.
+- hold: pad 2's virtual pad waits longer (HOLD_WAIT) for pad 1 and never uses a placeholder; if pad 1 does not come,
+  pad 2 is plugged in alone (and may then be player 1).
 """
 import ctypes
 import gc
@@ -61,6 +65,7 @@ if vg is not None:
         _vcli = DS4_LIGHTBAR_COLOR = None
 VIGEM_ERROR_NONE = 0x20000000
 
+HOLD_WAIT = 6.0         # hold mode: how long a higher slot waits for the lower pads to connect before plugging in alone
 PLUG_ORDER_WAIT = 2.0   # a slot waits at most this long for earlier slots to plug their DS4 (the player order in a game)
 
 
@@ -123,6 +128,7 @@ class Out:
 
 outs: list[Out | None] = []   # Out per slot or None (the virtual pad is not plugged)
 kinds: list[str | None] = []   # the virtual pad of a slot: "hm" (DualSense) | "vigem" (DS4) | "x360" | None (window: the pad card)
+holding: set[int] = set()   # placeholder mode: slots that stopped waiting for lower pads - the lower slots now hold the place
 failing: list[bool] = []   # the slot cannot create a pad (a backend error) - higher slots do not wait for it
 interval = 0.0            # 1 / pad_hz
 gen = 0                   # a backend change in the settings: plugged pads unplug and are created again in the new one
@@ -211,15 +217,54 @@ def fixed_slots() -> bool:
     return rx_settings.cur.vpad.fixed_slots
 
 
+def placeholders() -> bool:
+    """Whether empty lower slots are held by a placeholder pad (fixed order in placeholder mode)."""
+    cfg = rx_settings.cur.vpad
+    return cfg.fixed_slots and cfg.slot_mode == "placeholder"
+
+
+def _wait_lower(idx: int, timeout: float) -> bool | None:
+    """Wait until every lower slot has its physical pad; -> True = they do, False = timeout, None = the pad left / stop."""
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        if S.stop.is_set() or not S.want[idx].is_set():
+            return None
+        if all(S.want[j].is_set() or S.plugged[j] for j in range(idx)):
+            return True
+        S.stop.wait(0.05)
+    return False
+
+
+def hold_for_lower(idx: int, timeout: float | None = None) -> bool:
+    """Before plugging slot idx in: give the lower pads a moment to connect, so the pads come up in slot order.
+
+    hold: waits HOLD_WAIT and then plugs in alone (no placeholder device, but the order may then be wrong).
+    placeholder: waits only the grace time (slot_grace_ms); if a lower pad is still missing, the slot goes to `holding`, which makes
+    the lower slots plug a placeholder first (see needed()). Pads switched on together therefore need no placeholder at all.
+    -> False when the pad left while waiting or the receiver stops (nothing to plug in).
+    """
+    cfg = rx_settings.cur.vpad
+    if not cfg.fixed_slots:
+        return True
+    hold = cfg.slot_mode == "hold"
+    r = _wait_lower(idx, timeout if timeout is not None else (HOLD_WAIT if hold else cfg.slot_grace_ms / 1000))
+    if r is False:
+        if hold:
+            print(f"Controller {idx}: lower pads did not connect in time - plugging in alone")
+        else:
+            holding.add(idx)
+    return r is not None
+
+
 def needed(idx: int) -> bool:
     """The slot should have a virtual pad.
 
-    Its pad is connected or (fixed order) a pad of a higher slot is connected - then this slot holds the place with a
-    placeholder pad, so that the player numbering in the game matches the slot number.
+    Its pad is connected or (placeholder mode) a higher slot is waiting for it / already plugged - then this slot holds the
+    place with a placeholder pad, so that the player numbering in the game matches the slot number.
     """
     if S.want[idx].is_set():
         return True
-    return fixed_slots() and any(w.is_set() for w in S.want[idx + 1:])
+    return placeholders() and any(j in holding or S.plugged[j] for j in range(idx + 1, len(S.want)))
 
 
 def wait_turn(idx: int, timeout: float = PLUG_ORDER_WAIT) -> bool:
@@ -484,6 +529,8 @@ def slot_thread(idx: int) -> None:
             break
         pad = o = None
         my_gen = gen
+        if idx and not hold_for_lower(idx):
+            continue
         order = rx_hm.ORDER_WAIT if rx_settings.cur.vpad.backend != "vigem" else PLUG_ORDER_WAIT
         if idx and not wait_turn(idx, order):
             print(f"Controller {idx}: earlier slot not ready - plugging in anyway (player order may differ)")
@@ -502,6 +549,7 @@ def slot_thread(idx: int) -> None:
             # the next packet "connected" it again (rx_console.pad_connected: console mode auto-ON every second)
             S.stop.wait(1.0)
         finally:
+            holding.discard(idx)
             _release_slot(idx)
             if pad is not None:
                 o = None                         # drop our references first: vgamepad unplugs in the destructor

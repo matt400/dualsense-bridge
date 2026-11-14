@@ -710,12 +710,18 @@ EN: Final[dict[str, str]] = {
     "HIDMaestro {v} pobrany - zadziała po restarcie receivera": "HIDMaestro {v} downloaded - takes effect after a receiver restart",
     "Sprawdź teraz": "Check now",
     "KOLEJNOŚĆ GRACZY": "PLAYER ORDER",
-    "Gry i Steam numerują pady wg kolejności podłączenia. Gdy pad 2 włączy się pierwszy, pad 1 dostaje najpierw pad "
-    "zastępczy, więc pad 2 zawsze zostaje graczem 2. Który fizyczny pad to pad 1 / 2, pamięta nadajnik (slots.json, "
-    "wg MAC). Zastępczy pad znika razem z padem 2.":
-        "Games and Steam number pads in the order they connect. When pad 2 turns on first, pad 1 gets a placeholder pad "
-        "first, so pad 2 always stays player 2. The sender remembers which physical pad is pad 1 / 2 (slots.json, by MAC). "
-        "The placeholder goes away together with pad 2.",
+    "Gry i Steam numerują pady wg kolejności podłączenia. Gdy pad 2 włączy się pierwszy, czeka ~1 s na pad 1: pady "
+    "włączone razem powstają po kolei bez żadnego dodatkowego urządzenia (Steam Input nic nie widzi). Dopiero gdy pad 1 "
+    "jest spóźniony, slot 1 dostaje pad zastępczy, który pad 1 potem przejmuje. Tryb „czekaj” nie tworzy zastępczego, ale "
+    "pad 2 może wtedy zostać graczem 1. Który fizyczny pad to pad 1 / 2, pamięta nadajnik (slots.json, wg MAC).":
+        "Games and Steam number pads in the order they connect. When pad 2 turns on first, it waits ~1 s for pad 1: pads "
+        "switched on together are created in order with no extra device (Steam Input sees nothing). Only if pad 1 is late "
+        "does slot 1 get a placeholder pad, which pad 1 takes over later. The wait mode never creates a placeholder, but "
+        "pad 2 may then become player 1. The sender remembers which physical pad is pad 1 / 2 (slots.json, by MAC).",
+    "Sposób": "Method",
+    "Czekanie na pad 1 przed padem zastępczym": "Wait for pad 1 before using a placeholder pad",
+    "Pad zastępczy tylko gdy pad 1 nie dołączy w ~1 s": "Placeholder pad only if pad 1 does not join within ~1 s",
+    "Czekaj do 6 s na pad 1 (bez pada zastępczego)": "Wait up to 6 s for pad 1 (no placeholder pad)",
     "Teraz: {kinds}": "Now: {kinds}",
     "Teraz: żaden wirtualny pad nie jest podłączony": "Now: no virtual pad is plugged in",
     "HIDMaestro nieużywany: {why}": "HIDMaestro not used: {why}",

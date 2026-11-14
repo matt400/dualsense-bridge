@@ -121,8 +121,8 @@ dlg.vpad_fixed.setChecked(False); dlg.vpad_dll.setText("  D:\\HM  "); dlg.vpad_a
 dlg.save_btn.click(); pump()
 v = rx_settings.cur.vpad
 assert (v.backend, v.fixed_slots, v.hm_dll) == ("hidmaestro", False, "D:\\HM"), v
-assert json.load(open(C.SETTINGS_PATH))["vpad"] == {"backend": "hidmaestro", "fixed_slots": False, "hm_dll": "D:\\HM",
-                                                     "hm_auto": False, "mirror": True}
+assert json.load(open(C.SETTINGS_PATH))["vpad"] == {"backend": "hidmaestro", "fixed_slots": False, "slot_mode": "placeholder",
+                                                     "slot_grace_ms": 1000, "hm_dll": "D:\\HM", "hm_auto": False, "mirror": True}
 assert S.restart is False, "pads work without a restart"
 rx_settings.apply(rx_settings.defaults())
 ok("Settings -> Pads: backend / DLL / order saved at once, restart as administrator when it is missing")
