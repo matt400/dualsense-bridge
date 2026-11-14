@@ -34,6 +34,7 @@ class VpadTab(TabBase):
         self.vpad_admin.setIcon(icon("shield"))
         self.vpad_admin.clicked.connect(self.elevate.emit)
         self.vpad_fixed = QCheckBox(_("Stała kolejność graczy"))
+        self.vpad_mirror = QCheckBox(_("Wirtualny pad taki jak fizyczny (DualShock 4 → DS4, Xbox → Xbox 360)"))
         self.vpad_auto = QCheckBox(_("Pobieraj HIDMaestro automatycznie (GitHub, przypięta wersja)"))
         self.vpad_auto.toggled.connect(lambda _on: self._vpad_state())
         self.vpad_check = button(_("Sprawdź teraz"), small=True)
@@ -70,19 +71,26 @@ class VpadTab(TabBase):
         if PADS_COUNT[1] > C.NUM_PADS:
             shown.layout().addWidget(label(_("Liczba slotów w receiverze: {n} (opcja pads w receiver.toml albo --pads) - "
                                              "więcej wymaga zmiany tej wartości i restartu.").format(n=C.NUM_PADS), "dim", wrap=True))
+        kind = group(_("RODZAJ PADA W GRZE"),
+                     self.vpad_mirror,
+                     label(_("Włączone: pad DualSense widać w grze jako DualSense, DualShock 4 jako DS4, a pady Xbox (i inne, np. "
+                             "Switch Pro) jako Xbox 360 - gra pokazuje właściwe ikony przycisków. Xbox 360 i DS4 działają przez "
+                             "ViGEmBus; bez niego taki pad jest widoczny jako DualSense. Wyłączone: zawsze DualSense."),
+                           "dim", wrap=True))
         order = group(_("KOLEJNOŚĆ GRACZY"),
                       self.vpad_fixed,
                       label(_("Gry i Steam numerują pady wg kolejności podłączenia. Gdy pad 2 włączy się pierwszy, pad 1 "
                               "dostaje najpierw pad zastępczy, więc pad 2 zawsze zostaje graczem 2. Który fizyczny pad to "
                               "pad 1 / 2, pamięta nadajnik (slots.json, wg MAC). Zastępczy pad znika razem z padem 2."),
                             "dim", wrap=True))
-        return [shown, backend, order]
+        return [shown, backend, kind, order]
 
     def _load_vpad(self, v: VpadConfig) -> None:
         """Fill the Pads tab from a VpadConfig."""
         self.vpad_backend.set_data(v.backend)
         self.vpad_dll.setText(v.hm_dll)
         self.vpad_fixed.setChecked(v.fixed_slots)
+        self.vpad_mirror.setChecked(v.mirror)
         self.vpad_auto.setChecked(v.hm_auto)
         self._vpad_state()
 
@@ -169,4 +177,4 @@ class VpadTab(TabBase):
     def _collect_vpad(self) -> VpadConfig:
         """-> the VpadConfig described by the Pads tab."""
         return VpadConfig(backend=self.vpad_backend.currentData(), fixed_slots=self.vpad_fixed.isChecked(),
-                          hm_dll=self.vpad_dll.text().strip(), hm_auto=self.vpad_auto.isChecked())
+                          hm_dll=self.vpad_dll.text().strip(), hm_auto=self.vpad_auto.isChecked(), mirror=self.vpad_mirror.isChecked())

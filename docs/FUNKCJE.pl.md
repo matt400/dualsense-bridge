@@ -9,6 +9,17 @@
   opublikuje później, nie instaluje się samo; przypięcie przesuwa się razem z aktualizacją receivera (tylko DLL i jej zależności z zipa wydania, przez HTTP Range), a
   receiver uruchamia się jako administrator (UAC; zadanie autostartu z najwyższymi uprawnieniami). Zmiana działa od razu (pady powstają od nowa). Błąd HIDMaestro przy tworzeniu pada = ten pad przez
   ViGEmBus i ostrzeżenie w dzienniku. Karta pada (ikona touchpada) pokazuje, jakim padem jest slot.
+- **DualShock 4, Xbox i inne pady** obok DualSense (nadajnik v18+). Nadajnik rozpoznaje pad po USB id (DualSense, DualShock 4,
+  Xbox 360 / One / Series, Switch Pro; nieznany pad, który nazywa się „Xbox”, liczy się jako Xbox) i tłumaczy go na jeden układ, którym
+  mówi cały most, więc remapowanie, profile, skróty i okno działają dla każdego pada. Prawa gałka i spusty są wyszukiwane z tego, co
+  zgłasza sterownik jądra (xpad, xpadneo, hid-microsoft, hid-sony, hid-playstation i hid-nintendo różnią się tym, gdzie je trzymają);
+  przyciski X / Y z Xboxa trafiają na kwadrat / trójkąt wg położenia; krzyżak lub spusty będące przyciskami (Switch Pro) stają się hatem
+  i pełnymi spustami. Nadajnik mówi receiverowi, czym jest pad (pakiet `padkind`), a wirtualny pad za nim idzie - **DualSense → DualSense**
+  (HIDMaestro, a bez niego DS4), **DualShock 4 → DS4** (ViGEmBus), **Xbox / inny → Xbox 360** (ViGEmBus), więc gra pokazuje właściwe ikony
+  przycisków. Bez ViGEmBus pad Xbox lub DS4 jest obsługiwany jako DualSense. Ustawienia → Pady → „Rodzaj pada w grze” wyłącza to (zawsze
+  DualSense). Czego pad nie ma, tego nie ma: pady Xbox i inne nie mają żyroskopu, touchpada, lightbara, spustów adaptacyjnych, haptyki ani
+  głośnika; DualShock 4 ma żyroskop, touchpad i wibracje (jego lightbar nie jest jeszcze sterowany). Wibracje tych padów idą przez sterownik
+  jądra (evdev), nigdy przez raport HID DualSense.
 - **Serwer DSU (Cemuhook)** z ruchem i dotykiem dla emulatorów (Cemu, Yuzu/Ryujinx, Dolphin) na tym komputerze;
   emulator na innym urządzeniu wymaga `dsu_bind = "0.0.0.0"`.
 - **Touchpad jako mysz:** kursor, tap = lewy przycisk, przewijanie dwoma palcami, tap dwoma palcami = prawy przycisk.

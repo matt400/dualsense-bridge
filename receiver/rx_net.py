@@ -26,10 +26,12 @@ import rx_state as S
 import rx_swap
 import rx_testmode as testmode
 from proto import (BATT_CHARGING, BATT_UNKNOWN, BODY, CAL_MOVED, CAL_OK, CLICK_PRESSED, CLICK_TWO_FINGERS, HEADER_LEN, LAT_NONE, MUTE_BIT,
-                   NO_PAD, PAD_KEYS, RTT_NONE, SCFG_BATT, SCFG_EVENTS, SCFG_WOL, STATE_CHARGING, STATE_FIELDS, UINT32_MASK, WIRE, Codec,
+                   NO_PAD, PAD_KEYS, PK_DS4, PK_OTHER, PK_XBOX, RTT_NONE, SCFG_BATT, SCFG_EVENTS, SCFG_WOL, STATE_CHARGING, STATE_FIELDS,
+                   UINT32_MASK, WIRE, Codec,
                    EpochClock, T_BTCTRL, T_BTDEV, T_BTLINK, T_BTSTATE, T_BUILD, T_BUILD2, T_BUILD3, T_BYE, T_CALRES, T_CFGVAL, T_CLICK,
                    T_CMD, T_EVENT, T_FB, T_HAPT, T_IDENT, T_INFO, T_LEDS, SEQ_MASK,
-                   T_MOUSE, T_PING, T_PONG, T_PONG2, T_SCFG, T_SPK, T_STATE, T_STATE2, T_TOUCH, T_TRIG, T_TRIG2, T_TRIG3, T_UPDMSG,
+                   T_MOUSE, T_PADKIND, T_PING, T_PONG, T_PONG2, T_SCFG, T_SPK, T_STATE, T_STATE2, T_TOUCH, T_TRIG, T_TRIG2, T_TRIG3,
+                   T_UPDMSG,
                    T_VERSION, TRIG2_OFF, clamp, cstr, mac_bytes, mac_text)
 from rx_buttons import BUTTON_CODES, MASK_ALL, PS_BIT, TRIG_ON
 from rx_config import C
@@ -37,7 +39,7 @@ from rx_i18n import _
 from rx_winapi import bind_udp, boost_thread, recv_timeout
 
 RX_TYPES: Final = {T_STATE, T_STATE2, T_TOUCH, T_CLICK, T_MOUSE, T_PING, T_BYE, T_IDENT, T_INFO, T_VERSION,   # the packet types the
-            T_CALRES}                                                                                  # receiver accepts
+            T_CALRES, T_PADKIND}                                                                       # receiver accepts
 ST_TOUCH: Final = BODY[T_TOUCH]
 ST_MOUSE: Final = BODY[T_MOUSE]
 ST_INFO: Final = BODY[T_INFO]
@@ -435,6 +437,7 @@ def clear_slot(i: int, forget_id: bool = False) -> None:
     if forget_id:                      # the pad physically left - the next one in this slot will send its own ident
         rx_latency.reset_buttons(i)    # the last presses (no time limit) belonged to that pad
         S.sender_info[i] = None
+        S.pad_kind[i] = None           # the next pad in this slot may be another kind: its padkind packet comes with its ident
         S.gyro_cal[i] = None           # the gyro calibration belonged to that pad
         with S.profile_lock:
             S.pad_id[i] = None
@@ -644,6 +647,22 @@ def _on_ident(i: int, data: bytes) -> None:
         ev.info(_("{pad}: pad {id}").format(pad=ev.pad_name(i), id=pid))
 
 
+def _on_padkind(i: int, data: bytes) -> None:
+    """What kind of pad is in the slot (DualSense / DualShock 4 / Xbox / other): the virtual pad is chosen to match (rx_ds4)."""
+    family, features, vendor, product = BODY[T_PADKIND].unpack_from(data, 4)
+    kind = (family, features)
+    if kind != S.pad_kind[i]:
+        S.pad_kind[i] = kind
+        print(f"Controller {i}: pad kind {family}, features {features:#x}, usb {vendor:04x}:{product:04x}")
+        ev.info(_("{pad}: rodzaj pada: {kind}").format(pad=ev.pad_name(i), kind=pad_kind_name(family)))
+        S.wake[i].set()               # the slot thread re-checks which virtual pad this pad needs
+
+
+def pad_kind_name(family: int) -> str:
+    """The name of a pad family for the log and the window."""
+    return {PK_DS4: "DualShock 4", PK_XBOX: "Xbox", PK_OTHER: _("inny pad")}.get(family, "DualSense")
+
+
 def _on_version(i: int, data: bytes) -> None:
     """The sender's version, the rumble methods it found and the reason for the choice - logged once per change."""
     v = BODY[T_VERSION].unpack_from(data, 4)
@@ -660,7 +679,8 @@ def _on_info(i: int, data: bytes) -> None:
 
 # Per-pad packet types other than the state packets, which have their own fast path in handle().
 _HANDLERS: Final[dict[int, Callable[[int, bytes], None]]] = {
-    T_TOUCH: _on_touch, T_CLICK: _on_click, T_MOUSE: _on_mouse, T_IDENT: _on_ident, T_VERSION: _on_version, T_INFO: _on_info}
+    T_TOUCH: _on_touch, T_CLICK: _on_click, T_MOUSE: _on_mouse, T_IDENT: _on_ident, T_PADKIND: _on_padkind, T_VERSION: _on_version,
+    T_INFO: _on_info}
 
 
 def handle(t: int, i: int, data: bytes, arr: int = 0, now: float | None = None) -> None:

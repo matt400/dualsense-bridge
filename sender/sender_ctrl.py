@@ -14,9 +14,10 @@ from typing import TYPE_CHECKING, Any, Final, NamedTuple
 from evdev import InputDevice, InputEvent
 
 import sender_net as net
+import sender_padtype as padtype
 import sender_state as state
 from proto import (CAP_CALIB, CAP_HAPTICS, CAP_SPEAKER, IDENT_LEN, KEY_BIT, LAT_NONE, LEDS_MUTE, LEDS_PLAYER, MOUSE_TAP_ID_MAX,
-                   MOUSE_TAP_ID_SHIFT, MUTE_BIT, RAW_STICKS_MAX_S, SENDER_VERSION, T_CLICK, T_IDENT, T_MOUSE, T_STATE, T_STATE2,
+                   MOUSE_TAP_ID_SHIFT, MUTE_BIT, RAW_STICKS_MAX_S, SENDER_VERSION, T_CLICK, T_IDENT, T_MOUSE, T_PADKIND, T_STATE, T_STATE2,
                    T_TOUCH, T_VERSION, TRIG2_OFF, UINT32_MASK, WHY_OFF, clamp, trig2_from_legacy)
 from sender_config import (AXIS_MAX, BURST_DELAYS, C, DEVICE_READ_ERRORS, HAT_AXES, IDLE_TP, L2_AXIS, NEUTRAL_PAD, PAD_ABS,
                            R2_AXIS, STICK_AXES, STICK_CENTER, US_PER_S)
@@ -101,6 +102,8 @@ class Ctrl:
         idx: The pad's slot number.
         key: The device key (the pad's MAC, or its phys path).
         pad_dev: The evdev device of buttons, sticks and triggers.
+        kind: What the pad is (sender_padtype.Kind); sent to the receiver in the padkind packet.
+        plan: How a non-DualSense pad's events map onto the DualSense layout (None for a DualSense).
         motion_dev: The evdev device of the motion sensor (None until attached).
         touch_dev: The evdev device of the touchpad (None until attached).
         rumble: The rumble backend (set in run_ctrl), or None.
@@ -112,7 +115,8 @@ class Ctrl:
     def __init__(self, idx: int, key: str, pad: InputDevice, motion: InputDevice | None, touch: InputDevice | None) -> None:
         """Create the state of a pad whose devices were just found."""
         self.idx, self.key = idx, key
-        self.pad_dev, self.motion_dev, self.touch_dev = pad, motion, touch
+        # kind: DualSense / DualShock 4 / Xbox / other; plan: None = a DualSense, its events are already in the canonical layout
+        (self.pad_dev, self.motion_dev, self.touch_dev, (self.kind, self.plan)) = (pad, motion, touch, padtype.identify(pad))
         self.pad = list(NEUTRAL_PAD)
         self.hat = [0, 0]
         self.mask = 0
@@ -181,6 +185,39 @@ class Ctrl:
             v = STICK_CENTER
         self.pad[code] = v
 
+    def apply_axis(self, code: int, value: int) -> bool:
+        """Store a raw evdev axis value: a DualSense one as it is, any other pad's through its plan. True = the axis is one we use."""
+        plan = self.plan
+        if plan is None:
+            if code not in PAD_ABS:
+                return False
+            self.set_abs(code, value)
+            return True
+        m = plan.scale(code, value)
+        if m is None:
+            return False
+        self.set_abs(*m)
+        return True
+
+    def apply_key(self, code: int, value: int) -> int:
+        """Handle a key of a pad with a plan: a button bit is returned (the caller merges it), the D-pad / digital triggers are stored here.
+
+        The return value is the canonical button bit, or 0 for a key that is not a button (or for a key that was released).
+        """
+        plan = self.plan
+        if plan is None:
+            return KEY_BIT.get(code, 0) if value else 0
+        dp = plan.dpad_keys.get(code)
+        if dp is not None:
+            self.hat[dp[0]] = dp[1] if value else 0
+            return 0
+        trig = plan.trig_keys.get(code)
+        if trig is not None:
+            self.pad[trig] = AXIS_MAX if value else 0
+            return 0
+        canon = plan.keys.get(code)
+        return KEY_BIT.get(canon, 0) if canon is not None and value else 0
+
     def init_state(self) -> None:
         """Read the initial pad state from the device and locate the lightbar."""
         self.resync()
@@ -210,24 +247,35 @@ class Ctrl:
         Axes and the hat come from the current absinfo values, the button mask from the list of keys that are down.
         Individual read errors are ignored: whatever cannot be read keeps its previous value.
         """
-        for axis in PAD_ABS:
+        plan = self.plan
+        if plan is not None:                    # keys that act as the D-pad / triggers are rebuilt from the held keys below
+            if not plan.hat_axes:
+                self.hat[0] = self.hat[1] = 0
+            for trig in plan.trig_keys.values():
+                self.pad[trig] = 0
+        for axis in (PAD_ABS if plan is None else plan.axes):
             value = self._axis_value(axis)
             if value is not None:
-                self.set_abs(axis, value)
+                self.apply_axis(axis, value)
         for i, axis in enumerate(HAT_AXES):
             value = self._axis_value(axis)
-            if value is not None:
+            if value is not None and (plan is None or plan.hat_axes):
                 self.hat[i] = clamp(value, -1, 1)
         mask = 0
         with contextlib.suppress(OSError):      # the device is going away: keep the buttons we have already read
             for key in self.pad_dev.active_keys():
-                mask |= KEY_BIT.get(key, 0)
+                if plan is None:
+                    mask |= KEY_BIT.get(key, 0)
+                else:
+                    mask |= self.apply_key(key, 1)
             self.mask = mask
 
     # ---- sending ----
     def send_ident(self) -> None:
         """Tell the receiver which pad this is (identifier) and what the sender can do (version, capability bits, rumble mode)."""
         net.emit(T_IDENT, self.idx, pad_ident(self.key).encode("ascii", "replace")[:IDENT_LEN])
+        k = self.kind
+        net.emit(T_PADKIND, self.idx, k.family, k.features, k.vendor, k.product)     # an older receiver drops it (an unknown length)
         r = self.rumble
         net.emit(T_VERSION, self.idx, SENDER_VERSION, (r.bits if r is not None else 0) | CAP_CALIB,
                  r.why if r is not None else WHY_OFF)

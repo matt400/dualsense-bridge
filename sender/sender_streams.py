@@ -272,21 +272,50 @@ class _PadStream:
 
     def _on_axis(self, code: int, value: int) -> None:
         """Store a stick / trigger axis or a D-pad axis of the current report."""
-        if code in PAD_ABS:
-            self.c.set_abs(code, value)
+        c = self.c
+        if c.plan is None:                       # a DualSense: its axes are already canonical (the fast path)
+            if code in PAD_ABS:
+                c.set_abs(code, value)
+                self.dirty = True
+            elif code in HAT_AXES:
+                c.hat[code - ec.ABS_HAT0X] = clamp(value, -1, 1)
+                self.dirty = True
+        elif c.apply_axis(code, value):          # another pad: translated by its plan (sender_padtype)
             self.dirty = True
-        elif code in HAT_AXES:
-            self.c.hat[code - ec.ABS_HAT0X] = clamp(value, -1, 1)
+        elif code in HAT_AXES and c.plan.hat_axes:
+            c.hat[code - ec.ABS_HAT0X] = clamp(value, -1, 1)
             self.dirty = True
 
     def _on_key(self, code: int, value: int) -> None:
         """Set or clear a button bit of the mask."""
+        c = self.c
+        if c.plan is not None:                   # another pad: the key is translated (a button, a D-pad direction, a digital trigger)
+            self._on_plan_key(code, value)
+            return
         bit = KEY_BIT.get(code)
         if bit:
             if value:
-                self.c.mask |= bit
+                c.mask |= bit
             else:
-                self.c.mask &= ~bit
+                c.mask &= ~bit
+            self.dirty = self.burst = True
+
+    def _on_plan_key(self, code: int, value: int) -> None:
+        """A key of a pad with a translation plan (Xbox, DualShock 4, Switch Pro)."""
+        c, plan = self.c, self.c.plan
+        if plan is None:
+            return
+        if code in plan.dpad_keys or code in plan.trig_keys:
+            c.apply_key(code, value)
+            self.dirty = self.burst = True
+            return
+        canon = plan.keys.get(code)
+        bit = KEY_BIT.get(canon, 0) if canon is not None else 0
+        if bit:
+            if value:
+                c.mask |= bit
+            else:
+                c.mask &= ~bit
             self.dirty = self.burst = True
 
     def _recover_from_drop(self) -> None:
