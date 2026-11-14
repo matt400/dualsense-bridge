@@ -699,12 +699,17 @@ EN: Final[dict[str, str]] = {
     "HIDMaestro {v} pobrany - zadziała po restarcie receivera": "HIDMaestro {v} downloaded - takes effect after a receiver restart",
     "Sprawdź teraz": "Check now",
     "KOLEJNOŚĆ GRACZY": "PLAYER ORDER",
-    "Gry i Steam numerują pady wg kolejności podłączenia. Gdy pad 2 włączy się pierwszy, pad 1 dostaje najpierw pad "
-    "zastępczy, więc pad 2 zawsze zostaje graczem 2. Który fizyczny pad to pad 1 / 2, pamięta nadajnik (slots.json, "
-    "wg MAC). Zastępczy pad znika razem z padem 2.":
-        "Games and Steam number pads in the order they connect. When pad 2 turns on first, pad 1 gets a placeholder pad "
-        "first, so pad 2 always stays player 2. The sender remembers which physical pad is pad 1 / 2 (slots.json, by MAC). "
-        "The placeholder goes away together with pad 2.",
+    "Gry i Steam numerują pady wg kolejności podłączenia. Gdy pad 2 włączy się pierwszy, jego wirtualny pad czeka do 6 s "
+    "na pad 1 i dopiero wtedy oba powstają po kolei - bez dodatkowego urządzenia, więc nie koliduje ze Steam Input. Pad "
+    "zastępczy tworzy dodatkowy kontroler (Steam Input liczy go jako gracza). Który fizyczny pad to pad 1 / 2, pamięta "
+    "nadajnik (slots.json, wg MAC).":
+        "Games and Steam number pads in the order they connect. When pad 2 turns on first, its virtual pad waits up to "
+        "6 s for pad 1, then both are created in order - no extra device, so it does not clash with Steam Input. A "
+        "placeholder pad adds an extra controller (Steam Input counts it as a player). The sender remembers which "
+        "physical pad is pad 1 / 2 (slots.json, by MAC).",
+    "Sposób": "Method",
+    "Czekaj na pad 1 (bez pada zastępczego, zgodne ze Steam Input)": "Wait for pad 1 (no placeholder pad, Steam Input friendly)",
+    "Pad zastępczy w pustym slocie 1": "Placeholder pad in the empty slot 1",
     "Teraz: {kinds}": "Now: {kinds}",
     "Teraz: żaden wirtualny pad nie jest podłączony": "Now: no virtual pad is plugged in",
     "HIDMaestro nieużywany: {why}": "HIDMaestro not used: {why}",

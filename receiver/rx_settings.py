@@ -314,6 +314,11 @@ VPAD_BACKENDS: Final = {"auto": "Automatycznie: HIDMaestro, gdy jest, inaczej Vi
                  "vigem": "ViGEmBus - DualShock 4"}
 
 
+# how the fixed player order is kept (VpadConfig.slot_mode)
+SLOT_MODES: Final = {"hold": "Czekaj na pad 1 (bez pada zastępczego, zgodne ze Steam Input)",
+                     "placeholder": "Pad zastępczy w pustym slocie 1"}
+
+
 def _path(v: Any) -> str:
     """Accept a path string, stripped."""
     if not isinstance(v, str):
@@ -326,7 +331,8 @@ class VpadConfig:
     """Virtual pad backend."""
 
     backend: str = "auto"         # auto | hidmaestro | vigem
-    fixed_slots: bool = True      # a placeholder pad in empty lower slots: pad 2 never becomes player 1
+    fixed_slots: bool = True      # keep the player order: pad 2 never becomes player 1 just because it connected first
+    slot_mode: str = "hold"       # hold = pad 2's virtual pad waits for pad 1 | placeholder = a neutral pad holds slot 1
     # path to HIDMaestro.Core.dll (or its folder); "" = downloaded automatically / hidmaestro\ next to the script
     hm_dll: str = ""
     hm_auto: bool = True          # download and update HIDMaestro from GitHub (only without an own hm_dll path)
@@ -334,7 +340,8 @@ class VpadConfig:
     V: ClassVar[Validators]
 
 
-VpadConfig.V = {"backend": _choice(VPAD_BACKENDS), "fixed_slots": _bool, "hm_dll": _path, "hm_auto": _bool}
+VpadConfig.V = {"backend": _choice(VPAD_BACKENDS), "fixed_slots": _bool, "slot_mode": _choice(SLOT_MODES),
+                "hm_dll": _path, "hm_auto": _bool}
 
 
 # ---------------- game haptics ----------------

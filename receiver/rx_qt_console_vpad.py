@@ -16,7 +16,7 @@ from rx_config import C
 from rx_qt_icons import icon
 from rx_qt_style import set_prop
 from rx_qt_widgets import (Combo, button, field, group, label, spinbox)
-from rx_settings import (PADS_COUNT, VPAD_BACKENDS, UiConfig, VpadConfig)
+from rx_settings import (PADS_COUNT, SLOT_MODES, VPAD_BACKENDS, UiConfig, VpadConfig)
 from rx_qt_console_util import row_of, TabBase
 
 
@@ -34,6 +34,8 @@ class VpadTab(TabBase):
         self.vpad_admin.setIcon(icon("shield"))
         self.vpad_admin.clicked.connect(self.elevate.emit)
         self.vpad_fixed = QCheckBox(_("Stała kolejność graczy"))
+        self.vpad_mode = Combo([(k, _(v)) for k, v in SLOT_MODES.items()])
+        self.vpad_fixed.toggled.connect(self.vpad_mode.setEnabled)
         self.vpad_auto = QCheckBox(_("Pobieraj HIDMaestro automatycznie (GitHub, przypięta wersja)"))
         self.vpad_auto.toggled.connect(lambda _on: self._vpad_state())
         self.vpad_check = button(_("Sprawdź teraz"), small=True)
@@ -72,9 +74,12 @@ class VpadTab(TabBase):
                                              "więcej wymaga zmiany tej wartości i restartu.").format(n=C.NUM_PADS), "dim", wrap=True))
         order = group(_("KOLEJNOŚĆ GRACZY"),
                       self.vpad_fixed,
-                      label(_("Gry i Steam numerują pady wg kolejności podłączenia. Gdy pad 2 włączy się pierwszy, pad 1 "
-                              "dostaje najpierw pad zastępczy, więc pad 2 zawsze zostaje graczem 2. Który fizyczny pad to "
-                              "pad 1 / 2, pamięta nadajnik (slots.json, wg MAC). Zastępczy pad znika razem z padem 2."),
+                      field(_("Sposób"), self.vpad_mode),
+                      label(_("Gry i Steam numerują pady wg kolejności podłączenia. Gdy pad 2 włączy się pierwszy, jego "
+                              "wirtualny pad czeka do 6 s na pad 1 i dopiero wtedy oba powstają po kolei - bez dodatkowego "
+                              "urządzenia, więc nie koliduje ze Steam Input. Pad zastępczy tworzy dodatkowy kontroler (Steam "
+                              "Input liczy go jako gracza). Który fizyczny pad to pad 1 / 2, pamięta nadajnik (slots.json, "
+                              "wg MAC)."),
                             "dim", wrap=True))
         return [shown, backend, order]
 
@@ -83,6 +88,8 @@ class VpadTab(TabBase):
         self.vpad_backend.set_data(v.backend)
         self.vpad_dll.setText(v.hm_dll)
         self.vpad_fixed.setChecked(v.fixed_slots)
+        self.vpad_mode.set_data(v.slot_mode)
+        self.vpad_mode.setEnabled(v.fixed_slots)
         self.vpad_auto.setChecked(v.hm_auto)
         self._vpad_state()
 
@@ -169,4 +176,5 @@ class VpadTab(TabBase):
     def _collect_vpad(self) -> VpadConfig:
         """-> the VpadConfig described by the Pads tab."""
         return VpadConfig(backend=self.vpad_backend.currentData(), fixed_slots=self.vpad_fixed.isChecked(),
+                          slot_mode=self.vpad_mode.currentData(),
                           hm_dll=self.vpad_dll.text().strip(), hm_auto=self.vpad_auto.isChecked())
