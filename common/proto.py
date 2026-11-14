@@ -201,17 +201,19 @@ T_SPK = 0x40A                                                       # 10 ms of s
 T_CFGSET = 0x50A                                                    # read / change / reset a sender setting (PC -> sender, v16+)
 T_CFGVAL = 0x10E                                                    # a sender setting: the value, the file's value, the result (v16+)
 T_LEDS = 0x106                                                      # mute button LED + player LEDs from the game (PC -> sender, v15+)
+T_PADKIND = 0x40C                                                   # which kind of pad is in the slot + what it can do (sender -> PC, v18+)
 WIRE: Final[dict[int, int]] = {
     T_STATE2: T_STATE, T_PONG2: T_PONG, T_SCFG: T_CMD, T_CALRES: T_INFO, T_BUILD2: T_BUILD, T_TRIG2: T_TRIG,
     T_BTDEV: T_IDENT, T_BTSTATE: T_VERSION, T_BTCMD: T_CMD, T_BTCTRL: T_IDENT, T_TRIG3: T_TRIG,
     T_BUILD3: T_BUILD, T_BTLINK: T_VERSION, T_HAPT: T_CMD, T_SPK: T_CMD, T_LEDS: T_FB, T_CFGSET: T_CMD, T_CFGVAL: T_UPDMSG,
+    T_PADKIND: T_VERSION,
 }
 FRESH_EXEMPT = frozenset({T_PING})
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Capabilities and limits announced in the version packet, trigger effects.
 # ---------------------------------------------------------------------------------------------------------------------
-SENDER_VERSION: Final = 17
+SENDER_VERSION: Final = 18
 RUMBLE_EVDEV, RUMBLE_HIDRAW, CAP_TRIGGERS = 1, 2, 4     # bits of the version packet (CAP_TRIGGERS: trigger resistance works)
 CAP_TRIG_FX: Final = 8                                  # a bit of the version packet: the sender knows trig2 (click, vibration)
 CAP_CALIB: Final = 16                                   # a bit of the version packet: CMD_GYRO_CAL and CMD_RAW_STICKS (v9+)
@@ -228,6 +230,10 @@ SPK_FRAME: Final = 480                                  # ... one frame = 480 sa
 SPK_BYTES: Final = 2 * SPK_FRAME                        # ... = 960 B
 SPK_DATA_AT: Final = 5                                  # offset of the samples in the spk body (after the u32 counter and the flags)
 SPK_START, SPK_END = 1, 2                               # spk flags: the first frame of a stream / the last one
+PK_DUALSENSE, PK_DS4, PK_XBOX, PK_OTHER = range(4)       # padkind family: DualSense, DualShock 4, Xbox (360 / One / Series), any other pad
+# padkind features: gyro + accelerometer, touchpad, RGB lightbar, adaptive triggers + HD haptics + speaker (DualSense only), rumble motors
+PF_MOTION, PF_TOUCHPAD, PF_LIGHTBAR, PF_ADAPTIVE, PF_RUMBLE = 1, 2, 4, 8, 16
+PADKIND_SENDER: Final = 18                              # from this sender version the padkind packet is sent (older: a DualSense)
 LEDS_SENDER: Final = 15                                 # from this sender version the leds packet is understood (no free ways bit)
 LEDS_MUTE, LEDS_PLAYER = 1, 2                           # leds flags: the mute LED value / the player LEDs value is valid
 MUTE_OFF, MUTE_ON, MUTE_PULSE = range(3)                # the pad's mute button LED: off, on, pulsing (the output report's byte)
@@ -352,6 +358,7 @@ BODY: Final[dict[int, struct.Struct]] = {
     T_BTLINK: struct.Struct("!6sbBBB"),         # MAC, RSSI [dBm], link quality 0-255, BTL_*, N of hciN
     T_HAPT: struct.Struct(f"!IB{HAPT_CHUNK}s"),  # the first frame's number (3 kHz), HAPT_* flags, HAPT_FRAMES stereo frames (s8)
     T_SPK: struct.Struct(f"!IB{SPK_BYTES}s"),    # the frame's number (10 ms), SPK_* flags, SPK_FRAME mono samples (s16 little endian)
+    T_PADKIND: struct.Struct("!BBHH"),          # family PK_*, features PF_*, USB vendor id, USB product id (0 = not known)
     T_LEDS: struct.Struct("!3B"),                # LEDS_* flags, the mute LED MUTE_*, the player LEDs (5 bits)
     T_CFGSET: struct.Struct("!BBHd"),           # operation CFG_*, setting id (cfgspec.SPECS) or CFG_ALL, reference, the value as float64
     T_CFGVAL: struct.Struct("!BBHBdd"),         # setting id, result CFGR_*, request reference, CFGF_* flags, value, sender.toml value

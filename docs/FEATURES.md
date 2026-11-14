@@ -10,6 +10,17 @@
   HTTP Range), and the receiver starts as administrator (UAC; autostart task with highest privileges). The change takes
   effect immediately (pads are recreated). A HIDMaestro error while creating a pad = that pad goes through ViGEmBus
   and a warning in the event log. The pad card (touchpad icon) shows what kind of pad the slot is.
+- **DualShock 4, Xbox and other pads** next to the DualSense (sender v18+). The sender recognises the pad by its USB id (DualSense, DualShock 4,
+  Xbox 360 / One / Series, Switch Pro; an unknown pad that calls itself an "Xbox" pad counts as Xbox) and translates it into the one layout
+  the rest of the bridge speaks, so the remap, profiles, shortcuts and the window work for every pad. The right stick and the triggers are
+  found from what the kernel driver reports (xpad, xpadneo, hid-microsoft, hid-sony, hid-playstation and hid-nintendo disagree on where they
+  live); the Xbox X / Y buttons land on square / triangle by position; a D-pad or triggers that are buttons (Switch Pro) become a hat and
+  full triggers. The sender tells the receiver what the pad is (the `padkind` packet), and the virtual pad follows it - **DualSense → DualSense**
+  (HIDMaestro, else DS4), **DualShock 4 → DS4** (ViGEmBus), **Xbox / other → Xbox 360** (ViGEmBus), so a game shows the right button icons.
+  Without ViGEmBus an Xbox or DS4 pad is served as a DualSense. Settings → Pads → "Pad type in the game" turns it off (always a DualSense).
+  What a pad does not have simply does not exist: Xbox and other pads have no gyro, touchpad, lightbar, adaptive triggers, haptics or speaker;
+  a DualShock 4 has gyro, touchpad and rumble (its lightbar follows only with the hid-playstation driver, which exposes it as an RGB LED). Rumble of these pads goes through the kernel driver (evdev),
+  never through the DualSense HID report.
 - **DSU server (Cemuhook)** with motion and touch for emulators (Cemu, Yuzu/Ryujinx, Dolphin) on this PC; an emulator
   on another device needs `dsu_bind = "0.0.0.0"`.
 - **Touchpad as mouse:** cursor, tap = left button, two-finger scrolling, two-finger tap = right button.

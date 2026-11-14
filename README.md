@@ -62,6 +62,7 @@ What works from the PS5 pad (DualSense) and what is still missing.
 | Headphone jack | ❌ | |
 | Player LEDs (under the lightbar) | ✅ | follow what the game sets; needs sender v15+ |
 | DualSense Edge (back buttons, Fn) | ❌ | |
+| DualShock 4, Xbox 360 / One / Series, Switch Pro | ✅ | buttons, sticks, triggers, rumble (DualShock 4: also gyro and touchpad); the virtual pad is a DS4 / Xbox 360 pad; needs sender v18+; not yet tried on real DualShock 4 / Xbox / Switch Pro hardware |
 
 ## Installation
 

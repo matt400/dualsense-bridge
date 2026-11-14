@@ -10,6 +10,7 @@ sys.path.insert(0, sys.argv[1])
 sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
 import sender_bt as SB
+import sender_padtype
 import sender_supervisor as sup
 
 from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
@@ -36,7 +37,7 @@ class SlowRumble:
         SlowRumble.closed.append(self)
 
 sup.Rumble = SlowRumble
-pad = types.SimpleNamespace(idx=0, pad_dev=None)
+pad = types.SimpleNamespace(idx=0, pad_dev=None, kind=sender_padtype.DUALSENSE)
 
 
 async def rumble_cases():

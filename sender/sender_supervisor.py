@@ -15,6 +15,7 @@ from evdev import InputDevice
 
 import sender_calib as calib
 import sender_events as events
+import sender_padtype as padtype
 import sender_state as state
 import sender_streams as streams
 from proto import CAL_FEW, E_ERROR, E_NO_SLOT, E_PAD_OFF, E_PAD_ON, LAT_NONE, T_BYE, TRIG2_OFF, read_json_object
@@ -33,9 +34,6 @@ _first_seen: dict[str, float] = {}     # key -> when we first saw an incomplete 
 _no_slot: set[str] = set()             # pads rejected for lack of a free slot (max_pads) - the message once per connection
 
 INPUT_DIR: Final = b"/dev/input"
-PAD_NAME_MARK: Final = "Wireless Controller"   # all three evdev devices of a DualSense contain this in their name
-SONY_VENDOR: Final = 0x054C
-DUALSENSE_PRODUCTS: Final = frozenset({0x0CE6, 0x0DF2})   # DualSense, DualSense Edge
 TOUCH_NAME_MARK: Final = "Touchpad"
 MOTION_NAME_MARK: Final = "Motion"
 UNKNOWN_KEY: Final = "unknown"
@@ -46,9 +44,6 @@ MIN_SCAN_WAIT_S: Final = 0.05           # shortest sleep between scans while a g
 SCAN_SLACK_S: Final = 0.02              # added to the settle deadline so the scan lands just after it
 INOTIFY_READ_SIZE: Final = 4096
 GYRO_AXES: Final = 6                    # motion = 3 gyro + 3 accelerometer values
-
-
-_DUALSENSE_IDS: Final = frozenset((SONY_VENDOR, pid) for pid in DUALSENSE_PRODUCTS)   # the name alone also matches Xbox / DS4 pads
 
 
 def _node_id(path: str) -> tuple[int, int] | None:
@@ -71,7 +66,7 @@ def event_num(dev: InputDevice) -> int:
 
 
 def _kind_of(name: str) -> Kind:
-    """Classify a DualSense evdev device by its name: touchpad, motion sensors, or the pad itself."""
+    """Classify an evdev device of a Sony pad (DualSense / DualShock 4) by its name: touchpad, motion sensors, or the pad itself."""
     if TOUCH_NAME_MARK in name:
         return "touch"
     return "motion" if MOTION_NAME_MARK in name else "pad"
@@ -80,9 +75,9 @@ def _kind_of(name: str) -> Kind:
 def discover() -> dict[str, Group]:
     """Scan /dev/input and return the not-yet-used pad devices grouped by physical pad.
 
-    A DualSense shows up as three evdev devices ("Wireless Controller", "... Motion Sensors", "... Touchpad") that
+    A DualSense or DualShock 4 shows up as three evdev devices ("Wireless Controller", "... Motion Sensors", "... Touchpad") that
     share one key (uniq = Bluetooth MAC, or phys). Devices already used by an active pad are skipped, and devices that
-    turned out not to be a DualSense are remembered per node so they are not re-opened on every scan. A duplicate
+    turned out not to be a supported pad are remembered per node so they are not re-opened on every scan. A duplicate
     device of the same kind inside one group is closed immediately.
 
     Blocking (opens every new node): the supervisor runs it in a worker thread, so a pad connecting does not stall the
@@ -106,7 +101,7 @@ def discover() -> dict[str, Group]:
             dev = evdev.InputDevice(path)
         except OSError:
             continue
-        if PAD_NAME_MARK not in dev.name or (dev.info.vendor, dev.info.product) not in _DUALSENSE_IDS:
+        if padtype.classify(dev) is None:        # not a DualSense / DualShock 4 / Xbox / Switch Pro (the table is in sender_padtype)
             dev.close()
             _not_pads[path] = nid
             continue
@@ -337,7 +332,9 @@ async def _open_rumble(c: Ctrl) -> Rumble:
     opening, the finished backend is closed when it arrives instead of leaking its hidraw descriptor.
     """
     loop = asyncio.get_running_loop()          # HID reports are written by a thread (sender_hidwrite) and report back to this loop
-    fut = asyncio.ensure_future(asyncio.to_thread(Rumble, c.idx, c.pad_dev, C.RUMBLE, haptics_motors=C.HAPTICS_MOTORS, writer_loop=loop))
+    # the HID report path (hidraw) speaks the DualSense output report only: any other pad rumbles through the kernel driver (evdev FF)
+    mode = C.RUMBLE if c.kind.native or C.RUMBLE == "off" else "evdev"
+    fut = asyncio.ensure_future(asyncio.to_thread(Rumble, c.idx, c.pad_dev, mode, haptics_motors=C.HAPTICS_MOTORS, writer_loop=loop))
     try:
         return await asyncio.shield(fut)
     except asyncio.CancelledError:
@@ -574,6 +571,14 @@ def _attach_late_devices(c: Ctrl, group: Group) -> None:
     close_group(group)
 
 
+def _complete(group: Group) -> bool:
+    """Whether every device the pad will ever have is here: motion + touchpad for a Sony pad, the pad node alone for any other."""
+    pad = group.get("pad")
+    if pad is not None and not padtype.kind_of(pad).features & padtype.PF_MOTION:
+        return True
+    return "motion" in group and "touch" in group
+
+
 def _start_new_pad(key: str, group: Group, now: float) -> None:
     """Start a newly appeared pad, or hold it back for up to SETTLE_S while its motion / touchpad devices are missing.
 
@@ -581,7 +586,7 @@ def _start_new_pad(key: str, group: Group, now: float) -> None:
     a pad with no free slot gets a rejection message.
     """
     first_seen = _first_seen.setdefault(key, now)
-    if not ("motion" in group and "touch" in group) and now - first_seen < SETTLE_S:
+    if not _complete(group) and now - first_seen < SETTLE_S:
         close_group(group)
         return
     idx = pick_slot(key)

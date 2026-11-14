@@ -340,12 +340,13 @@ class VpadConfig:
     # path to HIDMaestro.Core.dll (or its folder); "" = downloaded automatically / hidmaestro\ next to the script
     hm_dll: str = ""
     hm_auto: bool = True          # download and update HIDMaestro from GitHub (only without an own hm_dll path)
+    mirror: bool = True           # the virtual pad follows the physical one: DS4 -> DS4, Xbox / other -> Xbox 360; off: a DualSense
 
     V: ClassVar[Validators]
 
 
 VpadConfig.V = {"backend": _choice(VPAD_BACKENDS), "fixed_slots": _bool, "slot_mode": _choice(SLOT_MODES),
-                "slot_grace_ms": _num(*SLOT_GRACE_MS), "hm_dll": _path, "hm_auto": _bool}
+                "slot_grace_ms": _num(*SLOT_GRACE_MS), "hm_dll": _path, "hm_auto": _bool, "mirror": _bool}
 
 
 # ---------------- game haptics ----------------

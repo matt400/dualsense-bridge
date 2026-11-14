@@ -36,6 +36,17 @@ EN: Final[dict[str, str]] = {
         "Games with DualSense haptics (audio on channels 3-4) send it to the pad through the sender. It needs a virtual USB pad "
         "(the composite profile) and a sender version with haptics. It is off by default: the first use installs a kernel driver "
         "(usbip-win2) and Windows adds a \"Wireless Controller\" sound device (the default audio output stays as it is).",
+    "{pad}: rodzaj pada: {kind}": "{pad}: pad type: {kind}",
+    "inny pad": "other pad",
+    "Wirtualny pad taki jak fizyczny (DualShock 4 → DS4, Xbox → Xbox 360)":
+        "Virtual pad matches the physical one (DualShock 4 → DS4, Xbox → Xbox 360)",
+    "RODZAJ PADA W GRZE": "PAD TYPE IN THE GAME",
+    "Włączone: pad DualSense widać w grze jako DualSense, DualShock 4 jako DS4, a pady Xbox (i inne, np. Switch Pro) jako Xbox 360 - "
+    "gra pokazuje właściwe ikony przycisków. Xbox 360 i DS4 działają przez ViGEmBus; bez niego taki pad jest widoczny jako DualSense. "
+    "Wyłączone: zawsze DualSense.":
+        "On: a DualSense shows up in the game as a DualSense, a DualShock 4 as a DS4, and Xbox pads (and others, e.g. Switch Pro) as an "
+        "Xbox 360 pad - the game shows the right button icons. Xbox 360 and DS4 pads go through ViGEmBus; without it such a pad appears "
+        "as a DualSense. Off: always a DualSense.",
     "HAPTYKA GRY": "GAME HAPTICS",
     "Haptyka gry jest tylko dla pada master (Ustawienia → Master).": "Game haptics are for the master pad only (Settings → Master).",
     "Haptyka gry (HD haptics)": "Game haptics (HD haptics)",
