@@ -282,7 +282,11 @@ def stream_values(stream: Any, rate_hz: float) -> tuple[tuple[int, ...], tuple[i
     st = stream.stats
     scale = TENTHS_MS_PER_S / rate_hz
     depth, target = round(stream.ring.depth * scale), round(stream.target * scale)
-    return ((st.chunks, st.played, st.underruns, st.overruns, st.dropped, st.repeated),
+    # the two streams count a bit differently: the speaker has "frames" (10 ms each) and no overruns / repeated counters
+    received: int = getattr(st, "chunks", getattr(st, "frames", 0))
+    overruns: int = getattr(st, "overruns", 0)
+    repeated: int = getattr(st, "repeated", 0)
+    return ((received, st.played, st.underruns, overruns, st.dropped, repeated),
             (st.late, st.lost, st.stale, st.resyncs, st.unwritten, min(depth, 0xFFFF) | min(target, 0xFFFF) << 16))
 
 
@@ -304,11 +308,15 @@ def end(idx: int, request: int) -> None:
     global ref
     disarm()
     ref = request
-    send_sys(idx)
-    _send_writes(idx, _writer(ctrl_for(idx)))
-    for which in (ST_HAPTICS, ST_SPEAKER):
-        send_stream(idx, which)
-    _put(SR_DONE, 0, ref, idx, _send_fb(idx))
+    count = 0
+    try:
+        send_sys(idx)
+        _send_writes(idx, _writer(ctrl_for(idx)))
+        for which in (ST_HAPTICS, ST_SPEAKER):
+            send_stream(idx, which)
+        count = _send_fb(idx)
+    finally:
+        _put(SR_DONE, 0, ref, idx, count)       # the closing record always goes out: the receiver waits for it
 
 
 def on_command(idx: int, op: int, arg: int, request: int, _a: int, _b: int) -> None:

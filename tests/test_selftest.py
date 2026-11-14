@@ -333,5 +333,26 @@ check(all(p[3][4] == 0 and p[3][5] == 0 for p in sent if p[0] == proto.T_FB), "n
 text = R.render(R.build(run))
 check("older than the self-test" in text and "skipped" in text, "the report of that run says what was skipped and why")
 
+# ---------- the radio link: the run keeps the sender's btlink reporting alive (it stops BT_ACTIVE_S after the last BT_LIST) ----------
+import rx_bt
+calls = []
+real_keepalive = rx_bt.keepalive
+rx_bt.keepalive = lambda: calls.append(time.monotonic()) or True
+probe = T.SelfTest(0, PLAN)
+probe._keep_link_alive(); probe._keep_link_alive()
+check(len(calls) == 1, f"BT_LIST is asked for once, not on every tick ({len(calls)})")
+probe._bt_keep -= rx_bt.KEEPALIVE_S
+probe._keep_link_alive()
+check(len(calls) == 2, "... and again after KEEPALIVE_S")
+rx_bt.keepalive = real_keepalive
+meta = probe._result("meta")
+meta.data["bluetooth"] = {"adapter": None, "link_hci": None}
+probe._fill_link_hci(None)
+check(meta.data["bluetooth"]["link_hci"] is None, "no reading yet: the controller stays unknown")
+probe._fill_link_hci(rx_diag.Link(-60, 200, 3, time.monotonic()))
+check(meta.data["bluetooth"]["link_hci"] == 3, "the first reading names the controller in the meta data")
+probe._fill_link_hci(rx_diag.Link(-60, 200, 5, time.monotonic()))
+check(meta.data["bluetooth"]["link_hci"] == 3, "a later reading does not overwrite it")
+
 S.stop.set(); F.fb_event.set(); fb_thread.join(2)
 sys.exit(1 if fails else 0)

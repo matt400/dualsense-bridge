@@ -144,6 +144,16 @@ async def main():
     depth, target = h[1][3][5] & 0xFFFF, h[1][3][5] >> 16
     check(depth == round(15 / 3000 * 10000) and target == round(60 / 3000 * 10000), f"haptics: depth and buffer target in 0.1 ms ({depth} {target})")
     check((s[1][3][5] & 0xFFFF, s[1][3][5] >> 16) == (1500, 6000), "speaker: depth and buffer target in 0.1 ms from the 10 ms frame")
+    # the real speaker counters: "frames" instead of "chunks", no overruns / repeated (reading them as haptics' once raised, so ST_END
+    # never reached its closing record and the receiver reported no speaker counters and no cpu step)
+    from sender_speaker import Counters as SpeakerCounters
+    pad.speaker = Stream()
+    pad.speaker.stats = SpeakerCounters(frames=306, played=300, underruns=1, dropped=2, late=3, lost=4, stale=5, resyncs=6, unwritten=7)
+    out.clear()
+    ST.on_command(0, ST_SNAP, ST_SPEAKER, 20, 0, 0)
+    s = take(SR_SPK)
+    check(len(s) == 2 and s[0][3][:6] == (306, 300, 1, 0, 2, 0) and s[1][3][:5] == (3, 4, 5, 6, 7),
+          f"speaker counters: frames reported as chunks, missing counters as 0 ({s})")
     pad.haptics = None
     out.clear()
     ST.on_command(0, ST_SNAP, ST_HAPTICS, 15, 0, 0)
@@ -166,6 +176,17 @@ async def main():
     out.clear()
     ST.on_command(0, ST_END, 0, 17, 0, 0)
     check(len(take(SR_FB)) == n_before and take(SR_DONE)[0][2] == 17, "a repeated ST_END sends the results again (a lost answer), with the new reference")
+
+    # ---------- a stream that cannot be read still lets the closing record out ----------
+    good = pad.speaker
+    pad.speaker = SimpleNamespace(stats=SimpleNamespace(), ring=SimpleNamespace(depth=0), target=1)
+    out.clear()
+    try:
+        ST.on_command(0, ST_END, 0, 21, 0, 0)
+    except AttributeError:
+        pass
+    check(take(SR_DONE) and take(SR_DONE)[0][2] == 21, "ST_END sends the closing record even when a stream's counters cannot be read")
+    pad.speaker = good
 
     # ---------- an old measurement nobody ended expires ----------
     ST.on_command(0, ST_BEGIN, 0, 18, 0, 0)
