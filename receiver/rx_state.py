@@ -69,6 +69,7 @@ pps: list[float] = []                   # state packets per second
 sender_info: list[tuple | None] = []    # (sender version, rumble ways, reason); None = old sender
 probe: list[list | None] = []           # drift measurement samples (lx, ly, rx, ry) or None
 gyro_cal: list[tuple | None] = []       # the last calres packet
+pad_kind: list[tuple[int, int] | None] = []   # (family PK_*, features PF_*) from the padkind packet; None = an older sender (a DualSense)
 
 
 def new_state() -> PadState:
@@ -100,7 +101,7 @@ def init(store_: RemapStore) -> None:
     """Create the per-slot lists for C.NUM_PADS pads and bind the remap store."""
     global states, wake, want, plugged, last_seen, connected_at, alive, ignore_until, mouse_mode
     global tp_down, swallow, last_v, last_touch, batt_info, pad_id, remap_maps, store
-    global override, active, info, pps, sender_info, probe, gyro_cal
+    global override, active, info, pps, sender_info, probe, gyro_cal, pad_kind
     n = C.NUM_PADS
     store = store_
     states = [new_state() for _ in range(n)]
@@ -126,6 +127,7 @@ def init(store_: RemapStore) -> None:
     sender_info = [None] * n                         # (sender version, rumble ways, reason) from the version packet; None = old
     probe = [None] * n                               # drift measurement (rx_drift): a list of samples (lx, ly, rx, ry) or None
     gyro_cal = [None] * n                            # the last calres packet: (state, flags, saved, current, time, received)
+    pad_kind = [None] * n                            # the padkind packet: (family, features); None = an older sender - a DualSense
 
 
 RESTART_PAUSE_STEP_S: Final = 0.2            # the pause before restarting a failed thread grows by this much per error ...

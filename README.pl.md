@@ -62,6 +62,7 @@ Co działa z pada PS5 (DualSense), a czego jeszcze brakuje.
 | Gniazdo słuchawkowe | ❌ | |
 | Diody gracza (pod lightbarem) | ✅ | wykonują to, co ustawi gra; wymagają nadajnika v15+ |
 | DualSense Edge (tylne przyciski, Fn) | ❌ | |
+| DualShock 4, Xbox 360 / One / Series, Switch Pro | ✅ | przyciski, gałki, spusty, wibracje (DualShock 4: także żyroskop i touchpad); wirtualny pad to DS4 / Xbox 360; wymaga nadajnika v18+; nie sprawdzone jeszcze na prawdziwym DualShock 4 / Xbox / Switch Pro |
 
 ## Instalacja
 

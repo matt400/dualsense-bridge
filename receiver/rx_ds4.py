@@ -1,7 +1,11 @@
 """Receiver: virtual pads on demand.
 
-A DualSense through HIDMaestro (rx_hm) or a DS4 through ViGEmBus (vgamepad); feedback from the game goes to
+A DualSense through HIDMaestro (rx_hm), a DS4 or an Xbox 360 pad through ViGEmBus (vgamepad); feedback from the game goes to
 rx_feedback.
+
+Which virtual pad a slot gets follows the physical pad (the sender's padkind packet, settings vpad.mirror): a DualSense -> a
+DualSense (HIDMaestro, else a DS4), a DualShock 4 -> a DS4 (ViGEm), an Xbox or any other pad -> an Xbox 360 pad (ViGEm). Without
+ViGEmBus those two fall back to the HIDMaestro DualSense, so the pad still works - the game just sees another pad.
 
 Backend (Settings -> Pads, rx_settings.VpadConfig): auto = HIDMaestro when the DLL is there and the receiver runs as
 administrator, otherwise ViGEm; hidmaestro = like auto, but a missing / failing HIDMaestro is a warning in the log (ViGEm
@@ -30,6 +34,7 @@ else:
 import rx_events as ev
 import rx_feedback as F
 import rx_swap
+import rx_xbox
 import rx_haptics
 import rx_hm
 import rx_latency
@@ -37,6 +42,7 @@ import rx_settings
 import rx_state as S
 from rx_config import C
 from rx_i18n import _
+from proto import PADKIND_SENDER, PK_DS4, PK_DUALSENSE, PK_OTHER, PK_XBOX
 from rx_report import build_report
 from rx_winapi import boost_thread
 
@@ -116,14 +122,15 @@ class Out:
 
 
 outs: list[Out | None] = []   # Out per slot or None (the virtual pad is not plugged)
-kinds: list[str | None] = []   # the backend of the plugged pad per slot: "hm" | "vigem" | None (window: the pad card)
+kinds: list[str | None] = []   # the virtual pad of a slot: "hm" (DualSense) | "vigem" (DS4) | "x360" | None (window: the pad card)
 failing: list[bool] = []   # the slot cannot create a pad (a backend error) - higher slots do not wait for it
 interval = 0.0            # 1 / pad_hz
 gen = 0                   # a backend change in the settings: plugged pads unplug and are created again in the new one
 hm_note: str | None = None   # the last reason HIDMaestro is not used (window: the Pads tab)
 _hm_warned: str | None = None   # this reason has already reached the log (no repeats on every connection)
 
-LABELS = {"hm": "DualSense (HIDMaestro)", "vigem": "DS4 (ViGEmBus)"}
+LABELS = {"hm": "DualSense (HIDMaestro)", "vigem": "DS4 (ViGEmBus)", "x360": "Xbox 360 (ViGEmBus)"}
+KIND_WAIT_S = 0.1      # how long a connecting pad's slot waits for the padkind packet (it follows the ident packet within milliseconds)
 
 
 def init() -> None:
@@ -231,7 +238,11 @@ def wait_turn(idx: int, timeout: float = PLUG_ORDER_WAIT) -> bool:
 
 
 def backend_changed(old: rx_settings.Settings, new: rx_settings.Settings) -> None:
-    """Settings: another backend / DLL -> pads are created again; another order -> the slot threads check it at once."""
+    """Settings: another backend / DLL -> pads are created again; another order / mirror -> the slot threads check it at once.
+
+    The mirror switch does not bump ``gen``: _pump re-plugs only the slots whose virtual pad really changes (an Xbox / DS4 pad);
+    a DualSense keeps its virtual pad.
+    """
     global gen, _hm_warned
     if (old.vpad.backend, old.vpad.hm_dll) != (new.vpad.backend, new.vpad.hm_dll):
         rx_hm.reset()
@@ -306,12 +317,58 @@ def vigem_pad(idx: int) -> Any:
     return pad
 
 
+def xbox_pad(idx: int) -> rx_xbox.XboxPad:
+    """Create a ViGEm virtual Xbox 360 pad and register its rumble callback (a failed registration is only reported)."""
+    if vg is None:
+        raise RuntimeError(f"vgamepad / ViGEmBus: {VG_ERROR!r}")
+    pad = rx_xbox.XboxPad(vg.VX360Gamepad())
+    try:
+        pad.register_feedback(F.cbs[idx])
+    except Exception as e:  # noqa: BLE001 - the pad still works without feedback, so only report
+        print(f"Rumble notification unavailable for pad {idx}: {e!r}")
+    return pad
+
+
+def physical_family(idx: int) -> int:
+    """The family (PK_*) of the physical pad in a slot; a DualSense when the sender did not say (an older sender, a placeholder)."""
+    k = S.pad_kind[idx] if idx < len(S.pad_kind) else None
+    return PK_DUALSENSE if k is None else k[0]
+
+
+def virtual_family(idx: int) -> int:
+    """The family of the virtual pad a slot should have: the physical pad's (mirror on) or always a DualSense (mirror off)."""
+    return physical_family(idx) if rx_settings.cur.vpad.mirror else PK_DUALSENSE
+
+
+def wait_kind(idx: int, timeout: float = KIND_WAIT_S) -> None:
+    """Give a connecting pad's padkind packet a moment to arrive, so its virtual pad is plugged right the first time.
+
+    Only a pad that is connected (not a placeholder) with a sender that sends the packet waits; a sender older than
+    PADKIND_SENDER, or one whose version is not known yet and never comes, costs at most ``timeout`` once per connection.
+    """
+    if not S.want[idx].is_set() or S.pad_kind[idx] is not None:
+        return
+    end = time.monotonic() + timeout
+    while not S.stop.is_set() and time.monotonic() < end:
+        info = S.sender_info[idx]
+        if S.pad_kind[idx] is not None or (info is not None and info[0] < PADKIND_SENDER):
+            return
+        time.sleep(0.01)
+
+
 def create_pad(idx: int) -> tuple[Any, str]:
     """-> (pad, kind).
 
-    HIDMaestro when available; its creation error = this pad through ViGEm (log), the next connection tries HIDMaestro
-    again (PnP errors can be transient).
+    The virtual pad follows the physical one (virtual_family): a DualShock 4 gets a ViGEm DS4, an Xbox or other pad a ViGEm Xbox
+    360 pad; without ViGEmBus these use the DualSense below. A DualSense gets HIDMaestro when available; its creation error =
+    this pad through ViGEm (log), the next connection tries HIDMaestro again (PnP errors can be transient).
     """
+    family = virtual_family(idx)
+    if vg is not None and family in (PK_DS4, PK_XBOX, PK_OTHER):
+        try:
+            return (vigem_pad(idx), "vigem") if family == PK_DS4 else (xbox_pad(idx), "x360")
+        except Exception as e:  # noqa: BLE001 - ViGEmBus refused (driver gone, no free target): the pad still works as a DualSense
+            print(f"Controller {idx}: virtual {'DS4' if family == PK_DS4 else 'Xbox 360'} failed ({e!r}) - using a DualSense")
     hm = hm_backend()
     if hm is not None:
         def on_fb(motors: tuple[int, int] | None, rgb: Sequence[int] | None, trig: Any = None,
@@ -341,15 +398,19 @@ def close_pad(pad: Any) -> None:
         pass
 
 
-def _pump(idx: int, o: Out, my_gen: int) -> None:
-    """Send the freshest state of a slot while its pad is needed (at most pad_hz; changes inside the window merge)."""
-    while needed(idx) and not S.stop.is_set() and gen == my_gen:
+def _pump(idx: int, o: Out, my_gen: int, family: int) -> None:
+    """Send the freshest state of a slot while its pad is needed (at most pad_hz; changes inside the window merge).
+
+    Ends (the slot thread then plugs another pad) when the slot needs a different kind of virtual pad: another physical pad
+    arrived in it, or the mirror setting changed.
+    """
+    while needed(idx) and not S.stop.is_set() and gen == my_gen and virtual_family(idx) == family:
         if not S.wake[idx].wait(0.5):
             continue
         d = o.last + interval - time.perf_counter()
         if d > 0:
             time.sleep(d)          # further changes in this window merge into one report
-        if not needed(idx) or S.stop.is_set() or gen != my_gen:
+        if not needed(idx) or S.stop.is_set() or gen != my_gen or virtual_family(idx) != family:
             break
         with o.lock:
             if not S.wake[idx].is_set():
@@ -428,10 +489,12 @@ def slot_thread(idx: int) -> None:
             print(f"Controller {idx}: earlier slot not ready - plugging in anyway (player order may differ)")
         try:
             F.reset(rx_swap.route(idx))          # the game feedback of this virtual pad lives with the physical pad it is fed by
+            wait_kind(idx)
+            family = virtual_family(idx)
             pad, kind = create_pad(idx)
             o = _publish(idx, pad, kind)
             last_err = None
-            _pump(idx, o, my_gen)
+            _pump(idx, o, my_gen, family)
         except Exception as e:  # noqa: BLE001 - any backend / driver error: unplug and retry, never kill the thread
             failing[idx] = True
             last_err = _slot_error(idx, e, last_err)
