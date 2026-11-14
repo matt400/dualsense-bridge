@@ -778,6 +778,7 @@ class MainWindow(UpdateFlow, ScreenPlacement):
         self.right_stack.addWidget(edit)
         self.test_panel = TestPanel(str(self.settings.value("test_block", "true")).lower() == "true")
         self.test_panel.block_changed.connect(self.on_block_toggled)
+        self.test_panel.selftest.busy_changed.connect(lambda _busy: self.sync_block())
         test_box = QWidget()
         _indent(test_box).addWidget(self.test_panel)
         self.right_stack.addWidget(test_box)
@@ -1089,7 +1090,7 @@ class MainWindow(UpdateFlow, ScreenPlacement):
         test = (self.view == "test" and not rx_testmode.escaped and self.isVisible() and not self.isMinimized()
                 and self.isActiveWindow())
         rx_testmode.set_active(test)           # all pads' shortcuts stand still, the master's Options + Create leaves
-        on = test and self.test_panel.block.isChecked()
+        on = test and (self.test_panel.block.isChecked() or self.test_panel.selftest.busy)     # the self-test always locks
         if self.access_page.wiz is not None and self.isVisible() and not self.isMinimized() and self.isActiveWindow():
             on = True                          # the accessibility wizard: circling the sticks must not move the game
         for i in range(C.NUM_PADS):

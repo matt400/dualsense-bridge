@@ -898,6 +898,29 @@ EN: Final[dict[str, str]] = {
     "{s}: zasięg {o}, strefa martwa {d}": "{s}: range {o}, deadzone {d}",
     "Puść gałki i odłóż pad - pomiar trwa {s} s.": "Let go of the sticks and put the pad down - the measurement takes {s} s.",
     "Zmierz dryf": "Measure drift",
+    "SELF-TEST PADA": "PAD SELF-TEST",
+    ("Jeden przebieg mierzy sieć, opóźnienie, wibracje, haptykę i głośnik oraz procesor nadajnika, "
+     "a potem daje raport do skopiowania (dla Claude'a). Wyjście do gry jest zablokowane na czas testu."):
+        ("One run measures the network, latency, vibration, haptics, speaker and the sender's processor, then gives a "
+         "report to copy (for Claude). The output to the game is blocked during the test."),
+    "Okno pomiaru opóźnienia:": "Latency measurement window:",
+    "Uruchom self-test": "Run self-test",
+    "Przerwij self-test": "Stop self-test",
+    "Kopiuj raport": "Copy report",
+    "{n} próbek": "{n} samples",
+    "Raport zapisany: {path}": "Report saved: {path}",
+    "Test przerwany - raport z tego, co zdążono zmierzyć: {path}": "Test stopped - report of what was measured so far: {path}",
+    "Nie udało się zapisać raportu ({err}) - można go skopiować.": "Could not save the report ({err}) - you can still copy it.",
+    "Raport skopiowany do schowka (plik: {path}).": "Report copied to the clipboard (file: {path}).",
+    "Metadane: wersje, pad, backend": "Metadata: versions, pad, backend",
+    "Sieć i Bluetooth w spoczynku - nie dotykaj pada": "Network and Bluetooth at rest - do not touch the pad",
+    "Opóźnienie - naciskaj przyciski i ruszaj gałkami": "Latency - press buttons and move the sticks",
+    "Wibracje: impulsy, zatrzymanie, brak odświeżeń": "Vibration: pulses, stopping, no refreshes",
+    "Strumień haptyki i głośnika (ścieżka, nie dźwięk)": "Haptics and speaker stream (the path, not the sound)",
+    "Procesor i zapisy nadajnika": "Sender processor and writes",
+    "Mikrofon (nieobsługiwany)": "Microphone (not supported)",
+    "Wyjście do gry nie jest zablokowane - self-test działa w aktywnym oknie, w widoku Test.":
+        "The output to the game is not blocked - the self-test runs in the active window, in the Test view.",
     "Mierzę…": "Measuring…",
     "Zastosuj": "Apply",
     "Zapisuje proponowaną strefę martwą jako korekcję dryfu tego pada - działa od razu we wszystkich jego profilach "

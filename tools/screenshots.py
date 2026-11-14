@@ -32,7 +32,7 @@ from proto import (BTD_CONNECTED, BTD_PAD, BTD_PAIRED, BTD_TRUSTED, BTF_LIST, BT
                    RUMBLE_HIDRAW, T_BTDEV, T_BTSTATE, T_IDENT, T_TOUCH, mac_bytes)
 from rx_console import Console, ConsoleConfig                     # noqa: E402
 from PySide6.QtTest import QTest                                  # noqa: E402
-from PySide6.QtWidgets import QWidget                               # noqa: E402
+from PySide6.QtWidgets import QScrollArea, QWidget                 # noqa: E402
 
 PADS = "a0:5a:5c:8e:12:41", "a0:5a:5c:3b:77:c2"
 SIZE = 1180, 760
@@ -138,6 +138,15 @@ feed(T_TOUCH, 0, 1, 1, 1180, 520, 0, 0, 0, 0)
 win.live_tick()
 tick()
 save(win, "test_view")
+box = panel.selftest                                              # the self-test block, scrolled into view, with a finished report
+box.text, box.path = "# Pad self-test report (version 1)", "receiver/reports/selftest-2026-11-14-103015.md"
+box._show(rx_i18n._("Raport zapisany: {path}").format(path=box.path), "ok")
+box.refresh()
+bar = panel.findChild(QScrollArea).verticalScrollBar()
+pump()
+bar.setValue(bar.maximum())
+pump()
+save(win, "selftest")
 win.seg.buttons["out"].click()
 pump()
 

@@ -344,7 +344,15 @@ class SpeakerLink(H.PacedStream):
         mono = mix(tune, tune, gain) if tester.flat else mix_eq(tune, tune, gain, tester)
         self._inject.extend(mono[k * SRC_FRAME:(k + 1) * SRC_FRAME] for k in range(TEST_FRAMES))
         silence = array("h", bytes(SRC_FRAME * H.BYTES_PER_SAMPLE))      # +2 frames: one waits for 1 sample ahead
-        self._inject.extend([silence] * (math.ceil(H.SILENCE_END_S / FRAME_S) + 2))
+        self.inject([], [silence] * (math.ceil(H.SILENCE_END_S / FRAME_S) + 2))
+
+    def inject(self, frames: Sequence[array[int]], tail: Sequence[array[int]] = ()) -> None:
+        """Queue ready source frames (SRC_FRAME mono samples at 48 kHz each) and ``tail`` after them for the game's way out.
+
+        The pad self-test sends its own stream; the same path as the game's sound (resampler, frames, pacing) carries it.
+        """
+        self._inject.extend(frames)
+        self._inject.extend(tail)
         self.ensure_thread()
         self.wake()
 
@@ -439,10 +447,9 @@ def wanted(idx: int, t: int) -> bool:
     return rx_master.allowed(t, "speaker")
 
 
-def test(i: int, gain: float | None = None, eq: Sequence[int] | None = None) -> str | None:
-    """The "Test speaker" button for physical pad i. -> None when the tone was sent, else why not (for the window).
+def unavailable(i: int) -> str | None:
+    """Why a test stream cannot reach the speaker of physical pad i (for the window), None when it can.
 
-    gain (1.0 = 100 %) and eq (dB per band) default to the saved ones of the pad; the window passes the values it shows.
     The same gates as the real path: the pad must be connected, its sender must know the speaker and the pad may use it (master only).
     """
     if not (0 <= i < C.NUM_PADS) or not S.alive[i]:
@@ -452,6 +459,16 @@ def test(i: int, gain: float | None = None, eq: Sequence[int] | None = None) -> 
     import rx_master
     if not rx_master.allowed(i, "speaker"):     # the link would drop the tone: say so instead of "sent"
         return _("Głośnik pada jest tylko dla pada master (Ustawienia → Master).")
+    return None
+
+
+def test(i: int, gain: float | None = None, eq: Sequence[int] | None = None) -> str | None:
+    """The "Test speaker" button for physical pad i. -> None when the tone was sent, else why not (for the window).
+
+    gain (1.0 = 100 %) and eq (dB per band) default to the saved ones of the pad; the window passes the values it shows.
+    """
+    if (why := unavailable(i)) is not None:
+        return why
     saved = rx_settings.cur.speaker.get(S.profile_key(i))
     # the virtual slot whose packets go to physical pad i
     speaker(rx_swap.route(i)).test(saved.gain / 100 if gain is None else gain, saved.eq if eq is None else eq)

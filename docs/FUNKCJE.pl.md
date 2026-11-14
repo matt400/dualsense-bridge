@@ -140,6 +140,24 @@
       „Testuj touchpad” go przechwytuje: kursor stoi, tapnięcia i kliknięcia nie są wykonywane, a palce i klik widać na
       rysunku pada. Przechwyt kończy przycisk PS na padzie, 8 s bez dotyku, ten sam przycisk (myszą), wyjście z widoku
       Test albo utrata fokusu okna;
+    - **self-test pada:** jeden przycisk uruchamia scenariusz pomiarowy na wybranym padzie i zostawia **raport** (tekst:
+      tabele Markdown i jeden blok JSON), który kopiujesz („Kopiuj raport”) i wklejasz do rozmowy - jest pisany dla
+      Claude'a, żeby problem z wibracją, opóźnieniem albo dźwiękiem diagnozować na liczbach. Wyjście do gry jest zablokowane
+      przez cały przebieg (także przy wyłączonym przełączniku blokady); wyjście z widoku Test, inny pad albo przycisk
+      przerywają test, a to, co zdążono zmierzyć, i tak trafia do raportu. Raport zapisuje się też w
+      `receiver/reports/selftest-RRRR-MM-DD-GGMMSS.md`. Kroki (każdy z limitem czasu): metadane (wersje, pad, backend
+      wirtualnego pada, tryby rumble, firmware pada, adapter Bluetooth); ok. 10 s sieci i Bluetooth w spoczynku (RTT,
+      jitter, utrata, RSSI, jakość łącza, tempo raportów); **opóźnienie** w wybranym oknie (5 / 15 / 30 / 60 s -
+      naciskaj przyciski i ruszaj gałkami): p50 / p95 / p99 / max sumy i segmentów Bluetooth / telefon / sieć / PC wraz z
+      liczbą próbek; **wibracje** - impulsy silnika małego i dużego na kilku poziomach, od wysłania przez PC do końca
+      zapisu do pada na nadajniku (offset zegara z pakietów `pong2`), potem zatrzymanie po ostatniej komendzie (watchdog
+      nadajnika, 1,5 s) i przypadek „gra przestała wysyłać” (silniki wyłączone po ok. 1 s bez raportów rumble albo po
+      0,25 s raportów bez silników); **haptyka i głośnik** - strumień testowy (ton, cisza, sweep) z licznikami obu
+      końców: ramki wysłane i odebrane, niedobory, nadmiary, odrzucone, głębokość bufora, czas zapisu; **procesor
+      nadajnika** (governor, zegary, obciążenie, tryb czasu rzeczywistego) i liczby zapisów hidraw. Mikrofon nie jest
+      obsługiwany - tylko flaga. Raport sam podaje swoje ograniczenia: wibracja jest mierzona do końca zapisu, nie do
+      silnika; czasy nadajnika mają błąd zegara do połowy RTT; krok audio mierzy ścieżkę, nie dźwięk. Wymaga nadajnika v19:
+      ze starszym kroki, które go potrzebują, są pomijane i nic z testu do niego nie jest wysyłane;
     - w trybie TV testowany pad nie steruje oknem; przytrzymanie ○ przez 1 s wychodzi z testu;
     - przy otwartym widoku Test **żaden pad nie uruchamia skrótów** (PS + przycisk, akcje i przejęcie mastera, tryb
       konsoli, PS + klik touchpada) - testowanie przycisków niczego nie przełączy;
@@ -332,7 +350,7 @@
 | Widok Test: wejścia na żywo, żyroskop, dryf gałek z propozycją strefy martwej | Bluetooth nadajnika: skan, parowanie, łączenie z PC |
 | ![Diagnostyka](img/diagnostics.png) | ![Ustawienia: tryb konsoli](img/settings_console.png) |
 | Diagnostyka: łącze sieciowe i Bluetooth każdego pada | Ustawienia → Tryb konsoli |
-| ![Ustawienia: pad master](img/settings_master.png) | |
-| Ustawienia → Master | |
+| ![Ustawienia: pad master](img/settings_master.png) | ![Self-test pada](img/selftest.png) |
+| Ustawienia → Master | Widok Test: self-test pada (jeden przycisk, raport do skopiowania) |
 
 Zrzuty są w wersji angielskiej, z danymi-atrapą: `python3 tools/screenshots.py` (patrz [ROZWOJ.pl.md](ROZWOJ.pl.md)).

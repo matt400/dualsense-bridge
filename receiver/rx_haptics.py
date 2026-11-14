@@ -530,6 +530,10 @@ class Link(PacedStream):
         side = quantize(tone, gain)
         chunks = [make_chunk(side[k:k + HAPT_FRAMES], side[k:k + HAPT_FRAMES]) for k in range(0, n, HAPT_FRAMES)]
         chunks += [ZERO_CHUNK] * (math.ceil(SILENCE_END_S / CHUNK_S) + 1)
+        self.inject(chunks)
+
+    def inject(self, chunks: Sequence[bytes]) -> None:
+        """Queue ready chunks (HAPT_CHUNK bytes each) for the way out the game's haptics take; the pad self-test sends its own stream."""
         self._inject.extend(chunks)
         self.ensure_thread()
         self.wake()
@@ -674,11 +678,8 @@ def detach(idx: int) -> None:
     rx_speaker.detach(idx)
 
 
-def test(i: int, gain: float | None = None) -> str | None:
-    """The "Test haptics" button for physical pad i. -> None when the tone was sent, else why not (for the window).
-
-    gain (1.0 = 100 %) defaults to the saved strength of the pad; the window passes the value it shows.
-    """
+def unavailable(i: int) -> str | None:
+    """Why a test stream cannot reach physical pad i (for the window), None when it can: connected, a sender with haptics, allowed."""
     if not (0 <= i < C.NUM_PADS) or not S.alive[i]:
         return _("Pad nie jest podłączony.")
     if not sender_haptics(i):
@@ -686,6 +687,16 @@ def test(i: int, gain: float | None = None) -> str | None:
     import rx_master
     if not rx_master.allowed(i, "haptics"):     # the link would drop the tone: say so instead of "sent"
         return _("Haptyka gry jest tylko dla pada master (Ustawienia → Master).")
+    return None
+
+
+def test(i: int, gain: float | None = None) -> str | None:
+    """The "Test haptics" button for physical pad i. -> None when the tone was sent, else why not (for the window).
+
+    gain (1.0 = 100 %) defaults to the saved strength of the pad; the window passes the value it shows.
+    """
+    if (why := unavailable(i)) is not None:
+        return why
     if gain is None:
         gain = rx_settings.cur.haptics.get(S.profile_key(i)).gain / 100
     link(rx_swap.route(i)).test(gain)           # the virtual slot whose packets go to physical pad i
