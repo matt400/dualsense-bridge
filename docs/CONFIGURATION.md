@@ -67,6 +67,7 @@ sender stores the Wake-on-LAN settings from the window in `sender/wol.json`.
 The sender stores the fixed pad → slot assignment in `sender/slots.json` (`slots_file = ""` disables it).
 Gyro calibration from the window (Test view) is in `sender/gyro_cal.json` (`gyro_cal_file = ""` - not saved),
 stick drift correction and the accessibility mode in `receiver/padcal.json` (next to `remap.json`, included in settings backups on update).
+Pad self-test reports (Test view) go to `receiver/reports/` (next to `settings.json`, not in the backups; delete them freely).
 
 ### Sender settings from the receiver window
 

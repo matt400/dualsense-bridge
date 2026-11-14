@@ -66,6 +66,7 @@ tylko podłączone pady) | `fixed`, `pads_count` = ile padów zawsze pokazuje `f
 Nadajnik zapisuje stały przydział pad → slot w `sender/slots.json` (`slots_file = ""` wyłącza).
 Kalibracja żyroskopu z okna (widok Test) jest w `sender/gyro_cal.json` (`gyro_cal_file = ""` - bez zapisu),
 korekcja dryfu gałek i tryb dostępności w `receiver/padcal.json` (obok `remap.json`, w kopiach ustawień przy aktualizacji).
+Raporty self-testu pada (widok Test) trafiają do `receiver/reports/` (obok `settings.json`, nie wchodzą do kopii ustawień; można je kasować).
 
 ### Ustawienia nadajnika z okna odbiornika
 

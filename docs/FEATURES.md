@@ -147,6 +147,24 @@
       operated with it. The "Test touchpad" button captures it: the cursor stands, taps and clicks are not executed,
       and the fingers and the click show on the pad drawing. The capture ends with the PS button on the pad, after 8 s
       without a touch, with the same button (mouse), on leaving the Test view, or when the window loses focus;
+    - **pad self-test:** one button runs a measuring scenario on the selected pad and leaves a **report** (text: Markdown
+      tables plus one JSON block) that you copy ("Copy report") and paste into a chat - it is made for Claude, so a
+      problem with vibration, latency or audio can be diagnosed from numbers. The output to the game stays blocked for the
+      whole run (even with the lock switch off); leaving the Test view, another pad or the button stop it, and what was
+      measured so far still goes to the report. The report is also saved to `receiver/reports/selftest-YYYY-MM-DD-HHMMSS.md`.
+      Steps (each with a time limit): metadata (versions, pad, virtual pad backend, rumble ways, pad firmware, Bluetooth
+      adapter); ~10 s of network and Bluetooth at rest (round trip, jitter, loss, RSSI, link quality, report rate);
+      **latency** over a window you pick (5 / 15 / 30 / 60 s - press buttons and move the sticks): p50 / p95 / p99 / max of
+      the total and of the segments Bluetooth / phone / network / PC, with the sample count; **vibration** - pulses on the
+      small and the large motor at a few levels, from the PC's send to the end of the write to the pad on the sender
+      (clock offset from the `pong2` packets), then the stop after the last command (the sender's 1.5 s watchdog) and the
+      case "the game stopped sending" (motors off after about 1 s without rumble reports, or 0.25 s of reports without
+      motors); **haptics and speaker** - a test stream (tone, silence, sweep) with the counters of both ends: frames sent
+      and received, underruns, overruns, drops, buffer depth, time of a write; the **sender's processor** (governor, clocks,
+      load, real-time mode) and the hidraw write numbers. The microphone is not supported and only flagged. The report
+      states its own limits: vibration is measured to the end of the write, not to the motor; the sender's times carry up
+      to half the round trip of clock error; the audio step measures the path, not the sound. Needs sender v19: with an
+      older one the steps that need it are skipped, nothing of the test is sent to it;
     - in TV mode the tested pad doesn't control the window; holding ○ for 1 s leaves the test;
     - with the Test view open **no pad triggers shortcuts** (PS + button, master actions and takeover, console mode,
       PS + touchpad click) - testing buttons won't toggle anything;
@@ -345,7 +363,7 @@
 | Test view: live inputs, gyro, stick drift with a proposed deadzone | Sender Bluetooth: scan, pair, connect from the PC |
 | ![Diagnostics](img/diagnostics.png) | ![Settings: console mode](img/settings_console.png) |
 | Diagnostics: network link and Bluetooth link of each pad | Settings → Console mode |
-| ![Settings: master pad](img/settings_master.png) | |
-| Settings → Master | |
+| ![Settings: master pad](img/settings_master.png) | ![Pad self-test](img/selftest.png) |
+| Settings → Master | Test view: the pad self-test (one button, a report to copy) |
 
 The screenshots are generated with mock data: `python3 tools/screenshots.py` (see [DEVELOPMENT.md](DEVELOPMENT.md)).

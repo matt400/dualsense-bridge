@@ -121,6 +121,17 @@ to the receiver from which scfg arrived; the receiver sends btcmd only after bts
                                Receive Power Range). Link quality 0 = the controller does not fill it in. An older receiver rejects the
                                unknown length
 
+  stcmd  (type 10) "BBHIH" PC -> sender (idx = pad slot): the pad self-test from the window (v19+) - operation ST_*, argument, a reference
+                         the answer repeats, a 32-bit value, a 16-bit value. ST_BEGIN arms the detailed measurement for the slot
+                         (the sender answers with the system record), ST_SNAP asks for the counters of one audio stream (arg =
+                         ST_HAPTICS / ST_SPEAKER) right now, or with arg ST_RECORDS the rumble records so far (it goes on measuring),
+                         ST_END ends the measurement and sends everything it collected. The sender knows it from
+                         SELFTEST_SENDER on (the version packet has no free ways bit left); an older one rejects the unknown length
+  stres  (type 12) "BBH6I" sender -> PC (idx = pad slot): one record of the self-test - kind SR_*, flags, the reference of the request,
+                         six 32-bit values whose meaning depends on the kind (see the SR_* constants). Times are in the PC clock
+                         (low 32 bits of microseconds, like the state2 stamp), so the receiver compares them with its own. Only
+                         in answer to stcmd, so a receiver that never asks never gets one
+
 Format v3 (only with an HMAC key) - protection against replaying a recorded packet (replay):
   a header with version 3 instead of 2, the body as above, then the freshness token "!I" and 8 B of HMAC-SHA256 (computed over the whole
   together with the token). The token is the RECEIVER's time in ms (low 32 bits): the sender writes the PC time (from PcClock -
@@ -141,6 +152,7 @@ At the end: shared git functions (code version, git pull update) - the receiver 
 import contextlib
 import hmac
 import json
+import math
 import os
 import random
 import secrets
@@ -202,18 +214,20 @@ T_CFGSET = 0x50A                                                    # read / cha
 T_CFGVAL = 0x10E                                                    # a sender setting: the value, the file's value, the result (v16+)
 T_LEDS = 0x106                                                      # mute button LED + player LEDs from the game (PC -> sender, v15+)
 T_PADKIND = 0x40C                                                   # which kind of pad is in the slot + what it can do (sender -> PC, v18+)
+T_STCMD = 0x60A                                                     # pad self-test request (PC -> sender, v19+)
+T_STRES = 0x50C                                                     # pad self-test record (sender -> PC, v19+)
 WIRE: Final[dict[int, int]] = {
     T_STATE2: T_STATE, T_PONG2: T_PONG, T_SCFG: T_CMD, T_CALRES: T_INFO, T_BUILD2: T_BUILD, T_TRIG2: T_TRIG,
     T_BTDEV: T_IDENT, T_BTSTATE: T_VERSION, T_BTCMD: T_CMD, T_BTCTRL: T_IDENT, T_TRIG3: T_TRIG,
     T_BUILD3: T_BUILD, T_BTLINK: T_VERSION, T_HAPT: T_CMD, T_SPK: T_CMD, T_LEDS: T_FB, T_CFGSET: T_CMD, T_CFGVAL: T_UPDMSG,
-    T_PADKIND: T_VERSION,
+    T_PADKIND: T_VERSION, T_STCMD: T_CMD, T_STRES: T_VERSION,
 }
 FRESH_EXEMPT = frozenset({T_PING})
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Capabilities and limits announced in the version packet, trigger effects.
 # ---------------------------------------------------------------------------------------------------------------------
-SENDER_VERSION: Final = 18
+SENDER_VERSION: Final = 19
 RUMBLE_EVDEV, RUMBLE_HIDRAW, CAP_TRIGGERS = 1, 2, 4     # bits of the version packet (CAP_TRIGGERS: trigger resistance works)
 CAP_TRIG_FX: Final = 8                                  # a bit of the version packet: the sender knows trig2 (click, vibration)
 CAP_CALIB: Final = 16                                   # a bit of the version packet: CMD_GYRO_CAL and CMD_RAW_STICKS (v9+)
@@ -234,6 +248,24 @@ PK_DUALSENSE, PK_DS4, PK_XBOX, PK_OTHER = range(4)       # padkind family: DualS
 # padkind features: gyro + accelerometer, touchpad, RGB lightbar, adaptive triggers + HD haptics + speaker (DualSense only), rumble motors
 PF_MOTION, PF_TOUCHPAD, PF_LIGHTBAR, PF_ADAPTIVE, PF_RUMBLE = 1, 2, 4, 8, 16
 PADKIND_SENDER: Final = 18                              # from this sender version the padkind packet is sent (older: a DualSense)
+SELFTEST_SENDER: Final = 19                             # from this sender version the stcmd / stres packets exist (no free ways bit)
+ST_BEGIN, ST_END, ST_SNAP = 1, 2, 3                     # stcmd operations: arm the measurement, end it and send the results, counters now
+ST_RECORDS, ST_HAPTICS, ST_SPEAKER = 0, 1, 2     # stcmd ST_SNAP argument: the rumble records so far (measuring goes on) / an audio stream
+ST_MAX_S: Final = 180                                   # the sender disarms by itself after this long without ST_END
+# stres kinds and the meaning of their six values (v0..v5):
+#   SR_SYS    flags SRF_*; v0 governor GOV_*, v1 clock [kHz], v2 maximum clock [kHz], v3 load x100, v4 pad firmware (0 = ?),
+#             v5 CPUs | fast CPUs << 8
+#   SR_COUNT  the always-on hidraw counters since the pad connected: v0 writes, v1 errors, v2 mean [us], v3 max [us], v4 queue full
+#   SR_FB     one rumble write: flags SRC_* | way << 4 (1 evdev, 2 hidraw), ref = the packet's sequence number, v0 command arrived
+#             [us], v1 write queued [us], v2 write done [us] (0 = never), v3 small | large << 8, v4 the write call [us], v5 errno
+#   SR_WRITES hidraw write times of the test: flags 0 = reports, 1 = audio; v0 count, v1 p50, v2 p95, v3 p99, v4 max [us], v5 errors
+#   SR_HAPT / SR_SPK  an audio stream, flags = part; part 0: chunks, played, underruns, overruns, dropped, repeated;
+#             part 1: late, lost, stale, resyncs, unwritten, depth | target << 16 (both in 0.1 ms)
+#   SR_DONE   the end of the answer to ST_END: v0 how many SR_FB records were sent
+SR_SYS, SR_COUNT, SR_FB, SR_WRITES, SR_HAPT, SR_SPK, SR_DONE = range(1, 8)
+SRF_LOW_LATENCY, SRF_RT, SRF_PINNED, SRF_QOS = 1, 2, 4, 8   # SR_SYS flags: low_latency, SCHED_FIFO, pinned to the fast cores, PM QoS
+SRC_PC, SRC_REPEAT, SRC_WATCHDOG = 0, 1, 2              # SR_FB source: the PC's command, the sender's repeat, its watchdog stop
+GOVERNORS: Final = ("performance", "schedutil", "ondemand", "conservative", "powersave", "userspace", "interactive")   # GOV_* = index + 1
 LEDS_SENDER: Final = 15                                 # from this sender version the leds packet is understood (no free ways bit)
 LEDS_MUTE, LEDS_PLAYER = 1, 2                           # leds flags: the mute LED value / the player LEDs value is valid
 MUTE_OFF, MUTE_ON, MUTE_PULSE = range(3)                # the pad's mute button LED: off, on, pulsing (the output report's byte)
@@ -359,6 +391,8 @@ BODY: Final[dict[int, struct.Struct]] = {
     T_HAPT: struct.Struct(f"!IB{HAPT_CHUNK}s"),  # the first frame's number (3 kHz), HAPT_* flags, HAPT_FRAMES stereo frames (s8)
     T_SPK: struct.Struct(f"!IB{SPK_BYTES}s"),    # the frame's number (10 ms), SPK_* flags, SPK_FRAME mono samples (s16 little endian)
     T_PADKIND: struct.Struct("!BBHH"),          # family PK_*, features PF_*, USB vendor id, USB product id (0 = not known)
+    T_STCMD: struct.Struct("!BBHIH"),           # operation ST_*, argument, reference, a 32-bit value, a 16-bit value
+    T_STRES: struct.Struct("!BBH6I"),           # kind SR_*, flags, reference, six values
     T_LEDS: struct.Struct("!3B"),                # LEDS_* flags, the mute LED MUTE_*, the player LEDs (5 bits)
     T_CFGSET: struct.Struct("!BBHd"),           # operation CFG_*, setting id (cfgspec.SPECS) or CFG_ALL, reference, the value as float64
     T_CFGVAL: struct.Struct("!BBHBdd"),         # setting id, result CFGR_*, request reference, CFGF_* flags, value, sender.toml value
@@ -399,6 +433,19 @@ def clamp(value: _Number, low: _Number, high: _Number) -> _Number:
         ``value`` limited to ``[low, high]``.
     """
     return max(low, min(high, value))
+
+
+def nearest_rank(sorted_values: Sequence[_Number], pct: float) -> _Number:
+    """Return the ``pct`` percentile (0-100) of an ascending list by the nearest-rank method (the same as rx_latency uses).
+
+    Args:
+        sorted_values: The values, ascending; at least one.
+        pct: The percentile, 0-100.
+
+    Returns:
+        The value at rank ``ceil(pct / 100 * n)`` (the first one for pct 0).
+    """
+    return sorted_values[max(0, math.ceil(len(sorted_values) * pct / 100) - 1)]
 
 
 def trig2_from_legacy(vals: Sequence[int]) -> tuple[int, ...]:

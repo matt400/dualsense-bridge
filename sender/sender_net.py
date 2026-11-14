@@ -13,10 +13,11 @@ from typing import Any, Final
 
 import sender_config
 import sender_events as events
+import sender_selftest as selftest
 import sender_state as state
 from proto import (BODY, E_NET_DOWN, E_NO_RECEIVER, HAPT_CHUNK, HAPT_DATA_AT, NS_PER_MS, RTT_NONE, SCFG_BATT, SPK_BYTES, SPK_DATA_AT,
                    UINT32_MASK, VER3, VER_SHIFT, Codec, EpochClock, SeqFilter, T_BTCMD, T_CFGSET, T_CMD, T_FB, T_HAPT, T_LEDS, T_PING,
-                   T_PONG, T_PONG2, T_SCFG, T_SPK, T_TRIG, T_TRIG2, T_TRIG3, HEADER_LEN)
+                   T_PONG, T_PONG2, T_SCFG, T_SPK, T_STCMD, T_TRIG, T_TRIG2, T_TRIG3, HEADER_LEN)
 from sender_config import C
 
 # the packet header is 4 bytes (see proto.HDR); the body of every received packet is unpacked right after it
@@ -64,6 +65,7 @@ on_speaker: Callable[[int, int, int, memoryview], None] | None = None   # callba
 on_scfg: Callable[..., object] | None = None        # callback(flags, mac, broadcast, button, hold ms) set in main
 on_bt: Callable[..., None] | None = None            # callback(BT_* operation, argument, MAC 6 B) set in main (sender_bt)
 on_cfg: Callable[..., None] | None = None           # callback(authenticated, CFG_* operation, setting id, reference, value) set in main
+on_selftest: Callable[..., None] | None = None      # callback(idx, ST_* operation, argument, reference, 32-bit, 16-bit) set in main
 scfg_t = 0.0                          # when the scfg packet arrived - the receiver knows build2 and events
 batt_t = 0.0                          # when an scfg packet with SCFG_BATT arrived - the receiver knows build3
 recent_rtt: collections.deque[float] = collections.deque(maxlen=RTT_RECENT)   # latest measurements - for the info packet
@@ -269,8 +271,12 @@ def _on_scfg(sq: int, data: bytes) -> None:
 
 
 def _on_setting(t: int, idx: int, sq: int, data: bytes, now: float) -> None:
-    """Handle the packets that set something on the sender: the game's LEDs (leds) and a setting from the window (cfgset)."""
-    if t == T_LEDS:
+    """Handle the packets that set something on the sender: the game's LEDs (leds), a setting (cfgset), the self-test (stcmd)."""
+    if t == T_STCMD:
+        # one stream per operation and argument: the three copies of a request share a number, a later request has a new one
+        if fb_filter.fresh(("st", idx, data[HEADER_LEN], data[HEADER_LEN + 1]), sq, now) and on_selftest is not None:
+            on_selftest(idx, *BODY[T_STCMD].unpack_from(data, HEADER_LEN))
+    elif t == T_LEDS:
         if fb_filter.fresh(("leds", idx), sq, now) and on_leds is not None:
             on_leds(idx, BODY[T_LEDS].unpack_from(data, HEADER_LEN))
     elif fb_filter.fresh(("cfg", data[HEADER_LEN + 1]), sq, now) and on_cfg is not None:   # one stream per setting id (see _on_control)
@@ -290,6 +296,8 @@ def _on_control(t: int, idx: int, sq: int, data: bytes) -> None:
     now = time.monotonic()
     if t == T_FB:
         if fb_filter.fresh(idx, sq, now) and on_feedback is not None:
+            if selftest.armed:                  # the self-test is measuring: the write this packet causes is matched by the sequence number
+                selftest.fb_arrived(idx, sq)
             on_feedback(idx, BODY[T_FB].unpack_from(data, HEADER_LEN))
     elif t == T_CMD:
         if fb_filter.fresh(("cmd", idx, data[HEADER_LEN]), sq, now) and on_command is not None:
@@ -297,7 +305,7 @@ def _on_control(t: int, idx: int, sq: int, data: bytes) -> None:
     elif t in (T_TRIG, T_TRIG2, T_TRIG3):   # trig3: + game effects (v11+), trig2: profile (v8+), trig: resistance only
         if fb_filter.fresh(("trig", idx), sq, now) and on_triggers is not None:
             on_triggers(idx, BODY[t].unpack_from(data, HEADER_LEN))
-    elif t in (T_LEDS, T_CFGSET):           # the mute LED / player LEDs from the game (v15+), a setting from the window (v16+)
+    elif t in (T_LEDS, T_CFGSET, T_STCMD):  # the game's LEDs (v15+), a setting from the window (v16+), the pad self-test (v19+)
         _on_setting(t, idx, sq, data, now)
     elif t == T_BTCMD and fb_filter.fresh(("bt", data[HEADER_LEN]), sq, now) and on_bt is not None:   # phone Bluetooth (window, v10+)
         on_bt(*BODY[T_BTCMD].unpack_from(data, HEADER_LEN))

@@ -50,13 +50,14 @@ from evdev import ff
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "common"))   # proto.py is shared, it lives in common/
 
 import sender_opus
+import sender_selftest as probe
 from sender_report import (BT_SEQ_MASK, BYTE_MASK, COMMON_LEN, EFFECT_FIELDS, L2_EFFECT_AT, MOTOR_MAX, R2_EFFECT_AT, RUMBLE_FX_AT,
                            TRIG_OFF, VALID_FLAG0_AT, _bt_report, effect, game_effect, haptics_setup_report, output_report,
                            rumble_amp, split_triggers, vibration_effect)
 from sender_hidwrite import AUDIO_PENDING, MAX_PENDING, HidWriter
 from sender_ioctl import IOC_READ, IOC_WRITE, ioc
 from proto import (CAP_HAPTICS, CAP_SPEAKER, CAP_TRIG_FX, CAP_TRIG_RAW, CAP_TRIGGERS, PLAYER_LEDS_MASK, RFX_HOLD_S,
-                   RFX_ON, RUMBLE_EVDEV, RUMBLE_HIDRAW, TFX_OFF, TRIG2_OFF,
+                   RFX_ON, RUMBLE_EVDEV, RUMBLE_HIDRAW, SRC_PC, SRC_REPEAT, SRC_WATCHDOG, TFX_OFF, TRIG2_OFF,
                    WHY_ACCESS,
                    WHY_NO_HIDRAW, WHY_NOT_FOUND, WHY_OFF, WHY_OK, WHY_OPEN)
 
@@ -322,6 +323,8 @@ class Rumble:
         self._rv_timer: asyncio.TimerHandle | None = None
         self._trig_watch: asyncio.TimerHandle | None = None   # watchdog of trigger effects (TRIG_WATCHDOG_S without a refresh)
         self.t_set = 0.0
+        self._src = SRC_PC                        # who is calling set(): the PC, or the watchdog (for the self-test's records)
+        self._rec: probe.FbRecord | None = None   # the self-test's record of the write in progress (set by _send)
         self._watch: asyncio.TimerHandle | None = None
         self._repeat: asyncio.TimerHandle | None = None
         self._opening = False                     # the hidraw fallback is being opened in a worker thread
@@ -437,7 +440,7 @@ class Rumble:
             self.logged += 1
             print(f"Controller {self.idx}: rumble {small}/{large} from PC {self.describe()}")
         self.rgb = rgb
-        self._send(small, large)
+        self._send(small, large, src=self._src)
         self.cur, self.t_set = (small, large), now
         self._arm_watchdog()
         if changed:
@@ -611,9 +614,9 @@ class Rumble:
         """Timer callback of _arm_repeat: resend the current rumble over the HID report."""
         self._repeat = None
         if self.methods:
-            self._send(*self.cur, only=WAY_HIDRAW)
+            self._send(*self.cur, only=WAY_HIDRAW, src=SRC_REPEAT)
 
-    def _send(self, small: int, large: int, only: str | None = None) -> None:
+    def _send(self, small: int, large: int, only: str | None = None, src: int = SRC_PC) -> None:
         """Send the rumble through every active way (or only ``only``), handling errors per way.
 
         A momentarily full report queue is not a failure. A real error is counted by _failed; if that switches the
@@ -630,6 +633,10 @@ class Rumble:
                 continue
             if audio and way == WAY_EVDEV:
                 continue
+            # the self-test (armed only): one record per write; the check is one attribute read
+            rec = probe.new_fb(self.idx, small, large, 2 if way == WAY_HIDRAW else 1, src,
+                               time.monotonic() - self.t_set) if probe.armed else None
+            self._rec = rec                            # read by the way's sender below (their signatures stay as they were)
             try:
                 if way == WAY_HIDRAW:
                     self._send_hidraw(small, large, audio)
@@ -713,17 +720,28 @@ class Rumble:
                 os.close(self.fd)
         self.fd = None
 
-    def _write(self, data: bytes | bytearray | memoryview, kind: str, reused: bool = False, limit: int = MAX_PENDING) -> None:
+    def _write(self, data: bytes | bytearray | memoryview, kind: str, reused: bool = False, limit: int = MAX_PENDING,
+               tag: probe.FbRecord | None = None) -> None:
         """Write one report to hidraw: queued to the writer thread when there is one, else ``os.write`` right here.
+
+        ``tag`` is the self-test's record of this write; it is finished when the write returned (by the writer thread, or here).
 
         Raises:
             BlockingIOError: A full queue (kernel or writer): not written, not a failure.
             OSError: The write failed (directly) or the writer is closed.
         """
         if self._writer is not None:
-            self._writer.write(data, kind, reused, limit)
-        else:
+            self._writer.write(data, kind, reused, limit, tag)
+        elif tag is None:
             os.write(self.fd, data)                 # type: ignore[arg-type]  # callers check fd first
+        else:
+            t0 = time.perf_counter_ns()
+            try:
+                os.write(self.fd, data)             # type: ignore[arg-type]
+            except OSError as e:
+                tag.finish(time.perf_counter_ns() - t0, e.errno or 0)
+                raise
+            tag.finish(time.perf_counter_ns() - t0)
 
     def _wrote(self, way: str) -> None:
         """A write of ``way`` went out: clear its error count. A queued write is confirmed later by the thread (_write_ok)."""
@@ -760,7 +778,7 @@ class Rumble:
         if trig == self.trig:
             trig = None
         self.seq = (self.seq + 1) & BT_SEQ_MASK
-        self._write(output_report(self.bt, self.seq, small, large, self.v2, self.rgb, trig, audio, self.leds), KIND_HID)
+        self._write(output_report(self.bt, self.seq, small, large, self.v2, self.rgb, trig, audio, self.leds), KIND_HID, tag=self._rec)
         if trig is not None:
             self.trig = trig
 
@@ -768,8 +786,22 @@ class Rumble:
         """Rumble through the kernel force-feedback API: upload (or update) one long rumble effect and start it; stop it for 0/0.
 
         The effect lasts EFFECT_MS, so the watchdog / refresh logic of the caller decides when it really ends. The
-        strong / weak magnitudes are scaled from 0..255 to the 16-bit range (x257).
+        strong / weak magnitudes are scaled from 0..255 to the 16-bit range (x257). The self-test's record of this write (``_rec``)
+        is finished when the call returns.
         """
+        rec = self._rec
+        t0 = time.perf_counter_ns() if rec is not None else 0
+        try:
+            self._ff_write(small, large)
+        except OSError as e:
+            if rec is not None:
+                rec.finish(time.perf_counter_ns() - t0, e.errno or 0)
+            raise
+        if rec is not None:
+            rec.finish(time.perf_counter_ns() - t0)
+
+    def _ff_write(self, small: int, large: int) -> None:
+        """Upload / start (or stop, for 0 / 0) the force-feedback rumble effect."""
         if small or large:
             eff = ff.Effect(ec.FF_RUMBLE, -1 if self.ff_id is None else self.ff_id, 0, ff.Trigger(0, 0),
                             ff.Replay(EFFECT_MS, 0),
@@ -792,7 +824,11 @@ class Rumble:
         """Watchdog fired: the receiver stopped refreshing the rumble, so switch the motors off."""
         self._watch = None
         if self.cur != (0, 0) and time.monotonic() - self.t_set >= WATCHDOG_S - WATCHDOG_SLACK_S:
-            self.set(0, 0)
+            self._src = SRC_WATCHDOG               # the self-test tells this stop from one the PC asked for
+            try:
+                self.set(0, 0)
+            finally:
+                self._src = SRC_PC
 
     # ---------- audio haptics (the stream itself is HapticsStream in sender_haptics) ----------
     @property

@@ -63,6 +63,7 @@ PULSES: Final[dict[str, Pulse]] = {
 fb: list[FeedbackState] = []
 fb_event = threading.Event()
 pulses: list[Pulse | None] = []       # the active confirmation per slot: (end, small, large, colour | None) or None
+hold_until: list[float] = []           # per slot: nothing goes to the sender before this monotonic time (the pad self-test sends its own)
 fb_sent: list[tuple[tuple[int, ...], float] | None] = []      # (value, time) of the feedback sent last; None = send at the next opportunity
 # (trigger effects, time) sent last per slot; None = nothing (the pad has default triggers)
 trig_sent: list[tuple[Sequence[Any], float] | None] = []

@@ -40,6 +40,7 @@ CAPTURE_IDLE_S: Final = 8.0                     # a touchpad capture ends after 
 
 active = False                                  # the Test view is open - pad shortcuts are disabled
 escaped = False                                 # the test was ended from a pad; rearm() on the next entry into Test
+latency_probe = False                           # the pad self-test is measuring latency: samples count although the output is blocked
 on_escape: Callable[[], None] | None = None     # window: leave the Test view (called from the network thread)
 capture_slot: int | None = None                 # the pad whose touchpad is captured by the test (the cursor stands), or None
 _capture_t = 0.0                                # monotonic time of the last touch / click of the captured pad

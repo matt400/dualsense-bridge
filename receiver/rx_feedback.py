@@ -28,7 +28,7 @@ from proto import STATE_CHARGING, clamp
 from rx_fbstate import (
     FX_SENDER, FeedbackState, GAME_RUMBLE_GAP_S, GAME_RUMBLE_STALE_S, IDLE_REFRESH_S, Leds, NO_GAME_TRIG, NO_LEDS,
     PCT_MAX, PULSES, Pulse, RAW_SENDER, RUMBLE_REFRESH_S, SendFeedback, SendLeds, SendTriggers, TRIG_OFF_MODES,
-    TRIG_REFRESH_S, TRIG_REPEAT, Trig, cbs, fb, fb_event, fb_sent, leds_sent, pulses, trig_sent,
+    TRIG_REFRESH_S, TRIG_REPEAT, Trig, cbs, fb, fb_event, fb_sent, hold_until, leds_sent, pulses, trig_sent,
 )
 from rx_fbtrig import (
     _has_effect, game_drives, leds_target, leds_tick, release_triggers, sender_fx, sender_leds, sender_raw,
@@ -65,10 +65,14 @@ __all__ = [  # the state and the trigger / LED ticks moved out (rx_fbstate, rx_f
     "fb_event",
     "fb_sent",
     "game_drives",
+    "hold",
+    "hold_until",
     "leds_sent",
     "leds_target",
     "leds_tick",
+    "pulse_for",
     "pulses",
+    "release",
     "release_triggers",
     "sender_fx",
     "sender_leds",
@@ -224,6 +228,7 @@ def init() -> None:
     trig_sent[:] = [None] * n
     leds_sent[:] = [None] * n
     pulses[:] = [None] * n
+    hold_until[:] = [0.0] * n
     cbs[:] = [make_cb(i) for i in range(n)]    # keep the references (GC)
     S.on_remap = fb_event.set
 
@@ -289,6 +294,32 @@ def _note_game_color(i: int) -> None:
             _("{pad}: program na PC ustawił kolor lightbara {hex} - pominięty (zawsze kolor z ustawień)") if not game else
             _("{pad}: program na PC ustawił kolor lightbara {hex} - poza grą świeci kolor z ustawień, w grze ten"))
     ev.info(text.format(pad=ev.pad_name(i), hex=L.rgb_hex(rgb)))
+
+
+def pulse_for(i: int, small: int, large: int, seconds: float) -> float:
+    """A rumble pulse of our own on pad i, laid over the game feedback like the confirmations (the pad self-test).
+
+    The colour is left alone. The feedback thread sends it like any other change and sends the stop when the time is up.
+
+    Returns:
+        The monotonic time the pulse was ordered (the feedback thread's reaction time starts there).
+    """
+    now = time.monotonic()
+    pulses[i] = (now + seconds, small, large, None)
+    fb_event.set()
+    return now
+
+
+def hold(i: int, seconds: float) -> None:
+    """Send nothing to the sender for pad i for ``seconds`` (the pad self-test sends its own packets and must not be refreshed over)."""
+    hold_until[i] = time.monotonic() + seconds
+
+
+def release(i: int) -> None:
+    """End a hold(): the feedback thread takes over again (and sends the current state at the next wake-up)."""
+    hold_until[i] = 0.0
+    fb_sent[i] = None
+    fb_event.set()
 
 
 def rumble_expired(f: FeedbackState, now: float) -> str | None:
@@ -357,6 +388,8 @@ def _tick_pad(i: int, now: float, send: SendFeedback, send_trig: SendTriggers | 
     if why := rumble_expired(f, now):
         f["large"] = f["small"] = 0
         print(f"Controller {i}: {why} - rumble stopped")
+    if now < hold_until[i]:             # the pad self-test is sending its own packets to this pad
+        return False
     val, ours, blink = _target(i, now)
     if not ours:
         return blink

@@ -42,6 +42,7 @@ import sender_events as events
 import sender_net as net
 import sender_remotecfg
 import sender_rt
+import sender_selftest
 import sender_state as state
 import sender_streams as streams
 import sender_supervisor as sup
@@ -159,6 +160,9 @@ if __name__ == "__main__":
     net.on_scfg = wol.apply_scfg
     net.on_bt = sender_bt.bt.on_command        # phone Bluetooth driven from the receiver window (scan, pair, connect)
     net.on_cfg = sender_remotecfg.on_packet    # settings changed in the receiver window (only v3 with the key)
+    # the pad self-test of the receiver window: it asks, the sender answers with what only it can see (v19+)
+    sender_selftest.bind(net.emit, net.clock.ns, lambda: net.pc_clock.offset_us, state.ctrl_by_idx)
+    net.on_selftest = sender_selftest.on_command
     wol.load()                         # Wake-on-LAN and events: settings from the receiver window saved at the last scfg
     sender_rt.setup(C.LOW_LATENCY, C.CPU_LATENCY_US, C.RT_PRIORITY)
     gc.collect()

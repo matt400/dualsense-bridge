@@ -20,6 +20,7 @@ import rx_hotkeys as hotkeys
 import rx_latency
 import rx_master as master
 import rx_mouse as mouse
+import rx_selftest
 import rx_sender_cfg
 import rx_settings
 import rx_state as S
@@ -30,7 +31,8 @@ from proto import (BATT_CHARGING, BATT_UNKNOWN, BODY, CAL_MOVED, CAL_OK, CLICK_P
                    UINT32_MASK, WIRE, Codec,
                    EpochClock, T_BTCTRL, T_BTDEV, T_BTLINK, T_BTSTATE, T_BUILD, T_BUILD2, T_BUILD3, T_BYE, T_CALRES, T_CFGVAL, T_CLICK,
                    T_CMD, T_EVENT, T_FB, T_HAPT, T_IDENT, T_INFO, T_LEDS, SEQ_MASK,
-                   T_MOUSE, T_PADKIND, T_PING, T_PONG, T_PONG2, T_SCFG, T_SPK, T_STATE, T_STATE2, T_TOUCH, T_TRIG, T_TRIG2, T_TRIG3,
+                   T_MOUSE, T_PADKIND, T_PING, T_PONG, T_PONG2, T_SCFG, T_SPK, T_STATE, T_STATE2, T_STCMD, T_STRES, T_TOUCH, T_TRIG,
+                   T_TRIG2, T_TRIG3,
                    T_UPDMSG,
                    T_VERSION, TRIG2_OFF, clamp, cstr, mac_bytes, mac_text)
 from rx_buttons import BUTTON_CODES, MASK_ALL, PS_BIT, TRIG_ON
@@ -285,9 +287,20 @@ def flush_repeats() -> None:
         send_peer(pkt)
 
 
+fb_tap: Callable[[int, Sequence[int], bytes, int], None] | None = None   # the pad self-test: (slot, values, packet, send ns) per feedback
+
+
 def send_feedback(i: int, vals: Sequence[int]) -> None:
     """Send the rumble / lightbar values of slot i."""
-    send_peer(codec.pack(T_FB, i, *vals))
+    pkt = codec.pack(T_FB, i, *vals)
+    send_peer(pkt)
+    if (tap := fb_tap) is not None and pkt is not None:      # only while the self-test runs; the packet carries the sequence number
+        tap(i, vals, pkt, time.perf_counter_ns())
+
+
+def send_selftest(i: int, op: int, arg: int = 0, ref: int = 0) -> None:
+    """A request of the pad self-test to the sender (3x like a command; only to a sender that knows it, see rx_selftest)."""
+    send_repeat(codec.pack(T_STCMD, i, op, arg, ref & 0xFFFF, 0, 0), 3)
 
 
 def send_cmd(i: int, cmd: int, arg: int = 0) -> None:
@@ -519,7 +532,8 @@ def _on_state(t: int, i: int, data: bytes, arr: int, now: float) -> None:
     dig = (mask, hx, hy, lt >> 5, rt >> 5)   # triggers to 1/8 precision (the trigger hysteresis in the console mode)
     btn = (mask, hx, hy, lt >= TRIG_ON, rt >= TRIG_ON)
     blocked = S.states[i]["blocked"]    # the Test view: the game gets a neutral state, shortcuts and the master do not work
-    pressed = (lat is not None and not blocked and _pressed[i] is not None   # the first state after connecting
+    measured = not blocked or testmode.latency_probe    # the self-test measures the path with the output still blocked
+    pressed = (lat is not None and measured and _pressed[i] is not None   # the first state after connecting
                and btn != _pressed[i])                                       # is not a press
     _pressed[i] = btn
     if dig != _digital[i]:              # shortcuts / master / console mode only on a button change,
@@ -544,7 +558,7 @@ def _on_state(t: int, i: int, data: bytes, arr: int, now: float) -> None:
         S.recompute(s, S.remap_maps[i])
         s["batt_dsu"], s["batt_ds4"], s["batt_ds5"] = batt_dsu, batt_ds4, batt_ds5
         s["ts"] = now_us         # the arrival time of the sample - better for DSU than the packet build time (jitter)
-        if s["lat"] is None and not blocked:   # measuring the oldest change waiting for a report (rx_ds4 - ViGEm)
+        if s["lat"] is None and measured:   # measuring the oldest change waiting for a report (rx_ds4 - ViGEm)
             s["lat"] = lat
         if pressed and s["blat"] is None:   # separately: the oldest waiting button / trigger change
             s["blat"] = lat
@@ -859,6 +873,13 @@ def _receive() -> tuple[bytes | None, tuple[str, int], int] | None:
         return (None, ("", 0), 0) if _recv_failed(e) else None
 
 
+def _on_selftest_record(i: int, sq: int, data: bytes, addr: tuple[str, int], now: float) -> None:
+    """A stres packet: hand the record to the running self-test (a repeated one is dropped by the freshness check)."""
+    _adopt_peer(addr, now)
+    if S.seen.fresh((WIRE[T_STRES], i, data[HEADER_LEN], data[HEADER_LEN + 1]), sq, now):
+        rx_selftest.on_stres(i, data)
+
+
 def _on_control(t: int, i: int, sq: int, data: bytes, addr: tuple[str, int], now: float, arr: int) -> bool:
     """Handle the packets about the sender itself (update, build, Bluetooth, events, ping); False = a per-pad packet."""
     if t == T_UPDMSG:  # the reason for a sender update failure (arrives before the build packet with the result)
@@ -881,6 +902,8 @@ def _on_control(t: int, i: int, sq: int, data: bytes, addr: tuple[str, int], now
             rx_sender_cfg.on_packet(data, now)
     elif t == T_EVENT:  # a sender event for the log (idx = the pad's slot or 255)
         on_event(i, data)
+    elif t == T_STRES:  # a record of the pad self-test (only an answer to our request, see rx_selftest)
+        _on_selftest_record(i, sq, data, addr, now)
     elif t == T_PING:   # ping -> pong2 (the PC clock for latency measurement) and pong (RTT; an older sender knows only this)
         _adopt_peer(addr, now, from_ping=True)
         t0 = BODY[T_PING].unpack_from(data, 4)[0]

@@ -14,6 +14,7 @@ import rx_gstick
 from rx_qt_gstick import CAL_TEXT, STATE_TEXT as GS_STATE
 from rx_qt_access import CHOICES as ACCESS_CHOICES
 from rx_shortcuts import HOLD_ACTION, SHARE_ACTION
+from rx_qt_selftest import REFUSAL_TEXT, STEP_TEXT
 
 keys = set()
 for f in glob.glob(os.path.join(RX, "*.py")):
@@ -26,6 +27,7 @@ keys |= set(LABELS.values()) | set(STICK_NAME.values()) | set(GYRO_MODES.values(
 keys |= {t for t, _ in MASTER_FEATURES.values()} | {t for t, _ in MASTER_ACTIONS.values()} | set(ABSENT.values())
 keys |= {*rx_gstick.TARGETS.values(), *rx_gstick.CURVES.values(), *rx_gstick.FEEDBACKS.values(), *GS_STATE.values(), *CAL_TEXT.values()}
 keys |= set(HOLD_ACTION.values()) | set(SHARE_ACTION.values())
+keys |= set(STEP_TEXT.values()) | set(REFUSAL_TEXT.values())
 keys |= {t for _k, t in ACCESS_CHOICES}
 keys |= set(LIGHT_MODES.values()) | set(LOG_LEVELS.values()) | set(VPAD_BACKENDS.values()) | set(SENDER_TEXT.values()) | set(EXTRA_TIPS.values())
 keys |= {*STATE_TEXT.values(), *OP_TEXT.values(), *DONE_TEXT.values(), *RESULT_TEXT.values(), "Operacja", "gotowe",
