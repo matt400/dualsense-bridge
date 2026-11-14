@@ -230,6 +230,11 @@ def setup(low_latency: bool, cpu_latency_us: int, rt_priority: int) -> None:
         print("Low latency: " + ", ".join(done))
 
 
+def status() -> tuple[bool, bool, bool]:
+    """Return what is switched on now: (SCHED_FIFO, the PM QoS request, pinned to the fast cores) - for the receiver's self-test."""
+    return _realtime_on, _qos is not None, _affinity is not None
+
+
 def default_switch_interval() -> str:
     """Put the GIL switch interval back to the interpreter's default."""
     sys.setswitchinterval(DEFAULT_SWITCH_INTERVAL_S)

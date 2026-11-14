@@ -15,6 +15,10 @@ Two counters per slot:
   buttons, D-pad and triggers only (crossing the TRIG_ON threshold) - the last BUTTON_KEEP presses / releases with no
   time limit (presses are rare, 5 s would give just a few samples) - buttons(); reset from the window: reset_buttons()
 Result: the mean, p95 and max of the total plus the mean of every segment (the segment bar adds up to the mean).
+
+The pad self-test (rx_selftest) reads the same samples over a window of its own (5-60 s): rows_since() returns the rows newer than a
+time and window_stats() turns them into p50 / p95 / p99 / max of the total and of every segment, with the number of samples. The
+collector adds nothing to the hot path - the self-test polls the lists, which keep a time with every row.
 """
 from __future__ import annotations
 
@@ -27,7 +31,7 @@ from dataclasses import dataclass
 from statistics import fmean
 from typing import Final, TypeAlias
 
-from proto import LAT_NONE
+from proto import LAT_NONE, nearest_rank
 
 Lat: TypeAlias = tuple[int, int, int, int]               # (receive ns, phone µs, bt µs, net µs) from rx_net
 Row: TypeAlias = tuple[int | None, int, int, int]       # (bt | None, phone, net, pc) µs
@@ -42,8 +46,8 @@ NS_PER_S: Final = 1_000_000_000
 _lock = threading.Lock()
 _samples: collections.defaultdict[int, collections.deque[tuple[int, *Row]]] = collections.defaultdict(
     lambda: collections.deque(maxlen=SAMPLE_KEEP))        # slot -> (time ns, bt, phone, net, pc)
-_buttons: collections.defaultdict[int, collections.deque[Row]] = collections.defaultdict(
-    lambda: collections.deque(maxlen=BUTTON_KEEP))        # slot -> (bt, phone, net, pc)
+_buttons: collections.defaultdict[int, collections.deque[tuple[int, *Row]]] = collections.defaultdict(
+    lambda: collections.deque(maxlen=BUTTON_KEEP))        # slot -> (time ns, bt, phone, net, pc)
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,7 +88,7 @@ def add_button(i: int, lat: Lat, done_ns: int) -> None:
     """Record a button sample for slot i: the report with a button / D-pad / trigger (threshold) change reached ViGEm at done_ns."""
     if (r := _row(lat, done_ns)) is not None:
         with _lock:
-            _buttons[i].append(r)
+            _buttons[i].append((done_ns, *r))
 
 
 def clear(i: int) -> None:
@@ -133,5 +137,63 @@ def summary(i: int, now_ns: int | None = None) -> Summary | None:
 def buttons(i: int) -> Summary | None:
     """Summarise the last BUTTON_KEEP presses / releases; None when there are none yet."""
     with _lock:
-        rows = list(_buttons.get(i, ()))
+        rows = [r[1:] for r in _buttons.get(i, ())]
     return _summarize(rows) if rows else None
+
+
+@dataclass(frozen=True, slots=True)
+class Pct:
+    """The distribution of one series of microsecond values, in milliseconds: how many and p50 / p95 / p99 / max."""
+
+    n: int
+    p50: float
+    p95: float
+    p99: float
+    max: float
+
+
+@dataclass(frozen=True, slots=True)
+class WindowStats:
+    """The latency of a time window: the total and each segment as percentiles. ``bt`` is None when the sender sent no pad timestamps."""
+
+    n: int
+    total: Pct
+    bt: Pct | None
+    phone: Pct
+    net: Pct
+    pc: Pct
+
+
+def rows_since(i: int, start_ns: int, buttons_only: bool = False) -> list[tuple[int, *Row]]:
+    """Return the samples of slot i that reached the virtual pad after ``start_ns`` (perf_counter_ns), oldest first.
+
+    Each row is ``(time ns, bt | None, phone, net, pc)``; a caller that polls takes the time of the last row as its next start, so no
+    sample is counted twice or lost. A plain copy under the lock and the filtering outside it, like summary(): the network thread's
+    append must not wait for it. The lists are bounded (SAMPLE_KEEP / BUTTON_KEEP), so a caller that wants a long window polls them
+    more often than they fill.
+
+    Args:
+        i: The slot.
+        start_ns: Only rows newer than this.
+        buttons_only: The button / D-pad / trigger changes instead of all changes.
+    """
+    with _lock:
+        d = (_buttons if buttons_only else _samples).get(i)
+        snap = list(d) if d else []
+    return [r for r in snap if r[0] > start_ns]
+
+
+def pct_of(values_us: Sequence[int]) -> Pct:
+    """Percentiles of microsecond values, in ms (the nearest-rank method, as summary()); at least one value."""
+    v = sorted(values_us)
+    return Pct(len(v), nearest_rank(v, 50) / 1000, nearest_rank(v, 95) / 1000, nearest_rank(v, 99) / 1000, v[-1] / 1000)
+
+
+def window_stats(rows: Sequence[Row]) -> WindowStats | None:
+    """Percentiles of the total and of every segment of ``rows`` (a missing bt counts as 0 in the total); None for no rows."""
+    if not rows:
+        return None
+    bt, phone, net, pc = zip(*rows, strict=True)
+    bts = [b for b in bt if b is not None]
+    return WindowStats(n=len(rows), total=pct_of([(b or 0) + p + n + c for b, p, n, c in rows]), bt=pct_of(bts) if bts else None,
+                       phone=pct_of(phone), net=pct_of(net), pc=pct_of(pc))

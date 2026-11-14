@@ -81,6 +81,13 @@ The tests cover:
   game (DS4, DSU, mouse, shortcuts), gyro calibration from the window and saving it on the sender, sticks without the
   sender's deadzone during measurement, disabled shortcuts and the Options + Create exit (`test_padtest.py`,
   `test_padtest_gui.py`, `test_calib_tx.py`);
+- pad self-test: the numbers (percentiles, nearest rank, clock wrap), joining our rumble packets with the sender's write
+  records, the sender's records over UDP, a whole run against a simulated sender (and against an old one, which must
+  receive nothing of it), the report format and file, the window block (`test_selftest.py`, `test_selftest_gui.py`)
+  and the sender side - fake sysfs, write records from the writer thread, the watchdog record, results on request
+  (`test_selftest_tx.py`); the packets `stcmd` / `stres` are pinned in `test_proto_golden.py`. The sender knows the
+  test from version 19 (`proto.SELFTEST_SENDER`; the version packet has no free bit for a CAP flag), so the receiver
+  never sends it to an older one;
 - sender Bluetooth from the window: protocol, BlueZ via a substituted `busctl`, scanning on a real process with a
   timeout, adapter / permission / program errors, list in rounds, everything over UDP (`test_bt.py`) and the panel in
   the window with pad navigation (`test_bt_gui.py`);

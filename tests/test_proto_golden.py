@@ -384,7 +384,7 @@ CONSTANTS = {'BODY_LEN': {0: 62,
  'SCFG_BATT': 4,
  'SCFG_EVENTS': 2,
  'SCFG_WOL': 1,
- 'SENDER_VERSION': 18,
+ 'SENDER_VERSION': 19,
  'STATE_FIELDS': 17,
  'TFX_CLICK': 2,
  'TFX_OFF': 0,
@@ -467,6 +467,25 @@ HELPERS = {'mac_bytes': [['aa:bb:cc:dd:ee:ff', 'aabbccddeeff'],
                   [1, 3, 5, 0, 1, 9, 8, 0, 0, 0, 0, 0],
                   [0, 0, 0, 0, 1, 2, 4, 0, 0, 0, 0, 0]],
  'utf8': [['7a61c5bcc3b3e280a6'], ['616263']]}
+
+
+# The pad self-test (sender version 19) added two packet types and their constants; the vectors and pins above are untouched.
+def _vector(size):
+    return {"high": "ff" * size, "low": "00" * size, "pattern": bytes((3 + 13 * k) & 0xFF for k in range(size)).hex(), "size": size}
+
+
+PACKETS[1546] = {"fmt": "!BBHIH", "wire": 10, **_vector(10)}      # stcmd: PC -> sender, a request of the self-test
+PACKETS[1292] = {"fmt": "!BBH6I", "wire": 12, **_vector(28)}      # stres: sender -> PC, one record of the self-test
+CONSTANTS["BODY_LEN"].update({1546: 10, 1292: 28})
+CONSTANTS["WIRE"].update({1546: 10, 1292: 12})
+CONSTANTS["BY_SIZE"] += [([10, 10], 1546), ([12, 28], 1292)]
+CONSTANTS.update({
+    "T_STCMD": 1546, "T_STRES": 1292, "SELFTEST_SENDER": 19, "ST_BEGIN": 1, "ST_END": 2, "ST_SNAP": 3,
+    "ST_RECORDS": 0, "ST_HAPTICS": 1, "ST_SPEAKER": 2, "ST_MAX_S": 180,
+    "SR_SYS": 1, "SR_COUNT": 2, "SR_FB": 3, "SR_WRITES": 4, "SR_HAPT": 5, "SR_SPK": 6, "SR_DONE": 7,
+    "SRF_LOW_LATENCY": 1, "SRF_RT": 2, "SRF_PINNED": 4, "SRF_QOS": 8, "SRC_PC": 0, "SRC_REPEAT": 1, "SRC_WATCHDOG": 2,
+    "GOVERNORS": ("performance", "schedutil", "ondemand", "conservative", "powersave", "userspace", "interactive"),
+})
 
 
 KEY = b"0123456789abcdef"

@@ -270,6 +270,9 @@ padcal.json.bad
 # settings copies from updates (receiver/rx_backup.py)
 receiver/backups/
 
+# pad self-test reports (receiver/rx_selftest_report.py)
+receiver/reports/
+
 # HIDMaestro (HIDMaestro.Core.dll and its dependencies) unpacked by the user
 receiver/hidmaestro/
 # start jako administrator przez zadanie (receiver_controller.elevate)

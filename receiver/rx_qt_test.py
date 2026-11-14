@@ -9,6 +9,7 @@ state. Refresh: tick() from the window clock (30 Hz) only while the view is visi
   The accessibility panel (rx_qt_access) lives in the profile editor's "Dostępność" tab; its range ring is drawn in the stick
              scope (set_reach), which is why the scope stays here.
   Gyroscope: "Calibrate" - the sender computes the offset of the pad lying still and stores it per pad (proto CMD_GYRO_CAL).
+  Self-test: one button runs the whole measuring scenario of the pad and leaves a report (rx_qt_selftest, rx_selftest).
   Touchpad:  shown for a pad whose touchpad is the mouse (the master); it keeps operating the window, "Test touchpad" captures
              it (rx_testmode): the cursor stands, fingers and click show on the pad drawing, the button counts down to the end.
 """
@@ -32,6 +33,7 @@ from rx_config import C
 from rx_i18n import _
 from rx_qt_icons import icon
 from rx_qt_panels import _vbox, scrolled
+from rx_qt_selftest import SelfTestBox
 from rx_qt_style import ACCENT, BORDER, DIM, FG, LINE, MUTED, OK, TRACK, WARN, px, set_prop
 from rx_qt_widgets import ConfirmButton, SegmentBar, button, icon_label, label
 
@@ -299,6 +301,8 @@ class TestPanel(QWidget):
         self._build_motion(lay)
         self._build_drift(lay)
         self._build_gyro(lay)
+        self.selftest = SelfTestBox()
+        lay.addWidget(self.selftest)
         lay.addStretch(1)
         self._buttons = (self.measure, self.apply, self.cal_btn, self.tp_btn)
         self.reset_view()
@@ -396,6 +400,7 @@ class TestPanel(QWidget):
         """Switch the panel to another pad and reset the view."""
         if slot != self.slot:
             self.slot = slot
+            self.selftest.set_slot(slot)
             self.reset_view()
 
     def activate(self, on: bool) -> None:
@@ -404,6 +409,7 @@ class TestPanel(QWidget):
             self._query(time.monotonic())
         else:
             self.cancel()
+        self.selftest.activate(on)
 
     def _query(self, now: float) -> None:
         """Ask the sender for the pad's gyro calibration state."""
@@ -411,7 +417,8 @@ class TestPanel(QWidget):
         P.query_gyro_cal(self.slot)
 
     def cancel(self) -> None:
-        """Abort a running drift measurement and a touchpad capture, hide the progress bar."""
+        """Abort a running drift measurement, a touchpad capture and the pad self-test, hide the progress bar."""
+        self.selftest.cancel()
         testmode.stop_capture()
         if self.run is not None:
             self.run.cancel()
@@ -451,6 +458,7 @@ class TestPanel(QWidget):
             w.rescale()
         for b in self._buttons:
             b.setIconSize(QSize(px(18), px(18)))
+        self.selftest.rescale()
         self.drift_bar.setFixedHeight(px(5))
         self.cal_bar.setFixedHeight(px(5))
 
@@ -644,6 +652,7 @@ class TestPanel(QWidget):
         self.scope.set_pos(live["ls"], live["rs"])
         self._drift_tick(now)
         self._cal_tick(now)
+        self.selftest.tick()
         if self._state() != self._shown:
             self.refresh()
         return t

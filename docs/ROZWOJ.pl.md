@@ -79,6 +79,13 @@ Testy obejmują:
   do gry (DS4, DSU, mysz, skróty), kalibracja żyroskopu z okna i jej zapis na nadajniku, gałki bez strefy martwej
   nadajnika na czas pomiaru, wyłączone skróty i wyjście Options + Create (`test_padtest.py`, `test_padtest_gui.py`,
   `test_calib_tx.py`);
+- self-test pada: liczby (percentyle, najbliższa ranga, przejście zegara przez 32 bity), łączenie naszych pakietów rumble z
+  rekordami zapisu z nadajnika, rekordy nadajnika przez UDP, cały przebieg na symulowanym nadajniku (i na starym, który nie
+  może dostać nic z testu), format i plik raportu, blok w oknie (`test_selftest.py`, `test_selftest_gui.py`) oraz strona
+  nadajnika - sztuczny sysfs, rekordy zapisu z wątku writera, rekord watchdoga, wyniki na żądanie (`test_selftest_tx.py`);
+  pakiety `stcmd` / `stres` są przypięte w `test_proto_golden.py`. Nadajnik zna test od wersji 19
+  (`proto.SELFTEST_SENDER`; w pakiecie wersji nie ma wolnego bitu na flagę CAP), więc odbiornik nigdy nie wysyła go
+  starszemu;
 - Bluetooth nadajnika z okna: protokół, BlueZ przez podstawiony `busctl`, skan na prawdziwym procesie z limitem,
   błędy adaptera / uprawnień / programów, lista rundami, całość przez UDP (`test_bt.py`) i panel w oknie z obsługą
   padem (`test_bt_gui.py`);
