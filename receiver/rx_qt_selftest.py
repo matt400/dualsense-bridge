@@ -14,7 +14,7 @@ from __future__ import annotations
 from typing import Final
 
 from PySide6.QtCore import QSize, Signal
-from PySide6.QtWidgets import QApplication, QHBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QFrame
 
 import rx_selftest as T
 import rx_selftest_report as R
@@ -22,9 +22,8 @@ import rx_state as S
 import rx_testmode as testmode
 from rx_i18n import _
 from rx_qt_icons import icon
-from rx_qt_panels import _vbox
 from rx_qt_style import ACCENT, LINE, px, set_prop
-from rx_qt_widgets import Segmented, SegmentBar, button, icon_label, label
+from rx_qt_widgets import Segmented, SegmentBar, button, label, section
 
 JOIN_S: Final = 2.0             # how long stopping the run waits for its thread (it reacts within a tick and then cleans up)
 
@@ -43,7 +42,7 @@ REFUSAL_TEXT: Final = {
 }
 
 
-class SelfTestBox(QWidget):
+class SelfTestBox(QFrame):
     """The "pad self-test" block of the Test view. busy_changed(bool): a run started / ended (the window re-applies the output lock)."""
 
     busy_changed = Signal(bool)
@@ -56,23 +55,14 @@ class SelfTestBox(QWidget):
         self.run: T.SelfTest | None = None
         self.text = ""                  # the last report (for "Copy report")
         self.path = ""                  # where it was saved
-        box = _vbox(self, 6)
-        head = QHBoxLayout()
-        head.setSpacing(px(6))
-        head.addWidget(icon_label("stopwatch", px(16)))
-        head.addWidget(label(_("SELF-TEST PADA"), "h2"), 1)
-        box.addLayout(head)
+        box = section("stopwatch", _("SELF-TEST PADA"), self)[1]
         box.addWidget(label(_("Jeden przebieg mierzy sieć, opóźnienie, wibracje, haptykę i głośnik oraz procesor nadajnika, "
                               "a potem daje raport do skopiowania (dla Claude'a). Wyjście do gry jest zablokowane na czas testu."),
                             "dim", wrap=True))
-        row = QHBoxLayout()
-        row.setSpacing(px(8))
-        row.addWidget(label(_("Okno pomiaru opóźnienia:")))
+        box.addWidget(label(_("Okno pomiaru opóźnienia:"), wrap=True))      # above the switch: side by side they do not fit
         self.window_seg = Segmented(self.WINDOWS)
         self.window_seg.set("15")
-        row.addWidget(self.window_seg)
-        row.addStretch(1)
-        box.addLayout(row)
+        box.addWidget(self.window_seg)
         self.start_btn = button(_("Uruchom self-test"), primary=True)
         self.start_btn.setIcon(icon("stopwatch"))
         self.start_btn.clicked.connect(self.toggle)

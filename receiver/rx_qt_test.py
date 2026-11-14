@@ -22,7 +22,7 @@ from typing import Any
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetricsF, QPainter, QPaintEvent, QPen, QPolygonF
-from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QCheckBox, QFrame, QHBoxLayout, QSizePolicy, QVBoxLayout, QWidget
 
 import rx_drift as D
 import rx_profiles as P
@@ -35,7 +35,7 @@ from rx_qt_icons import icon
 from rx_qt_panels import _vbox, scrolled
 from rx_qt_selftest import SelfTestBox
 from rx_qt_style import ACCENT, BORDER, DIM, FG, LINE, MUTED, OK, TRACK, WARN, px, set_prop
-from rx_qt_widgets import ConfirmButton, SegmentBar, button, icon_label, label
+from rx_qt_widgets import ConfirmButton, SegmentBar, button, label, section
 
 CHART_S = 5.0
 AXES = (("X", "#ff6b6b"), ("Y", OK), ("Z", "#5b9bff"))
@@ -143,8 +143,10 @@ class MotionChart(QWidget):
             p.drawText(QPointF(x, r.top() + px(14)), text)
             x += fm.horizontalAdvance(text) + px(8)
         scale = f"±{rng:g} {self.unit}"
-        p.setPen(QColor(MUTED))
-        p.drawText(QPointF(r.right() - px(8) - fm.horizontalAdvance(scale), r.top() + px(14)), scale)
+        sx = r.right() - px(8) - fm.horizontalAdvance(scale)
+        if sx >= x:                     # in a narrow panel the scale would overlap the values: it is dropped then
+            p.setPen(QColor(MUTED))
+            p.drawText(QPointF(sx, r.top() + px(14)), scale)
 
 
 class StickScope(QWidget):
@@ -268,15 +270,6 @@ class StickScope(QWidget):
         return QPointF(c.x() + x * k, c.y() + y * k)
 
 
-def _head(icon_name: str, text: str) -> QHBoxLayout:
-    """A section heading row: a small icon and an h2 label."""
-    row = QHBoxLayout()
-    row.setSpacing(px(6))
-    row.addWidget(icon_label(icon_name, px(16)))
-    row.addWidget(label(text, "h2"), 1)
-    return row
-
-
 class TestPanel(QWidget):
     """The right panel in the Test view. block_changed(bool) - the user toggled the lock of output to the game."""
 
@@ -309,9 +302,7 @@ class TestPanel(QWidget):
 
     def _build_lock(self, lay: QVBoxLayout, block_on: bool) -> None:
         """The checkbox that blocks the output to the game while testing."""
-        row = QHBoxLayout()
-        row.setSpacing(px(6))
-        row.addWidget(icon_label("shield", px(18)))
+        card, box = section("shield", _("BLOKADA"))
         self.block = QCheckBox(_("Blokuj wyjście do gry"))
         self.block.setToolTip(_("Na czas testu gra dostaje puszczone przyciski i gałki w środku tego pada; skróty pada, "
                                 "gyro-mysz i tryb konsoli też nie reagują. Touchpad jako mysz dalej steruje oknem "
@@ -319,14 +310,12 @@ class TestPanel(QWidget):
                                 "po przejściu do gry albo wyjściu z testu pad od razu do niej wraca."))
         self.block.setChecked(block_on)
         self.block.toggled.connect(self.block_changed.emit)
-        row.addWidget(self.block, 1)
-        lay.addLayout(row)
+        box.addWidget(self.block)
+        lay.addWidget(card)
 
     def _build_touchpad(self, lay: QVBoxLayout) -> None:
         """The touchpad capture: a hint and the button; the whole block is visible only for a pad whose touchpad is the mouse."""
-        self.tp_box = QWidget()
-        box = _vbox(self.tp_box, 6)
-        box.addLayout(_head("touchpad", _("TOUCHPAD")))
+        self.tp_box, box = section("touchpad", _("TOUCHPAD"), QFrame())
         self.tp_hint = label("", "dim", wrap=True)
         box.addWidget(self.tp_hint)
         self.tp_btn = button(_("Testuj touchpad"))
@@ -337,26 +326,27 @@ class TestPanel(QWidget):
 
     def _build_motion(self, lay: QVBoxLayout) -> None:
         """The gyro and accelerometer charts."""
-        lay.addLayout(_head("pulse", _("RUCH")))
+        card, box = section("pulse", _("RUCH"))
         self.gyro_chart = MotionChart(_("Gyro"), "°/s", 10.0, 1)
         self.acc_chart = MotionChart(_("Akcelerometr"), "g", 1.2, 2)
-        lay.addWidget(self.gyro_chart)
-        lay.addWidget(self.acc_chart)
+        box.addWidget(self.gyro_chart)
+        box.addWidget(self.acc_chart)
+        lay.addWidget(card)
 
     def _build_drift(self, lay: QVBoxLayout) -> None:
         """The stick scope, the drift measurement with its result and the stored correction."""
-        lay.addLayout(_head("target", _("GAŁKI - DRYF")))
+        card, box = section("target", _("GAŁKI - DRYF"))
         self.scope = StickScope()
         self.scope.setToolTip(_("Skala pierwiastkowa: małe odchyłki są powiększone. Kropkowane okręgi: 5% i 25% "
                                 "wychylenia; niebieski: strefa martwa z korekcji dryfu; żółty: szczyt ostatniego pomiaru; zielony: "
                                 "zasięg z trybu dostępności."))
-        lay.addWidget(self.scope)
+        box.addWidget(self.scope)
         self.drift_hint = label(_("Puść gałki i odłóż pad - pomiar trwa {s} s.").format(s=f"{D.MEASURE_S:g}"), "dim", wrap=True)
-        lay.addWidget(self.drift_hint)
+        box.addWidget(self.drift_hint)
         self.drift_bar = SegmentBar(px(5))
-        lay.addWidget(self.drift_bar)
+        box.addWidget(self.drift_bar)
         self.drift_res = label("", wrap=True)
-        lay.addWidget(self.drift_res)
+        box.addWidget(self.drift_res)
         row = QHBoxLayout()
         row.setSpacing(px(8))
         self.measure = button(_("Zmierz dryf"))
@@ -368,7 +358,7 @@ class TestPanel(QWidget):
         self.apply.clicked.connect(self.apply_drift)
         row.addWidget(self.measure, 1)
         row.addWidget(self.apply, 1)
-        lay.addLayout(row)
+        box.addLayout(row)
         row = QHBoxLayout()
         row.setSpacing(px(6))
         self.corr = label("", "dim", wrap=True)
@@ -377,23 +367,25 @@ class TestPanel(QWidget):
         self.clear_btn.confirmed.connect(self.clear_drift)
         row.addWidget(self.corr, 1)
         row.addWidget(self.clear_btn)
-        lay.addLayout(row)
+        box.addLayout(row)
+        lay.addWidget(card)
 
     def _build_gyro(self, lay: QVBoxLayout) -> None:
         """The gyro calibration: a hint, a progress bar, the state text and the button."""
-        lay.addLayout(_head("gyro", _("ŻYROSKOP - KALIBRACJA")))
-        lay.addWidget(label(_("Połóż pad na płaskiej, stabilnej powierzchni i nie dotykaj go przez {s} s.")
+        card, box = section("gyro", _("ŻYROSKOP - KALIBRACJA"))
+        box.addWidget(label(_("Połóż pad na płaskiej, stabilnej powierzchni i nie dotykaj go przez {s} s.")
                             .format(s=CAL_S), "dim", wrap=True))
         self.cal_bar = SegmentBar(px(5))
-        lay.addWidget(self.cal_bar)
+        box.addWidget(self.cal_bar)
         self.cal_text = label("", wrap=True)
-        lay.addWidget(self.cal_text)
+        box.addWidget(self.cal_text)
         self.cal_btn = button(_("Kalibruj żyroskop"))
         self.cal_btn.setIcon(icon("gyro"))
         self.cal_btn.setToolTip(_("Nadajnik liczy offset żyroskopu i zapisuje go na telefonie dla tego pada - "
                                   "po restarcie nie trzeba już kalibrować przy starcie."))
         self.cal_btn.clicked.connect(self.start_cal)
-        lay.addWidget(self.cal_btn)
+        box.addWidget(self.cal_btn)
+        lay.addWidget(card)
 
     # ---------- pad choice / view ----------
     def set_slot(self, slot: int) -> None:
