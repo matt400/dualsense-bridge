@@ -301,7 +301,7 @@
   missing in kernel / pad not found / old sender). The rumble button on the pad card checks whether rumble reaches
   the pad.
 - **Fixed player order:** the sender remembers which pad (MAC) was in which slot (`slots.json`), and the receiver
-  plugs in virtual pads in slot order. When pad 2 connects first, it waits ~1 s for pad 1: pads switched on together are
+  plugs in virtual pads in slot order. When pad 2 connects first, it waits for pad 1 (1 s by default, Settings → Pads): pads switched on together are
   created in order with no extra device, so Steam Input sees nothing unusual. Only if pad 1 is late, slot 1 gets a
   **placeholder pad** (a neutral virtual pad) that pad 1 takes over later without replugging; it goes away together with
   the last pad from a higher slot. The alternative "wait" mode (Settings → Pads → Method) waits up to 6 s and never

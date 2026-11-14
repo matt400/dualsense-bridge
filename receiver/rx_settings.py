@@ -319,6 +319,9 @@ SLOT_MODES: Final = {"placeholder": "Pad zastępczy tylko gdy pad 1 nie dołącz
                      "hold": "Czekaj do 6 s na pad 1 (bez pada zastępczego)"}
 
 
+SLOT_GRACE_MS: Final = (0, 5000)    # placeholder mode: how long pad 2 waits for pad 1 before a placeholder pad is used [ms]
+
+
 def _path(v: Any) -> str:
     """Accept a path string, stripped."""
     if not isinstance(v, str):
@@ -333,6 +336,7 @@ class VpadConfig:
     backend: str = "auto"         # auto | hidmaestro | vigem
     fixed_slots: bool = True      # keep the player order: pad 2 never becomes player 1 just because it connected first
     slot_mode: str = "placeholder"   # placeholder = a neutral pad holds slot 1 if pad 1 is late | hold = pad 2 waits for pad 1
+    slot_grace_ms: int = 1000     # placeholder mode: how long pad 2 waits for pad 1 before slot 1 gets a placeholder pad
     # path to HIDMaestro.Core.dll (or its folder); "" = downloaded automatically / hidmaestro\ next to the script
     hm_dll: str = ""
     hm_auto: bool = True          # download and update HIDMaestro from GitHub (only without an own hm_dll path)
@@ -341,7 +345,7 @@ class VpadConfig:
 
 
 VpadConfig.V = {"backend": _choice(VPAD_BACKENDS), "fixed_slots": _bool, "slot_mode": _choice(SLOT_MODES),
-                "hm_dll": _path, "hm_auto": _bool}
+                "slot_grace_ms": _num(*SLOT_GRACE_MS), "hm_dll": _path, "hm_auto": _bool}
 
 
 # ---------------- game haptics ----------------

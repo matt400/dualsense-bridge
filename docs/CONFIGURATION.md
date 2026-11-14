@@ -58,7 +58,7 @@ defaults (the file is created and fixed, a corrupted one is kept as `console.jso
 
 Touchpad mouse, master pad, lightbar, game haptics, Wake-on-LAN, event log settings and virtual pads are in `receiver/settings.json`
 (window → Settings, takes effect immediately). Virtual pads (`vpad`): `backend` = `auto` | `hidmaestro` | `vigem`,
-`fixed_slots` = fixed player order, `slot_mode` = how it is kept: `placeholder` (default; pad 2 waits ~1 s for pad 1, then a neutral pad holds the empty lower slot) | `hold` (waits up to 6 s, never a placeholder), `hm_auto` = download the
+`fixed_slots` = fixed player order, `slot_mode` = how it is kept: `placeholder` (default; pad 2 waits ~1 s for pad 1, then a neutral pad holds the empty lower slot) | `hold` (waits up to 6 s, never a placeholder), `slot_grace_ms` = the placeholder wait in ms (0-5000, default 1000), `hm_auto` = download the
 HIDMaestro version pinned in `receiver/hm_pin.json` from GitHub (to `receiver/hidmaestro/vX.Y.Z/`; a new version takes effect after a restart when
 an older one is already in use), `hm_dll` = a custom `HIDMaestro.Core.dll` or its folder (then no download). Window preferences (`ui`): `lang` = `pl` | `en`, `pads_mode` = `dynamic` (the left column shows
 only connected pads) | `fixed`, `pads_count` = how many pads `fixed` always shows (1-4). The number of slots is `pads` in

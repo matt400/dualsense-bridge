@@ -16,7 +16,7 @@ from rx_config import C
 from rx_qt_icons import icon
 from rx_qt_style import set_prop
 from rx_qt_widgets import (Combo, button, field, group, label, spinbox)
-from rx_settings import (PADS_COUNT, SLOT_MODES, VPAD_BACKENDS, UiConfig, VpadConfig)
+from rx_settings import (PADS_COUNT, SLOT_GRACE_MS, SLOT_MODES, VPAD_BACKENDS, UiConfig, VpadConfig)
 from rx_qt_console_util import row_of, TabBase
 
 
@@ -35,7 +35,9 @@ class VpadTab(TabBase):
         self.vpad_admin.clicked.connect(self.elevate.emit)
         self.vpad_fixed = QCheckBox(_("Stała kolejność graczy"))
         self.vpad_mode = Combo([(k, _(v)) for k, v in SLOT_MODES.items()])
-        self.vpad_fixed.toggled.connect(self.vpad_mode.setEnabled)
+        self.vpad_grace = spinbox(*SLOT_GRACE_MS, 100, " ms")
+        self.vpad_mode.changed.connect(lambda _v: self._vpad_state())
+        self.vpad_fixed.toggled.connect(lambda _on: self._vpad_state())
         self.vpad_auto = QCheckBox(_("Pobieraj HIDMaestro automatycznie (GitHub, przypięta wersja)"))
         self.vpad_auto.toggled.connect(lambda _on: self._vpad_state())
         self.vpad_check = button(_("Sprawdź teraz"), small=True)
@@ -75,6 +77,7 @@ class VpadTab(TabBase):
         order = group(_("KOLEJNOŚĆ GRACZY"),
                       self.vpad_fixed,
                       field(_("Sposób"), self.vpad_mode),
+                      field(_("Czekanie na pad 1 przed padem zastępczym"), self.vpad_grace),
                       label(_("Gry i Steam numerują pady wg kolejności podłączenia. Gdy pad 2 włączy się pierwszy, "
                               "czeka ~1 s na pad 1: pady włączone razem powstają po kolei bez żadnego dodatkowego urządzenia "
                               "(Steam Input nic nie widzi). Dopiero gdy pad 1 jest spóźniony, slot 1 dostaje pad zastępczy, "
@@ -89,7 +92,7 @@ class VpadTab(TabBase):
         self.vpad_dll.setText(v.hm_dll)
         self.vpad_fixed.setChecked(v.fixed_slots)
         self.vpad_mode.set_data(v.slot_mode)
-        self.vpad_mode.setEnabled(v.fixed_slots)
+        self.vpad_grace.setValue(v.slot_grace_ms)
         self.vpad_auto.setChecked(v.hm_auto)
         self._vpad_state()
 
@@ -129,6 +132,9 @@ class VpadTab(TabBase):
         restart-as-administrator button.
         """
         backend = self.vpad_backend.currentData()
+        fixed = self.vpad_fixed.isChecked()
+        self.vpad_mode.setEnabled(fixed)
+        self.vpad_grace.setEnabled(fixed and self.vpad_mode.currentData() == "placeholder")
         used = sorted({rx_ds4.LABELS[k] for k in rx_ds4.kinds if k})
         lines = [_("Teraz: {kinds}").format(kinds=", ".join(used)) if used else _("Teraz: żaden wirtualny pad nie jest podłączony")]
         st = rx_hm_update.refresh_status() if not rx_hm_update.status.busy else rx_hm_update.status
@@ -176,5 +182,5 @@ class VpadTab(TabBase):
     def _collect_vpad(self) -> VpadConfig:
         """-> the VpadConfig described by the Pads tab."""
         return VpadConfig(backend=self.vpad_backend.currentData(), fixed_slots=self.vpad_fixed.isChecked(),
-                          slot_mode=self.vpad_mode.currentData(),
+                          slot_mode=self.vpad_mode.currentData(), slot_grace_ms=self.vpad_grace.value(),
                           hm_dll=self.vpad_dll.text().strip(), hm_auto=self.vpad_auto.isChecked())

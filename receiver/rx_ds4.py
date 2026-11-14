@@ -9,7 +9,7 @@ still serves as a fallback); vigem = always ViGEm. Changing the backend in the w
 
 Fixed player order (fixed_slots): games, Steam and Windows number pads by the order in which devices appear.
 When the pad of slot 2 connects while slot 1 is empty, slot_mode decides how pad 2 stays player 2:
-- placeholder (default): pad 2 first waits PLACEHOLDER_GRACE for pad 1 (two pads switched on together never need a
+- placeholder (default): pad 2 first waits the grace time (vpad.slot_grace_ms, 1 s) for pad 1 (two pads switched on together never need a
   placeholder, so Steam Input sees no extra device). Only if pad 1 is still missing, slot 1 gets a neutral virtual pad
   that pad 1 later takes over. It disappears together with the last pad of a higher slot.
 - hold: pad 2's virtual pad waits longer (HOLD_WAIT) for pad 1 and never uses a placeholder; if pad 1 does not come,
@@ -59,7 +59,6 @@ if vg is not None:
         _vcli = DS4_LIGHTBAR_COLOR = None
 VIGEM_ERROR_NONE = 0x20000000
 
-PLACEHOLDER_GRACE = 1.0   # placeholder mode: how long pad 2 waits for pad 1 before slot 1 gets a placeholder pad
 HOLD_WAIT = 6.0         # hold mode: how long a higher slot waits for the lower pads to connect before plugging in alone
 PLUG_ORDER_WAIT = 2.0   # a slot waits at most this long for earlier slots to plug their DS4 (the player order in a game)
 
@@ -233,7 +232,7 @@ def hold_for_lower(idx: int, timeout: float | None = None) -> bool:
     """Before plugging slot idx in: give the lower pads a moment to connect, so the pads come up in slot order.
 
     hold: waits HOLD_WAIT and then plugs in alone (no placeholder device, but the order may then be wrong).
-    placeholder: waits only PLACEHOLDER_GRACE; if a lower pad is still missing, the slot is added to `holding`, which makes
+    placeholder: waits only the grace time (slot_grace_ms); if a lower pad is still missing, the slot goes to `holding`, which makes
     the lower slots plug a placeholder first (see needed()). Pads switched on together therefore need no placeholder at all.
     -> False when the pad left while waiting or the receiver stops (nothing to plug in).
     """
@@ -241,7 +240,7 @@ def hold_for_lower(idx: int, timeout: float | None = None) -> bool:
     if not cfg.fixed_slots:
         return True
     hold = cfg.slot_mode == "hold"
-    r = _wait_lower(idx, timeout if timeout is not None else (HOLD_WAIT if hold else PLACEHOLDER_GRACE))
+    r = _wait_lower(idx, timeout if timeout is not None else (HOLD_WAIT if hold else cfg.slot_grace_ms / 1000))
     if r is False:
         if hold:
             print(f"Controller {idx}: lower pads did not connect in time - plugging in alone")

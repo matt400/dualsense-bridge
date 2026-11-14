@@ -708,6 +708,7 @@ EN: Final[dict[str, str]] = {
         "does slot 1 get a placeholder pad, which pad 1 takes over later. The wait mode never creates a placeholder, but "
         "pad 2 may then become player 1. The sender remembers which physical pad is pad 1 / 2 (slots.json, by MAC).",
     "Sposób": "Method",
+    "Czekanie na pad 1 przed padem zastępczym": "Wait for pad 1 before using a placeholder pad",
     "Pad zastępczy tylko gdy pad 1 nie dołączy w ~1 s": "Placeholder pad only if pad 1 does not join within ~1 s",
     "Czekaj do 6 s na pad 1 (bez pada zastępczego)": "Wait up to 6 s for pad 1 (no placeholder pad)",
     "Teraz: {kinds}": "Now: {kinds}",

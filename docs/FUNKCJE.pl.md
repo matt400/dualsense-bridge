@@ -289,7 +289,7 @@
   pokazuje „wibracja: sterownik + HID” albo powód jej braku (brak uprawnień / brak w jądrze / nie znaleziono pada /
   stary nadajnik). Przycisk wibracji na karcie pada sprawdza, czy wibracja dochodzi do pada.
 - **Stała kolejność graczy:** nadajnik pamięta, który pad (MAC) był w którym slocie (`slots.json`), a receiver podłącza
-  wirtualne pady w kolejności slotów. Gdy pad 2 połączy się pierwszy, czeka ~1 s na pad 1: pady włączone razem powstają
+  wirtualne pady w kolejności slotów. Gdy pad 2 połączy się pierwszy, czeka na pad 1 (domyślnie 1 s, Ustawienia → Pady): pady włączone razem powstają
   po kolei bez dodatkowego urządzenia, więc Steam Input nie widzi niczego nietypowego. Dopiero gdy pad 1 jest spóźniony,
   slot 1 dostaje **pad zastępczy** (neutralny wirtualny pad), który pad 1 potem przejmuje bez ponownego podłączania, a
   znika on razem z ostatnim padem z wyższego slotu. Tryb „czekaj” (Ustawienia → Pady → Sposób) czeka do 6 s i nigdy nie

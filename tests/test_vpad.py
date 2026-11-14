@@ -39,8 +39,7 @@ class VPad:
 
 rx_ds4.vg.VDS4Gamepad = VPad
 rx_ds4.init()
-rx_ds4.PLACEHOLDER_GRACE = 0.3
-vpad(backend="vigem")
+vpad(backend="vigem", slot_grace_ms=300)
 threads = [threading.Thread(target=rx_ds4.slot_thread, args=(i,), daemon=True) for i in range(2)]
 for t in threads:
     t.start()
@@ -76,16 +75,16 @@ check(wait(lambda: not S.plugged[0] and not S.plugged[1]), "both disconnected: n
 check(wait(lambda: not alive_pads), f"all pads detached from ViGEm: {alive_pads}")
 
 # without the fixed order: pad 2 alone = one virtual pad
-vpad(backend="vigem", fixed_slots=False)
+vpad(backend="vigem", fixed_slots=False, slot_grace_ms=300)
 S.want[1].set(); S.wake[1].set()
 check(wait(lambda: S.plugged[1]) and not S.plugged[0], "fixed_slots=false: only slot 1 (the old behaviour)")
 # turning the fixed order on midway: slot 0 gets the placeholder at once (the slot thread checks needed)
-vpad(backend="vigem", fixed_slots=True)
+vpad(backend="vigem", fixed_slots=True, slot_grace_ms=300)
 check(wait(lambda: S.plugged[0]), "fixed_slots turned on midway: placeholder slot 0")
 S.want[1].clear(); S.wake[1].set()
 check(wait(lambda: not S.plugged[0] and not S.plugged[1]), "cleanup")
 
-# placeholder mode, pad 1 joins within the grace period: no placeholder device is ever created
+# placeholder mode, pad 1 joins within the grace time (slot_grace_ms): no placeholder device is ever created
 created.clear()
 S.want[1].set(); S.wake[1].set()
 time.sleep(0.1)
