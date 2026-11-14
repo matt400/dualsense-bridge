@@ -15,30 +15,69 @@ also over the game colour; confirmations (e.g. the master's golden flash) are al
 """
 from __future__ import annotations
 
-import threading
 import time
 from collections.abc import Callable, Sequence
 from types import ModuleType
-from typing import Any, Final, TypeAlias
 
 import rx_events as ev
 import rx_lightbar as L
 import rx_settings
 import rx_state as S
 import rx_swap
-from proto import (CAP_TRIG_FX, CAP_TRIG_RAW, LEDS_MUTE, LEDS_PLAYER, LEDS_SENDER, STATE_CHARGING, TRG3_L2, TRG3_R2, TRIG2_OFF,
-                   TRIG_RAW_LEN, clamp)
+from proto import STATE_CHARGING, clamp
+from rx_fbstate import (
+    FX_SENDER, FeedbackState, GAME_RUMBLE_GAP_S, GAME_RUMBLE_STALE_S, IDLE_REFRESH_S, Leds, NO_GAME_TRIG, NO_LEDS,
+    PCT_MAX, PULSES, Pulse, RAW_SENDER, RUMBLE_REFRESH_S, SendFeedback, SendLeds, SendTriggers, TRIG_OFF_MODES,
+    TRIG_REFRESH_S, TRIG_REPEAT, Trig, cbs, fb, fb_event, fb_sent, leds_sent, pulses, trig_sent,
+)
+from rx_fbtrig import (
+    _has_effect, game_drives, leds_target, leds_tick, release_triggers, sender_fx, sender_leds, sender_raw,
+    trigger_target, triggers_tick,
+)
 from rx_config import C
 from rx_i18n import _
-from rx_shape import BYTE_MAX, legacy_values, trigger_values
+from rx_shape import BYTE_MAX
 
-FeedbackState: TypeAlias = dict[str, Any]           # what the game set for one slot (see init())
-Trig: TypeAlias = tuple[bytes | None, bytes | None]   # the game's trigger effects (L2, R2); None = not set
-Pulse: TypeAlias = tuple[float, int, int, tuple[int, int, int] | None]   # (end, small, large, colour | None)
-SendFeedback: TypeAlias = Callable[[int, tuple[int, int, int, int, int]], None]
-SendTriggers: TypeAlias = Callable[[int, Sequence[Any], int], None]
-SendLeds: TypeAlias = Callable[[int, tuple[int, int, int], int], None]
-Leds: TypeAlias = tuple[int | None, int | None]       # the game's (mute button LED, player LEDs); None = not set
+__all__ = [  # the state and the trigger / LED ticks moved out (rx_fbstate, rx_fbtrig); this module stays their one public face
+    "FX_SENDER",
+    "GAME_RUMBLE_GAP_S",
+    "GAME_RUMBLE_STALE_S",
+    "IDLE_REFRESH_S",
+    "NO_GAME_TRIG",
+    "NO_LEDS",
+    "PCT_MAX",
+    "PULSES",
+    "RAW_SENDER",
+    "RUMBLE_REFRESH_S",
+    "TRIG_OFF_MODES",
+    "TRIG_REFRESH_S",
+    "TRIG_REPEAT",
+    "FeedbackState",
+    "Leds",
+    "Pulse",
+    "SendFeedback",
+    "SendLeds",
+    "SendTriggers",
+    "Trig",
+    "_has_effect",
+    "cbs",
+    "fb",
+    "fb_event",
+    "fb_sent",
+    "game_drives",
+    "leds_sent",
+    "leds_target",
+    "leds_tick",
+    "pulses",
+    "release_triggers",
+    "sender_fx",
+    "sender_leds",
+    "sender_raw",
+    "trig_sent",
+    "trigger_target",
+    "triggers_tick",
+]
+
 
 _games: ModuleType | None = None          # rx_games (it imports this module) - loaded lazily, on first use
 
@@ -52,58 +91,7 @@ def in_game() -> bool:
     return bool(_games.in_game())
 
 
-FX_SENDER: Final = 8          # from this version the sender knows trig2 (with the CAP_TRIG_FX bit in the version packet)
-RAW_SENDER: Final = 11        # from this version the sender knows trig3 - trigger effects from the game (the CAP_TRIG_RAW bit)
-NO_GAME_TRIG: Final[Trig] = (None, None)    # the game has set no trigger effects (L2, R2)
-NO_LEDS: Final[Leds] = (None, None)         # the game has set neither the mute LED nor the player LEDs
-TRIG_OFF_MODES: Final = (0x00, 0x05)  # first byte of a trigger effect: none / Off - the game released the trigger
-
-TRIG_REFRESH_S: Final = 2.0   # trigger effects are refreshed this often (a pad after reconnecting / a lost packet)
-TRIG_REPEAT: Final = 3        # a change of effects is sent this many times (UDP)
-GAME_RUMBLE_STALE_S: Final = 1.0   # game rumble with no new motor report for longer than this -> 0. Games send reports every frame while
-                            # rumbling; the last "motors 0" (entering a menu, the end of a drive) can get lost
-                            # (HIDMaestro overwrites old packets) and the pad would vibrate forever. Not longer:
-                            # with 3 s the pad keeps twitching in the Forza Horizon menu after leaving a drive
-GAME_RUMBLE_GAP_S: Final = 0.25    # the game still sends reports (colour, triggers) but no motors for longer than this since the last
-                            # motor report -> it stopped driving the rumble (a menu) -> 0, without waiting for STALE
-RUMBLE_REFRESH_S: Final = 0.5         # while rumbling: refreshes the timeout on the sender
-IDLE_REFRESH_S: Final = 5.0           # at rest: a lost packet will not leave a wrong lightbar colour
-PCT_MAX: Final = 100                  # a battery level above this means "unknown"
-
-# confirmations on the pad: (time s, small rumble, large rumble, lightbar colour | None = colour unchanged)
-PULSES: Final[dict[str, Pulse]] = {
-    "mouse": (0.18, 0, 150, (0, 90, 255)),        # touchpad -> mouse
-    "ds4": (0.18, 0, 150, (255, 255, 255)),       # touchpad -> DS4 touch
-    "profile": (0.25, 0, 190, (0, 220, 90)),      # profile change (game / manual)
-    "default": (0.25, 0, 190, (255, 170, 0)),     # back to the default profile
-    "up": (0.07, 160, 0, None),                   # sensitivity up
-    "down": (0.07, 80, 0, None),                  # sensitivity down
-    "action": (0.10, 130, 0, None),               # screenshot, Game Bar etc.
-    "auto_profile": (0.30, 0, 0, (0, 220, 90)),   # a game profile switched on by itself (alt-tab) - colour only, no rumble
-    "auto_default": (0.30, 0, 0, (255, 170, 0)),
-    "master": (0.60, 0, 200, (255, 200, 0)),      # this pad became the master - a golden flash
-    "hold": (0.06, 90, 0, None),                  # a master action: keep holding
-    "denied": (0.25, 0, 0, (255, 0, 0)),          # only the master may - a red blink
-    "test": (0.6, 200, 255, (255, 255, 255)),     # the "Test rumble" button in the window
-    # tilt-to-stick zone crossings (rx_gstick_io, per-pad "feedback": haptic / led / both)
-    "tilt_edge_h": (0.06, 0, 170, None),          # full tilt reached - a firm tick
-    "tilt_edge_l": (0.25, 0, 0, (255, 120, 0)),   # ... an orange flash
-    "tilt_edge_b": (0.25, 0, 170, (255, 120, 0)),
-    "tilt_center_h": (0.04, 90, 0, None),         # back in the deadzone - a light tick
-    "tilt_center_l": (0.15, 0, 0, (0, 200, 255)), # ... a cyan flash
-    "tilt_center_b": (0.15, 90, 0, (0, 200, 255)),
-}
-fb: list[FeedbackState] = []
-fb_event = threading.Event()
-pulses: list[Pulse | None] = []       # the active confirmation per slot: (end, small, large, colour | None) or None
-fb_sent: list[tuple[tuple[int, ...], float] | None] = []      # (value, time) of the feedback sent last; None = send at the next opportunity
-# (trigger effects, time) sent last per slot; None = nothing (the pad has default triggers)
-trig_sent: list[tuple[Sequence[Any], float] | None] = []
-leds_sent: list[tuple[tuple[int, int, int], float] | None] = []   # (leds packet values, time) sent last; None = send at once
-cbs: list[Callable[..., None]] = []
-
-
-def make_cb(i: int):  # noqa: ANN201 - the return type would only be the unannotated cb below
+def make_cb(i: int):  # noqa: ANN202 - the return type would only be the unannotated cb below
     """Build the ViGEm callback (on the ViGEm thread) for slot i.
 
     The parameter names match vgamepad.dummy_callback - vgamepad compares the signature with the names and rejects any
@@ -341,117 +329,6 @@ def _target(i: int, now: float) -> tuple[tuple[int, ...], bool, bool]:
         # leave the old one (e.g. by battery) after switching to "default", a receiver restart or a reconnect
         return base, True, blink
     return (p[1], p[2], *(p[3] or base[2:])), True, blink
-
-
-def sender_leds(i: int) -> bool:
-    """Tell whether this pad's sender understands the leds packet (v15+; the ways byte has no free bit left, so the version decides)."""
-    info = S.sender_info[i]
-    return info is not None and info[0] >= LEDS_SENDER
-
-
-def leds_target(i: int) -> tuple[int, int, int] | None:
-    """Return the leds packet values for what the game set (flags, mute LED, player LEDs), or None when it set neither."""
-    mute, player = fb[i]["leds"]
-    if mute is None and player is None:
-        return None
-    return ((LEDS_MUTE if mute is not None else 0) | (LEDS_PLAYER if player is not None else 0), mute or 0, player or 0)
-
-
-def leds_tick(i: int, now: float, send_leds: SendLeds) -> None:
-    """Send the LEDs the game set: a change at once (several times), the same values again every IDLE_REFRESH_S.
-
-    Nothing is sent while the game has set no LED (the pad's driver keeps both) or to a sender that does not know the packet.
-    The refresh brings the LEDs back after the pad reconnected or a packet was lost.
-    """
-    vals = leds_target(i)
-    if vals is None or not sender_leds(i):
-        return
-    last = leds_sent[i]
-    if last is None or last[0] != vals:
-        leds_sent[i] = (vals, now)
-        send_leds(i, vals, TRIG_REPEAT)
-    elif now - last[1] >= IDLE_REFRESH_S:
-        leds_sent[i] = (vals, now)
-        send_leds(i, vals, 1)
-
-
-def sender_fx(i: int) -> bool:
-    """Tell whether this pad's sender knows trig2 (click, trigger vibration, game rumble)."""
-    info = S.sender_info[i]
-    return info is not None and info[0] >= FX_SENDER and bool(info[1] & CAP_TRIG_FX)
-
-
-def sender_raw(i: int) -> bool:
-    """Tell whether this pad's sender knows trig3 (trigger effects set by the game)."""
-    info = S.sender_info[i]
-    return info is not None and info[0] >= RAW_SENDER and bool(info[1] & CAP_TRIG_RAW)
-
-
-def game_drives(game: Trig) -> bool:
-    """Tell whether the game holds an effect (other than none / Off) on some trigger."""
-    return any(t is not None and t[0] not in TRIG_OFF_MODES for t in game)
-
-
-def trigger_target(i: int) -> tuple[Any, ...]:
-    """Return the values to send to the sender.
-
-    trig3 (profile + the game's trigger effects) when the game set them and the sender knows them, else trig2 for a new
-    sender, trig (resistance only) for an older one; no effects (game ones too) when trigger effects are master-only and
-    this is not the master. On a trigger with a profile effect the profile wins (the sender decides - any mode other than
-    TFX_OFF); when the game itself drives the triggers, game rumble on the profile's triggers is switched off.
-    """
-    import rx_master        # rx_master imports this module
-    vals: tuple[int, ...]
-    if not rx_master.allowed(i, "triggers"):
-        vals, game = TRIG2_OFF, NO_GAME_TRIG
-    else:
-        vals, game = trigger_values(S.remap_maps[i]["triggers"]), fb[i]["trig"] if i < len(fb) else NO_GAME_TRIG
-    if game != NO_GAME_TRIG and sender_raw(i):
-        if game_drives(game):
-            vals = (*vals[:8], 0, 0, 0, 0)
-        flags = (TRG3_L2 if game[0] is not None else 0) | (TRG3_R2 if game[1] is not None else 0)
-        return (*vals, *(t if t is not None else bytes(TRIG_RAW_LEN) for t in game), flags)
-    return vals if sender_fx(i) else legacy_values(vals)
-
-
-def _has_effect(vals: Sequence[Any]) -> bool:
-    """Tell whether a trigger value sequence (ints, and raw ``bytes`` effects in trig3) holds anything but zeros.
-
-    A plain ``any(vals)`` would count every non-empty ``bytes`` as set, even an all-zero raw effect.
-    """
-    return any(any(v) if isinstance(v, bytes) else v for v in vals)
-
-
-def triggers_tick(i: int, now: float, send_trig: SendTriggers) -> None:
-    """Trigger effects of the slot's profile.
-
-    A change -> at once (several times), constant effects -> refreshed every TRIG_REFRESH_S. The first pass after the
-    pad connects always sends the state, "no effects" too: the sender and the pad may hold effects from a previous
-    receiver run (a restart after an update, closing mid-game with a click on R2) - without this the trigger stayed hard
-    when the profile in use after startup has no effects. Afterwards nothing is refreshed while there are no effects.
-    """
-    vals = trigger_target(i)
-    last = trig_sent[i]
-    if last is None or last[0] != vals:
-        trig_sent[i] = (vals, now)
-        send_trig(i, vals, TRIG_REPEAT)
-    elif _has_effect(vals) and now - last[1] >= TRIG_REFRESH_S:
-        trig_sent[i] = (vals, now)
-        send_trig(i, vals, 1)
-
-
-def release_triggers(send_trig: SendTriggers) -> None:
-    """Receiver shutdown (the feedback thread is already stopped): pads we set trigger effects on get "no effects".
-
-    The sender keeps an effect until the next change, so without this the resistance / click stayed after leaving the
-    receiver (before a restart and an update too) until the pad disconnected. The sender also has its own guard
-    (sender_rumble) that releases the triggers when the PC refreshes stop (PC sleep / crash).
-    """
-    for i, last in enumerate(trig_sent):
-        if last is not None and _has_effect(last[0]):
-            # trig3 (game effects) also releases trig2 - a v11 sender then forgets the game effects
-            send_trig(i, TRIG2_OFF if len(last[0]) >= len(TRIG2_OFF) else (0, 0, 0, 0), TRIG_REPEAT)
-            trig_sent[i] = None
 
 
 def _wait_time(now: float, blink: bool) -> float:
