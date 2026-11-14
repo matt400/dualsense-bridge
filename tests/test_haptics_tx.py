@@ -9,6 +9,7 @@ import proto
 import sender_ctrl
 import sender_haptics as H
 import sender_net as net
+import sender_report as RP
 import sender_rumble as R
 import sender_state as state
 import sender_supervisor as sup
@@ -130,7 +131,7 @@ rep32.payload[:] = chunk(1)
 assert crc_ok(bytes(rep32.finish(2))) and bytes(rep32.finish(2))[13:77] == chunk(1), "the CRC follows the samples"
 ok("report 0x32: layout, sized headers, depth 0x10 x5, counter, CRC32 (seed 0xA2) against an independent computation")
 
-setup = R.haptics_setup_report(3)
+setup = RP.haptics_setup_report(3)
 exp = bytearray(78)
 exp[0], exp[1], exp[2] = 0x31, 3 << 4, 0x10
 exp[3 + 1] = 0x02 | 0x20 | 0x40                              # valid_flag1; valid_flag0 stays 0; motor power byte (3 + 36) is 0
@@ -139,16 +140,16 @@ assert setup == bytes(exp), (setup.hex(), bytes(exp).hex())
 ok("setup report: valid_flag0 0, valid_flag1 0x62, motor power 0")
 
 # ---------- the flags of an ordinary report while the haptics play ----------
-trig = (R.trigger_effect(2, 5), R.weapon_effect(5, 7))
+trig = (RP.trigger_effect(2, 5), RP.weapon_effect(5, 7))
 for v2_flag, f0, f2 in ((None, 0x03, 0x04), (False, 0x03, 0x00), (True, 0x02, 0x04)):
-    c = common(R.output_report(True, 1, 70, 140, v2_flag, (1, 2, 3), trig))
+    c = common(RP.output_report(True, 1, 70, 140, v2_flag, (1, 2, 3), trig))
     assert c[0] == f0 | 0x0C and c[38] == f2 and c[2:4] == bytes([70, 140]) and c[1] == 0x04, (v2_flag, c[:4].hex())
-    h = common(R.output_report(True, 1, 70, 140, v2_flag, (1, 2, 3), trig, haptics=True))
+    h = common(RP.output_report(True, 1, 70, 140, v2_flag, (1, 2, 3), trig, haptics=True))
     assert h[0] == 0x0C, f"trigger bits only (never 0x01 / 0x02): {h[0]:#x}"
     assert h[38] == 0 and h[2:4] == b"\0\0" and h[1] == 0x04 and h[44:47] == bytes([1, 2, 3]), "no vibration v2, no motors, lightbar kept"
-    assert h[R.LEFT_TRIGGER_AT:R.LEFT_TRIGGER_AT + 11] == trig[0] and h[R.RIGHT_TRIGGER_AT:R.RIGHT_TRIGGER_AT + 11] == trig[1]
-    assert common(R.output_report(True, 1, 70, 140, v2_flag, None, None, haptics=True))[0] == 0
-assert crc_ok(R.output_report(True, 1, 0, 0, None, None, None, True)) and len(R.output_report(True, 1, 0, 0, None, None, None, True)) == 78
+    assert h[RP.LEFT_TRIGGER_AT:RP.LEFT_TRIGGER_AT + 11] == trig[0] and h[RP.RIGHT_TRIGGER_AT:RP.RIGHT_TRIGGER_AT + 11] == trig[1]
+    assert common(RP.output_report(True, 1, 70, 140, v2_flag, None, None, haptics=True))[0] == 0
+assert crc_ok(RP.output_report(True, 1, 0, 0, None, None, None, True)) and len(RP.output_report(True, 1, 0, 0, None, None, None, True)) == 78
 ok("output_report(haptics=True): valid_flag0 keeps only the trigger bits, valid_flag2 and the motors are zero; normal reports unchanged")
 
 # ---------- capability ----------
@@ -170,7 +171,7 @@ async def scenarios():
     assert common(reports(path)[-1])[0] & 0x03 == 0x03
     assert r.haptics_begin() and r.haptics and r.audio
     out = reports(path)
-    assert out[-1] == R.haptics_setup_report(out[-1][1] >> 4) and common(out[-1])[0] == 0 and common(out[-1])[1] == 0x62
+    assert out[-1] == RP.haptics_setup_report(out[-1][1] >> 4) and common(out[-1])[0] == 0 and common(out[-1])[1] == 0x62
     await asyncio.sleep(R.HAPTICS_RESEND_S + 0.03)
     out = reports(path)
     assert [common(x)[1] for x in out].count(0x62) == 2 and common(out[-1])[1] == 0x62 and crc_ok(out[-1]), "the setup report goes out twice"
@@ -186,7 +187,7 @@ async def scenarios():
     fx = (proto.TFX_RES, 2, 5, 0, proto.TFX_CLICK, 5, 7, 0, 0, 0, 0, 0)
     assert r.set_triggers(fx)
     c = common(reports(path)[-1])
-    assert c[0] == 0x0C and c[38] == 0 and c[R.LEFT_TRIGGER_AT:R.LEFT_TRIGGER_AT + 11] == trig[0], "trigger report: trigger bits only"
+    assert c[0] == 0x0C and c[38] == 0 and c[RP.LEFT_TRIGGER_AT:RP.LEFT_TRIGGER_AT + 11] == trig[0], "trigger report: trigger bits only"
     assert r.write_haptics(rep) and not r.write_haptics.__self__.ducked
     last = reports(path)[-1]
     assert len(last) == 142 and last[13:77] == chunk(1) and crc_ok(last)

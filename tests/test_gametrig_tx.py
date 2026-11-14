@@ -6,6 +6,7 @@ sys.path.insert(0, sys.argv[1])
 sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
 import sender_net as net
+import sender_report as RP
 import sender_rumble as R
 from proto import (BODY, CAP_TRIG_RAW, RFX_ON, SENDER_VERSION, T_TRIG3, TFX_CLICK, TFX_OFF, TFX_RES, TRG3_L2, TRG3_R2,
                    TRIG2_OFF, Codec)
@@ -24,10 +25,10 @@ def trig3(vals=TRIG2_OFF, l2=None, r2=None):
 
 
 # ---------- packet parsing ----------
-assert R.split_triggers((3, 6, 0, 0)) == ((TFX_RES, 3, 6, 0, *(0,) * 8), (None, None))
-assert R.split_triggers(TRIG2_OFF) == (TRIG2_OFF, (None, None))
-assert R.split_triggers(trig3(l2=G_L2)) == (TRIG2_OFF, (G_L2, None)), "TRG3_R2 flag cleared - R2 without the game effect"
-assert R.game_effect(G_R2) == G_R2 and R.game_effect(None) == R.OFF_EFFECT and R.game_effect(Z) == R.OFF_EFFECT
+assert RP.split_triggers((3, 6, 0, 0)) == ((TFX_RES, 3, 6, 0, *(0,) * 8), (None, None))
+assert RP.split_triggers(TRIG2_OFF) == (TRIG2_OFF, (None, None))
+assert RP.split_triggers(trig3(l2=G_L2)) == (TRIG2_OFF, (G_L2, None)), "TRG3_R2 flag cleared - R2 without the game effect"
+assert RP.game_effect(G_R2) == G_R2 and RP.game_effect(None) == RP.OFF_EFFECT and RP.game_effect(Z) == RP.OFF_EFFECT
 assert SENDER_VERSION >= 11
 ok("trig3 -> trig2 + game effects (flags), mode 0 = Off, sender version 11")
 
@@ -63,9 +64,9 @@ class Dev:
 
 
 def _trig(c):
-    if not c[0] & (R.FLAG0_LEFT_TRIGGER | R.FLAG0_RIGHT_TRIGGER):
+    if not c[0] & (RP.FLAG0_LEFT_TRIGGER | RP.FLAG0_RIGHT_TRIGGER):
         return None
-    return bytes(c[R.LEFT_TRIGGER_AT:R.LEFT_TRIGGER_AT + 11]), bytes(c[R.RIGHT_TRIGGER_AT:R.RIGHT_TRIGGER_AT + 11])
+    return bytes(c[RP.LEFT_TRIGGER_AT:RP.LEFT_TRIGGER_AT + 11]), bytes(c[RP.RIGHT_TRIGGER_AT:RP.RIGHT_TRIGGER_AT + 11])
 
 
 def last(path):
@@ -84,28 +85,28 @@ async def main():
 
     prof = (TFX_CLICK, 5, 7, 0, TFX_OFF, 0, 0, 0, 0, 0, 0, 0)
     r.set_triggers(trig3(prof, l2=G_L2, r2=G_R2))
-    assert last(path) == (R.weapon_effect(5, 7), G_R2), "L2 from the profile, R2 (no effect in the profile) from the game"
+    assert last(path) == (RP.weapon_effect(5, 7), G_R2), "L2 from the profile, R2 (no effect in the profile) from the game"
     r.set_triggers(trig3(prof, r2=G_R2))
-    assert last(path) == (R.weapon_effect(5, 7), G_R2)
+    assert last(path) == (RP.weapon_effect(5, 7), G_R2)
     r.set_triggers(trig3(TRIG2_OFF, r2=G_R2))
-    assert last(path) == (R.OFF_EFFECT, G_R2), "L2 without a profile and without a game effect = Off"
+    assert last(path) == (RP.OFF_EFFECT, G_R2), "L2 without a profile and without a game effect = Off"
     ok("the profile wins on its trigger, the game effect on the other")
 
     r.set(0, 0)
     r.set_triggers((*prof[:8], RFX_ON, 100, 40, 0))   # trig2: game effects forgotten
-    assert r.game_fx == (None, None) and last(path) == (R.weapon_effect(5, 7), R.OFF_EFFECT)
+    assert r.game_fx == (None, None) and last(path) == (RP.weapon_effect(5, 7), RP.OFF_EFFECT)
     r.set_triggers(trig3(l2=G_L2))
     r.set(0, 0)
     r.set(10, 20)
-    assert last(path) == (G_L2, R.OFF_EFFECT), "rumble without RFX does not touch the game effects"
+    assert last(path) == (G_L2, RP.OFF_EFFECT), "rumble without RFX does not touch the game effects"
     ok("trig2 releases the game effects; plain rumble does not touch them")
 
     r._trig_watch.cancel()
     r._trig_expired()
-    assert r.game_fx == (None, None) and last(path) == (R.OFF_EFFECT, R.OFF_EFFECT), "watchdog: no refreshes -> Off"
+    assert r.game_fx == (None, None) and last(path) == (RP.OFF_EFFECT, RP.OFF_EFFECT), "watchdog: no refreshes -> Off"
     r.set_triggers(trig3(r2=G_R2))
     r.close()
-    assert last(path) == (R.OFF_EFFECT, R.OFF_EFFECT), "closing removes the game effects"
+    assert last(path) == (RP.OFF_EFFECT, RP.OFF_EFFECT), "closing removes the game effects"
     ok("the refresh watchdog and closing release the game triggers")
 
 

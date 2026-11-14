@@ -40,7 +40,8 @@ from dataclasses import dataclass, fields
 from typing import Final, Protocol
 
 from proto import HAPT_CHUNK, HAPT_END, HAPT_FRAMES, HAPT_RATE, HAPT_START, UINT32_MASK
-from sender_rumble import BT_SEQ_MASK, BT_SEQ_SHIFT, BYTE_MASK, CRC_LEN, CRC_SEED, HapticsReport, Rumble
+from sender_report import BT_SEQ_MASK, BT_SEQ_SHIFT, BYTE_MASK, CRC_LEN, CRC_SEED
+from sender_rumble import HapticsReport, Rumble
 from sender_tick import TickTimer
 
 # ---- report 0x32 (measured on the real pad, P0) ----

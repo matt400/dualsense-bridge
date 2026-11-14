@@ -44,7 +44,8 @@ from proto import HAPT_CHUNK, HAPT_FRAMES, HAPT_RATE, SPK_BYTES, SPK_END, SPK_FR
 from sender_haptics import (BUFFER_AT, BUFFER_BYTES, COUNTER_AT, CRC_AT, DATA_AT, HEADER, PAD_BUFFER_DEFAULT, REPORT_LEN, SEQ_AT,
                             LATE_S, RESYNC_S, RETRY_S, SEED_CRC, LogCounters, Playout, frame_delta, on_clock)
 from sender_opus import COMPLEXITY_AUTO, DEFAULT_MODE, OpusEncoder
-from sender_rumble import BT_SEQ_MASK, BT_SEQ_SHIFT, BYTE_MASK, CRC_LEN, Rumble
+from sender_report import BT_SEQ_MASK, BT_SEQ_SHIFT, BYTE_MASK, CRC_LEN
+from sender_rumble import Rumble
 from sender_tick import TickTimer
 
 # ---- report 0x36 (measured on the real pad, P3a) ----

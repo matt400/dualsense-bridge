@@ -4,6 +4,7 @@ sys.path.insert(0, sys.argv[1])
 sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
 import sender_opus
+import sender_report as RP
 import sender_rumble as R
 from evdev import ecodes as ec
 from proto import CAP_HAPTICS, CAP_SPEAKER, CAP_TRIG_FX, CAP_TRIG_RAW, CAP_TRIGGERS, RUMBLE_EVDEV, RUMBLE_HIDRAW
@@ -12,20 +13,20 @@ TMP = tempfile.mkdtemp()
 from chk import ok
 
 # ---------- output report ----------
-bt = R.output_report(True, 3, 40, 200)
-usb = R.output_report(False, 0, 40, 200)
+bt = RP.output_report(True, 3, 40, 200)
+usb = RP.output_report(False, 0, 40, 200)
 assert len(bt) == 78 and len(usb) == 63, (len(bt), len(usb))
 assert bt[0] == 0x31 and bt[1] == 0x30 and bt[2] == 0x10, bt[:3].hex()
 c = bt[3:]
 assert c[0] == 0x03 and c[2] == 40 and c[3] == 200 and c[38] == 0x04, "rumble flags, right motor (weak) / left (strong)"
-v1, v2 = R.output_report(False, 0, 1, 1, False), R.output_report(False, 0, 1, 1, True)
+v1, v2 = RP.output_report(False, 0, 1, 1, False), RP.output_report(False, 0, 1, 1, True)
 assert v1[1] == 0x03 and v1[39] == 0 and v2[1] == 0x02 and v2[39] == 0x04, "v1: compat flag in flag0, v2: in flag2 (like the kernel)"
 assert c[1] == 0 and not any(c[41:47]), "no lightbar / LED flags or values - the driver controls them"
 assert int.from_bytes(bt[-4:], "little") == zlib.crc32(b"\xa2" + bt[:-4]) & 0xFFFFFFFF, "CRC32 z ziarnem 0xA2"
 assert usb[0] == 0x02 and usb[1:48] == c[:47]
-assert R.output_report(True, 0x13, 0, 0)[1] == 0x30, "numer sekwencji 4 bity"
+assert RP.output_report(True, 0x13, 0, 0)[1] == 0x30, "numer sekwencji 4 bity"
 ok("report: USB 63 B / BT 78 B, only rumble flags, CRC32")
-lb = R.output_report(True, 1, 200, 255, None, (255, 128, 0))[3:]
+lb = RP.output_report(True, 1, 200, 255, None, (255, 128, 0))[3:]
 assert lb[1] == 0x04 and lb[44:47] == bytes([255, 128, 0]) and lb[2:4] == bytes([200, 255]) and not any(lb[41:44])
 ok("report with the lightbar colour: flag + RGB in the same report as the rumble")
 

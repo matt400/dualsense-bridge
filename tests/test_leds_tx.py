@@ -9,6 +9,7 @@ import proto
 import sender_ctrl
 import sender_mute as M
 import sender_net as net
+import sender_report as RP
 import sender_rumble as R
 import sender_state as state
 import sender_supervisor as sup
@@ -60,26 +61,26 @@ net._dispatch(T_LEDS, 1, 99, tx.pack(T_LEDS, 1, 3, 1, 4))     # no hook set: ign
 ok("delivery: on_leds gets (idx, (flags, mute, player)), a repeat is dropped, no hook is no error")
 
 # ---------- the report bytes ----------
-base = R.output_report(True, 3, 40, 200)
-assert common(base)[R.VALID_FLAG1_AT] == 0 and common(base)[R.MUTE_LED_AT] == 0 and common(base)[R.PLAYER_LEDS_AT] == 0, "no LEDs by default"
-assert R.output_report(True, 3, 40, 200, leds=(None, None)) == base, "None = the report is byte for byte the old one"
-r = R.output_report(True, 3, 40, 200, leds=(MUTE_ON, 0x15))
+base = RP.output_report(True, 3, 40, 200)
+assert common(base)[RP.VALID_FLAG1_AT] == 0 and common(base)[RP.MUTE_LED_AT] == 0 and common(base)[RP.PLAYER_LEDS_AT] == 0, "no LEDs by default"
+assert RP.output_report(True, 3, 40, 200, leds=(None, None)) == base, "None = the report is byte for byte the old one"
+r = RP.output_report(True, 3, 40, 200, leds=(MUTE_ON, 0x15))
 c = common(r)
-assert (R.MUTE_LED_AT, R.PLAYER_LEDS_AT) == (8, 43) and (R.FLAG1_MUTE_LED, R.FLAG1_PLAYER_LEDS) == (0x01, 0x10)   # hid-playstation offsets
+assert (RP.MUTE_LED_AT, RP.PLAYER_LEDS_AT) == (8, 43) and (RP.FLAG1_MUTE_LED, RP.FLAG1_PLAYER_LEDS) == (0x01, 0x10)   # hid-playstation offsets
 assert c[1] == 0x11 and c[8] == MUTE_ON and c[43] == 0x15 and crc_ok(r) and len(r) == 78
 assert c[0] == common(base)[0] and c[2:8] == common(base)[2:8], "valid_flag0 and the motors are not touched by the LEDs"
-only_mute = common(R.output_report(True, 3, 0, 0, leds=(MUTE_PULSE, None)))
+only_mute = common(RP.output_report(True, 3, 0, 0, leds=(MUTE_PULSE, None)))
 assert only_mute[1] == 0x01 and only_mute[8] == MUTE_PULSE and only_mute[43] == 0
-only_player = common(R.output_report(True, 3, 0, 0, leds=(None, 0xFF)))
+only_player = common(RP.output_report(True, 3, 0, 0, leds=(None, 0xFF)))
 assert only_player[1] == 0x10 and only_player[8] == 0 and only_player[43] == 0x1F, "the player LEDs are 5 bits"
-both = common(R.output_report(True, 3, 0, 0, None, (1, 2, 3), None, False, (MUTE_OFF, 4)))
+both = common(RP.output_report(True, 3, 0, 0, None, (1, 2, 3), None, False, (MUTE_OFF, 4)))
 assert both[1] == 0x04 | 0x01 | 0x10 and both[44:47] == bytes([1, 2, 3]) and both[8] == MUTE_OFF and both[43] == 4, "lightbar flag kept (|=)"
-usb = R.output_report(False, 0, 0, 0, leds=(MUTE_ON, 1))
+usb = RP.output_report(False, 0, 0, 0, leds=(MUTE_ON, 1))
 assert usb[0] == 2 and usb[1 + 1] == 0x11 and usb[1 + 8] == MUTE_ON and usb[1 + 43] == 1
 ok("output_report: bytes 8 / 43 and valid_flag1 bits 0x01 / 0x10, lightbar flag kept, 5 bits, CRC against zlib, None = unchanged report")
 
 # ---------- during audio mode no rumble bit appears ----------
-au = common(R.output_report(True, 3, 70, 140, True, None, None, True, (MUTE_ON, 2)))
+au = common(RP.output_report(True, 3, 70, 140, True, None, None, True, (MUTE_ON, 2)))
 assert au[0] == 0 and au[2:4] == bytes(2) and au[1] == 0x11, "haptics / speaker: valid_flag0 stays clear, the LEDs are safe in audio mode"
 ok("audio mode: the LED flags are not rumble bits")
 

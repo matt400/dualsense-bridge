@@ -7,6 +7,7 @@ sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
 from sender_config import C
 import sender_calib as calib
+import sender_report as RP
 import sender_rumble as R
 import sender_state as state
 import sender_supervisor as sup
@@ -66,9 +67,9 @@ async def main():
 asyncio.run(main())
 
 # ---------- trigger Off effect: the same bytes as before ----------
-check(R.OFF_EFFECT == bytes([R.TRIG_OFF]) + bytes(10) and len(R.OFF_EFFECT) == R.TRIGGER_LEN, "efekt Off: 0x05 + 10 zer")
-check(R.trigger_effect(0, 0) == R.weapon_effect(9, 3) == R.vibration_effect(0, 0, 9) == R.OFF_EFFECT, "bad parameters -> Off")
-check(R.trigger_effect(3, 6)[0] == R.TRIG_FEEDBACK and R.weapon_effect(5, 6)[0] == R.TRIG_WEAPON, "effects as before")
+check(RP.OFF_EFFECT == bytes([RP.TRIG_OFF]) + bytes(10) and len(RP.OFF_EFFECT) == RP.TRIGGER_LEN, "efekt Off: 0x05 + 10 zer")
+check(RP.trigger_effect(0, 0) == RP.weapon_effect(9, 3) == RP.vibration_effect(0, 0, 9) == RP.OFF_EFFECT, "bad parameters -> Off")
+check(RP.trigger_effect(3, 6)[0] == RP.TRIG_FEEDBACK and RP.weapon_effect(5, 6)[0] == RP.TRIG_WEAPON, "effects as before")
 
 if fails:
     print("FAIL", len(fails), "failures")
