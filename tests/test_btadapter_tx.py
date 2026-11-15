@@ -10,6 +10,7 @@ import sender_config; sender_config.init(["127.0.0.1"])
 from sender_config import C
 import sender_btadapter as A
 import sender_bt as SB
+import sender_state as state
 from proto import (BT_ADAPTER, BT_ADAPTER_USE, BTA_AUTO, BTA_MANUAL, BTA_PICK, BTC_ACTIVE, BTC_BLOCKED, BTC_FIXED,
                    BTC_PICKED, BTC_USB, BTF_HAS_BUILTIN, BTF_HAS_USB, BTF_MODE_SHIFT, BTF_ON_USB, BTR_NOT_FOUND, BTR_OK,
                    T_BTCTRL, T_BTSTATE, cstr)
@@ -116,6 +117,12 @@ emit = lambda t, i, *v: out.append((t, v))
 calls = []
 
 
+async def written() -> None:
+    """Wait until bt.json is on disk: save_mode hands the write to the state-files worker (one thread, FIFO), so a no-op
+    queued behind it runs only after it. Reading the file or starting a new Bluetooth right after a command races otherwise."""
+    await asyncio.get_running_loop().run_in_executor(state._file_writer, int)  # noqa: SLF001
+
+
 def objects(*names):
     return json.dumps({"data": [{f"/org/bluez/{n}": {"org.bluez.Adapter1": {"Powered": {"type": "b", "data": True}}}
                                  for n in names}]})
@@ -163,6 +170,7 @@ async def main():
         b.on_command(BT_ADAPTER_USE, 0, bytes(6))                # "Use" on the built-in one
         await b.busy
         assert b.last[:2] == (BT_ADAPTER_USE, BTR_OK) and b.pick.name == "hci0" and fs.blocked("hci1")
+        await written()
         assert A.load_mode(C.BT_FILE, (BTA_AUTO, "")) == (BTA_PICK, "builtin:qcom,wcn3990-bt"), "zapisany po kluczu"
         b.send(full=True)
         assert ctrl_rows()[0][0] == BTC_ACTIVE | BTC_PICKED and ctrl_rows()[1][0] == BTC_USB | BTC_BLOCKED
@@ -206,6 +214,7 @@ async def main():
                 raise OSError(5, "Input/output error")
             real_set(name, block, sysfs)
         A.set_blocked = flaky
+        await written()
         try:
             b = SB.Bluetooth(run=run, emit=emit, sysfs=fs.cls)
             calls.clear()
