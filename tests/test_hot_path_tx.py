@@ -163,8 +163,12 @@ async def t_files():
     state.write_json_later(path, data)
     data["v"] = 99                                   # later changes must not reach the first write
     state.write_json_later(path, {"b": 2, "a": 1}, indent=1, sort_keys=True)
-    await until(lambda: len(threads) >= 2 and os.path.exists(path))
-    await asyncio.sleep(0.05)
+    def second_written():                            # the spy runs before the write: wait for the file itself, not a fixed sleep
+        try:
+            return len(threads) >= 2 and json.load(open(path)) == {"a": 1, "b": 2}
+        except (OSError, ValueError):
+            return False
+    await until(second_written)
     state.write_file = real
     check(len(threads) == 2 and all(n.startswith("state-files") for n in threads), f"files are written by the worker thread ({threads})")
     check(json.load(open(path)) == {"a": 1, "b": 2} and open(path).read().startswith('{\n "a": 1'), "the last request wins, indent and key order kept")
