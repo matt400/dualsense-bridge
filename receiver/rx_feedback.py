@@ -26,7 +26,8 @@ import rx_state as S
 import rx_swap
 from proto import STATE_CHARGING, clamp
 from rx_fbstate import (
-    FX_SENDER, FeedbackState, GAME_RUMBLE_GAP_S, GAME_RUMBLE_STALE_S, IDLE_REFRESH_S, Leds, NO_GAME_TRIG, NO_LEDS,
+    FX_SENDER, GAME_RUMBLE_DT_ALPHA, GAME_RUMBLE_GAP_S, GAME_RUMBLE_STALE_FRAMES, GAME_RUMBLE_STALE_MIN_S, GAME_RUMBLE_STALE_S,
+    IDLE_REFRESH_S, FeedbackState, Leds, NO_GAME_TRIG, NO_LEDS,
     PCT_MAX, PULSES, Pulse, RAW_SENDER, RUMBLE_REFRESH_S, SendFeedback, SendLeds, SendTriggers, TRIG_OFF_MODES,
     TRIG_REFRESH_S, TRIG_REPEAT, Trig, cbs, fb, fb_event, fb_sent, hold_until, leds_sent, pulses, trig_sent,
 )
@@ -40,7 +41,10 @@ from rx_shape import BYTE_MAX
 
 __all__ = [  # the state and the trigger / LED ticks moved out (rx_fbstate, rx_fbtrig); this module stays their one public face
     "FX_SENDER",
+    "GAME_RUMBLE_DT_ALPHA",
     "GAME_RUMBLE_GAP_S",
+    "GAME_RUMBLE_STALE_FRAMES",
+    "GAME_RUMBLE_STALE_MIN_S",
     "GAME_RUMBLE_STALE_S",
     "IDLE_REFRESH_S",
     "NO_GAME_TRIG",
@@ -95,6 +99,32 @@ def in_game() -> bool:
     return bool(_games.in_game())
 
 
+def _note_motors(f: FeedbackState, now: float) -> None:
+    """Record a motor report from the game at ``now`` and learn how often the game sends them.
+
+    The interval feeds stale_limit. A gap longer than GAME_RUMBLE_STALE_S is not a sample (the game was quiet, a menu, a
+    reset) - it would stretch the timeout for the next drive. dt = 0 means not known yet (after reset / start).
+    """
+    gap = now - f["t"]
+    if f["t"] > 0.0 and 0.0 < gap < GAME_RUMBLE_STALE_S:
+        f["dt"] = gap if f["dt"] <= 0.0 else f["dt"] + GAME_RUMBLE_DT_ALPHA * (gap - f["dt"])
+    f["t"] = now
+
+
+def stale_limit(f: FeedbackState) -> float:
+    """Return how long game rumble may go without a motor report before it is stopped.
+
+    A game that sends a report every frame (16 ms) has stopped driving the rumble after a few missed frames, so waiting
+    the full GAME_RUMBLE_STALE_S only leaves the pad vibrating in the menu. GAME_RUMBLE_STALE_FRAMES of the game's own
+    interval, kept within [GAME_RUMBLE_STALE_MIN_S, GAME_RUMBLE_STALE_S]: a game (or Steam Input) that sends only on a
+    change has long intervals and keeps the full timeout, an unknown interval too.
+    """
+    dt = f["dt"]
+    if dt <= 0.0:
+        return GAME_RUMBLE_STALE_S
+    return min(GAME_RUMBLE_STALE_S, max(GAME_RUMBLE_STALE_MIN_S, GAME_RUMBLE_STALE_FRAMES * dt))
+
+
 def make_cb(i: int):  # noqa: ANN202 - the return type would only be the unannotated cb below
     """Build the ViGEm callback (on the ViGEm thread) for slot i.
 
@@ -111,7 +141,7 @@ def make_cb(i: int):  # noqa: ANN202 - the return type would only be the unannot
             # alone needs no wake-up (_wait_time computes the refresh deadline from it).
             changed = not f["set"] or (f["large"], f["small"]) != (int(large_motor), int(small_motor))
             f["large"], f["small"] = int(large_motor), int(small_motor)
-            f["t"] = time.monotonic()
+            _note_motors(f, time.monotonic())
             if hasattr(led_number, "Red"):
                 changed = _merge_rgb(f, (led_number.Red, led_number.Green, led_number.Blue)) or changed
             f["set"] = True
@@ -172,7 +202,7 @@ def game(i: int, large: int | None = None, small: int | None = None, rgb: Sequen
         motors = (int(large), int(small or 0))
         changed = changed or (f["large"], f["small"]) != motors
         f["large"], f["small"] = motors
-        f["t"] = time.monotonic()               # refresh only: _wait_time derives the RUMBLE_REFRESH_S deadline from it
+        _note_motors(f, time.monotonic())       # refresh only: _wait_time derives the expiry deadline from it
     elif rgb is not None or trig is not None:
         f["t_other"] = time.monotonic()        # a game report without motors (GAME_RUMBLE_GAP_S)
         changed = changed or bool(f["large"] or f["small"])   # rumble running: the gap timer must be re-evaluated
@@ -222,7 +252,7 @@ def init() -> None:
     """
     n = C.NUM_PADS
     fb[:] = [{"small": 0, "large": 0, "r": 0, "g": 0, "b": 0, "set": False, "rgb": False, "note": False,
-              "t": 0.0, "t_other": 0.0, "trig": NO_GAME_TRIG, "trig_owner": None, "trig_note": False, "leds": NO_LEDS}
+              "t": 0.0, "dt": 0.0, "t_other": 0.0, "trig": NO_GAME_TRIG, "trig_owner": None, "trig_note": False, "leds": NO_LEDS}
              for _ in range(n)]
     fb_sent[:] = [None] * n
     trig_sent[:] = [None] * n
@@ -239,7 +269,7 @@ rx_settings.on_change(lambda _old, _new: fb_event.set())    # a new lightbar col
 def reset(i: int) -> None:
     """Forget what the game set after a new / disconnected virtual DS4 in the slot (without init() - nothing to clear)."""
     if i < len(fb):
-        fb[i].update(set=False, small=0, large=0, t_other=0.0, rgb=False, note=False, trig=NO_GAME_TRIG,
+        fb[i].update(set=False, small=0, large=0, t=0.0, dt=0.0, t_other=0.0, rgb=False, note=False, trig=NO_GAME_TRIG,
                      trig_owner=None, trig_note=False, leds=NO_LEDS)
         fb_sent[i] = leds_sent[i] = None
 
@@ -325,15 +355,17 @@ def release(i: int) -> None:
 def rumble_expired(f: FeedbackState, now: float) -> str | None:
     """Return the reason (for the log) when game rumble is on but the game stopped driving it, else None.
 
-    The game sends only other reports (colour, triggers) - a menu; or no motor reports since STALE (a lost "motors 0",
-    the game hung / minimised).
+    The game sends only other reports (colour, triggers) - a menu; or no motor reports for stale_limit (a menu that
+    sends nothing, the game ended / hung / minimised without "motors 0"). Both use the adaptive limit, GAP at most.
     """
     if not (f["large"] or f["small"]):
         return None
-    if f["t_other"] - f["t"] > GAME_RUMBLE_GAP_S:
-        return f"game reports without motors for {GAME_RUMBLE_GAP_S:g}s"
-    if now - f["t"] > GAME_RUMBLE_STALE_S:
-        return f"no rumble report from the game for {GAME_RUMBLE_STALE_S:g}s"
+    limit = stale_limit(f)
+    gap = min(GAME_RUMBLE_GAP_S, limit)
+    if f["t_other"] - f["t"] > gap:
+        return f"game reports without motors for {gap:.2f}s"
+    if now - f["t"] > limit:
+        return f"no rumble report from the game for {limit:.2f}s"
     return None
 
 
@@ -368,7 +400,7 @@ def _wait_time(now: float, blink: bool) -> float:
     # expire the rumble exactly on time (without this, STALE + up to 0.5 s of waiting)
     # only pads with a signal: the loop handles expiry only for S.alive - for a pad without a signal
     # (the virtual DS4 still plugged, game rumble non-zero) the deadline would be in the past and the loop would spin
-    waits += [f["t"] + GAME_RUMBLE_STALE_S + 0.001 - now for i, f in enumerate(fb) if S.alive[i] and (f["large"] or f["small"])]
+    waits += [f["t"] + stale_limit(f) + 0.001 - now for i, f in enumerate(fb) if S.alive[i] and (f["large"] or f["small"])]
     if blink:
         waits.append(L.next_edge(now) + 0.002)
     return max(0.0, min(waits))
