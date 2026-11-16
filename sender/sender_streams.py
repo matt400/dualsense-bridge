@@ -10,12 +10,15 @@ from __future__ import annotations
 import array
 import asyncio
 import collections
+import errno
 import fcntl
+import os
+import struct
 import time
-from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, Final, TypeAlias
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Final, Protocol, TypeAlias
 
-from evdev import InputDevice, InputEvent
+from evdev import InputDevice
 from evdev import ecodes as ec
 
 import sender_calib as calib
@@ -26,13 +29,19 @@ from proto import (BATT_UNKNOWN, CAL_RUNNING, CLICK_PRESSED, CLICK_RELEASED, CLI
                    MOUSE_SCROLL, MOUSE_TAP, MOUSE_TAP_RIGHT, STATE_CHARGING, clamp)
 from sender_config import (AUTOBIAS_MAX_STEP, BURST_DELAYS, C, DEVICE_READ_ERRORS, HAT_AXES, IDLE_TP, PAD_ABS, TOUCH_H,
                            TOUCH_W, US_PER_S)
-from sender_ioctl import IOC_READ, ioc
+from sender_ioctl import IOC_READ, IOC_WRITE, ioc
 
 if TYPE_CHECKING:
     from sender_ctrl import Ctrl
 
 EVIOC_MAGIC, EVIOCGMTSLOTS_NR = "E", 0x0A               # EVIOCGMTSLOTS(len), see linux/input.h
 INT32_BYTES: Final = 4
+# struct input_event: timeval (two C longs: 8 + 8 B on 64-bit, 4 + 4 B on 32-bit, also with a 64-bit time_t) + type, code, value
+EVENT: Final = struct.Struct("llHHi")
+READ_EVENTS: Final = 64                                 # one read takes up to this many events (as python-evdev does)
+READ_BYTES: Final = EVENT.size * READ_EVENTS
+EVIOCSCLOCKID: Final = ioc(IOC_WRITE, EVIOC_MAGIC, 0xA0, INT32_BYTES)   # pick the clock of this client's event timestamps
+CLOCK_ID_MONOTONIC: Final = struct.pack("i", time.CLOCK_MONOTONIC)
 ABS_RANGE: Final = 1 << 60                              # larger than any sample: the start value of a running minimum / maximum
 
 # ---- motion: the packet carries accelerometer x y z and then gyro x y z ----
@@ -172,26 +181,54 @@ class BtDelay:
         return min(LAT_NONE - 1, diff - win[0][1])
 
 
-def _send_state_burst(c: Ctrl, loop: asyncio.AbstractEventLoop) -> None:
+def _send_state_burst(c: Ctrl, loop: asyncio.AbstractEventLoop, now: float | None = None) -> None:
     """Send the state now and again after each of BURST_DELAYS, then give Wake-on-LAN a look at the buttons.
 
     The repeats protect a button change against a lost packet (a repeat of an identical state carries no latency
     measurement). After SYN_DROPPED the lost events may have contained a released PS combination, which must not fire
-    Wake-on-LAN; while the receiver is silent, PS + a button held is the Wake-on-LAN trigger.
+    Wake-on-LAN; while the receiver is silent, PS + a button held is the Wake-on-LAN trigger. ``now`` is the
+    caller's ``time.monotonic()`` reading, if it has one.
     """
-    c.send_state()
+    c.send_state(now=now)
     for delay in BURST_DELAYS:
         loop.call_later(delay, c.send_state, True)
     wol.on_mask(c)
 
 
-async def pump(dev: InputDevice, handler: Callable[[InputEvent], None]) -> None:
+class Handler(Protocol):
+    """An event handler of a read loop: called with the fields of one raw ``struct input_event``."""
+
+    def __call__(self, sec: int, usec: int, etype: int, code: int, value: int, /) -> None:
+        """Handle one event; ``sec`` / ``usec`` are the kernel timestamp (CLOCK_MONOTONIC, 0 = unknown)."""
+
+
+def _use_monotonic_clock(dev: InputDevice) -> bool:
+    """Ask the kernel to stamp this client's events with CLOCK_MONOTONIC instead of CLOCK_REALTIME.
+
+    The clock is per open descriptor (EVIOCSCLOCKID), so nobody else reading the device is affected. A monotonic stamp
+    can be compared with ``time.monotonic()`` directly: the phone delay of a change then costs one clock read at send
+    time instead of an extra ``time.time_ns()``, and an NTP step can no longer turn into a bogus delay. If the kernel
+    had events queued, it drops them and queues SYN_DROPPED, which the streams already handle.
+
+    Returns:
+        True when the events now carry monotonic stamps; False means the stamps are unusable for latency.
+    """
+    try:
+        fcntl.ioctl(dev.fd, EVIOCSCLOCKID, CLOCK_ID_MONOTONIC)
+    except (OSError, ValueError, TypeError):
+        return False
+    return True
+
+
+async def pump(dev: InputDevice, handler: Handler) -> None:
     """Feed every event of ``dev`` to ``handler`` until the device goes away.
 
     python-evdev's ``async_read_loop()`` is convenient, but on this path it is expensive: it creates a Future for every
     single event and, for every batch the kernel hands over, registers and removes the descriptor in the event loop again
-    (two ``epoll_ctl`` calls) and creates one more Future. Here the descriptor is registered once and the callback reads
-    whole batches with ``dev.read()``, so an event costs one handler call.
+    (two ``epoll_ctl`` calls) and creates one more Future. Even ``dev.read()`` builds an ``InputEvent`` object per event,
+    which at the motion sensor's ~250-1000 reports/s (8 events each) was the largest CPU cost of the sender. Here the
+    descriptor is registered once, the callback reads a whole batch with one ``os.read`` and ``struct.iter_unpack`` hands
+    the raw ``struct input_event`` fields to the handler as plain ints - no object per event.
 
     Whatever ends the loop is raised from here exactly as ``async_read_loop`` raised it: ``OSError`` when the device
     disappears, or the exception of a handler that has a bug. The descriptor is unregistered before the function returns
@@ -200,36 +237,45 @@ async def pump(dev: InputDevice, handler: Callable[[InputEvent], None]) -> None:
 
     Args:
         dev: The evdev device. Anything that is not an ``InputDevice`` (a stand-in in the tests) is read with its own
-            ``async_read_loop()``.
-        handler: Called with every event, in the order the kernel delivered them.
+            ``async_read_loop()``; its events carry no timestamp (0, 0).
+        handler: Called with ``(sec, usec, type, code, value)`` of every event, in the order the kernel delivered them.
     """
     if not isinstance(dev, InputDevice):
         async for e in dev.async_read_loop():
-            handler(e)
+            handler(getattr(e, "sec", 0), getattr(e, "usec", 0), e.type, e.code, e.value)
         return
     loop = asyncio.get_running_loop()
     ended: asyncio.Future[None] = loop.create_future()
+    fd, timed = dev.fd, _use_monotonic_clock(dev)
+    read, unpack = os.read, EVENT.iter_unpack
 
     def on_readable() -> None:
         try:
-            for e in dev.read():
-                handler(e)
+            data = read(fd, READ_BYTES)
+            if not data:
+                raise OSError(errno.ENODEV, "input device closed")
+            if timed:
+                for ev in unpack(data):
+                    handler(*ev)
+            else:
+                for _sec, _usec, etype, code, value in unpack(data):
+                    handler(0, 0, etype, code, value)
         except BlockingIOError:
             pass                        # woken up with nothing to read: wait for the next wake-up
         except Exception as exc:  # noqa: BLE001 - handed to the awaiting task, which treats it like an error of the read loop
             if not ended.done():
                 ended.set_exception(exc)
 
-    loop.add_reader(dev.fd, on_readable)
+    loop.add_reader(fd, on_readable)
     try:
         await ended
     finally:
-        loop.remove_reader(dev.fd)
+        loop.remove_reader(fd)
 
 
-def _is_report(e: InputEvent) -> bool:
+def _is_report(etype: int, code: int) -> bool:
     """Whether an event is SYN_REPORT, which closes one complete report of a device."""
-    return e.type == ec.EV_SYN and e.code == ec.SYN_REPORT
+    return etype == ec.EV_SYN and code == ec.SYN_REPORT
 
 
 class _PadStream:
@@ -250,26 +296,29 @@ class _PadStream:
         self.dropping = False       # skipping the events up to the next SYN_REPORT
         self.meter = c.meters.setdefault("pad", RateMeter()) if C.STATS else None
 
-    def handle(self, e: InputEvent) -> None:
-        """Process one evdev event of the pad."""
-        report = _is_report(e)
-        if report:
-            self.c.reports["pad"] += 1
-            if self.meter is not None:
-                self.meter.tick(time.monotonic())
-        if self.dropping:
-            if report:
-                self._recover_from_drop()
-            return
-        if e.type == ec.EV_ABS:
-            self._on_axis(e.code, e.value)
-        elif e.type == ec.EV_KEY:
-            self._on_key(e.code, e.value)
-        elif e.type == ec.EV_SYN:
-            if e.code == ec.SYN_DROPPED:
+    def handle(self, sec: int, usec: int, etype: int, code: int, value: int) -> None:
+        """Process one evdev event of the pad (the raw fields, see ``pump``)."""
+        if etype == ec.EV_SYN:
+            if code == ec.SYN_REPORT:
+                self._on_syn_report(sec * US_PER_S + usec)
+            elif code == ec.SYN_DROPPED:
                 self.dropping = True
-            elif report and self.dirty:
-                self._on_report(e)
+        elif self.dropping:
+            return
+        elif etype == ec.EV_ABS:
+            self._on_axis(code, value)
+        elif etype == ec.EV_KEY:
+            self._on_key(code, value)
+
+    def _on_syn_report(self, event_us: int) -> None:
+        """SYN_REPORT: count it, end a SYN_DROPPED gap, or send the report if it changed something."""
+        self.c.reports["pad"] += 1
+        if self.meter is not None:
+            self.meter.tick(time.monotonic())
+        if self.dropping:
+            self._recover_from_drop()
+        elif self.dirty:
+            self._on_report(event_us)
 
     def _on_axis(self, code: int, value: int) -> None:
         """Store a stick / trigger axis or a D-pad axis of the current report."""
@@ -325,16 +374,21 @@ class _PadStream:
         self.c.resync()
         _send_state_burst(self.c, self.loop)
 
-    def _on_report(self, e: InputEvent) -> None:
-        """A complete report with changes: send the state (with repeats after a button change)."""
+    def _on_report(self, event_us: int) -> None:
+        """A complete report with changes: send the state (with repeats after a button change).
+
+        The clock is read once here and handed down: the idle timer, the send time and the latency of the change all
+        use the same reading.
+        """
+        c, now = self.c, time.monotonic()
         self.dirty = False
-        self.c.mark_event(e)
-        self.c.note_input(time.monotonic())
+        c.mark_event(event_us)
+        c.note_input(now)
         if self.burst:
             self.burst = False
-            _send_state_burst(self.c, self.loop)
+            _send_state_burst(c, self.loop, now)
         else:
-            self.c.request_send()
+            c.request_send(now)
 
 
 async def stream_pad(c: Ctrl) -> None:
@@ -348,7 +402,9 @@ async def heartbeat() -> None:
 
     Every HEARTBEAT_S, each pad that has not sent anything for twice that time resends its full state. Every fifth tick
     additionally resends the pad identification, the click state and the touch state (the "finger lifted" packet of a
-    pad without activity would otherwise never be repeated).
+    pad without activity would otherwise never be repeated). The touch state is skipped for a pad without a touchpad
+    whose touch state is idle (an Xbox pad, a DualSense whose touchpad device is gone): there is nothing to repeat, and
+    the idle packet sent when a touchpad goes away is already repeated by ``_reset_lost_stream``.
     """
     tick = 0
     while True:
@@ -362,7 +418,8 @@ async def heartbeat() -> None:
             if slow:
                 c.send_ident()
                 c.send_click()
-                c.send_touch(force=True)      # also without a touchpad: a lost "finger lifted" packet will get through
+                if c.touch_dev is not None or c.touch != IDLE_TP:
+                    c.send_touch(force=True)  # a lost "finger lifted" packet gets through
         tick += 1
         await asyncio.sleep(C.HEARTBEAT_S)
 
@@ -452,23 +509,24 @@ class _MotionStream:
         self.bt = BtDelay()
         self.dropping = False
 
-    def handle(self, e: InputEvent) -> None:
-        """Process one evdev event of the motion sensor."""
-        if e.type == ec.EV_SYN and e.code == ec.SYN_DROPPED:
-            self.dropping = True
-            return
-        report = _is_report(e)
-        if self.dropping:
-            if not report:
-                return
-            self.dropping = False
-            self._reread_axes()
-        if e.type == ec.EV_ABS and 0 <= e.code < MOTION_AXES:
-            self.sample[e.code] = e.value
-        elif e.type == ec.EV_MSC and e.code == ec.MSC_TIMESTAMP:
-            self.c.bt_us = self.bt.sample(e.sec * US_PER_S + e.usec, e.value)
-        elif report:
-            self._on_report(e)
+    def handle(self, sec: int, usec: int, etype: int, code: int, value: int) -> None:
+        """Process one evdev event of the motion sensor (the raw fields, see ``pump``).
+
+        The most frequent events (the six axes, ~8 per report at up to 1000 reports/s) are tested first.
+        """
+        if etype == ec.EV_ABS:
+            if code < MOTION_AXES and not self.dropping:
+                self.sample[code] = value
+        elif etype == ec.EV_SYN:
+            if code == ec.SYN_REPORT:
+                if self.dropping:
+                    self.dropping = False
+                    self._reread_axes()
+                self._on_report(sec * US_PER_S + usec)
+            elif code == ec.SYN_DROPPED:
+                self.dropping = True
+        elif etype == ec.EV_MSC and code == ec.MSC_TIMESTAMP and not self.dropping and sec:
+            self.c.bt_us = self.bt.sample(sec * US_PER_S + usec, value)    # without a kernel stamp (sec 0) there is nothing to compare
 
     def _reread_axes(self) -> None:
         """Read the axes from the device: an axis whose change was lost must not keep its old value."""
@@ -503,7 +561,7 @@ class _MotionStream:
             (calib.finish if self.cal.user else calib.startup_done)(self.c, result)
             self.cal = None
 
-    def _on_report(self, e: InputEvent) -> None:
+    def _on_report(self, event_us: int) -> None:
         """A complete motion report: calibrate, track the bias and (rate-limited) send the averaged motion."""
         c = self.c
         now = time.monotonic()
@@ -524,9 +582,9 @@ class _MotionStream:
         if now - self.last_sent < C.MOTION_MIN_DT:
             return                              # samples arrive faster than the limit - they stay averaged until the next packet
         self.last_sent = now
-        self._send_average(e)
+        self._send_average(event_us, now)
 
-    def _send_average(self, e: InputEvent) -> None:
+    def _send_average(self, event_us: int, now: float) -> None:
         """Send the average of the samples since the last packet (bias-corrected) if it moved past the deadband.
 
         Runs for every packet (up to 1000 Hz), so it works in place: the sums are zeroed and the result goes to a scratch list
@@ -548,8 +606,8 @@ class _MotionStream:
         self.count = 0
         if moved:
             old[:] = new
-            c.mark_event(e)
-            c.request_send()
+            c.mark_event(event_us)
+            c.request_send(now)
 
 
 async def stream_motion(c: Ctrl) -> None:
@@ -615,25 +673,25 @@ def _touch_range(dev: InputDevice | None) -> tuple[int, int]:
         return TOUCH_DEFAULT_MAX_X, TOUCH_DEFAULT_MAX_Y
 
 
-def _apply_touch_axis(e: InputEvent, slot: int, fingers: list[_Finger], prev: list[tuple[int, int] | None]) -> int:
-    """Fold one EV_ABS multitouch event into the per-finger table.
+def _apply_touch_axis(code: int, value: int, slot: int, fingers: list[_Finger], prev: list[tuple[int, int] | None]) -> int:
+    """Fold one EV_ABS multitouch event (``code``, ``value``) into the per-finger table.
 
     Returns:
         The (possibly changed) current slot.
     """
-    if e.code == ec.ABS_MT_SLOT:
-        return e.value
+    if code == ec.ABS_MT_SLOT:
+        return value
     if 0 <= slot < TOUCH_SLOTS:
         finger = fingers[slot]
-        if e.code == ec.ABS_MT_TRACKING_ID:
+        if code == ec.ABS_MT_TRACKING_ID:
             prev[slot] = None              # a new / lifted finger: no delta, the position stays (as in the kernel)
-            finger.on = e.value >= 0
+            finger.on = value >= 0
             if finger.on:
-                finger.id = e.value & TOUCH_ID_MASK
-        elif e.code == ec.ABS_MT_POSITION_X:
-            finger.x = e.value
-        elif e.code == ec.ABS_MT_POSITION_Y:
-            finger.y = e.value
+                finger.id = value & TOUCH_ID_MASK
+        elif code == ec.ABS_MT_POSITION_X:
+            finger.x = value
+        elif code == ec.ABS_MT_POSITION_Y:
+            finger.y = value
     return slot
 
 
@@ -789,19 +847,19 @@ class _TouchStream:
         self.dropping = False
         self.resynced = any(f.on for f in self.fingers)
 
-    def handle(self, e: InputEvent) -> None:
-        """Process one evdev event of the touchpad."""
+    def handle(self, sec: int, usec: int, etype: int, code: int, value: int) -> None:
+        """Process one evdev event of the touchpad (the raw fields, see ``pump``; the timestamp is not used)."""
         if self.dropping:
-            if not _is_report(e):
+            if not _is_report(etype, code):
                 return                  # an incomplete frame after a buffer overflow - skipped
             self._recover_from_drop()
-        if e.type == ec.EV_ABS:
-            self.slot = _apply_touch_axis(e, self.slot, self.fingers, self.prev)
-        elif e.type == ec.EV_SYN and e.code == ec.SYN_DROPPED:
+        if etype == ec.EV_ABS:
+            self.slot = _apply_touch_axis(code, value, self.slot, self.fingers, self.prev)
+        elif etype == ec.EV_SYN and code == ec.SYN_DROPPED:
             self.dropping = True
-        elif e.type == ec.EV_KEY and e.code == ec.BTN_LEFT:
-            self._on_click(bool(e.value))
-        elif _is_report(e):
+        elif etype == ec.EV_KEY and code == ec.BTN_LEFT:
+            self._on_click(bool(value))
+        elif _is_report(etype, code):
             self._on_report()
 
     def _recover_from_drop(self) -> None:

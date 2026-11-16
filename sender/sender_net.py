@@ -111,15 +111,22 @@ class PcClock:
         self.offset_us = min(self.samples)[1]
         self.t_sync = now
 
-    def _pc_time_us(self) -> int | None:
-        """Return the PC time now in µs (not truncated), or None while the clock is not synchronised."""
-        if self.offset_us is None or time.monotonic() - self.t_sync > self.SYNC_MAX_AGE_S:
+    def _pc_time_us(self, now: float | None = None) -> int | None:
+        """Return the PC time now in µs (not truncated), or None while the clock is not synchronised.
+
+        ``now`` is a ``time.monotonic()`` reading the caller already has (for the age of the synchronisation only; the
+        PC time itself comes from ``clock``).
+        """
+        if self.offset_us is None or (time.monotonic() if now is None else now) - self.t_sync > self.SYNC_MAX_AGE_S:
             return None
         return clock.ns() // NS_PER_US + self.offset_us
 
-    def now_us(self) -> int | None:
-        """Return the PC time now [µs, low 32 bits] or None (not synchronised); 0 is reserved, so it becomes 1."""
-        t = self._pc_time_us()
+    def now_us(self, now: float | None = None) -> int | None:
+        """Return the PC time now [µs, low 32 bits] or None (not synchronised); 0 is reserved, so it becomes 1.
+
+        ``now``: an optional ``time.monotonic()`` reading of the caller, see ``_pc_time_us``.
+        """
+        t = self._pc_time_us(now)
         return None if t is None else (t & UINT32_MASK) or 1
 
     def now_ms(self) -> int | None:

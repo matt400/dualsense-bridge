@@ -99,27 +99,25 @@ def emit(t, i, *v):
     out.append((t, i, v))
 net.emit = sender_ctrl.net.emit = emit
 c = Ctrl(0, "aa:bb:cc:dd:ee:ff", None, None, None)
-net.pc_clock = types.SimpleNamespace(now_us=lambda: None)
+net.pc_clock = types.SimpleNamespace(now_us=lambda now=None: None)
 c.send_state(force=True)
 assert out[-1][0] == T_STATE, "no PC clock - a plain state packet (older receiver)"
-net.pc_clock = types.SimpleNamespace(now_us=lambda: 777)
+net.pc_clock = types.SimpleNamespace(now_us=lambda now=None: 777)
 c.bt_us = 250
-c.mark_event(types.SimpleNamespace(sec=(time.time_ns() // 1000 - 1500) // 1_000_000,
-                                   usec=(time.time_ns() // 1000 - 1500) % 1_000_000))
+c.mark_event(int(time.monotonic() * 1_000_000) - 1500)  # the kernel stamp: CLOCK_MONOTONIC (pump switches the evdev clock)
 c.pad[0] = 1
 c.send_state()
 t, i, v = out[-1]
 assert t == T_STATE2 and v[-3] == 777 and 1000 <= v[-2] < 50_000 and v[-1] == 250, v[-3:]
 c.send_state(force=True)
 assert out[-1][0] == T_STATE2 and out[-1][2][-2:] == (LAT_NONE, LAT_NONE), "a repeat (heartbeat) without a measurement"
-c.mark_event(types.SimpleNamespace())                    # event without a time (tests) - no measurement
+c.mark_event(0)                                          # event without a time (a stand-in device) - no measurement
 assert c.t_event is None
 ok("Ctrl.send_state: state2 with the time on the PC clock, phone and Bluetooth only for a fresh change")
 
 
 def ev_ago(us):
-    t = time.time_ns() // 1000 - us
-    return types.SimpleNamespace(sec=t // 1_000_000, usec=t % 1_000_000)
+    return int(time.monotonic() * 1_000_000) - us
 
 
 c.set_abs(0, c.pad[0] + 1 if c.pad[0] < 255 else 254)    # stick change ...

@@ -78,7 +78,7 @@ real_time = sender_streams.time
 sender_streams.time = types.SimpleNamespace(monotonic=lambda: clock[0])
 E = lambda t, c, v: types.SimpleNamespace(type=t, code=c, value=v)
 c = sender_ctrl.Ctrl(0, "aa:bb:cc:dd:ee:19", None, None, None)
-c.request_send = lambda: None
+c.request_send = lambda now=None: None
 c.mark_event = lambda e: None
 seen = {}
 
