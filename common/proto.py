@@ -151,6 +151,7 @@ At the end: shared git functions (code version, git pull update) - the receiver 
 """
 import contextlib
 import hmac
+import itertools
 import json
 import math
 import os
@@ -401,6 +402,10 @@ STATE_FIELDS: Final = 17                        # the state fields in state / st
 BODY_LEN: Final = {ptype: body.size for ptype, body in BODY.items()}
 # (the type in the header, the body length) -> the type in the program
 BY_SIZE: Final[dict[tuple[int, int], int]] = {(WIRE.get(ptype, ptype), body.size): ptype for ptype, body in BODY.items()}
+# header + body (and, for v3, + the freshness token) as one Struct per type: Codec.pack builds a packet with a single
+# pack() call instead of packing the header and the body separately and concatenating them (one bytes object, not three)
+FRAMED: Final[dict[int, struct.Struct]] = {ptype: struct.Struct(HDR.format + body.format[1:]) for ptype, body in BODY.items()}
+FRAMED3: Final[dict[int, struct.Struct]] = {ptype: struct.Struct(f.format + TOKEN.format[1:]) for ptype, f in FRAMED.items()}
 if len(BY_SIZE) != len(BODY):
     raise ValueError("two packet types share the same (wire type, body length) pair: the parser could not tell them apart")
 
@@ -616,8 +621,9 @@ class Codec:
     ) -> None:
         """Create a codec; see the class docstring for the meaning of the arguments."""
         self.key = key
-        self._seq = random.getrandbits(16)
-        self._lock = threading.Lock()
+        # next() of itertools.count is one C call that holds the GIL for its whole duration, so packets packed from several
+        # threads (the receiver) still get distinct numbers - without a lock taken for every packet
+        self._seq = itertools.count(random.getrandbits(16) + 1)
         self.mismatch_t = float("-inf")
         self.token, self.now_ms, self.state_path = token, now_ms, state_path
         self.writer: Callable[[str, object], None] = writer or write_json
@@ -668,22 +674,19 @@ class Codec:
         Returns:
             The packet bytes, or None when v3 is in use and the other side's clock is not known yet.
         """
-        with self._lock:
-            self._seq = (self._seq + 1) & SEQ_MASK
-            seq = self._seq
+        seq = next(self._seq) & SEQ_MASK
         wire_type = WIRE.get(ptype, ptype)
-        body = BODY[ptype].pack(*vals)
         if not self.key:
-            return HDR.pack(HDR0 | wire_type, idx, seq) + body
+            return FRAMED[ptype].pack(HDR0 | wire_type, idx, seq, *vals)
         if self.v3 if v3 is None else v3:
             token = self.token() if self.token is not None else None
             if token is None:
                 if ptype not in FRESH_EXEMPT:
                     return None
                 token = 0
-            message = HDR.pack(HDR3 | wire_type, idx, seq) + body + TOKEN.pack(token & UINT32_MASK)
+            message = FRAMED3[ptype].pack(HDR3 | wire_type, idx, seq, *vals, token & UINT32_MASK)
         else:
-            message = HDR.pack(HDR0 | wire_type, idx, seq) + body
+            message = FRAMED[ptype].pack(HDR0 | wire_type, idx, seq, *vals)
         return message + hmac.digest(self.key, message, "sha256")[:MAC_LEN]
 
     def _signature_ok(self, packet: Packet, length: int) -> bool:

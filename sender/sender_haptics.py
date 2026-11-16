@@ -63,6 +63,7 @@ RING_FRAMES: Final = 2048                   # capacity: 683 ms, far above any bu
 MAX_GAP_FRAMES: Final = 8 * HAPT_FRAMES     # a gap up to this long (85 ms) is a loss and is filled with silence; a larger one restarts
 OVERRUN_CHUNKS: Final = 3                   # deeper than target + this many reports: the oldest audio is dropped (a stall, then a burst)
 TIMEOUT_S: Final = 0.2                      # no packet for this long ends the stream
+US_PER_S: Final = 1_000_000
 LATE_S: Final = 0.004                       # a tick later than this is counted as late
 RESYNC_S: Final = 0.05                      # a tick later than this (a stalled loop): no burst of catch-up reports, restart the timeline
 RETRY_S: Final = 1.0                        # a refused start (USB pad, no HID report) is retried after this
@@ -232,6 +233,7 @@ class Counters(LogCounters):
         dropped: Frames dropped (overruns and drift).
         repeated: Frames repeated to fill a report (drift).
         late: Ticks later than LATE_S.
+        worst_late_us: The largest delay of a tick behind its deadline, in µs (how late "late" was).
         lost: Frames missing between chunks (filled with silence).
         stale: Late, repeated or reordered chunks refused.
         resyncs: Times the stream restarted after a jump of the frame counter.
@@ -245,6 +247,7 @@ class Counters(LogCounters):
     dropped: int = 0
     repeated: int = 0
     late: int = 0
+    worst_late_us: int = 0
     lost: int = 0
     stale: int = 0
     resyncs: int = 0
@@ -444,6 +447,9 @@ class HapticsStream(Playout):
         lag = now - self._due
         if lag > LATE_S:
             self.stats.late += 1
+            lag_us = int(lag * US_PER_S)
+            if lag_us > self.stats.worst_late_us:
+                self.stats.worst_late_us = lag_us
         if lag > RESYNC_S:
             self._due = now
         if not self.ending and now - self._rx > TIMEOUT_S:

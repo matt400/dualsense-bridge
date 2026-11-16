@@ -48,6 +48,8 @@ from sender_report import BT_SEQ_MASK, BT_SEQ_SHIFT, BYTE_MASK, CRC_LEN
 from sender_rumble import Rumble
 from sender_tick import TickTimer
 
+US_PER_S: Final = 1_000_000
+
 # ---- report 0x36 (measured on the real pad, P3a) ----
 REPORT_ID: Final = 0x36
 REPORT36_LEN: Final = 398                   # with the report id; the HID descriptor says 397 data bytes
@@ -221,6 +223,7 @@ class Counters(LogCounters):
         underruns: Times the ring ran dry in the middle of a stream.
         dropped: Frames removed (drift: crossfaded away; bursts: dropped).
         late: Ticks later than LATE_S.
+        worst_late_us: The largest delay of a tick behind its deadline, in µs (how late "late" was).
         lost: Frames missing between packets (filled with silence).
         stale: Late, repeated or reordered frames refused.
         resyncs: Times the stream restarted after a jump of the frame counter.
@@ -234,6 +237,7 @@ class Counters(LogCounters):
     underruns: int = 0
     dropped: int = 0
     late: int = 0
+    worst_late_us: int = 0
     lost: int = 0
     stale: int = 0
     resyncs: int = 0
@@ -427,6 +431,9 @@ class SpeakerStream(Playout):
         lag = now - self._due
         if lag > LATE_S:
             self.stats.late += 1
+            lag_us = int(lag * US_PER_S)
+            if lag_us > self.stats.worst_late_us:
+                self.stats.worst_late_us = lag_us
         if lag > RESYNC_S:
             self._due = now
         self.report.payload[:] = _NO_HAPTICS

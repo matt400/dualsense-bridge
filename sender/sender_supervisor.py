@@ -19,7 +19,7 @@ import sender_padtype as padtype
 import sender_state as state
 import sender_streams as streams
 from proto import CAL_FEW, E_ERROR, E_NO_SLOT, E_PAD_OFF, E_PAD_ON, LAT_NONE, T_BYE, TRIG2_OFF, read_json_object
-from sender_config import C, IDLE_TP, SETTLE_S
+from sender_config import BURST_DELAYS, C, IDLE_TP, SETTLE_S
 from sender_ctrl import Ctrl
 from sender_mute import stream_mute
 from sender_net import emit_repeat
@@ -241,6 +241,19 @@ def attach(c: Ctrl, kind: Kind, dev: InputDevice) -> None:
     task.add_done_callback(c.extra.discard)
 
 
+def _send_touch_burst(c: Ctrl) -> None:
+    """Send the touch and click state now and again after each of BURST_DELAYS (a lost packet must not leave a finger down)."""
+    c.send_touch(force=True)
+    c.send_click()
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:                  # no loop (shutdown): the one copy has to do
+        return
+    for delay in BURST_DELAYS:
+        loop.call_later(delay, c.send_touch, True)
+        loop.call_later(delay, c.send_click)
+
+
 def _reset_lost_stream(c: Ctrl, kind: Kind) -> None:
     """Zero the values of a lost motion / touch stream and tell the receiver.
 
@@ -264,8 +277,8 @@ def _reset_lost_stream(c: Ctrl, kind: Kind) -> None:
     if c.closing:                         # when the pad is closing, send_neutral sends the same thing
         return
     if kind == "touch":
-        c.send_touch(force=True)
-        c.send_click()
+        # repeated like a button change: once the touchpad is gone the heartbeat no longer resends the touch state
+        _send_touch_burst(c)
     else:
         c.send_state(force=True)
 

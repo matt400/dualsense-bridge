@@ -23,7 +23,7 @@ def reference(sums, count, bias, old, pending):
 def make(old, bias, pending):
     sent = []
     c = types.SimpleNamespace(motion=old, gyro_bias=bias, pending=pending, mark_event=lambda e: sent.append("mark"),
-                              request_send=lambda: sent.append("send"))
+                              request_send=lambda now=None: sent.append("send"))
     st = S._MotionStream.__new__(S._MotionStream)
     st.c, st.sums, st.count, st._new = c, [0] * AX, 0, [0] * AX
     return st, c, sent
@@ -41,7 +41,7 @@ for _ in range(3000):
     st, c, sent = make(list(old), bias, pending)
     st.sums[:], st.count = sums, count
     ident = id(c.motion)
-    st._send_average(None)
+    st._send_average(0, 0.0)
     expected = want if want_send else old
     if c.motion != expected or bool(sent) != want_send or st.sums != [0] * AX or st.count != 0 or id(c.motion) != ident:
         bad += 1
@@ -49,7 +49,7 @@ check(bad == 0, f"3000 random averages: same values, same decision to send, sums
 
 st, c, sent = make([0] * AX, [0.0] * 3, False)
 st.sums[:], st.count = [1] * AX, 1
-st._send_average(None)
+st._send_average(0, 0.0)
 check(c.motion == [0] * AX and not sent, "a change inside the deadband is not sent and does not touch c.motion")
 
 sys.exit(1 if fails else 0)

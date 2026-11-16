@@ -9,28 +9,24 @@ from sender_config import C
 from evdev import InputDevice
 import sender_net as net, sender_ctrl, sender_state as state, sender_streams as st, sender_supervisor as sup
 from sender_ctrl import Ctrl
-from proto import T_BYE, T_CLICK, T_MOUSE, T_STATE, T_STATE2
+from proto import T_BYE, T_CLICK, T_MOUSE, T_STATE, T_STATE2, T_TOUCH
 
 from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 TMP = tempfile.mkdtemp()
 
 
-# ---------- pump: one registration of the descriptor, whole batches per wake-up ----------
-def make_dev(batches):
-    """A real InputDevice object on a pipe: every byte written to the pipe is one wake-up that delivers the next batch."""
+# ---------- pump: one registration of the descriptor, whole batches per wake-up, raw events ----------
+def raw(*values):
+    """Raw struct input_event records (sec 5, usec 6, EV_ABS, code 0) carrying the given values."""
+    return b"".join(st.EVENT.pack(5, 6, 3, 0, v) for v in values)
+
+def make_dev():
+    """A real InputDevice object on a pipe: the bytes written to the pipe are the kernel's struct input_event records."""
     r, w = os.pipe()
     os.set_blocking(r, False)
     dev = InputDevice.__new__(InputDevice)          # no open /dev/input node needed
     dev.fd = r
-    queue = list(batches)
-    def read():
-        os.read(r, 1)                               # a wake-up byte; BlockingIOError when there is none
-        item = queue.pop(0)
-        if isinstance(item, Exception):
-            raise item
-        yield from item
-    dev.read = read
     return dev, w
 
 def watch_loop(loop):
@@ -40,38 +36,64 @@ def watch_loop(loop):
     loop.remove_reader = lambda fd: (unregs.append(fd), rem(fd))[1]
     return regs, unregs
 
-async def wake(w, n=1):
-    for _ in range(n):
-        os.write(w, b"x")
-        await asyncio.sleep(0.02)
-
 async def t_pump():
     loop = asyncio.get_running_loop()
     regs, unregs = watch_loop(loop)
-    # events of several batches arrive in order; a spurious wake-up (BlockingIOError) does not end the loop
-    dev, w = make_dev([[1, 2], BlockingIOError(), [3], OSError(errno.ENODEV, "gone")])
+    # events of several batches arrive in order, as plain fields; a spurious wake-up (BlockingIOError) does not end the loop
+    dev, w = make_dev()
     got = []
-    task = asyncio.create_task(st.pump(dev, got.append))
-    await asyncio.sleep(0.02)
-    await wake(w, 3)
-    check(got == [1, 2, 3] and not task.done(), f"pump: events of all batches in order, spurious wake-up survived ({got})")
-    check(regs == [dev.fd], f"pump: the descriptor is registered once for three batches ({regs})")
-    await wake(w)
+    real_read, spurious = os.read, [True]
+    def read(fd, n):
+        if spurious[0]:
+            spurious[0] = False
+            raise BlockingIOError
+        return real_read(fd, n)
+    st.os.read = read
+    try:
+        task = asyncio.create_task(st.pump(dev, lambda *ev: got.append(ev)))
+        await asyncio.sleep(0.02)
+        for batch in (raw(1), raw(2, 3), raw(4)):
+            os.write(w, batch)
+            await asyncio.sleep(0.02)
+    finally:
+        st.os.read = real_read
+    check([ev[4] for ev in got] == [1, 2, 3, 4],             # the batch left unread by the spurious wake-up comes on the next one
+          f"pump: events of all batches in order, spurious wake-up survived ({got})")
+    check(not task.done(), "pump: a spurious wake-up does not end the loop")
+    check(all(ev[:4] == (0, 0, 3, 0) for ev in got), f"pump: no monotonic stamps (EVIOCSCLOCKID failed on a pipe) -> time 0 ({got[:1]})")
+    check(regs == [dev.fd], f"pump: the descriptor is registered once for all batches ({regs})")
+    os.close(w)                                     # end of file = the device is gone
     try:
         await asyncio.wait_for(task, 1)
         err = None
     except OSError as e:
         err = e
-    check(err is not None and err.errno == errno.ENODEV, "pump: OSError of the device (disappeared) is raised from the pump")
+    check(err is not None and err.errno == errno.ENODEV, "pump: a device that is gone (no data) raises OSError from the pump")
     check(unregs == [dev.fd], "pump: the descriptor is unregistered when the device is gone")
 
+    # with the monotonic clock in place the kernel stamp is handed over as it is
+    dev, w = make_dev()
+    got = []
+    real_clock = st._use_monotonic_clock
+    st._use_monotonic_clock = lambda d: True
+    try:
+        task = asyncio.create_task(st.pump(dev, lambda *ev: got.append(ev)))
+        await asyncio.sleep(0.02)
+        os.write(w, raw(9))
+        await asyncio.sleep(0.02)
+    finally:
+        st._use_monotonic_clock = real_clock
+    check(got == [(5, 6, 3, 0, 9)], f"pump: with the monotonic clock the event time is passed on ({got})")
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+
     # a bug in the handler ends the loop like it did with async_read_loop (the supervisor reports it)
-    dev, w = make_dev([[1]])
-    def bad(_e):
+    dev, w = make_dev()
+    def bad(*_ev):
         raise ValueError("bug in the handler")
     task = asyncio.create_task(st.pump(dev, bad))
     await asyncio.sleep(0.02)
-    await wake(w)
+    os.write(w, raw(1))
     try:
         await asyncio.wait_for(task, 1)
         err = None
@@ -80,21 +102,24 @@ async def t_pump():
     check(err is not None and unregs[-1] == dev.fd, "pump: an exception of the handler is raised and the descriptor unregistered")
 
     # cancelling (pad teardown) unregisters too, before the caller closes the device
-    dev, w = make_dev([[1]])
-    task = asyncio.create_task(st.pump(dev, lambda e: None))
+    dev, w = make_dev()
+    task = asyncio.create_task(st.pump(dev, lambda *ev: None))
     await asyncio.sleep(0.02)
     task.cancel()
     await asyncio.gather(task, return_exceptions=True)
     check(unregs[-1] == dev.fd and task.cancelled(), "pump: cancelling the task unregisters the descriptor")
 
-    # a stand-in without a file descriptor (the other tests) is read with its own async_read_loop
+    # a stand-in without a file descriptor (the other tests) is read with its own async_read_loop, without a time
+    class Ev:
+        def __init__(self, v):
+            self.type, self.code, self.value = 3, 0, v
     class Fake:
         async def async_read_loop(self):
             for i in (7, 8):
-                yield i
+                yield Ev(i)
     seen = []
-    await st.pump(Fake(), seen.append)
-    check(seen == [7, 8], "pump: a device that is not an InputDevice goes through async_read_loop")
+    await st.pump(Fake(), lambda *ev: seen.append(ev))
+    check(seen == [(0, 0, 3, 0, 7), (0, 0, 3, 0, 8)], f"pump: a device that is not an InputDevice goes through async_read_loop ({seen})")
 
 asyncio.run(t_pump())
 
@@ -235,6 +260,50 @@ c2.led = os.path.join(TMP, "no-such-led")
 with contextlib.redirect_stdout(io.StringIO()):
     c2.apply_feedback(0, 0, 3, 3, 3)
 check(c2.led is None, "a LED node that is gone is given up at once")
+
+# ---------- raw events: the ioctl that switches the event clock, the motion stream without a kernel stamp ----------
+check(st.EVIOCSCLOCKID == 0x400445A0, f"EVIOCSCLOCKID = _IOW('E', 0xa0, int) ({st.EVIOCSCLOCKID:#x})")
+check(st.EVENT.size in (16, 24), f"struct input_event is 16 B (32-bit) or 24 B (64-bit): {st.EVENT.size}")
+
+async def t_motion_stamp():
+    cm = Ctrl(2, "aa:bb:cc:dd:ee:03", None, None, None)
+    cm.bias_known = True                            # no startup calibration
+    ms = st._MotionStream(cm)
+    ms.handle(0, 0, 4, 5, 1234)                     # MSC_TIMESTAMP of a stand-in: no kernel stamp
+    check(cm.bt_us == st.LAT_NONE and ms.bt.last is None, "a pad timestamp without a kernel stamp does not feed BtDelay")
+    ms.handle(7, 0, 4, 5, 1234)
+    check(ms.bt.last == 1234, "with a kernel stamp it does")
+asyncio.run(t_motion_stamp())
+
+# ---------- heartbeat: the touch state only for a pad that has a touchpad (or a finger still down) ----------
+sent = []
+real_emit = net.emit
+net.emit = lambda t, i, *v: sent.append((t, i))
+state.active.clear()
+no_tp = Ctrl(3, "aa:bb:cc:dd:ee:04", None, None, None)
+with_tp = Ctrl(4, "aa:bb:cc:dd:ee:05", None, None, object())
+state.active.update({3: no_tp, 4: with_tp})
+async def t_heartbeat():
+    task = asyncio.create_task(st.heartbeat())
+    await asyncio.sleep(0.01)
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+asyncio.run(t_heartbeat())
+check((T_TOUCH, 4) in sent and (T_TOUCH, 3) not in sent, f"heartbeat: touch only for the pad with a touchpad ({sent})")
+check((T_CLICK, 3) in sent, "heartbeat: the click state still goes for every pad")
+no_tp.touch = ((1, 1, 10, 10), (0, 0, 0, 0))     # a finger was down when the touchpad vanished
+sent.clear()
+asyncio.run(t_heartbeat())
+check((T_TOUCH, 3) in sent, "heartbeat: a pad without a touchpad but with a finger down still repeats it")
+async def t_lost_touch():
+    sent.clear()
+    no_tp.touch = st.IDLE_TP
+    sup._send_touch_burst(no_tp)
+    await asyncio.sleep(0.15)
+asyncio.run(t_lost_touch())
+check(sent.count((T_TOUCH, 3)) == 1 + len(st.BURST_DELAYS), f"a lost touchpad: the idle touch packet is repeated ({sent})")
+state.active.clear()
+net.emit = real_emit
 
 if fails:
     print("FAIL", len(fails), "errors")

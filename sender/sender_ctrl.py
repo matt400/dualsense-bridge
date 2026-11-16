@@ -11,7 +11,7 @@ import zlib
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Final, NamedTuple
 
-from evdev import InputDevice, InputEvent
+from evdev import InputDevice
 
 import sender_net as net
 import sender_padtype as padtype
@@ -280,35 +280,43 @@ class Ctrl:
         net.emit(T_VERSION, self.idx, SENDER_VERSION, (r.bits if r is not None else 0) | CAP_CALIB,
                  r.why if r is not None else WHY_OFF)
 
-    def mark_event(self, e: InputEvent) -> None:
+    def mark_event(self, event_us: int) -> None:
         """Remember the time of the oldest unsent change after a kernel event changed the state (button, stick, motion).
 
-        The kernel timestamp of the event (evdev clock) is later subtracted from the send time to measure how long the
-        change sat on the phone; the Bluetooth delay seen at that moment is saved with it.
+        ``event_us`` is the kernel timestamp of the SYN_REPORT in µs on CLOCK_MONOTONIC (``sender_streams.pump`` switches
+        the evdev clock), or 0 when the event has no usable time (a stand-in device in the tests). It is later subtracted
+        from the send time to measure how long the change sat on the phone; the Bluetooth delay seen at that moment is
+        saved with it.
         """
-        if self.t_event is None:
-            sec = getattr(e, "sec", None)            # events in tests have no time
-            if sec is not None:
-                self.t_event = sec * US_PER_S + e.usec
-                self.ev_bt = self.bt_us
+        if self.t_event is None and event_us:
+            self.t_event = event_us
+            self.ev_bt = self.bt_us
 
-    def _delay_fields(self, fresh: bool, event_us: int | None) -> tuple[int, int]:
-        """The phone and Bluetooth delay of a change for the state2 packet; LAT_NONE for a repeat (no measurement)."""
+    def _delay_fields(self, fresh: bool, event_us: int | None, now: float) -> tuple[int, int]:
+        """The phone and Bluetooth delay of a change for the state2 packet; LAT_NONE for a repeat (no measurement).
+
+        ``now`` is ``time.monotonic()`` at the send: the event stamp is on the same clock, so one reading serves both.
+        """
         if fresh and event_us is not None:
-            age = time.time_ns() // NS_PER_US - event_us            # the evdev event clock = CLOCK_REALTIME
+            age = int(now * US_PER_S) - event_us
             if 0 <= age < LAT_NONE:
                 return age, self.ev_bt
         return LAT_NONE, LAT_NONE
 
-    def send_state(self, force: bool = False) -> None:
+    def send_state(self, force: bool = False, now: float | None = None) -> None:
         """Pack and send the full pad state, unless nothing changed since the last packet.
 
         The state key is a tuple of everything that goes into the packet. A repeat of an identical state (heartbeat,
         burst) carries no latency measurement. When the PC clock is synchronised, a state2 packet is sent that also
         carries the PC time and the measured phone / Bluetooth delay of the change; otherwise a plain state packet.
 
+        A tuple compared with ``==`` is as fast as packing into a preallocated buffer and comparing the bytes (measured:
+        both well under 1 µs), and the packet is then built by ``Codec.pack`` in a single ``Struct.pack`` call.
+
         Args:
             force: Send even if the state is identical to the last packet.
+            now: ``time.monotonic()`` read by the caller for this report (the read loop reads the clock once per report);
+                None = read it here.
         """
         if self.sealed:
             return
@@ -321,28 +329,30 @@ class Ctrl:
             return
         fresh = key != self.last_key
         self.last_key = key
-        self.t_state = time.monotonic()
+        if now is None:
+            now = time.monotonic()
+        self.t_state = now
         event_us, self.t_event = self.t_event, None
-        pc = net.pc_clock.now_us()
+        pc = net.pc_clock.now_us(now)
         if pc is None:                                   # a receiver without pong2 (older) or no synchronisation
             net.emit(T_STATE, self.idx, *key)
             return
-        phone, bt = self._delay_fields(fresh, event_us)
+        phone, bt = self._delay_fields(fresh, event_us, now)
         net.emit(T_STATE2, self.idx, *key, pc, phone, bt)
 
-    def request_send(self) -> None:
+    def request_send(self, now: float | None = None) -> None:
         """Send the changed state, limited by pad_min_dt.
 
         The first change after silence goes out in this very loop iteration (call_soon - tens of µs), later ones inside
         the window merge into one packet at its end - nothing is lost. call_soon instead of sending at once: one pad report
         lands in three evdev devices (buttons / sticks, motion, touchpad), and their events arrive in the same loop
         iteration - stick and motion changes from one report go out in one packet, not two (the second only after
-        pad_min_dt).
+        pad_min_dt). ``now`` is the caller's ``time.monotonic()`` reading, if it has one.
         """
         self.pending = True
         if self._state_timer is not None:
             return                     # a send is scheduled - it will take this change as well
-        wait = C.PAD_MIN_DT - (time.monotonic() - self.t_state)
+        wait = C.PAD_MIN_DT - ((time.monotonic() if now is None else now) - self.t_state)
         loop = asyncio.get_running_loop()
         self._state_timer = loop.call_soon(self._state_flush) if wait <= 0 else loop.call_later(wait, self._state_flush)
 
