@@ -50,28 +50,28 @@ sender_config.resolve = fake_resolve
 async def reresolve_cases():
     C.HOST, C.PC_ADDR = "desktop.local", "10.0.0.5"
     now = time.monotonic()
-    net.last_pong = now
-    check(not await net._reresolve(now - 100), "receiver answers: no lookup") ; check(not looked_up, "  (the resolver was not called)")
-    net.last_pong = now - 100
-    check(not await net._reresolve(now), "just started: wait before the first lookup"); check(not looked_up, "  (the resolver was not called)")
-    check(await net._reresolve(now - 100) and C.PC_ADDR == "10.0.0.7", "silent receiver, new address: PC_ADDR updated")
-    check(not await net._reresolve(now - 100), "same address again: no change")
+    net.link.last_pong = now
+    check(not await net.link._reresolve(now - 100), "receiver answers: no lookup") ; check(not looked_up, "  (the resolver was not called)")
+    net.link.last_pong = now - 100
+    check(not await net.link._reresolve(now), "just started: wait before the first lookup"); check(not looked_up, "  (the resolver was not called)")
+    check(await net.link._reresolve(now - 100) and C.PC_ADDR == "10.0.0.7", "silent receiver, new address: PC_ADDR updated")
+    check(not await net.link._reresolve(now - 100), "same address again: no change")
     answers["value"] = None
-    check(not await net._reresolve(now - 100) and C.PC_ADDR == "10.0.0.7", "failed lookup: the old address stays")
+    check(not await net.link._reresolve(now - 100) and C.PC_ADDR == "10.0.0.7", "failed lookup: the old address stays")
     answers["value"] = "10.0.0.9"
     C.HOST = "10.0.0.7"
     looked_up.clear()
-    check(not await net._reresolve(now - 100) and not looked_up, "a literal IP is never looked up")
+    check(not await net.link._reresolve(now - 100) and not looked_up, "a literal IP is never looked up")
 
     # sock_keeper recreates the socket after the address changed
     C.HOST, C.PC_ADDR = "desktop.local", "127.0.0.1"
     answers["value"] = "127.0.0.2"
-    net.sock, net.sock_bad, net.last_pong = None, False, 0.0
+    net.link.sock, net.link.sock_bad, net.link.last_pong = None, False, 0.0
     net.RESOLVE_AFTER_S = net.SOCK_RETRY_S = 0.05
     task = asyncio.create_task(net.sock_keeper())
     await asyncio.sleep(0.4)
     task.cancel()
-    check(C.PC_ADDR == "127.0.0.2" and net.sock is not None and net.sock.getpeername()[0] == "127.0.0.2",
+    check(C.PC_ADDR == "127.0.0.2" and net.link.sock is not None and net.link.sock.getpeername()[0] == "127.0.0.2",
           "sock_keeper: the socket now points at the new address")
     net.close_sock()
 

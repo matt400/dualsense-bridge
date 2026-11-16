@@ -127,7 +127,7 @@ def _reset(key: int, ref: int) -> None:
 
 
 def on_packet(authenticated: bool, op: int, key: int, ref: int, number: float) -> None:
-    """Handle a cfgset packet (net.on_cfg).
+    """Handle a cfgset packet (net.handlers.cfg).
 
     Args:
         authenticated: The packet is v3 and the sender has a key (so the HMAC and the freshness token were checked).
@@ -137,7 +137,7 @@ def on_packet(authenticated: bool, op: int, key: int, ref: int, number: float) -
         number: The new value (CFG_SET only).
     """
     if not authenticated:
-        _reply(CFG_ALL, CFGR_NO_V3 if net.codec.key else CFGR_NO_KEY, ref)
+        _reply(CFG_ALL, CFGR_NO_V3 if net.link.codec.key else CFGR_NO_KEY, ref)
         return
     if not C.REMOTE_CFG_FILE:
         _reply(CFG_ALL, CFGR_OFF, ref)

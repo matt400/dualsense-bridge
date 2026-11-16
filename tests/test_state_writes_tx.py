@@ -27,7 +27,7 @@ plain = proto.Codec(b"k" * 16, state_path=os.path.join(TMP, "auth2.json"))
 plain._upgrade()
 check(os.path.exists(os.path.join(TMP, "auth2.json")), "without a writer the default write_json still saves the file")
 net.init()
-check(net.codec.writer is state.write_json_later, "the sender's codec uses state.write_json_later")
+check(net.link.codec.writer is state.write_json_later, "the sender's codec uses state.write_json_later")
 
 calls = []
 real_later = BA.write_json_later

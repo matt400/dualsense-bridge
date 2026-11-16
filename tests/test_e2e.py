@@ -21,13 +21,13 @@ import sender_net as net, sender_control as ctl, sender_state as state, sender_s
 from sender_ctrl import Ctrl
 net.init()
 got = {"cmd": [], "fb": []}
-net.on_command = lambda i, cmd, arg: got["cmd"].append((i, cmd))
-net.on_feedback = lambda i, v: got["fb"].append((i, v))
+net.handlers.command = lambda i, cmd, arg: got["cmd"].append((i, cmd))
+net.handlers.feedback = lambda i, v: got["fb"].append((i, v))
 # Wake-on-LAN and events: settings from the receiver window go to the sender (scfg), events come back to the log
 import rx_events as ev, rx_settings as R, sender_events, sender_wol
 from proto import E_WOL
 TC.WOL_FILE = os.path.join(TMP, "wol_e2e.json")
-net.on_scfg = sender_wol.apply_scfg
+net.handlers.scfg = sender_wol.apply_scfg
 R.apply(R.Settings(log=R.LogConfig(sender=True), wol=R.WolConfig(mac="aa:bb:cc:dd:ee:ff", button="triangle")))
 ev.clear()
 

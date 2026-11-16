@@ -60,17 +60,17 @@ ok("hapt packet: 69 B body, plain / HMAC v2 / v3 round trip")
 
 # a received packet reaches the hook once, with the samples cut out of the datagram (also with a v3 trailer)
 got = []
-net.on_haptics = lambda idx, frame, flags, view: got.append((idx, frame, flags, bytes(view)))
-net.fb_filter = SeqFilter(1.0)
+net.handlers.haptics = lambda idx, frame, flags, view: got.append((idx, frame, flags, bytes(view)))
+net.link.fb_filter = SeqFilter(1.0)
 
 
 def deliver(pkt):
-    p = net.codec.parse(pkt)
+    p = net.link.codec.parse(pkt)
     assert p is not None
-    net._dispatch(p[0], p[1], p[2], pkt)
+    net.link._dispatch(p[0], p[1], p[2], pkt)
 
 
-net.codec = Codec()
+net.link.codec = Codec()
 tx = Codec()
 a, b = tx.pack(T_HAPT, 2, 10, HAPT_START, chunk(1)), tx.pack(T_HAPT, 2, 42, 0, chunk(2))
 deliver(b)
@@ -79,12 +79,12 @@ deliver(b)                                                  # the same datagram 
 assert got == [(2, 42, 0, chunk(2))], got
 deliver(tx.pack(T_HAPT, 5, 7, HAPT_END, chunk(4)))          # another pad has its own stream filter
 assert got[-1] == (5, 7, HAPT_END, chunk(4)) and len(got) == 2
-net.fb_filter = SeqFilter(1.0)
-net.codec = Codec(KEY, token=lambda: 77, now_ms=lambda: 77)
+net.link.fb_filter = SeqFilter(1.0)
+net.link.codec = Codec(KEY, token=lambda: 77, now_ms=lambda: 77)
 del got[:]
-deliver(net.codec.pack(T_HAPT, 1, 99, HAPT_START, chunk(9), v3=True))
+deliver(net.link.codec.pack(T_HAPT, 1, 99, HAPT_START, chunk(9), v3=True))
 assert got == [(1, 99, HAPT_START, chunk(9))], "the samples are found with the HMAC trailer behind them"
-net.codec = Codec()
+net.link.codec = Codec()
 ok("sender_net: one call per new packet, late / repeated packets dropped, separate filter per pad")
 
 
@@ -309,9 +309,9 @@ async def scenarios():
     c.haptics = H.HapticsStream(3, c.rumble, sender_config.C.HAPTICS_BUFFER_MS)
     c.haptics.high, c.haptics.low = 10**9, 0                      # keep the audio exactly as sent: no drift correction here
     state.active[c.key] = c
-    net.on_haptics = sup.dispatch_haptics
-    net.fb_filter = SeqFilter(1.0)
-    net.codec = Codec()
+    net.handlers.haptics = sup.dispatch_haptics
+    net.link.fb_filter = SeqFilter(1.0)
+    net.link.codec = Codec()
     tx = Codec()
     count = 12
     loop = asyncio.get_running_loop()

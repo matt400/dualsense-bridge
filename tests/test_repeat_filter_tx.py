@@ -26,17 +26,17 @@ class FakeSock:
 net.init()
 pc = Codec()                                                  # receiver on the other side, no key
 cfgs, cmds, bts = [], [], []
-net.on_cfg = lambda authenticated, op, key, ref, number: cfgs.append((key, number))
-net.on_command = lambda idx, cmd, arg: cmds.append((idx, cmd, arg))
-net.on_bt = lambda op, arg, mac: bts.append((op, arg))
+net.handlers.cfg = lambda authenticated, op, key, ref, number: cfgs.append((key, number))
+net.handlers.command = lambda idx, cmd, arg: cmds.append((idx, cmd, arg))
+net.handlers.bt = lambda op, arg, mac: bts.append((op, arg))
 
 
 def deliver(*packets):
     """Deliver the packets in this order to a fresh filter; return what reached the handlers."""
-    net.fb_filter = SeqFilter(1.0)
+    net.link.fb_filter = SeqFilter(1.0)
     for lst in (cfgs, cmds, bts):
         lst.clear()
-    net.sock = FakeSock(packets)
+    net.link.sock = FakeSock(packets)
     net.on_readable()
     return list(cfgs), list(cmds), list(bts)
 

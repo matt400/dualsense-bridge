@@ -138,7 +138,7 @@ asyncio.run(main())
 # ---------- network: trig2 and trig -> callback ----------
 cod = Codec()
 got = []
-net.on_triggers = lambda idx, vals: got.append((idx, vals))
+net.handlers.triggers = lambda idx, vals: got.append((idx, vals))
 
 
 class Sock:
@@ -151,8 +151,8 @@ class Sock:
 
 
 vals = (TFX_CLICK, 5, 7, 0, TFX_VIB, 0, 3, 30, RFX_ON, 120, 40, 0)
-net.codec = cod
-net.sock = Sock([cod.pack(T_TRIG2, 1, *vals), cod.pack(T_TRIG, 0, 0, 0, 3, 6)])
+net.link.codec = cod
+net.link.sock = Sock([cod.pack(T_TRIG2, 1, *vals), cod.pack(T_TRIG, 0, 0, 0, 3, 6)])
 net.on_readable()
 assert got == [(1, vals), (0, (0, 0, 3, 6))], got
 assert BODY[T_TRIG2].size == 12

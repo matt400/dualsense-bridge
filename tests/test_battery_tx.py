@@ -74,11 +74,11 @@ assert key.parse(key.pack(T_BUILD3, 255, b"abc", 1, 0, b"\1" * 6, b"\0" * 4, 5, 
 ok("protocol: build3 is told apart from build / build2 by its length, also with an HMAC")
 
 # ---------- scfg: SCFG_BATT announces build3 ----------
-net.batt_t = net.scfg_t = 0.0
+net.link.batt_t = net.link.scfg_t = 0.0
 assert not net.batt_receiver()
-net._on_scfg(1, cod.pack(T_SCFG, 255, SCFG_WOL, bytes(6), bytes(4), 7, 1000))
-assert net.scfg_t and not net.batt_receiver(), "an older receiver: scfg without SCFG_BATT"
-net._on_scfg(2, cod.pack(T_SCFG, 255, SCFG_WOL | SCFG_BATT, bytes(6), bytes(4), 7, 1000))
+net.link._on_scfg(1, cod.pack(T_SCFG, 255, SCFG_WOL, bytes(6), bytes(4), 7, 1000))
+assert net.link.scfg_t and not net.batt_receiver(), "an older receiver: scfg without SCFG_BATT"
+net.link._on_scfg(2, cod.pack(T_SCFG, 255, SCFG_WOL | SCFG_BATT, bytes(6), bytes(4), 7, 1000))
 assert net.batt_receiver() and net.batt_receiver(time.monotonic() + 1)
 assert not net.batt_receiver(time.monotonic() + net.NEW_RECEIVER_S + 1), "the announcement expires like scfg"
 ok("scfg with SCFG_BATT -> batt_receiver() (and it expires when the receiver goes silent)")
@@ -91,18 +91,18 @@ W.cfg = W.WolCfg(); W.learned = "11:22:33:44:55:66"; W._bcast_cache = ("192.168.
 sender_update.version = ("abc1234", 1_700_000_000, "x")
 now = time.monotonic()
 with mock.patch.object(B, "read", lambda: 87 | BATT_CHARGING):
-    net.scfg_t, net.batt_t = 0.0, 0.0
+    net.link.scfg_t, net.link.batt_t = 0.0, 0.0
     sender_update.send_build()
     assert out[-1][0] == T_BUILD, "no scfg at all: the plain build"
-    net.scfg_t, net.batt_t = now, 0.0
+    net.link.scfg_t, net.link.batt_t = now, 0.0
     sender_update.send_build()
     assert out[-1][0] == T_BUILD2, "a receiver without SCFG_BATT must never get build3 (it would reject the length)"
-    net.scfg_t = net.batt_t = now
+    net.link.scfg_t = net.link.batt_t = now
     sender_update.send_build()
     assert out[-1][0] == T_BUILD3 and out[-1][-1] == 87 | BATT_CHARGING and out[-1][5] == bytes.fromhex("112233445566"), out[-1]
 with mock.patch.object(B, "read", lambda: None):
     sender_update.send_build()
     assert out[-1][0] == T_BUILD2, "a device without a battery (Raspberry Pi) keeps sending build2"
 net.emit = real_emit
-net.scfg_t = net.batt_t = 0.0
+net.link.scfg_t = net.link.batt_t = 0.0
 ok("send_build: build3 only with a battery and a receiver that announced SCFG_BATT, otherwise build2 / build as before")

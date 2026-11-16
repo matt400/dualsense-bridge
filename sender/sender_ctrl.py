@@ -148,7 +148,7 @@ class Ctrl:
         self.last_touch_send = 0.0
         self._touch_timer: asyncio.TimerHandle | None = None
         # latency measurement (state2 packet): kernel time [µs, evdev event clock] of the oldest unsent change,
-        # the Bluetooth delay above the minimum at that moment, and the current one (from sender_streams.BtDelay)
+        # the Bluetooth delay above the minimum at that moment, and the current one (from sender_motion.BtDelay)
         self.t_event: int | None = None
         self.ev_bt = self.bt_us = LAT_NONE
         self.mute_down = False      # the mute button is "held" for a moment after each press (sender_mute); not part of self.mask
@@ -283,7 +283,7 @@ class Ctrl:
     def mark_event(self, event_us: int) -> None:
         """Remember the time of the oldest unsent change after a kernel event changed the state (button, stick, motion).
 
-        ``event_us`` is the kernel timestamp of the SYN_REPORT in µs on CLOCK_MONOTONIC (``sender_streams.pump`` switches
+        ``event_us`` is the kernel timestamp of the SYN_REPORT in µs on CLOCK_MONOTONIC (``sender_evread.pump`` switches
         the evdev clock), or 0 when the event has no usable time (a stand-in device in the tests). It is later subtracted
         from the send time to measure how long the change sat on the phone; the Bluetooth delay seen at that moment is
         saved with it.
@@ -333,7 +333,7 @@ class Ctrl:
             now = time.monotonic()
         self.t_state = now
         event_us, self.t_event = self.t_event, None
-        pc = net.pc_clock.now_us(now)
+        pc = net.link.pc_clock.now_us(now)
         if pc is None:                                   # a receiver without pong2 (older) or no synchronisation
             net.emit(T_STATE, self.idx, *key)
             return

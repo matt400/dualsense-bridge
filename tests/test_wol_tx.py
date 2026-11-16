@@ -49,14 +49,13 @@ E.set_enabled(False); assert E.pending() == 0
 ok("events: only enabled ones, age in seconds, SENDS repeats with one number, queue and argument limit")
 
 E.set_enabled(True); out.clear()
-net._receiver_watch(False, True)
+net.link._receiver_watch(False, True)
 assert E.pending() == 1 and E._queue[0][3] == E_NO_RECEIVER, "utrata receivera = zdarzenie"
-net._receiver_watch(False, False)
+net.link._receiver_watch(False, False)
 assert E.pending() == 1, "waits for the receiver reply"
-real_emit = net.emit
-net.emit = emit
-net._receiver_watch(True, False); net._receiver_watch(True, True)
-net.emit = real_emit
+net.link.emit = emit                                 # the link's own emit (an instance attribute shadows the method)
+net.link._receiver_watch(True, False); net.link._receiver_watch(True, True)
+del net.link.emit
 assert [o[4] for o in out] == [E_NO_RECEIVER] * 2 and E.pending() == 0
 E.set_enabled(False)
 ok("ping loop: losing contact with the receiver as an event, sent after it comes back")
@@ -143,7 +142,7 @@ real_send, real_targets = W.send, W.targets
 W.targets = lambda: ["192.168.1.255", "255.255.255.255", "192.168.1.4"]
 W.send = lambda mac, addrs: [f"{a}: Network is unreachable" for a in addrs for _p in W.WOL_PORTS]
 W.cfg = W.WolCfg(mac="aa:bb:cc:dd:ee:ff", events=True); E.set_enabled(True); E._queue.clear()
-net.last_pong, W._last_sent = 0.0, 0.0
+net.link.last_pong, W._last_sent = 0.0, 0.0
 pad = _Pad()
 assert W.fire(pad) is False and pad.pulses == ["fail"] and E._queue[-1][3] == E_WOL_FAIL, (pad.pulses, list(E._queue))
 W.send = lambda mac, addrs: [f"{addrs[0]}: Network is unreachable"] * len(W.WOL_PORTS)   # one address failed
@@ -173,7 +172,7 @@ PS, OPT, TRI = KEY_BIT[316], KEY_BIT[315], KEY_BIT[307]
 
 async def scenario():
     c = FakeCtrl()
-    net.last_pong = 0.0                              # the receiver never replied
+    net.link.last_pong = 0.0                              # the receiver never replied
     W._last_sent = 0.0
     c.mask = PS; W.on_mask(c)
     assert c.wol_timer is None, "PS alone - nothing (that is how the pad turns on)"
@@ -193,11 +192,11 @@ async def scenario():
     await asyncio.sleep(0.4)
     assert len(sent) == 1, "the next send no earlier than after REPEAT_GUARD_S"
     W._last_sent = 0.0
-    net.last_pong = time.monotonic()                 # PC running: the combo belongs to the receiver
+    net.link.last_pong = time.monotonic()                 # PC running: the combo belongs to the receiver
     c.mask = 0; W.on_mask(c); c.mask = PS | OPT; W.on_mask(c)
     await asyncio.sleep(0.4)
     assert len(sent) == 1 and c.pulses == ["wol"], "the receiver replies - no Wake-on-LAN"
-    net.last_pong = 0.0
+    net.link.last_pong = 0.0
     W.cfg = W.WolCfg(enabled=False, mac="aa:bb:cc:dd:ee:ff", hold_ms=300)
     c.mask = 0; W.on_mask(c); c.mask = PS | OPT; W.on_mask(c)
     assert c.wol_timer is None, "off in the receiver window"
@@ -214,12 +213,13 @@ ok("combo: PS + button held for hold_ms with a silent receiver; release cancels;
 
 # ---------- build2 only for a new receiver ----------
 out.clear()
+real_emit = net.emit
 net.emit = emit
 W.cfg = W.WolCfg(); W.learned = "11:22:33:44:55:66"; W._bcast_cache = ("192.168.1.20", "192.168.1.255")
-net.scfg_t = 0.0
+net.link.scfg_t = 0.0
 sender_update.send_build()
 assert out[-1][0] == T_BUILD, "older receiver (no scfg) gets a plain build"
-net.scfg_t = time.monotonic()
+net.link.scfg_t = time.monotonic()
 sender_update.send_build()
 assert out[-1][0] == T_BUILD2 and out[-1][5] == bytes.fromhex("112233445566") and out[-1][6] == socket.inet_aton("192.168.1.255")
 net.emit = real_emit

@@ -19,7 +19,7 @@ async def fake_run(argv, timeout):
 
 
 async def main():
-    net.scfg_t = time.monotonic()                              # a receiver that knows the new packets
+    net.link.scfg_t = time.monotonic()                              # a receiver that knows the new packets
     bt = SB.Bluetooth(run=fake_run, emit=lambda *a: None, sysfs=None)
     task = asyncio.create_task(bt.loop())
     await asyncio.sleep(0.6)                                   # past the first report and its gap
