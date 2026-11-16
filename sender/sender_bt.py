@@ -33,7 +33,7 @@ import sender_btadapter as btadapter
 import sender_btlink as btlink
 import sender_net as net
 import sender_state as state
-from proto import (BODY, BTA_MANUAL, BTA_PICK, BTC_ACTIVE, BTC_BLOCKED, BTC_FIXED, BTC_PICKED, BTC_USB,
+from proto import (BODY, EmitFn, BTA_MANUAL, BTA_PICK, BTC_ACTIVE, BTC_BLOCKED, BTC_FIXED, BTC_PICKED, BTC_USB,
                    BTD_CONNECTED, BTD_PAD, BTD_PAIRED, BTD_TRUSTED, BTF_BUSY, BTF_HAS_BUILTIN, BTF_HAS_USB, BTF_LIST,
                    BTF_MODE_SHIFT, BTF_ON_USB, BTF_SCANNING, BTL_LQ, BTL_RSSI, BTR_AUTH, BTR_BUSY, BTR_DENIED, BTR_FAILED, BTR_NONE,
                    BTR_NOT_FOUND, BTR_OFF, BTR_OK, BTR_RUNNING, BTS_BLOCKED, BTS_DENIED, BTS_ERROR,
@@ -63,7 +63,7 @@ class Bluetooth:
     the controller through sender_btadapter, and periodically reports everything to the receiver window (loop()).
     """
 
-    def __init__(self, run: Runner = run_cmd, emit: Callable[..., None] | None = None, sysfs: Path | None = None,
+    def __init__(self, run: Runner = run_cmd, emit: EmitFn | None = None, sysfs: Path | None = None,
                  links: btlink.LinkReader | None = None) -> None:
         """Create the manager; ``run``, ``emit`` and ``links`` are replaceable for tests, ``sysfs=None`` disables the controller choice.
 
@@ -630,7 +630,7 @@ class Bluetooth:
         self.emit(T_BTSTATE, 255, self.state, flags, left, conn, len(devs), self.gen, op, res, mac or bytes(6))
         for k, d in enumerate(devs):
             rssi = BT_RSSI_NONE if d.rssi is None else clamp(d.rssi, BT_RSSI_NONE + 1, 127)
-            self.emit(T_BTDEV, 255, self.gen, k, len(devs), mac_bytes(d.mac), rssi, d.flags, utf8_field(d.name, NAME_MAX, "…"))
+            self.emit(T_BTDEV, 255, self.gen, k, len(devs), mac_bytes(d.mac) or bytes(6), rssi, d.flags, utf8_field(d.name, NAME_MAX, "…"))
         if full and self.sysfs is not None:          # the sender's controllers (panel: a list with names, "Use")
             rows = self.ctrl_rows()
             self.cgen = (self.cgen + 1) & 0xFFFF
@@ -651,7 +651,8 @@ class Bluetooth:
             return
         for mac, link in await asyncio.to_thread(self.links.sample, macs):
             flags = (BTL_RSSI if link.rssi is not None else 0) | (BTL_LQ if link.quality is not None else 0)
-            self.emit(T_BTLINK, 255, mac_bytes(mac), clamp(link.rssi or 0, -127, 127), link.quality or 0, flags, clamp(link.hci, 0, 255))
+            mac6 = mac_bytes(mac) or bytes(6)          # None (an unparsable / zero MAC) would make struct.pack raise
+            self.emit(T_BTLINK, 255, mac6, clamp(link.rssi or 0, -127, 127), link.quality or 0, flags, clamp(link.hci, 0, 255))
 
     async def loop(self) -> None:
         """Report the state to the receiver.

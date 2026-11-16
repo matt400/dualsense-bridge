@@ -333,7 +333,7 @@ class Ctrl:
             now = time.monotonic()
         self.t_state = now
         event_us, self.t_event = self.t_event, None
-        pc = net.pc_clock.now_us(now)
+        pc = net.link.pc_clock.now_us(now)
         if pc is None:                                   # a receiver without pong2 (older) or no synchronisation
             net.emit(T_STATE, self.idx, *key)
             return

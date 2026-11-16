@@ -118,7 +118,7 @@ async def main():
     SB.IDLE_S = 0.2
     try:
         b = SB.Bluetooth(run=run, emit=lambda *a: sent.append(a), sysfs=fs.cls)
-        net.scfg_t = 0.0                              # receiver not running (PC off)
+        net.link.scfg_t = 0.0                              # receiver not running (PC off)
         task = asyncio.create_task(b.loop())
         await asyncio.sleep(0.3)
         assert b.pick is not None and b.pick.name == "hci1", "dongle selected without a receiver"

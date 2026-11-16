@@ -23,7 +23,7 @@ import sender_net as net, sender_state as state, sender_streams as streams
 from sender_ctrl import Ctrl
 net.init()
 got = []
-net.on_command = lambda i, cmd, arg: got.append((i, cmd))
+net.handlers.command = lambda i, cmd, arg: got.append((i, cmd))
 sniffed = []
 real_send = net.send_raw
 
@@ -33,7 +33,7 @@ def sniff(data):
     real_send(data)
 
 
-net.send_raw = sniff
+net.link.send_raw = sniff           # the instance attribute: emit() inside the link goes through it too
 
 
 async def main():
@@ -44,7 +44,7 @@ async def main():
     pinger = asyncio.create_task(net.pinger())
     hb = asyncio.create_task(streams.heartbeat())
     await asyncio.sleep(1.6)                      # the v3 probe ping goes with every 4th ping (1/s)
-    assert net.codec.v3 and N.codec.v3, (net.codec.v3, N.codec.v3)
+    assert net.link.codec.v3 and N.codec.v3, (net.link.codec.v3, N.codec.v3)
     print("OK   both sides switched to v3 without configuration (probe ping)")
     c.send_ident(); c.pad[0] = 255; c.send_state(True)
     await asyncio.sleep(0.4)

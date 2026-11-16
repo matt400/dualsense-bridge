@@ -125,10 +125,10 @@ class Sock:
         raise OSError(self.err, "x")
 
 for err, bad in ((errno.ENOBUFS, False), (errno.EHOSTUNREACH, False), (errno.ENETDOWN, True)):
-    net.sock, net.sock_bad = Sock(err), False
+    net.link.sock, net.link.sock_bad = Sock(err), False
     net.send_raw(b"x")
-    check(net.sock_bad is bad, f"send_raw: {errno.errorcode[err]} -> socket {'rebuilt' if bad else 'kept'}")
-net.sock, net.sock_bad = None, False
+    check(net.link.sock_bad is bad, f"send_raw: {errno.errorcode[err]} -> socket {'rebuilt' if bad else 'kept'}")
+net.link.sock, net.link.sock_bad = None, False
 
 print("LATE DEVICES / SLOTS", "FAIL" if fails else "OK")
 sys.exit(1 if fails else 0)

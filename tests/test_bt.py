@@ -337,11 +337,11 @@ asyncio.run(t_real())
 async def t_loop():
     b = SB.Bluetooth(run=bz, emit=emit)
     tx_out.clear()
-    net.scfg_t = 0.0
+    net.link.scfg_t = 0.0
     task = asyncio.create_task(b.loop())
     await asyncio.sleep(0.3)
     assert not tx_out, "receiver without scfg (older) - nothing"
-    net.scfg_t = time.monotonic()
+    net.link.scfg_t = time.monotonic()
     b.poke(); await asyncio.sleep(0.3)
     assert len(states()) == 1 and not states()[0][1] & SB.BTF_LIST, "state at once, no list"
     b.on_command(BT_LIST, 0, bytes(6)); await asyncio.sleep(0.3)
@@ -435,13 +435,13 @@ net.init()
 RB.reset()
 bz2 = FakeBlueZ()
 bt = SB.Bluetooth(run=bz2)                     # emit = sender_net.emit (prawdziwe gniazdo)
-net.on_bt = bt.on_command
+net.handlers.bt = bt.on_command
 
 async def t_e2e():
     loop = asyncio.get_running_loop()
     assert net.open_sock(loop)
     net.emit(proto.T_PING, 255, time.perf_counter_ns())    # the receiver learns the sender address
-    net.scfg_t = time.monotonic()
+    net.link.scfg_t = time.monotonic()
     task = asyncio.create_task(bt.loop())
     for _k in range(50):
         await asyncio.sleep(0.05)

@@ -13,10 +13,9 @@ from __future__ import annotations
 import collections
 import random
 import time
-from collections.abc import Callable
 from typing import Any, Final
 
-from proto import BODY, EV_ERROR, EV_INFO, EV_WARN, T_EVENT, utf8_field
+from proto import BODY, EV_ERROR, EV_INFO, EV_WARN, T_EVENT, EmitFn, utf8_field
 
 KEEP: Final = 32                 # events kept while the receiver is silent
 SENDS: Final = 2                 # how many consecutive pings carry each event
@@ -66,7 +65,7 @@ def set_enabled(on: object) -> None:
         _queue.clear()
 
 
-def flush(emit: Callable[..., None], now: float | None = None) -> None:
+def flush(emit: EmitFn, now: float | None = None) -> None:
     """Called from the ping loop when the receiver answers: send the waiting events, each one SENDS times in total.
 
     Every call sends each queued event once, with its age in seconds (capped to 16 bits), and decrements its counter;

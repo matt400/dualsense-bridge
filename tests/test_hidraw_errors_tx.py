@@ -100,7 +100,7 @@ check(len(arg) <= events.ARG_MAX and "�" not in cstr(arg) and cstr(arg).endswi
       f"event argument cut on a character boundary, with an ellipsis ({cstr(arg)[-6:]!r})")
 import sender_net as net
 import sender_update as U
-net.codec, out = Codec(), []
+net.link.codec, out = Codec(), []
 net.emit = lambda t, i, *v: out.append((t, v))
 U.status, U.fail_msg = proto.UPD_FAILED, "błąd: nie można pobrać - " + "ąę" * 80
 U.send_build()

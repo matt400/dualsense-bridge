@@ -152,18 +152,18 @@ if __name__ == "__main__":
         raise SystemExit("Another sender is already running (service or autostart) - stop it first.")
     net.init()
     # callbacks the network layer calls for packets arriving from the receiver
-    net.on_feedback = sup.dispatch_feedback
-    net.on_command = control.on_command
-    net.on_triggers = sup.dispatch_triggers
-    net.on_leds = sup.dispatch_leds            # the mute LED and player LEDs the game set
-    net.on_haptics = sup.dispatch_haptics      # HD haptics for a Bluetooth pad (sender_haptics)
-    net.on_speaker = sup.dispatch_speaker      # the game's sound on the pad's speaker (sender_speaker)
-    net.on_scfg = wol.apply_scfg
-    net.on_bt = sender_bt.bt.on_command        # phone Bluetooth driven from the receiver window (scan, pair, connect)
-    net.on_cfg = sender_remotecfg.on_packet    # settings changed in the receiver window (only v3 with the key)
+    net.handlers.feedback = sup.dispatch_feedback
+    net.handlers.command = control.on_command
+    net.handlers.triggers = sup.dispatch_triggers
+    net.handlers.leds = sup.dispatch_leds            # the mute LED and player LEDs the game set
+    net.handlers.haptics = sup.dispatch_haptics      # HD haptics for a Bluetooth pad (sender_haptics)
+    net.handlers.speaker = sup.dispatch_speaker      # the game's sound on the pad's speaker (sender_speaker)
+    net.handlers.scfg = wol.apply_scfg
+    net.handlers.bt = sender_bt.bt.on_command        # phone Bluetooth driven from the receiver window (scan, pair, connect)
+    net.handlers.cfg = sender_remotecfg.on_packet    # settings changed in the receiver window (only v3 with the key)
     # the pad self-test of the receiver window: it asks, the sender answers with what only it can see (v19+)
-    sender_selftest.bind(net.emit, net.clock.ns, lambda: net.pc_clock.offset_us, state.ctrl_by_idx)
-    net.on_selftest = sender_selftest.on_command
+    sender_selftest.bind(net.emit, net.link.clock.ns, lambda: net.link.pc_clock.offset_us, state.ctrl_by_idx)
+    net.handlers.selftest = sender_selftest.on_command
     wol.load()                         # Wake-on-LAN and events: settings from the receiver window saved at the last scfg
     sender_rt.setup(C.LOW_LATENCY, C.CPU_LATENCY_US, C.RT_PRIORITY)
     gc.collect()

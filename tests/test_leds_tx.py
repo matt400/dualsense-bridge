@@ -40,24 +40,24 @@ ok("leds packet: wire type fb, length 3 (unique), plain / HMAC v2 / v3 parse, ve
 
 # ---------- delivery: own filter key, repeats dropped, other packets unaffected ----------
 got = []
-net.on_leds = lambda idx, vals: got.append((idx, vals))
-net.fb_filter = SeqFilter(1.0)
-net.codec = Codec()
+net.handlers.leds = lambda idx, vals: got.append((idx, vals))
+net.link.fb_filter = SeqFilter(1.0)
+net.link.codec = Codec()
 tx = Codec()
 a = tx.pack(T_LEDS, 1, 3, 1, 4)
 for pkt in (a, a):                    # the receiver repeats a change: the same packet (the same sequence number) twice
-    p = net.codec.parse(pkt)
-    net._dispatch(p[0], p[1], p[2], pkt)
+    p = net.link.codec.parse(pkt)
+    net.link._dispatch(p[0], p[1], p[2], pkt)
 assert got == [(1, (3, 1, 4))], got
 b = tx.pack(T_LEDS, 1, 1, 2, 0)       # the next packet has the next sequence number
-p = net.codec.parse(b)
-net._dispatch(p[0], p[1], p[2], b)
+p = net.link.codec.parse(b)
+net.link._dispatch(p[0], p[1], p[2], b)
 assert got[-1] == (1, (1, 2, 0)) and len(got) == 2
 fb = tx.pack(T_FB, 1, 1, 2, 3, 4, 5)
-net._dispatch(T_FB, 1, 9, fb)         # feedback is another packet type: the leds hook is not called for it
+net.link._dispatch(T_FB, 1, 9, fb)         # feedback is another packet type: the leds hook is not called for it
 assert len(got) == 2
-net.on_leds = None
-net._dispatch(T_LEDS, 1, 99, tx.pack(T_LEDS, 1, 3, 1, 4))     # no hook set: ignored without an error
+net.handlers.leds = None
+net.link._dispatch(T_LEDS, 1, 99, tx.pack(T_LEDS, 1, 3, 1, 4))     # no hook set: ignored without an error
 ok("delivery: on_leds gets (idx, (flags, mute, player)), a repeat is dropped, no hook is no error")
 
 # ---------- the report bytes ----------
@@ -112,13 +112,13 @@ async def scenarios():
     c = sender_ctrl.Ctrl(5, "aa:bb:cc:dd:ee:05", dev, None, None)
     c.rumble = R.Rumble(5, dev, "hidraw", hidraw=(path, True))
     state.active[c.key] = c
-    net.on_leds = sup.dispatch_leds
-    net.fb_filter = SeqFilter(1.0)
-    net.codec = Codec()
+    net.handlers.leds = sup.dispatch_leds
+    net.link.fb_filter = SeqFilter(1.0)
+    net.link.codec = Codec()
     tx2 = Codec()
     for pkt in (tx2.pack(T_LEDS, 5, LEDS_MUTE, MUTE_ON, 0), tx2.pack(T_LEDS, 5, LEDS_PLAYER, 0, 0x0A), tx2.pack(T_LEDS, 6, LEDS_MUTE, 1, 0)):
-        p = net.codec.parse(pkt)
-        net._dispatch(p[0], p[1], p[2], pkt)
+        p = net.link.codec.parse(pkt)
+        net.link._dispatch(p[0], p[1], p[2], pkt)
     assert c.leds == (MUTE_ON, 0x0A), "the flags decide what changes: a packet with only the player LEDs keeps the mute LED"
     out2 = reports(path)
     assert len(out2) == 2 and common(out2[-1])[8] == MUTE_ON and common(out2[-1])[43] == 0x0A and crc_ok(out2[-1]), "another slot is not touched"

@@ -20,13 +20,13 @@ def pong(t0: int) -> bytes:
     return bytes(HEADER_LEN) + BODY[T_PONG].pack(t0)
 
 
-now = net.clock.ns()
-net._on_pong(pong(now - 5 * net.MAX_RTT_NS))            # a ping recorded 5 s ago and replayed
-check(not net.rtts and not net.recent_rtt and net.pongs == 0, "a reply to an old ping does not go into the RTT stats")
-check(net.last_pong == float("-inf"), "a reply to an old ping does not pose as a live receiver")
-net._on_pong(pong(now + net.MAX_RTT_NS))                  # "sent" in the future: another clock base
-check(not net.rtts and net.pongs == 0, "a ping from another clock base (the future) rejected too")
-net._on_pong(pong(net.clock.ns() - 3_000_000))            # an ordinary 3 ms round trip
-check(len(net.rtts) == 1 and 2.5 < net.rtts[0] < 1000 and net.pongs == 1, "a plain pong counts as before")
+now = net.link.clock.ns()
+net.link._on_pong(pong(now - 5 * net.MAX_RTT_NS))            # a ping recorded 5 s ago and replayed
+check(not net.link.rtts and not net.link.recent_rtt and net.link.pongs == 0, "a reply to an old ping does not go into the RTT stats")
+check(net.link.last_pong == float("-inf"), "a reply to an old ping does not pose as a live receiver")
+net.link._on_pong(pong(now + net.MAX_RTT_NS))                  # "sent" in the future: another clock base
+check(not net.link.rtts and net.link.pongs == 0, "a ping from another clock base (the future) rejected too")
+net.link._on_pong(pong(net.link.clock.ns() - 3_000_000))            # an ordinary 3 ms round trip
+check(len(net.link.rtts) == 1 and 2.5 < net.link.rtts[0] < 1000 and net.link.pongs == 1, "a plain pong counts as before")
 check(net.rtt_x10() != net.RTT_NONE, "info gets the RTT median")
 sys.exit(1 if fails else 0)

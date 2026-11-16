@@ -218,20 +218,20 @@ async def main():
 
     # ---------- the request packet through sender_net ----------
     got = []
-    net.on_selftest = lambda idx, *a: got.append((idx, a))
-    net.on_feedback = lambda idx, vals: None
+    net.handlers.selftest = lambda idx, *a: got.append((idx, a))
+    net.handlers.feedback = lambda idx, vals: None
     codec = proto.Codec()
     def feed(t, *v):
         data = codec.pack(t, 0, *v)
-        net._on_control(t, 0, (data[2] << 8) | data[3], data)
+        net.link._on_control(t, 0, (data[2] << 8) | data[3], data)
         return data
     req = codec.pack(T_STCMD, 0, ST_SNAP, ST_HAPTICS, 300, 0, 0)
     sq = (req[2] << 8) | req[3]
     for _k in range(3):
-        net._on_control(T_STCMD, 0, sq, req)
+        net.link._on_control(T_STCMD, 0, sq, req)
     check(got == [(0, (ST_SNAP, ST_HAPTICS, 300, 0, 0))], f"stcmd reaches the self-test once, its three copies run it once ({got})")
     other = codec.pack(T_STCMD, 0, ST_SNAP, ST_SPEAKER, 301, 0, 0)
-    net._on_control(T_STCMD, 0, (other[2] << 8) | other[3], other)
+    net.link._on_control(T_STCMD, 0, (other[2] << 8) | other[3], other)
     check(len(got) == 2 and got[1][1][1] == ST_SPEAKER, "another argument is another request even right after the first")
     ST.begin(0, 21)
     ST._pending.clear()

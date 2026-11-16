@@ -6,10 +6,10 @@ sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
 import sender_ctrl
 import sender_net as net
-net.clock.base = 0   # pings and the PC clock on perf_counter (the test gives the pong2 times)
+net.link.clock.base = 0   # pings and the PC clock on perf_counter (the test gives the pong2 times)
 import sender_report as RP
 import sender_rumble as R
-from proto import BODY, CAP_TRIGGERS, LAT_NONE, T_PONG2, T_STATE, T_STATE2, T_TRIG, Codec
+from proto import BODY, CAP_TRIGGERS, LAT_NONE, T_CMD, T_PONG2, T_STATE, T_STATE2, T_TRIG, Codec
 from sender_ctrl import Ctrl
 from sender_motion import BtDelay
 
@@ -99,10 +99,10 @@ def emit(t, i, *v):
     out.append((t, i, v))
 net.emit = sender_ctrl.net.emit = emit
 c = Ctrl(0, "aa:bb:cc:dd:ee:ff", None, None, None)
-net.pc_clock = types.SimpleNamespace(now_us=lambda now=None: None)
+net.link.pc_clock = types.SimpleNamespace(now_us=lambda now=None: None)
 c.send_state(force=True)
 assert out[-1][0] == T_STATE, "no PC clock - a plain state packet (older receiver)"
-net.pc_clock = types.SimpleNamespace(now_us=lambda now=None: 777)
+net.link.pc_clock = types.SimpleNamespace(now_us=lambda now=None: 777)
 c.bt_us = 250
 c.mark_event(int(time.monotonic() * 1_000_000) - 1500)  # the kernel stamp: CLOCK_MONOTONIC (pump switches the evdev clock)
 c.pad[0] = 1
@@ -147,8 +147,8 @@ ok("PcClock: measurements from before a gap in the pongs are dropped")
 # ---------- receive: trig and pong2 from the network ----------
 cod = Codec()
 got = []
-net.on_triggers = lambda idx, vals: got.append((idx, vals))
-net.pc_clock = net.PcClock()
+net.handlers.triggers = lambda idx, vals: got.append((idx, vals))
+net.link.pc_clock = net.PcClock()
 
 
 class Sock:
@@ -160,9 +160,18 @@ class Sock:
         return self.pkts.pop(0)
 
 
-net.codec = cod
-net.sock = Sock([cod.pack(T_TRIG, 1, 0, 0, 3, 6), cod.pack(T_PONG2, 255, time.perf_counter_ns() - 100_000, 5_000_000)])
+net.link.codec = cod
+net.link.sock = Sock([cod.pack(T_TRIG, 1, 0, 0, 3, 6), cod.pack(T_PONG2, 255, time.perf_counter_ns() - 100_000, 5_000_000)])
 net.on_readable()
-assert got == [(1, (0, 0, 3, 6))] and net.pc_clock.offset_us is not None
+assert got == [(1, (0, 0, 3, 6))] and net.link.pc_clock.offset_us is not None
 ok("sender_net: trig packet -> callback, pong2 -> PC clock")
+
+own = net.Net()                                          # a second link: its own socket, codec, handlers and counters
+cmds = []
+own.handlers.command = lambda idx, cmd, arg: cmds.append((idx, cmd, arg))
+own.codec, own.sock = cod, Sock([cod.pack(T_CMD, 2, 7, 9)])
+own.on_readable()
+assert cmds == [(2, 7, 9)] and net.link.handlers.command is not own.handlers.command and own.pongs == 0
+assert own.pc_clock is not net.link.pc_clock and own.clock is net.link.clock, "one process clock, a PC clock per link"
+ok("sender_net.Net: a separate link has its own state and handlers")
 print("FEATURES TX OK")
