@@ -27,10 +27,15 @@ TRIG_OFF_MODES: Final = (0x00, 0x05)  # first byte of a trigger effect: none / O
 
 TRIG_REFRESH_S: Final = 2.0   # trigger effects are refreshed this often (a pad after reconnecting / a lost packet)
 TRIG_REPEAT: Final = 3        # a change of effects is sent this many times (UDP)
-GAME_RUMBLE_STALE_S: Final = 1.0   # game rumble with no new motor report for longer than this -> 0. Games send reports every frame while
-                            # rumbling; the last "motors 0" (entering a menu, the end of a drive) can get lost
-                            # (HIDMaestro overwrites old packets) and the pad would vibrate forever. Not longer:
-                            # with 3 s the pad keeps twitching in the Forza Horizon menu after leaving a drive
+GAME_RUMBLE_STALE_S: Final = 1.0   # the upper bound: game rumble with no new motor report for longer than this -> 0. A game that
+                            # ends, hangs or goes quiet in a menu without sending "motors 0" would otherwise vibrate forever (the
+                            # feedback thread refreshes the last value). The "motors 0" itself is not lost on the way: HIDMaestro's
+                            # output ring holds 64 packets and overwrites the oldest only when the handler stalls > 512 ms. The
+                            # driver cannot tell us that the game closed the pad either (it sits below HidClass, which owns the
+                            # handles), so a timeout is the only signal. Not longer: with 3 s the Forza Horizon menu kept twitching
+GAME_RUMBLE_STALE_MIN_S: Final = 0.15   # the lower bound of the adaptive timeout (a game sending every 16 ms stops after this)
+GAME_RUMBLE_STALE_FRAMES: Final = 6     # the adaptive timeout = this many of the game's usual motor report intervals
+GAME_RUMBLE_DT_ALPHA: Final = 0.25      # smoothing of the measured interval (one hitch does not shorten / stretch it much)
 GAME_RUMBLE_GAP_S: Final = 0.25    # the game still sends reports (colour, triggers) but no motors for longer than this since the last
                             # motor report -> it stopped driving the rumble (a menu) -> 0, without waiting for STALE
 RUMBLE_REFRESH_S: Final = 0.5         # while rumbling: refreshes the timeout on the sender

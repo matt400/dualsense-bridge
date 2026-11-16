@@ -105,6 +105,37 @@ check(F.rumble_expired(F.fb[0], time.monotonic()) is None, "a new motor report -
 F.reset(0); F.fb[0]["t"] -= 5; F.game(0, rgb=(1, 2, 3))
 check(F.rumble_expired(F.fb[0], time.monotonic()) is None, "no rumble - nothing to expire")
 
+# ---------- adaptive timeout: a game sending every frame stops in its menu after a few frames, not after STALE ----------
+F.GAME_RUMBLE_STALE_S = 1.0
+F.reset(0)
+check(F.stale_limit(F.fb[0]) == 1.0, "unknown interval - the full STALE")
+for _ in range(10):
+    F.game(0, 180, 90); time.sleep(0.016)
+F.game(0, 180, 90)
+lim = F.stale_limit(F.fb[0])
+check(abs(lim - F.GAME_RUMBLE_STALE_MIN_S) < 1e-9, f"every-frame game - the lower bound: {lim:.3f}")
+check(F.rumble_expired(F.fb[0], time.monotonic() + 0.1) is None, "a few missed frames - rumble continues")
+check(F.rumble_expired(F.fb[0], time.monotonic() + 0.2) is not None, "menu without reports - stopped after ~0.15 s, not 1 s")
+F.fb[0]["t"] = time.monotonic(); F.fb[0]["t_other"] = F.fb[0]["t"] + 0.2
+check(F.rumble_expired(F.fb[0], time.monotonic()) is not None, "menu with colour reports - GAP shortened too")
+
+# a sender that reports only on a change (long intervals) keeps the full STALE
+F.reset(0)
+for k in range(3):
+    F.fb[0]["t"] = time.monotonic() - 0.5 if k else 0.0
+    F.game(0, 180, 90)
+check(F.stale_limit(F.fb[0]) == 1.0, f"0.5 s intervals - the upper bound: {F.stale_limit(F.fb[0]):.3f}")
+
+# a long pause (a menu, loading) is not a sample - the learned interval stays
+F.reset(0)
+for _ in range(6):
+    F.game(0, 180, 90); time.sleep(0.016)
+dt = F.fb[0]["dt"]
+F.fb[0]["t"] -= 5.0; F.game(0, 180, 90)
+check(F.fb[0]["dt"] == dt, "a 5 s pause does not change the interval")
+F.reset(0)
+check(F.fb[0]["dt"] == 0.0 and F.stale_limit(F.fb[0]) == 1.0, "reset forgets the interval")
+
 print("HUNT12", "OK" if not fails else f"FAILURES: {len(fails)}")
 if fails:
     sys.exit(1)
