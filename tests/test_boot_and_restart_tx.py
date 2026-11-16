@@ -13,7 +13,7 @@ import sender_config; sender_config.init(["127.0.0.1"])
 import sender_control
 import sender_ctrl
 import sender_net as net
-import sender_streams as ST
+import sender_motion as ST
 import sender_update as UPD
 import sender_wol as W
 

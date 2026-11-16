@@ -5,7 +5,7 @@ from evdev import ecodes as ec
 from fakedev import DROP, SYN, Dev, Ev
 import sender_config; sender_config.init(["127.0.0.1"])
 from sender_config import C
-import sender_net as net, sender_streams as st, sender_ctrl, sender_supervisor as sup, sender_state as state
+import sender_net as net, sender_streams as st, sender_touch, sender_ctrl, sender_supervisor as sup, sender_state as state
 from sender_ctrl import Ctrl
 out = []
 def emit(t, i, *v): out.append((t, v))
@@ -14,7 +14,7 @@ sup.emit_repeat = lambda t, i, *v, **k: emit(t, i, *v)
 A = lambda c, v: Ev(ec.EV_ABS, c, v)
 
 # touchpad: finger resting, buffer overflow, the finger still resting and moving -> no jump, no tap
-st.read_mt = lambda dev, n=2: [(5, 1000, 500), (-1, 0, 0)]      # kernel: slot 0 = finger id 5 at (1000, 500)
+sender_touch.read_mt = lambda dev, n=2: [(5, 1000, 500), (-1, 0, 0)]      # kernel: slot 0 = finger id 5 at (1000, 500)
 evs = [(0, A(ec.ABS_MT_SLOT, 0)), (0, A(ec.ABS_MT_TRACKING_ID, 5)), (0, A(ec.ABS_MT_POSITION_X, 500)),
        (0, A(ec.ABS_MT_POSITION_Y, 500)), (0, SYN),
        (0.01, DROP), (0, A(ec.ABS_MT_POSITION_X, 777)), (0, SYN),          # incomplete frame - skipped

@@ -12,6 +12,7 @@ import sender_bt as SB
 import sender_calib as calib
 import sender_ctrl
 import sender_streams
+import sender_motion
 from proto import (BT_CONNECT, BT_SCAN_START, BTR_BUSY, BTR_DENIED, BTR_FAILED, BTR_RUNNING, BTS_DENIED, BTS_ERROR,
                    BTS_OK)
 
@@ -74,8 +75,8 @@ asyncio.run(bt_ops())
 sender_ctrl.net.emit = calib.net.emit = lambda *a: None
 C.CAL_S = 0
 clock = [1000.0]
-real_time = sender_streams.time
-sender_streams.time = types.SimpleNamespace(monotonic=lambda: clock[0])
+real_time = sender_motion.time
+sender_motion.time = types.SimpleNamespace(monotonic=lambda: clock[0])
 E = lambda t, c, v: types.SimpleNamespace(type=t, code=c, value=v)
 c = sender_ctrl.Ctrl(0, "aa:bb:cc:dd:ee:19", None, None, None)
 c.request_send = lambda now=None: None
@@ -104,7 +105,7 @@ class Motion:
 
 c.motion_dev = Motion()
 asyncio.run(sender_streams.stream_motion(c))
-sender_streams.time = real_time
+sender_motion.time = real_time
 check(abs(seen["after"] - 100) < 1, f"right after calibration bias = measured (was 348 - samples from before the calibration): {seen['after']:.0f}")
 check(abs(seen["later"] - 100) < 1, f"after the next autobias window the bias is unchanged: {seen['later']:.0f}")
 

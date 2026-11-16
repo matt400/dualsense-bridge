@@ -8,7 +8,8 @@ Entry point of the sender. It reads DualSense pads through evdev, packs their st
 receiver on the PC; feedback (rumble, lightbar, adaptive triggers) travels back the same way.
 
 Modules: proto.py (shared with the receiver), sender_config.py, sender_state.py, sender_net.py,
-         sender_ctrl.py, sender_streams.py, sender_supervisor.py, sender_control.py, sender_rumble.py (rumble),
+         sender_ctrl.py, sender_streams.py (+ sender_evread.py, sender_padstream.py, sender_motion.py, sender_touch.py: the input
+         read loops), sender_supervisor.py, sender_control.py, sender_rumble.py (rumble),
          sender_report.py (report bytes),
          sender_wol.py (Wake-on-LAN: PS + button while the receiver is silent), sender_events.py (events for the PC window),
          sender_bt.py (phone Bluetooth driven from the receiver window: scan, pair, connect - busctl / bluetoothctl),

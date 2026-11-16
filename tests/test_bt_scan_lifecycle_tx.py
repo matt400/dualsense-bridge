@@ -9,7 +9,7 @@ from fakedev import SYN, Dev, Ev
 import sender_config; sender_config.init(["127.0.0.1"])
 from sender_config import C
 import sender_bt as SB
-import sender_ctrl, sender_net as net, sender_streams as st
+import sender_ctrl, sender_net as net, sender_streams as st, sender_touch
 from proto import BT_SCAN_START, BT_SCAN_STOP, T_MOUSE, T_TOUCH
 
 from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
@@ -86,8 +86,8 @@ lift = [(0.01, Ev(ec.EV_ABS, ec.ABS_MT_TRACKING_ID, -1)), (0, SYN)]
 
 def run(evs, kernel):
     out.clear()
-    orig = st._kernel_slots
-    st._kernel_slots = lambda dev, n: kernel
+    orig = sender_touch._kernel_slots
+    sender_touch._kernel_slots = lambda dev, n: kernel
     try:
         async def go():
             c = sender_ctrl.Ctrl(0, "aa", None, None, Dev(evs))
@@ -96,7 +96,7 @@ def run(evs, kernel):
             return c
         return asyncio.run(go())
     finally:
-        st._kernel_slots = orig
+        sender_touch._kernel_slots = orig
 
 
 C.TOUCH_COALESCE_S = 0.0

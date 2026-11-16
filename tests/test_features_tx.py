@@ -11,7 +11,7 @@ import sender_report as RP
 import sender_rumble as R
 from proto import BODY, CAP_TRIGGERS, LAT_NONE, T_PONG2, T_STATE, T_STATE2, T_TRIG, Codec
 from sender_ctrl import Ctrl
-from sender_streams import BtDelay
+from sender_motion import BtDelay
 
 TMP = tempfile.mkdtemp()
 from chk import ok
