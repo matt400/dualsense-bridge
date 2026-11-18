@@ -149,6 +149,14 @@ check(any(t == T_PADKIND and v[0] == PK_DUALSENSE for t, v in sent), "a DualSens
 c.resync()
 check(c.pad[ec.ABS_X] == 128 and c.pad[ec.ABS_Y] == 128 and c.pad[ec.ABS_RX] == 128, f"resync: centred sticks {c.pad}")
 
+# ---------- the supervisor waits only for the devices a pad has ----------
+import sender_supervisor as sup
+check(not sup.incomplete(c), "an Xbox pad has no motion / touchpad node: never incomplete (no rescan every rescan_s with full slots)")
+check(not sup.incomplete(sender_ctrl.Ctrl(0, "aa:bb:cc:dd:ee:05", switch_pro(), None, None)), "neither is a Switch Pro pad")
+check(sup.incomplete(sender_ctrl.Ctrl(0, "aa:bb:cc:dd:ee:06", ds4(), object(), None)), "a DS4 without its touchpad node is incomplete")
+check(sup.incomplete(d) and not sup.incomplete(sender_ctrl.Ctrl(1, "k", None, object(), object())),
+      "a DualSense: incomplete until both its motion and touchpad nodes are there")
+
 # ---------- the read loop ----------
 A = lambda code, v: Ev(ec.EV_ABS, code, v)
 K = lambda code, v: Ev(ec.EV_KEY, code, v)
