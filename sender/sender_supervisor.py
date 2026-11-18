@@ -317,8 +317,14 @@ def _reject(key: str) -> None:
 
 
 def incomplete(c: Ctrl) -> bool:
-    """Return True while a pad still misses its motion or touchpad device (they can appear a moment after the pad)."""
-    return c.motion_dev is None or c.touch_dev is None
+    """Return True while a pad still misses its motion or touchpad device (they can appear a moment after the pad).
+
+    Only the devices its kind has count: an Xbox or Switch Pro pad has neither, so it is never waiting for one. Counted as
+    incomplete, it kept the supervisor scanning /dev/input every rescan_s while all slots were full, instead of waiting for
+    inotify.
+    """
+    features = c.kind.features
+    return bool((features & padtype.PF_MOTION and c.motion_dev is None) or (features & padtype.PF_TOUCHPAD and c.touch_dev is None))
 
 
 def _announce(c: Ctrl) -> None:
