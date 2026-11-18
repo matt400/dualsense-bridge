@@ -9,6 +9,21 @@
   opublikuje później, nie instaluje się samo; przypięcie przesuwa się razem z aktualizacją receivera (tylko DLL i jej zależności z zipa wydania, przez HTTP Range), a
   receiver uruchamia się jako administrator (UAC; zadanie autostartu z najwyższymi uprawnieniami). Zmiana działa od razu (pady powstają od nowa). Błąd HIDMaestro przy tworzeniu pada = ten pad przez
   ViGEmBus i ostrzeżenie w dzienniku. Karta pada (ikona touchpada) pokazuje, jakim padem jest slot.
+
+  Co działa z którym backendem (reszta mostu od niego nie zależy):
+
+  | | HIDMaestro (DualSense) | ViGEmBus (DS4) |
+  |---|:---:|:---:|
+  | Przyciski, gałki, spusty, touchpad, żyroskop | ✅ | ✅ |
+  | Wibracje z gry | ✅ | ✅ |
+  | Kolor lightbara ustawiony przez grę | ✅ | ✅ |
+  | Efekty spustów adaptacyjnych ustawione przez grę | ✅ | ❌ (tylko z profilu, ustawia je nadajnik) |
+  | Diody graczy i dioda mute ustawione przez grę | ✅ | ❌ |
+  | Przycisk mute jako przycisk dla gry | ✅ | ❌ |
+  | Haptyka HD z gry i głośnik pada | ✅ (opcjonalnie, wymaga pada złożonego) | ❌ |
+  | Serwer DSU, touchpad jako mysz, profile, remap, skróty | ✅ | ✅ |
+  | Wymaga | administratora, .NET 10, sterownika HIDMaestro | sterownika ViGEmBus; bez administratora |
+  | Rozwój | aktywny | porzucony przez autora, bez aktualizacji - zapas |
 - **DualShock 4, Xbox i inne pady** obok DualSense (nadajnik v18+). Nadajnik rozpoznaje pad po USB id (DualSense, DualShock 4,
   Xbox 360 / One / Series, Switch Pro; nieznany pad, który nazywa się „Xbox”, liczy się jako Xbox) i tłumaczy go na jeden układ, którym
   mówi cały most, więc remapowanie, profile, skróty i okno działają dla każdego pada. Prawa gałka i spusty są wyszukiwane z tego, co

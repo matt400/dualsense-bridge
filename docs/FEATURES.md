@@ -10,6 +10,21 @@
   HTTP Range), and the receiver starts as administrator (UAC; autostart task with highest privileges). The change takes
   effect immediately (pads are recreated). A HIDMaestro error while creating a pad = that pad goes through ViGEmBus
   and a warning in the event log. The pad card (touchpad icon) shows what kind of pad the slot is.
+
+  What works with which backend (the rest of the bridge does not depend on it):
+
+  | | HIDMaestro (DualSense) | ViGEmBus (DS4) |
+  |---|:---:|:---:|
+  | Buttons, sticks, triggers, touchpad, gyro | ✅ | ✅ |
+  | Game rumble | ✅ | ✅ |
+  | Lightbar colour set by the game | ✅ | ✅ |
+  | Adaptive trigger effects set by the game | ✅ | ❌ (only from the profile, set by the sender) |
+  | Player LEDs and mute LED set by the game | ✅ | ❌ |
+  | Mute button as a button for the game | ✅ | ❌ |
+  | Game HD haptics and the pad's speaker | ✅ (opt-in, needs the composite pad) | ❌ |
+  | DSU server, touchpad as mouse, profiles, remap, shortcuts | ✅ | ✅ |
+  | Needs | administrator, .NET 10, the HIDMaestro driver | the ViGEmBus driver; no administrator needed |
+  | Maintenance | active | retired by its author, no updates - a fallback |
 - **DualShock 4, Xbox and other pads** next to the DualSense (sender v18+). The sender recognises the pad by its USB id (DualSense, DualShock 4,
   Xbox 360 / One / Series, Switch Pro; an unknown pad that calls itself an "Xbox" pad counts as Xbox) and translates it into the one layout
   the rest of the bridge speaks, so the remap, profiles, shortcuts and the window work for every pad. The right stick and the triggers are

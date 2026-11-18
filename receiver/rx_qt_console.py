@@ -74,6 +74,7 @@ class ConsoleSettings(SafetyTabs, VpadTab, HapticsTab, LightWolTabs, QDialog):
     """The settings dialog: tabs built by the _*_tab methods, the Test / Cancel / Save row and the status line."""
     saved = Signal()            # console.json saved - the window owner restarts the receiver
     elevate = Signal()          # Pads: restart the receiver as administrator (HIDMaestro)
+    restart = Signal()          # Pads: restart the receiver to load another HIDMaestro version (a newer one, or the rollback)
     applied = Signal()          # mouse / master saved and in effect (no restart) - the window refreshes the pad cards
     captured = Signal(str)      # the button name from the network thread (Qt queues it to the window thread)
     outputs_listed = Signal(object)     # (generation, tv, pc, names, error) from the audio listing thread

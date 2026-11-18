@@ -116,6 +116,19 @@ dlg.elevate.disconnect(); dlg.elevate.connect(lambda: win.restart(admin=True))
 dlg.vpad_backend.set_data("hidmaestro"); dlg._vpad_state(); dlg.vpad_admin.click(); pump()
 assert asked == [True], asked
 del win.restart
+# a newer HIDMaestro on disk than the one in use (or a rollback): the restart button names the version
+import rx_hm_update
+real_tag = rx_hm_update.restart_tag
+rx_hm_update.restart_tag = lambda: "v9.9.9"
+dlg._vpad_state(); pump()
+assert dlg.vpad_restart.isVisible() and "v9.9.9" in dlg.vpad_restart.text(), dlg.vpad_restart.text()
+dlg.vpad_backend.set_data("vigem"); dlg._vpad_state(); pump()
+assert not dlg.vpad_restart.isVisible(), "ViGEm: no HIDMaestro restart"
+dlg.vpad_backend.set_data("hidmaestro")
+rx_hm_update.restart_tag = lambda: ""
+dlg._vpad_state(); pump()
+assert not dlg.vpad_restart.isVisible(), "nothing to restart for: no button"
+rx_hm_update.restart_tag = real_tag
 rx_winapi.is_admin = real_admin
 dlg.vpad_fixed.setChecked(False); dlg.vpad_dll.setText("  D:\\HM  "); dlg.vpad_auto.setChecked(False)
 dlg.save_btn.click(); pump()

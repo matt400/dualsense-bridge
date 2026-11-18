@@ -33,6 +33,10 @@ class VpadTab(TabBase):
         self.vpad_admin = button(_("Uruchom ponownie jako administrator"), small=True)
         self.vpad_admin.setIcon(icon("shield"))
         self.vpad_admin.clicked.connect(self.elevate.emit)
+        self.vpad_restart = button("", small=True)
+        self.vpad_restart.setIcon(icon("update"))
+        self.vpad_restart.setToolTip(_("Pierwszy start z nową wersją HIDMaestro instaluje jej sterownik - trwa to chwilę."))
+        self.vpad_restart.clicked.connect(self.restart.emit)
         self.vpad_fixed = QCheckBox(_("Stała kolejność graczy"))
         self.vpad_mode = Combo([(k, _(v)) for k, v in SLOT_MODES.items()])
         self.vpad_grace = spinbox(*SLOT_GRACE_MS, 100, " ms")
@@ -61,7 +65,7 @@ class VpadTab(TabBase):
                         field(_("Backend"), self.vpad_backend),
                         self.vpad_auto,
                         field(_("Własna HIDMaestro.Core.dll (plik albo folder; puste = pobrana automatycznie)"), self.vpad_dll),
-                        self.vpad_now, row_of(self.vpad_check, self.vpad_net, self.vpad_admin))
+                        self.vpad_now, row_of(self.vpad_check, self.vpad_net, self.vpad_admin, self.vpad_restart))
         self.pads_mode = Combo([("dynamic", _("Dynamiczna: tylko podłączone pady")), ("fixed", _("Stała: zawsze te same sloty"))])
         self.pads_mode.changed.connect(lambda _v: self._pads_view_state())
         self.pads_count = spinbox(PADS_COUNT[0], min(PADS_COUNT[1], C.NUM_PADS))
@@ -148,6 +152,8 @@ class VpadTab(TabBase):
         st = rx_hm_update.refresh_status() if not rx_hm_update.status.busy else rx_hm_update.status
         busy = busy or st.busy
         lines += self._hm_download_lines(st, busy)
+        if backend != "vigem" and (bad := rx_hm_update.bad_versions()):
+            lines.append(_("Wersje HIDMaestro, które nie zadziałały: {v}").format(v=", ".join(sorted(bad))))
         need_net = backend != "vigem" and rx_hm.need_dotnet()
         lines += self._net_lines(need_net)
         self.vpad_net.setVisible(need_net or self._net_busy)
@@ -164,6 +170,9 @@ class VpadTab(TabBase):
         self.vpad_now.setText("\n".join(lines))
         set_prop(self.vpad_now, "level", "warn" if need_admin or (backend == "hidmaestro" and rx_ds4.hm_note) else "")
         self.vpad_admin.setVisible(need_admin)
+        again = rx_hm_update.restart_tag() if backend != "vigem" else ""
+        self.vpad_restart.setVisible(bool(again))
+        self.vpad_restart.setText(_("Uruchom ponownie, by użyć HIDMaestro {v}").format(v=again))
 
     @staticmethod
     def _hm_download_lines(st: rx_hm_update.Status, busy: bool) -> list[str]:
