@@ -128,7 +128,7 @@ t = T(base); t.e.start_center(t.t, 0.4); t.run(acc(), 120, gdps=200.0)
 check(t.e.cal_result == (False, None), "kalibracja w ruchu odrzucona")
 
 # --- skala 16-bit i 8-bit ---
-check(G.to_u8(0) == 128 and G.to_u8(1) == 255 and G.to_u8(-1) == 1, "DS4 stick byte")
+check(G.to_u8(0) == 128 and G.to_u8(1) == 255 and G.to_u8(-1) == 0, "DS4 stick byte (full scale, as a physical stick)")
 
 # --- settings file ---
 bad = G.normalize({"deadzone": "x", "outer": 5, "curve": "zig", "enabled": 1, "nope": 1, "center": [9, 9, 9]})

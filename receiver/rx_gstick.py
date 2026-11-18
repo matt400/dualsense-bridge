@@ -23,6 +23,7 @@ from dataclasses import dataclass, fields, replace
 from typing import Any, TypeAlias
 
 from rx_buttons import BIT, BUTTON_CODES, INPUTS
+from rx_shape import to_byte
 
 Vec2: TypeAlias = tuple[float, float]
 # what the window shows: (state, zone, raw °, filtered °, output -1..1, mag 0..1, sprint, driving)
@@ -183,8 +184,8 @@ def curve(m: float, name: str) -> float:
 
 
 def to_u8(v: float) -> int:
-    """-1..1 -> DS4 report stick byte (128 = center)."""
-    return max(0, min(255, 128 + round(v * 127)))
+    """-1..1 -> DS4 report stick byte (128 = center), the same scale as a physical stick: -1 = 0, +1 = 255 (rx_shape.to_byte)."""
+    return to_byte(v)
 
 
 def drive_state(s: MutableMapping[str, Any], gs: tuple[str, float, float, int]) -> None:

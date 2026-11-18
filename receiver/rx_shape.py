@@ -221,14 +221,19 @@ def gyro_rates(gyro: Sequence[float], g: dict[str, Any], res: float) -> tuple[fl
 
 
 def gyro_stick(rx: int, ry: int, rates: Sequence[float], g: dict[str, Any]) -> tuple[int, int]:
-    """Add gyro to the right stick; the anti-deadzone overcomes the game's deadzone on small movements."""
+    """Add gyro to the right stick; the anti-deadzone overcomes the game's deadzone on small movements.
+
+    The anti-deadzone is faded in over the same GYRO_SOFT_DPS band as the tremor fading of gyro_rates: applied in full to
+    any non-zero rate, the sensor noise of a pad lying still would jump the stick to the anti-deadzone in random directions.
+    """
     full = GYRO_DPS_FULL / g["sens"]
     gx, gy = rates[0] / full, rates[1] / full
     m = math.hypot(gx, gy)
     if m == 0:
         return rx, ry
     if g["anti"]:
-        k = (g["anti"] + (1.0 - g["anti"]) * min(1.0, m)) / m
+        anti = g["anti"] * min(1.0, math.hypot(rates[0], rates[1]) / GYRO_SOFT_DPS)
+        k = (anti + (1.0 - anti) * min(1.0, m)) / m
         gx, gy = gx * k, gy * k
     sx, sy = unit(rx) + gx, unit(ry) + gy
     r = math.hypot(sx, sy)
