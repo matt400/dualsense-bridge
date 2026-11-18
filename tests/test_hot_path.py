@@ -117,5 +117,13 @@ check(S.last_seen[0] == 123.5 and S.states[0]["ts"] == 123_500_000,
 state(0, mask=0, sticks=(11, 20, 30, 40))                                              # no now: handle reads the clock by itself
 check(S.states[0]["ts"] > 0 and S.last_seen[0] != 123.5, "a call without now (tests, other modules) still works")
 
+# ---------- the battery codes of a state packet come from one memoised call ----------
+same = all(rx_net.batt_bytes(pct, fl) == (*rx_net.batt_codes(pct, fl), rx_net.ds5_batt_byte(pct, fl))
+           for pct in range(256) for fl in (0, 1, 2, 3))
+check(same, "batt_bytes = batt_codes + ds5_batt_byte for every percentage and flag")
+state(0, batt=37)
+check((S.states[0]["batt_dsu"], S.states[0]["batt_ds4"], S.states[0]["batt_ds5"]) == rx_net.batt_bytes(37, 0),
+      "a state packet stores the memoised battery codes")
+
 print("HOT PATH OK" if not fails else f"HOT PATH FAILURES: {len(fails)}")
 sys.exit(1 if fails else 0)

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import contextlib
+import functools
 import heapq
 import itertools
 import os
@@ -46,6 +47,7 @@ ST_TOUCH: Final = BODY[T_TOUCH]
 ST_MOUSE: Final = BODY[T_MOUSE]
 ST_INFO: Final = BODY[T_INFO]
 STATES: Final = (T_STATE, T_STATE2)
+BATT_CACHE: Final = 1024              # battery readings memoised by batt_bytes (pct 0..255 x the flag bits that occur)
 MAX_PROBE: Final = 20_000              # drift measurement: a safeguard on the length of the sample list
 MAX_NET_US: Final = 1_000_000          # a network time over 1 s = a bad clock (e.g. right after a restart), not a measurement
 SCFG_S: Final = 5.0                    # Wake-on-LAN / event settings go to the sender this often (it has them after its own restart too)
@@ -428,6 +430,16 @@ def ds5_batt_byte(pct: int, flags: int) -> int:
     return level | (DS5_BATT_FULL if pct >= PCT_MAX else DS5_BATT_CHARGING)
 
 
+@functools.lru_cache(maxsize=BATT_CACHE)
+def batt_bytes(pct: int, flags: int) -> tuple[int, int, int]:
+    """Return (the DSU battery code, the DS4 battery byte, the DualSense battery byte) of one battery reading.
+
+    Memoised: every state packet (up to ~1 kHz per pad) carries the battery, and it changes a few times an hour, so the hot path
+    gets the three codes from one cache hit instead of recomputing them.
+    """
+    return (*batt_codes(pct, flags), ds5_batt_byte(pct, flags))
+
+
 def clear_slot(i: int, forget_id: bool = False) -> None:
     """Reset everything known about the pad in slot i (state, profile effects, shortcuts, latency, mouse).
 
@@ -525,8 +537,7 @@ def _on_state(t: int, i: int, data: bytes, arr: int, now: float) -> None:
     lx, ly, lt, rx, ry, rt, hat_x, hat_y, buttons, batt_pct, batt_flags = v[:STATE_HEAD]
     mask = buttons & MASK_ALL
     mute = bool(buttons & MUTE_BIT)         # not a remappable button: straight to the virtual DualSense's report
-    batt_dsu, batt_ds4 = batt_codes(batt_pct, batt_flags)
-    batt_ds5 = ds5_batt_byte(batt_pct, batt_flags)
+    batt_dsu, batt_ds4, batt_ds5 = batt_bytes(batt_pct, batt_flags)
     S.batt_info[i] = (batt_pct, batt_flags)
     hx, hy = clamp(hat_x, -1, 1), clamp(hat_y, -1, 1)
     dig = (mask, hx, hy, lt >> 5, rt >> 5)   # triggers to 1/8 precision (the trigger hysteresis in the console mode)
