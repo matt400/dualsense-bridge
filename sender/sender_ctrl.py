@@ -230,9 +230,13 @@ class Ctrl:
         than STICK_MOVE_MIN units from the centre. The timestamp feeds the idle power-off.
         """
         p = self.pad
-        if (self.mask or self.hat[0] or self.hat[1] or p[L2_AXIS] > TRIGGER_PRESS_MIN or p[R2_AXIS] > TRIGGER_PRESS_MIN
-                or any(abs(p[k] - STICK_CENTER) > STICK_MOVE_MIN for k in STICK_AXES)):
+        if self.mask or self.hat[0] or self.hat[1] or p[L2_AXIS] > TRIGGER_PRESS_MIN or p[R2_AXIS] > TRIGGER_PRESS_MIN:
             self.last_input = now
+            return
+        for k in STICK_AXES:            # a plain loop: any() over a generator cost ~2 us of every pad report
+            if abs(p[k] - STICK_CENTER) > STICK_MOVE_MIN:
+                self.last_input = now
+                return
 
     def _axis_value(self, axis: int) -> int | None:
         """Read one axis from the device; None when it cannot be read (the device is going away)."""
