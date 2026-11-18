@@ -27,7 +27,7 @@ from collections.abc import Callable, Iterable
 from typing import Any, Final
 
 import sender_rt
-from proto import (GOVERNORS, HAPT_RATE, SR_COUNT, SR_DONE, SR_FB, SR_HAPT, SR_SPK, SR_SYS, SR_WRITES, SRC_PC, SRC_WATCHDOG,
+from proto import (EmitFn, GOVERNORS, HAPT_RATE, SR_COUNT, SR_DONE, SR_FB, SR_HAPT, SR_SPK, SR_SYS, SR_WRITES, SRC_PC, SRC_WATCHDOG,
                    SRF_LOW_LATENCY, SRF_PINNED, SRF_QOS, SRF_RT, ST_BEGIN, ST_END, ST_HAPTICS, ST_MAX_S, ST_RECORDS, ST_SNAP,
                    ST_SPEAKER, T_STRES, UINT32_MASK, nearest_rank)
 
@@ -45,8 +45,8 @@ slot = -1                               # the pad slot being measured
 ref = 0                                 # the reference of the request that armed it (echoed in every record)
 _t_armed = 0.0                          # monotonic time of ST_BEGIN (the auto-disarm after ST_MAX_S)
 
-emit: Callable[..., None] | None = None                 # sender_net.emit, bound at start
-now_ns: Callable[[], int] = time.monotonic_ns           # the sender's clock (sender_net.clock.ns), bound at start
+emit: EmitFn | None = None                             # sender_net.emit, bound at start
+now_ns: Callable[[], int] = time.monotonic_ns           # the sender's clock (sender_net.link.clock.ns), bound at start
 
 
 def _no_offset() -> int | None:
@@ -66,7 +66,7 @@ _pending: dict[int, tuple[int, int]] = {}               # slot -> (sequence of t
 _records: list[FbRecord] = []
 
 
-def bind(emit_fn: Callable[..., None], clock_ns: Callable[[], int], offset_us: Callable[[], int | None],
+def bind(emit_fn: EmitFn, clock_ns: Callable[[], int], offset_us: Callable[[], int | None],
          find: Callable[[int], Any]) -> None:
     """Connect the module to the sender (called once from the entry point; tests bind fakes).
 
@@ -320,7 +320,7 @@ def end(idx: int, request: int) -> None:
 
 
 def on_command(idx: int, op: int, arg: int, request: int, _a: int, _b: int) -> None:
-    """Handle a stcmd packet (net.on_selftest); a slot without a pad is ignored.
+    """Handle a stcmd packet (net.handlers.selftest); a slot without a pad is ignored.
 
     Args:
         idx: The pad slot.

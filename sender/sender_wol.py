@@ -190,7 +190,7 @@ def subnet_broadcast(local_ip: str, ip_output: str | None = None) -> str | None:
 
 def local_ip() -> str | None:
     """The local IP address of the sender's UDP socket (the interface that routes to the PC), or None."""
-    sock = net.sock
+    sock = net.link.sock
     try:
         return str(sock.getsockname()[0]) if sock is not None else None
     except OSError:
@@ -285,7 +285,7 @@ def send(mac: bytes, addrs: Sequence[str]) -> list[str]:
 
 def receiver_alive(now: float | None = None) -> bool:
     """Return True if a pong from the receiver arrived within the last RECEIVER_TIMEOUT_S seconds."""
-    return (time.monotonic() if now is None else now) - net.last_pong < RECEIVER_TIMEOUT_S
+    return (time.monotonic() if now is None else now) - net.link.last_pong < RECEIVER_TIMEOUT_S
 
 
 # ---------------- the combination on the pad ----------------

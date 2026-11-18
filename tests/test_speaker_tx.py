@@ -73,17 +73,17 @@ assert Codec(KEY).parse(v2[:-1]) is None and Codec(b"another key 1234").parse(v2
 ok("spk packet: 965 B body, plain / HMAC v2 / v3 round trip, fits the receive buffer")
 
 got = []
-net.on_speaker = lambda idx, frame, flags, view: got.append((idx, frame, flags, bytes(view)))
-net.fb_filter = SeqFilter(1.0)
+net.handlers.speaker = lambda idx, frame, flags, view: got.append((idx, frame, flags, bytes(view)))
+net.link.fb_filter = SeqFilter(1.0)
 
 
 def deliver(pkt):
-    p = net.codec.parse(pkt)
+    p = net.link.codec.parse(pkt)
     assert p is not None
-    net._dispatch(p[0], p[1], p[2], pkt)
+    net.link._dispatch(p[0], p[1], p[2], pkt)
 
 
-net.codec = Codec()
+net.link.codec = Codec()
 tx = Codec()
 a, b = tx.pack(T_SPK, 2, 10, SPK_START, frame(1)), tx.pack(T_SPK, 2, 42, 0, frame(2))
 deliver(b)
@@ -92,13 +92,13 @@ deliver(b)                                                  # the same datagram 
 assert got == [(2, 42, 0, frame(2))], got[:1]
 deliver(tx.pack(T_SPK, 5, 7, SPK_END, frame(4)))            # another pad has its own filter, and haptics do not share it
 assert got[-1] == (5, 7, SPK_END, frame(4)) and len(got) == 2
-net.fb_filter = SeqFilter(1.0)
-net.codec = Codec(KEY, token=lambda: 77, now_ms=lambda: 77)
+net.link.fb_filter = SeqFilter(1.0)
+net.link.codec = Codec(KEY, token=lambda: 77, now_ms=lambda: 77)
 del got[:]
-deliver(net.codec.pack(T_SPK, 1, 99, SPK_START, frame(9), v3=True))
+deliver(net.link.codec.pack(T_SPK, 1, 99, SPK_START, frame(9), v3=True))
 assert got == [(1, 99, SPK_START, frame(9))], "the samples are found with the HMAC trailer behind them"
-net.codec = Codec()
-net.on_speaker = None
+net.link.codec = Codec()
+net.handlers.speaker = None
 deliver(tx.pack(T_SPK, 1, 1, 0, frame(1)))                  # no hook: silently ignored
 ok("sender_net: one call per new packet, late / repeated packets dropped, separate filter per pad")
 
@@ -710,9 +710,9 @@ async def ctrl_scenarios():
     c = sender_ctrl.Ctrl(3, "aa:bb:cc:dd:ee:03", dev, None, None)
     c.rumble = R.Rumble(3, dev, "hidraw", hidraw=(path, True))
     state.active[c.key] = c
-    net.on_speaker = sup.dispatch_speaker
-    net.fb_filter = SeqFilter(1.0)
-    net.codec = Codec()
+    net.handlers.speaker = sup.dispatch_speaker
+    net.link.fb_filter = SeqFilter(1.0)
+    net.link.codec = Codec()
     tx = Codec()
     sender_config.C.SPEAKER_OPUS_COMPLEXITY = 1                     # from the settings, through Ctrl, into the encoder
     count = 150

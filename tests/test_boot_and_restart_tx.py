@@ -13,7 +13,7 @@ import sender_config; sender_config.init(["127.0.0.1"])
 import sender_control
 import sender_ctrl
 import sender_net as net
-import sender_streams as ST
+import sender_motion as ST
 import sender_update as UPD
 import sender_wol as W
 
@@ -27,9 +27,9 @@ time.monotonic = lambda: 5.0           # 5 s of uptime: shorter than every guard
 try:
     check(UPD._last == float("-inf") and 5.0 - UPD._last >= UPD.REPEAT_GUARD_S, "update: the first request is not inside the repeat guard")
     check(W._last_sent == float("-inf") and 5.0 - W._last_sent >= W.REPEAT_GUARD_S, "WoL: the first send is not inside the repeat guard")
-    check(net.last_pong == float("-inf"), "net: no pong yet = -inf")
+    check(net.link.last_pong == float("-inf"), "net: no pong yet = -inf")
     check(not W.receiver_alive(), "WoL: a receiver that never answered is not 'alive' at a small uptime")
-    check(not (5.0 - net.last_pong < net.ALIVE_S), "net: not alive before the first pong at a small uptime")
+    check(not (5.0 - net.link.last_pong < net.ALIVE_S), "net: not alive before the first pong at a small uptime")
     c = sender_ctrl.Ctrl(0, "usb-pad", None, None, None)        # not Bluetooth: power_off gets past the guard and skips the disconnect
     asyncio.run(sender_control.power_off(c, "test"))
     check(c.powering_off == 5.0, "power off: the first request after boot is not inside the retry guard")

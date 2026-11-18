@@ -10,6 +10,7 @@ import sender_ctrl
 import sender_net
 import sender_state
 import sender_streams as streams
+import sender_motion
 import sender_supervisor as sup
 from proto import CAL_FEW, T_CALRES
 
@@ -35,7 +36,7 @@ class Dev:
 
 c = sender_ctrl.Ctrl(0, "aa:bb:cc:dd:ee:20", Dev(), None, None)
 c.cal_request = 2
-stream = streams._MotionStream.__new__(streams._MotionStream)
+stream = sender_motion._MotionStream.__new__(sender_motion._MotionStream)
 stream.c, stream.cal = c, None
 stream.autobias = types.SimpleNamespace(reset=lambda now: None)
 stream._start_user_calibration(time.monotonic())

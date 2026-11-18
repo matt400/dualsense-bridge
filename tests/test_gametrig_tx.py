@@ -38,8 +38,8 @@ p = c.parse(data)
 assert p[:2] == (T_TRIG3, 1) and len(data) == 4 + 35
 assert BODY[T_TRIG3].unpack_from(data, 4) == trig3((TFX_RES, 2, 5, 0, *(0,) * 8), G_L2, G_R2)
 got = []
-net.on_triggers = lambda i, v: got.append((i, v))
-net.fb_filter = net.fb_filter.__class__(1.0)
+net.handlers.triggers = lambda i, v: got.append((i, v))
+net.link.fb_filter = net.link.fb_filter.__class__(1.0)
 
 
 class Sock:
@@ -52,7 +52,7 @@ class Sock:
         return self.pkts.pop(0)
 
 
-net.codec, net.sock = c, Sock([data, data])
+net.link.codec, net.link.sock = c, Sock([data, data])
 net.on_readable()
 assert got == [(1, trig3((TFX_RES, 2, 5, 0, *(0,) * 8), G_L2, G_R2))], got
 ok("trig3 packet: 35 B body, received by the sender once (repeat dropped)")

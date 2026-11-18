@@ -1,7 +1,7 @@
 """Sender: gyro calibration (at startup and on request from the receiver window) and saving the bias per pad (MAC).
 
 A pad with a saved calibration (gyro_cal_file) does not calibrate at startup - it uses the stored bias right away, so
-it does not have to be put down after switching on. Autobias (sender_streams) keeps fine-tuning the bias in memory;
+it does not have to be put down after switching on. Autobias (sender_motion) keeps fine-tuning the bias in memory;
 the saved value does not change.
 Calibration from the window (CMD_GYRO_CAL): the pad lies still for arg seconds; the result (calres packet) goes back
 to the receiver.

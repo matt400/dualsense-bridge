@@ -8,6 +8,7 @@ import sender_config; sender_config.init(["127.0.0.1"])
 from sender_config import C
 from evdev import InputDevice
 import sender_net as net, sender_ctrl, sender_state as state, sender_streams as st, sender_supervisor as sup
+import sender_evread as evr, sender_motion, sender_padstream
 from sender_ctrl import Ctrl
 from proto import T_BYE, T_CLICK, T_MOUSE, T_STATE, T_STATE2, T_TOUCH
 
@@ -19,7 +20,7 @@ TMP = tempfile.mkdtemp()
 # ---------- pump: one registration of the descriptor, whole batches per wake-up, raw events ----------
 def raw(*values):
     """Raw struct input_event records (sec 5, usec 6, EV_ABS, code 0) carrying the given values."""
-    return b"".join(st.EVENT.pack(5, 6, 3, 0, v) for v in values)
+    return b"".join(evr.EVENT.pack(5, 6, 3, 0, v) for v in values)
 
 def make_dev():
     """A real InputDevice object on a pipe: the bytes written to the pipe are the kernel's struct input_event records."""
@@ -48,7 +49,7 @@ async def t_pump():
             spurious[0] = False
             raise BlockingIOError
         return real_read(fd, n)
-    st.os.read = read
+    evr.os.read = read
     try:
         task = asyncio.create_task(st.pump(dev, lambda *ev: got.append(ev)))
         await asyncio.sleep(0.02)
@@ -56,7 +57,7 @@ async def t_pump():
             os.write(w, batch)
             await asyncio.sleep(0.02)
     finally:
-        st.os.read = real_read
+        evr.os.read = real_read
     check([ev[4] for ev in got] == [1, 2, 3, 4],             # the batch left unread by the spurious wake-up comes on the next one
           f"pump: events of all batches in order, spurious wake-up survived ({got})")
     check(not task.done(), "pump: a spurious wake-up does not end the loop")
@@ -74,15 +75,15 @@ async def t_pump():
     # with the monotonic clock in place the kernel stamp is handed over as it is
     dev, w = make_dev()
     got = []
-    real_clock = st._use_monotonic_clock
-    st._use_monotonic_clock = lambda d: True
+    real_clock = evr._use_monotonic_clock
+    evr._use_monotonic_clock = lambda d: True
     try:
         task = asyncio.create_task(st.pump(dev, lambda *ev: got.append(ev)))
         await asyncio.sleep(0.02)
         os.write(w, raw(9))
         await asyncio.sleep(0.02)
     finally:
-        st._use_monotonic_clock = real_clock
+        evr._use_monotonic_clock = real_clock
     check(got == [(5, 6, 3, 0, 9)], f"pump: with the monotonic clock the event time is passed on ({got})")
     task.cancel()
     await asyncio.gather(task, return_exceptions=True)
@@ -132,7 +133,7 @@ async def t_sealed():
     loop = asyncio.get_running_loop()
     c = Ctrl(0, "aa:bb:cc:dd:ee:ff", None, None, None)
     c.mask = 1
-    st._send_state_burst(c, loop)                    # one packet now, two repeats in 3 and 9 ms
+    sender_padstream._send_state_burst(c, loop)                    # one packet now, two repeats in 3 and 9 ms
     c.send_tap(1)                                    # a tap: the packet now and two repeats
     c.send_click()
     first = len(out)
@@ -262,15 +263,15 @@ with contextlib.redirect_stdout(io.StringIO()):
 check(c2.led is None, "a LED node that is gone is given up at once")
 
 # ---------- raw events: the ioctl that switches the event clock, the motion stream without a kernel stamp ----------
-check(st.EVIOCSCLOCKID == 0x400445A0, f"EVIOCSCLOCKID = _IOW('E', 0xa0, int) ({st.EVIOCSCLOCKID:#x})")
-check(st.EVENT.size in (16, 24), f"struct input_event is 16 B (32-bit) or 24 B (64-bit): {st.EVENT.size}")
+check(evr.EVIOCSCLOCKID == 0x400445A0, f"EVIOCSCLOCKID = _IOW('E', 0xa0, int) ({evr.EVIOCSCLOCKID:#x})")
+check(evr.EVENT.size in (16, 24), f"struct input_event is 16 B (32-bit) or 24 B (64-bit): {evr.EVENT.size}")
 
 async def t_motion_stamp():
     cm = Ctrl(2, "aa:bb:cc:dd:ee:03", None, None, None)
     cm.bias_known = True                            # no startup calibration
-    ms = st._MotionStream(cm)
+    ms = sender_motion._MotionStream(cm)
     ms.handle(0, 0, 4, 5, 1234)                     # MSC_TIMESTAMP of a stand-in: no kernel stamp
-    check(cm.bt_us == st.LAT_NONE and ms.bt.last is None, "a pad timestamp without a kernel stamp does not feed BtDelay")
+    check(cm.bt_us == sender_motion.LAT_NONE and ms.bt.last is None, "a pad timestamp without a kernel stamp does not feed BtDelay")
     ms.handle(7, 0, 4, 5, 1234)
     check(ms.bt.last == 1234, "with a kernel stamp it does")
 asyncio.run(t_motion_stamp())
@@ -301,7 +302,7 @@ async def t_lost_touch():
     sup._send_touch_burst(no_tp)
     await asyncio.sleep(0.15)
 asyncio.run(t_lost_touch())
-check(sent.count((T_TOUCH, 3)) == 1 + len(st.BURST_DELAYS), f"a lost touchpad: the idle touch packet is repeated ({sent})")
+check(sent.count((T_TOUCH, 3)) == 1 + len(sup.BURST_DELAYS), f"a lost touchpad: the idle touch packet is repeated ({sent})")
 state.active.clear()
 net.emit = real_emit
 

@@ -41,5 +41,5 @@ try:
         if p: types.append(p[0])
 except TimeoutError:
     pass
-check(types.count(T_BYE) == 1 + len(net.REPEAT_DELAYS), f"bye with repeats when the sender closes: {types.count(T_BYE)}; socket closed: {net.sock is None}")
+check(types.count(T_BYE) == 1 + len(net.REPEAT_DELAYS), f"bye with repeats when the sender closes: {types.count(T_BYE)}; socket closed: {net.link.sock is None}")
 sys.exit(1 if fails else 0)

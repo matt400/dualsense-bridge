@@ -10,6 +10,7 @@ sys.path.insert(0, sys.argv[1])
 sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
 import sender_bt as SB
+from proto import BT_DEV_MAX
 import sender_padtype
 import sender_supervisor as sup
 
@@ -119,7 +120,7 @@ async def bt_cases():
         await b.refresh()
         check(len(parsed_in) == 1 and (parsed_in[0] != MAIN) == big,
               f"{n} devices: parsed {'in a worker thread' if big else 'inline'}")
-        check(len(b.devices) == min(n, SB.BT_DEV_MAX) and b.adapter == "/org/bluez/hci0", f"{n} devices: the list is the same either way")
+        check(len(b.devices) == min(n, BT_DEV_MAX) and b.adapter == "/org/bluez/hci0", f"{n} devices: the list is the same either way")
 
 asyncio.run(bt_cases())
 

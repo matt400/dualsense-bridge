@@ -38,7 +38,7 @@ TMP = tempfile.mkdtemp()
 C.AUTH_FILE = os.path.join(TMP, "auth.json")
 C.REMOTE_CFG_FILE = os.path.join(TMP, "remote_cfg.json")
 net.init()
-net.on_cfg = R.on_packet
+net.handlers.cfg = R.on_packet
 
 # ---------- receiver (v3) on the other side, as in test_security_tx ----------
 pc_clock = EpochClock()
@@ -50,18 +50,18 @@ def pc_token():
     return ((t0 + time.perf_counter_ns() - at) // 1_000_000) & 0xFFFFFFFF
 pc = Codec(b"sekret", token=pc_token, now_ms=pc_clock.ms32)
 pc.v3 = True
-t0 = net.clock.ns()
+t0 = net.link.clock.ns()
 sender_t0.append((t0, time.perf_counter_ns()))
-net.sock = FakeSock([pc.pack(T_PONG2, 255, t0, pc_clock.ns() // 1000), pc.pack(T_PONG, 255, t0)])
+net.link.sock = FakeSock([pc.pack(T_PONG2, 255, t0, pc_clock.ns() // 1000), pc.pack(T_PONG, 255, t0)])
 net.on_readable()
-check(net.codec.v3 and net.codec.key == b"sekret", "setup: the sender with a key is already on v3")
+check(net.link.codec.v3 and net.link.codec.key == b"sekret", "setup: the sender with a key is already on v3")
 
 
 def sync():
     """Refresh the sender's PC clock (it expires after 3 s without pong2): without it no v3 packets leave the sender."""
-    t = net.clock.ns()
+    t = net.link.clock.ns()
     sender_t0.append((t, time.perf_counter_ns()))
-    net.sock = FakeSock([pc.pack(T_PONG2, 255, t, pc_clock.ns() // 1000), pc.pack(T_PONG, 255, t)])
+    net.link.sock = FakeSock([pc.pack(T_PONG2, 255, t, pc_clock.ns() // 1000), pc.pack(T_PONG, 255, t)])
     net.on_readable()
 
 
@@ -69,10 +69,10 @@ def ask(*packets, codec=pc):
     """Send packets to the sender, return the cfgval replies as tuples (id, result, ref, flags, value, from file)."""
     if codec is pc:
         sync()
-    net.sock = FakeSock(list(packets))
+    net.link.sock = FakeSock(list(packets))
     net.on_readable()
     out = []
-    for raw in net.sock.sent:
+    for raw in net.link.sock.sent:
         p = codec.parse(raw)
         if p is not None and p[0] == T_CFGVAL:
             out.append(BODY[T_CFGVAL].unpack_from(raw, 4))
@@ -242,8 +242,8 @@ check(sender_rt.apply(False, 50, 0) == [], "apply: turning off again changes not
 state.flush_writes()
 os.remove(C.AUTH_FILE)                                          # the remembered switch to v3 removed: a new codec starts in v2
 net.init()                                                      # new codec: a key, not switched to v3 yet
-net.fb_filter = proto.SeqFilter(1.0)                            # another "receiver process": a random start of the numbers (the filter accepts it after 1 s of silence)
-check(net.codec.key == b"sekret" and not net.codec.v3, "codec with a key before the switch")
+net.link.fb_filter = proto.SeqFilter(1.0)                            # another "receiver process": a random start of the numbers (the filter accepts it after 1 s of silence)
+check(net.link.codec.key == b"sekret" and not net.link.codec.v3, "codec with a key before the switch")
 v2 = Codec(b"sekret")
 before = dict(sender_config.CHANGES)
 r = ask(setting("tap_click", False, 20, codec=v2), codec=v2)
@@ -254,15 +254,15 @@ check(len(r) == 1 and r[0][1] == CFGR_NO_V3, "a read in v2 refused too - one rep
 
 C.KEY = b""
 net.init()
-net.fb_filter = proto.SeqFilter(1.0)
+net.link.fb_filter = proto.SeqFilter(1.0)
 plain = Codec()
 r = ask(setting("tap_click", False, 22, codec=plain), codec=plain)
 check(r and r[0][1] == CFGR_NO_KEY and C.TAP_CLICK is True, f"sender without a key: refusal NO_KEY, changes nothing: {r}")
-check(not any(s[0] >> 4 == proto.VER3 for s in net.sock.sent), "the reply without a key is a plain v2 packet (unsigned)")
+check(not any(s[0] >> 4 == proto.VER3 for s in net.link.sock.sent), "the reply without a key is a plain v2 packet (unsigned)")
 C.KEY = b"sekret"
 net.init()
-net.codec.v3 = True
-net.fb_filter = proto.SeqFilter(1.0)
+net.link.codec.v3 = True
+net.link.fb_filter = proto.SeqFilter(1.0)
 
 # ---------- remote changes off: remote_cfg_file = "" ----------
 C.REMOTE_CFG_FILE = ""

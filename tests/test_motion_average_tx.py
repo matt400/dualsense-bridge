@@ -4,7 +4,7 @@ import random, sys, types
 sys.path.insert(0, sys.argv[1])
 sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
-import sender_streams as S
+import sender_motion as S
 from sender_config import C
 
 from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)

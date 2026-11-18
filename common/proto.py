@@ -163,9 +163,18 @@ import threading
 import time
 import tomllib
 from collections.abc import Callable, Collection, Hashable, Sequence
-from typing import Any, Final, TypeAlias, TypeVar
+from typing import Any, Final, Protocol, TypeAlias, TypeVar
 
 Packet: TypeAlias = bytes | bytearray | memoryview
+# one body field of a packet: which kind each position takes is fixed by BODY[ptype] and checked by struct when packing
+Field: TypeAlias = int | float | bytes
+
+
+class EmitFn(Protocol):
+    """Send one packet: its type (T_*), the pad slot (255 = none) and the body fields in the order of ``BODY[ptype]``."""
+
+    def __call__(self, ptype: int, idx: int, /, *vals: Field) -> None:
+        """Pack and send the packet."""
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Header layout. The first byte carries the protocol version in its high nibble and the wire packet type in the low one.
@@ -659,7 +668,7 @@ class Codec:
             except OSError as e:
                 print(f"WARNING: cannot save {self.state_path}: {e}")
 
-    def pack(self, ptype: int, idx: int, *vals: int | float | bytes, v3: bool | None = None) -> bytes | None:
+    def pack(self, ptype: int, idx: int, *vals: Field, v3: bool | None = None) -> bytes | None:
         """Build a packet.
 
         Layout: header (version | wire type, idx, sequence) + the struct-packed body. Without a key that is all. With a key,
