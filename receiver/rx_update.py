@@ -10,7 +10,7 @@ update() -> Result:
      the running receiver is older than HEAD -> a restart as well (not "You have the latest version" with the old code running on)
   3. receiver/requirements.txt changed -> pip install -r (new libraries)
 The user's settings (console.json, settings.json, remap.json, receiver_ui.ini) are in .gitignore - a pull does not touch them.
-After the new code is downloaded (before the restart) a copy of settings.json / console.json / remap.json is made in receiver/backups/
+After the new code is downloaded (before the restart) a copy of the settings files (rx_backup.files) is made in receiver/backups/
 (rx_backup, the last 5, restore in the window: Settings -> Backups) - the new version may fix them at startup.
 After a successful update the window restarts the receiver (the new code only runs in a new process).
 

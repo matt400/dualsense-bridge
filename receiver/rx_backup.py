@@ -1,10 +1,11 @@
 """Receiver: copies of the user's settings made on update (receiver/backups/), with restoring from the window.
 
-The settings files (settings.json, console.json, remap.json, padcal.json) are in .gitignore, so git pull does not touch them - but the new
-code version may fix them at startup (migration, validation). A copy is made after the new code has been downloaded
-successfully, before the receiver restarts, i.e. exactly in the version written by the old code. The last KEEP are kept.
+The settings files (settings.json, console.json, remap.json, padcal.json, gyrostick.json) are in .gitignore, so git pull
+does not touch them - but the new code version may fix them at startup (migration, validation). A copy is made after the
+new code has been downloaded successfully, before the receiver restarts, i.e. exactly in the version written by the old
+code. The last KEEP are kept.
 
-  backups/20261012-134501_a1b2c3d/   settings.json  console.json  remap.json  meta.json
+  backups/20261012-134501_a1b2c3d/   settings.json  console.json  remap.json  padcal.json  gyrostick.json  meta.json
                                      meta.json: {"time", "commit" (old code), "new" (new code), "reason"}
 
 Restoring copies the files from the backup over the current ones (atomically, file by file) and first makes a copy of the
@@ -40,8 +41,10 @@ def files() -> dict[str, str]:
     def path(attr: str, name: str) -> str:
         return getattr(C, attr, None) or os.path.join(HERE, name)
     remap = path("REMAP_PATH", "remap.json")
+    beside_remap = os.path.dirname(remap)        # padcal.json (rx_padcal) and gyrostick.json (rx_gstick_io) follow remap_file
     return {"settings.json": path("SETTINGS_PATH", "settings.json"), "console.json": path("CONSOLE_PATH", "console.json"),
-            "remap.json": remap, "padcal.json": os.path.join(os.path.dirname(remap), "padcal.json")}
+            "remap.json": remap, "padcal.json": os.path.join(beside_remap, "padcal.json"),
+            "gyrostick.json": os.path.join(beside_remap, "gyrostick.json")}
 
 
 def backup_dir() -> str:

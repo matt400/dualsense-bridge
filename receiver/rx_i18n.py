@@ -619,10 +619,12 @@ EN: Final[dict[str, str]] = {
     # ---------- settings backups ----------
     "Kopie": "Backups",
     "KOPIE USTAWIEŃ": "SETTINGS BACKUPS",
-    "Przed każdą aktualizacją receiver kopiuje settings.json, console.json, remap.json i padcal.json (zostaje {n} ostatnich). "
-    "Przywrócenie najpierw zapisuje kopię bieżących plików - też da się je cofnąć - a potem uruchamia receiver od nowa.":
-        "Before every update the receiver copies settings.json, console.json, remap.json and padcal.json (the last {n} are kept). "
-        "Restoring first backs up the current files - so it can be undone too - and then restarts the receiver.",
+    "Przed każdą aktualizacją receiver kopiuje settings.json, console.json, remap.json, padcal.json "
+    "i gyrostick.json (zostaje {n} ostatnich). Przywrócenie najpierw zapisuje kopię bieżących plików - "
+    "też da się je cofnąć - a potem uruchamia receiver od nowa.":
+        "Before every update the receiver copies settings.json, console.json, remap.json, padcal.json and gyrostick.json "
+        "(the last {n} are kept). Restoring first backs up the current files - so it can be undone too - and then restarts "
+        "the receiver.",
     "Zrób kopię teraz": "Back up now",
     "{pad}: {exe} ustawia efekty spustów - nadajnik w starszej wersji ich nie przekaże (kliknij Aktualizuj)":
         "{pad}: {exe} sets trigger effects - the older sender cannot pass them on (click Update)",
