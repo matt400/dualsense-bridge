@@ -85,7 +85,7 @@ Every module has a docstring with its role; find the file here before opening an
 ## Tests
 ```
 pip install evdev ruff mypy PySide6-Essentials
-./tests/run_tests.sh          # from the repo root; ruff + mypy + all tests, GUI in Qt offscreen
+./tests/run_tests.sh          # from the repo root; ruff + mypy + all tests, GUI in Qt offscreen; tests run in parallel (JOBS=N, default the CPU count)
 python3 tests/test_x.py receiver|sender                          # one test (e2e / bt take both: ... receiver sender)
 ruff check receiver sender tests                                 # lint only
 (cd receiver && python3 -m mypy --config-file ../pyproject.toml --platform win32 .)   # types; sender: same without --platform

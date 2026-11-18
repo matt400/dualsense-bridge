@@ -1,15 +1,16 @@
 #!/bin/sh
-# Tests on Linux (stubs for Windows and the evdev devices): ./tests/run_tests.sh   (from the repo root)
+# Tests on Linux (stubs for Windows and the evdev devices): ./tests/run_tests.sh   (from the repo root)   JOBS=N: N tests at once (default: the CPU count, JOBS=1 = one by one)
 # Requirements: python3 >= 3.11, pip install evdev ruff mypy (or pyflakes); the window: pip install PySide6-Essentials (offscreen, no Xvfb).
 set -u
 cd "$(dirname "$0")/.."
 T=tests; RX=receiver; TX=sender; CM=common
 export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-offscreen}"      # the window tests need no display
-export BTLOG="$(mktemp)" PATH="$PWD/$T/fakebin:$PATH"
+export PATH="$PWD/$T/fakebin:$PATH"
 fail=0
-run() { name=$1; shift
-  if out=$(timeout 120 "$@" 2>&1); then printf 'OK    %s\n' "$name"; else printf 'FAIL  %s\n' "$name"; printf '%s\n' "$out" | tail -20; fail=1; fi
-  if printf '%s' "$out" | grep -q '^FAIL'; then printf 'FAIL  %s (assert)\n' "$name"; fail=1; fi; }
+JOBS="${JOBS:-$(nproc 2>/dev/null || echo 1)}"      # tests run in parallel (each is its own process with its own temp dir)
+OUT=$(mktemp -d)
+# run NAME CMD...: queue one test; the queue runs after the lint / type checks, the results print in queue order
+run() { printf '%s\n' "$*" >> "$OUT/jobs"; }
 if command -v ruff >/dev/null 2>&1; then ruff check --quiet $RX $TX $CM $T || fail=1      # rules in pyproject.toml
 else python3 -m pyflakes $RX/*.py $TX/*.py $CM/*.py | grep -v "imported but unused" && fail=1; fi
 # types: the packages import each other by flat name, so each is checked from its own directory (the receiver as on Windows)
@@ -30,5 +31,16 @@ run test_blocking_calls_tx python3 $T/test_blocking_calls_tx.py $TX
 run test_update python3 $T/test_update.py $RX
 run test_update_tx python3 $T/test_update_tx.py $TX
 python3 -c "import PySide6.QtWidgets, PySide6.QtTest" 2>/dev/null && { run test_gui python3 $T/test_gui.py $RX; run test_console_gui python3 $T/test_console_gui.py $RX; run test_settings_gui python3 $T/test_settings_gui.py $RX; run test_extras_gui python3 $T/test_extras_gui.py $RX; run test_padtest_gui python3 $T/test_padtest_gui.py $RX; run test_access_gui python3 $T/test_access_gui.py $RX; run test_gui_hot_path python3 $T/test_gui_hot_path.py $RX; run test_bt_gui python3 $T/test_bt_gui.py $RX; run test_keys_gui python3 $T/test_keys_gui.py $RX; run test_battery_gui python3 $T/test_battery_gui.py $RX; run test_pads_view_gui python3 $T/test_pads_view_gui.py $RX; run test_diag_gui python3 $T/test_diag_gui.py $RX; run test_sender_cfg_gui python3 $T/test_sender_cfg_gui.py $RX; run test_sidebar_fit_gui python3 $T/test_sidebar_fit_gui.py $RX; run test_scope_memory_gui python3 $T/test_scope_memory_gui.py $RX; run test_selftest_gui python3 $T/test_selftest_gui.py $RX; } || echo "SKIP  test_gui (no PySide6)"
-rm -f "$BTLOG"
+# one job: its own BTLOG (the fake bluetoothctl's call log), output kept in a file per test
+xargs -P "$JOBS" -L 1 sh -c '
+  name=$1; shift; res="$0/res.$name"
+  export BTLOG="$(mktemp)"
+  if out=$(timeout 120 "$@" 2>&1); then printf "OK    %s\n" "$name" > "$res"; else printf "FAIL  %s\n%s\n" "$name" "$(printf "%s\n" "$out" | tail -20)" > "$res"; fi
+  if printf "%s" "$out" | grep -q "^FAIL"; then printf "FAIL  %s (assert)\n" "$name" >> "$res"; fi
+  rm -f "$BTLOG"' "$OUT" < "$OUT/jobs"
+while read -r name _rest; do
+  cat "$OUT/res.$name" 2>/dev/null || { printf 'FAIL  %s (no result)\n' "$name"; fail=1; }
+  grep -q '^FAIL' "$OUT/res.$name" 2>/dev/null && fail=1
+done < "$OUT/jobs"
+rm -rf "$OUT"
 [ $fail -eq 0 ] && echo "ALL OK" || { echo "FAILURES"; exit 1; }
