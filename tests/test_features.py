@@ -38,6 +38,7 @@ assert len(lst) == BK.KEEP and lst[0].name == names[-1] and b.name not in {x.nam
 assert len({x.name for x in lst}) == BK.KEEP, "backups from the same second do not overwrite each other"
 ok("backups: only existing files, version metadata, KEEP newest, unique names")
 
+
 oldest = lst[-1]
 write(C.SETTINGS_PATH, {"v": 2}); write(C.CONSOLE_PATH, {"c": 1})
 okr, msg = BK.restore(oldest.name, "3333333")
@@ -52,6 +53,15 @@ assert okr2 and read(C.SETTINGS_PATH) == {"v": 2}, "a restore can be undone"
 os.makedirs(os.path.join(BK.backup_dir(), "pusty"))
 assert all(x.name != "pusty" for x in BK.list_backups()), "a folder without settings files skipped"
 ok("restore: a backup of the current ones first, atomic write, undo, protection against ../")
+
+# the per-pad files next to remap.json (drift / accessibility, tilt -> stick) are user settings too
+import rx_gstick_io, rx_padcal
+assert set(BK.files()) >= {"padcal.json", "gyrostick.json"} and BK.files()["gyrostick.json"] == rx_gstick_io.path() \
+    and BK.files()["padcal.json"] == rx_padcal.path()
+write(rx_gstick_io.path(), {"version": 1, "pads": {}})
+assert "gyrostick.json" in BK.create("manual").files
+os.remove(rx_gstick_io.path())
+ok("backups: padcal.json and gyrostick.json next to remap.json are included")
 
 # an update makes a backup after fetching the code, and a backup error does not spoil the result
 import rx_update
