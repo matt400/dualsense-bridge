@@ -1,5 +1,5 @@
 """Sender: security review - protocol v3 with a key (freshness token, rejecting replayed recordings
-and signed v2 packets after the switch, the switch remembered), v3 probe ping, the PC clock after a receiver restart.
+and signed v2 packets), the PC clock after a receiver restart.
     python3 tests/test_security_tx.py sender"""
 import asyncio, os, sys, tempfile, time
 sys.path.insert(0, sys.argv[1])
@@ -8,7 +8,7 @@ import sender_config; sender_config.init(["127.0.0.1", "--key", "sekret"])
 from sender_config import C
 import proto
 import sender_net as net
-from proto import (BODY, CMD_POWER_OFF, FRESH_PAST_MS, T_CMD, T_PING, T_PONG, T_PONG2, T_STATE, Codec, EpochClock,
+from proto import (BODY, CMD_POWER_OFF, FRESH_PAST_MS, T_CMD, T_PING, T_PONG2, T_STATE, Codec, EpochClock,
                    token_fresh)
 
 from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
@@ -25,10 +25,8 @@ class FakeSock:
         s.sent.append(data)
 
 
-TMP = tempfile.mkdtemp()
-C.AUTH_FILE = os.path.join(TMP, "auth.json")
 net.init()
-check(net.link.codec.key == b"sekret" and not net.link.codec.v3, "key from --key, v2 format before the switch")
+check(net.link.codec.key == b"sekret", "key from --key")
 
 # ---------- receiver (v3) on the other side: PC clock, tokens from the sender clock ----------
 pc_clock = EpochClock()
@@ -39,30 +37,26 @@ def pc_token():
     t0, at = sender_t0[-1]
     return ((t0 + time.perf_counter_ns() - at) // 1_000_000) & 0xFFFFFFFF
 pc = Codec(b"sekret", token=pc_token, now_ms=pc_clock.ms32)
-pc.v3 = True
 
 cmds = []
 net.handlers.command = lambda i, cmd, arg: cmds.append((i, cmd, arg))
 
-# ---------- v3 probe ping and the switch ----------
+# ---------- with a key every packet is v3 from the start ----------
 net.link.sock = FakeSock()
-net.link.pings_sent = 0
 t0 = net.link.clock.ns()
 net.emit(T_PING, 255, t0)
-net.send_raw(net.link.codec.pack(T_PING, 255, t0, v3=True))
-v2, v3 = net.link.sock.sent
-check(v2[0] >> 4 == proto.VER and v3[0] >> 4 == proto.VER3, "with a key before the switch: v2 ping and the v3 probe ping")
-check(pc.parse(v2) is None and pc.legacy_t > 0, "the receiver after the switch rejects a signed v2 (recording / old version)")
-p = pc.parse(v3)
-check(p is not None and p[0] == T_PING, "v3 probe ping without the PC clock (token 0) accepted - pings are not checked")
+(ping,) = net.link.sock.sent
+check(ping[0] >> 4 == proto.VER3, "with a key the ping is v3 at once (no switch, no probe)")
+p = pc.parse(ping)
+check(p is not None and p[0] == T_PING, "v3 ping without the PC clock (token 0) accepted - pings are not checked")
 sender_t0.append((t0, time.perf_counter_ns()))
+signed_v2 = proto.FRAMED[T_PING].pack(proto.HDR0 | T_PING, 255, 1, t0)
+signed_v2 += __import__("hmac").digest(b"sekret", signed_v2, "sha256")[:proto.MAC_LEN]
+check(pc.parse(signed_v2) is None and pc.legacy_t > 0, "a signed v2 packet (a version from before v3) is rejected and noted")
 
-pong2 = pc.pack(T_PONG2, 255, t0, pc_clock.ns() // 1000)
-pong = pc.pack(T_PONG, 255, t0)
-net.link.sock = FakeSock([pong2, pong])
+net.link.sock = FakeSock([pc.pack(T_PONG2, 255, t0, pc_clock.ns() // 1000)])
 net.on_readable()
-check(net.link.codec.v3 and net.link.pc_clock.offset_us is not None, "v3 pong from the receiver: the sender switches to v3, PC clock known")
-check(open(C.AUTH_FILE).read().strip() == f'{{"v3": "{proto.key_fingerprint(b"sekret")}"}}', "switch stored (key fingerprint)")
+check(net.link.pc_clock.offset_us is not None and net.link.pongs == 1, "pong2 from the receiver: PC clock known, RTT counted")
 
 # ---------- commands: fresh once, repeat rejected, expired rejected, v2 rejected ----------
 cmd = pc.pack(T_CMD, 0, CMD_POWER_OFF, 0)
@@ -70,25 +64,19 @@ net.link.sock = FakeSock([cmd, cmd])
 net.on_readable()
 check(cmds == [(0, CMD_POWER_OFF, 0)], f"v3 command run once, an exact repeat rejected: {cmds}")
 
-old = Codec(b"sekret", token=lambda: (net.link.clock.ms32() - FRESH_PAST_MS - 2000) & 0xFFFFFFFF); old.v3 = True
+old = Codec(b"sekret", token=lambda: (net.link.clock.ms32() - FRESH_PAST_MS - 2000) & 0xFFFFFFFF)
 cmds.clear(); stale = net.link.codec.stale
 net.link.sock = FakeSock([old.pack(T_CMD, 0, CMD_POWER_OFF, 0)])
 net.on_readable()
 check(not cmds and net.link.codec.stale == stale + 1, "nagranie sprzed kilku sekund (znacznik poza oknem) odrzucone")
 
-legacy = Codec(b"sekret")
-net.link.codec.upgraded_t = float("-inf")             # right after the switch v2 means packets in flight (no warning)
-net.link.sock = FakeSock([legacy.pack(T_CMD, 0, CMD_POWER_OFF, 0)])
-net.on_readable()
-check(not cmds and net.link.codec.legacy_t > 0, "after the switch a signed v2 packet (a recording from before the update) rejected")
-
 other = EpochClock()                              # a recording from a previous sender run: a different clock
-rec = Codec(b"sekret", token=other.ms32); rec.v3 = True
+rec = Codec(b"sekret", token=other.ms32)
 net.link.sock = FakeSock([rec.pack(T_CMD, 0, CMD_POWER_OFF, 0)])
 net.on_readable()
 check(not cmds, "a token from another run (random clock offset) rejected")
 
-wrong = Codec(b"inny", token=pc_token); wrong.v3 = True
+wrong = Codec(b"inny", token=pc_token)
 net.link.sock = FakeSock([wrong.pack(T_CMD, 0, CMD_POWER_OFF, 0)])
 net.on_readable()
 check(not cmds and time.monotonic() - net.link.codec.mismatch_t < 1, "another key: rejected and reported as a key mismatch")
@@ -107,14 +95,9 @@ check(len(net.link.sock.sent) == 1 and pc.parse(net.link.sock.sent[0])[0] == T_P
       "no PC clock: the state does not go out (the receiver would reject it anyway), the ping does - the receiver answers it")
 net.link.pc_clock = saved
 
-# ---------- sender restart: the switch remembered ----------
-net.link.codec = None
-net.init()
-check(net.link.codec.v3, "sender restart: v3 at once (no window for recorded v2 packets)")
-C.KEY = b"nowy"; net.init()
-check(not net.link.codec.v3, "key change: the switch starts over (another fingerprint)")
+# ---------- no key: always v2 ----------
 C.KEY = b""; net.init()
-check(not net.link.codec.v3 and net.link.codec.pack(T_PING, 255, 1)[0] >> 4 == proto.VER, "no key: always v2 as before")
+check(net.link.codec.pack(T_PING, 255, 1)[0] >> 4 == proto.VER, "no key: always v2")
 C.KEY = b"sekret"; net.init()
 
 # ---------- PC clock: an offset jump (a new receiver process) clears the old measurements ----------

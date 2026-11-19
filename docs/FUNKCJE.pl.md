@@ -58,7 +58,7 @@
   - **pigułka nadajnika** w nagłówku („● Nadajnik online”): gdy urządzenie z nadajnikiem ma baterię (telefon, laptop),
     w nawiasie widać procenty, a pigułka jest wypełniona do poziomu naładowania (zielona, bursztynowa do 30 %, czerwona
     przy niskim); podczas ładowania po jej górnej krawędzi płynie fala. Raspberry Pi i inne urządzenia bez baterii
-    nie pokazują procentów; starszy nadajnik po prostu ich nie wysyła;
+    nie pokazują procentów;
   - na środku rysunek pada na żywo: kliknij przycisk, spust albo gałkę, żeby ją zremapować lub dostroić;
   - po prawej profil (domyślny / per gra), pionowe zakładki po lewej: **Selected**, **Rumble**, **Gyro**, **Accessibility**, **Changes** i przycisk **Save** (Ctrl+S);
   - remapowanie przycisków i gałek, celowanie żyroskopem (prawa gałka / mysz); strefy martwe, krzywe i
@@ -323,8 +323,8 @@
   (przycisk, gałka, ruch), od chwili, gdy jądro nadajnika dostało raport z pada, do oddania raportu wirtualnemu DS4. Nadajnik zna zegar PC z odpowiedzi na ping
   (jak NTP, pomiar o najmniejszym RTT), więc sieć jest mierzona w jedną stronę, nie jako połowa pingu. Odcinki:
   **Bluetooth** - opóźnienie radia ponad najlepszy przypadek z 2 s (znaczniki czasu pada; stała część ~1-2 ms jest
-  niemierzalna), **nadajnik** - jądro → wysłanie, **sieć**, **PC** - odbiór → wirtualny pad. Ze starszym nadajnikiem karta
-  pokazuje sam ping; starszy receiver dostaje od nowego nadajnika zwykłe pakiety.
+  niemierzalna), **nadajnik** - jądro → wysłanie, **sieć**, **PC** - odbiór → wirtualny pad. Dopóki zegar nadajnika nie jest
+  zsynchronizowany, karta pokazuje sam ping.
   **Przycisk → gra** to ten sam pomiar tylko dla zmian przycisków, D-pada i spustów (przejście przez próg wciśnięcia,
   bez gałek i żyroskopu): ostatnie 100 naciśnięć / puszczeń bez limitu czasu (naciśnięcia są rzadkie - 5 s dałoby
   kilka próbek), kasowane przy zmianie pada w slocie albo ikoną ↻ na karcie.

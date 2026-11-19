@@ -28,15 +28,13 @@ class Dev:
 # ---------- the packet ----------
 assert proto.WIRE[T_LEDS] == T_FB and proto.BODY[T_LEDS].size == 3 and proto.BODY[proto.T_FB].size == 5
 assert proto.BY_SIZE[(T_FB, 3)] == T_LEDS and proto.BY_SIZE[(T_FB, 5)] == T_FB, "the leds packet is told apart from fb by its length"
-assert proto.SENDER_VERSION >= proto.LEDS_SENDER == 15 and MUTE_BIT == 1 << len(proto.PAD_KEYS) and MUTE_BIT not in proto.KEY_BIT.values()
+assert MUTE_BIT == 1 << len(proto.PAD_KEYS) and MUTE_BIT not in proto.KEY_BIT.values()
 plain = Codec().pack(T_LEDS, 2, LEDS_MUTE | LEDS_PLAYER, MUTE_PULSE, 0x15)
 assert len(plain) == 4 + 3 and plain[0] == (2 << 4) | T_FB and plain[4:] == bytes([3, 2, 0x15])
 assert Codec().parse(plain)[0] == T_LEDS
-v2 = Codec(KEY).pack(T_LEDS, 2, 1, 1, 0, v3=False)
-assert len(v2) == 4 + 3 + 8 and Codec(KEY).parse(v2)[0] == T_LEDS
-v3 = Codec(KEY, token=lambda: 77).pack(T_LEDS, 2, 1, 1, 0, v3=True)
+v3 = Codec(KEY, token=lambda: 77).pack(T_LEDS, 2, 1, 1, 0)
 assert len(v3) == 4 + 3 + 12 and v3[0] >> 4 == 3 and Codec(KEY, now_ms=lambda: 77).parse(v3)[0] == T_LEDS
-ok("leds packet: wire type fb, length 3 (unique), plain / HMAC v2 / v3 parse, version 15")
+ok("leds packet: wire type fb, length 3 (unique), plain / v3 parse")
 
 # ---------- delivery: own filter key, repeats dropped, other packets unaffected ----------
 got = []

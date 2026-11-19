@@ -33,7 +33,6 @@ DEFAULTS: dict[str, Any] = {
     "gyro_cal_file": "gyro_cal.json",  # gyro calibration from the receiver window, per pad (MAC); "" = do not save
     "bt_adapter": "auto",          # Bluetooth controller: auto (USB dongle before the built-in one) | builtin | manual (leave as is)
     "bt_file": "bt.json",          # controller chosen in the receiver window (takes precedence over bt_adapter); "" = do not save
-    "auth_file": "auth.json",      # with a key: remembered switch to protocol v3 (replay protection); "" = do not save
     "remote_cfg_file": "remote_cfg.json",   # settings changed in the receiver window (Sender tab, needs the key); "" = no remote changes
     "grab_pad": True,
     "grab_touch": True,
@@ -221,7 +220,6 @@ def _apply_files(cfg: dict[str, Any]) -> None:
     C.WOL_FILE = _beside(cfg["wol_file"])
     C.GYRO_CAL_FILE = _beside(cfg["gyro_cal_file"])
     C.BT_ADAPTER, C.BT_FILE = str(cfg["bt_adapter"]), _beside(cfg["bt_file"])
-    C.AUTH_FILE = _beside(cfg["auth_file"])
     C.REMOTE_CFG_FILE = _beside(cfg["remote_cfg_file"])
 
 

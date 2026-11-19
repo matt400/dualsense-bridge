@@ -51,7 +51,7 @@ from sender_report import (BT_SEQ_MASK, BYTE_MASK, COMMON_LEN, EFFECT_FIELDS, L2
                            rumble_amp, split_triggers, vibration_effect)
 from sender_hidraw import VIBRATION_V2_FROM, ensure_node, find_hidraw, firmware_version, has_ff, kernel_has_hidraw
 from sender_hidwrite import AUDIO_PENDING, MAX_PENDING, HidWriter
-from proto import (CAP_HAPTICS, CAP_SPEAKER, CAP_TRIG_FX, CAP_TRIG_RAW, CAP_TRIGGERS, PLAYER_LEDS_MASK, RFX_HOLD_S,
+from proto import (CAP_HAPTICS, CAP_SPEAKER, CAP_TRIGGERS, PLAYER_LEDS_MASK, RFX_HOLD_S,
                    RFX_ON, RUMBLE_EVDEV, RUMBLE_HIDRAW, SRC_PC, SRC_REPEAT, SRC_WATCHDOG, TFX_OFF, TRIG2_OFF,
                    WHY_ACCESS,
                    WHY_NO_HIDRAW, WHY_NOT_FOUND, WHY_OFF, WHY_OK, WHY_OPEN)
@@ -224,13 +224,12 @@ class Rumble:
     def bits(self) -> int:
         """The ways as bits (the version packet to the receiver).
 
-        1 = driver, 2 = HID report, 4 = trigger resistance, 8 = trigger effects from trig2 (click, vibration, game
-        vibration), 32 = trigger effects from the game (trig3), 64 = HD haptics (a Bluetooth pad with a HID report: report 0x32
+        1 = driver, 2 = HID report, 4 = trigger effects, 64 = HD haptics (a Bluetooth pad with a HID report: report 0x32
         does not exist on USB), 128 = the speaker (the same pad, and libopus is installed).
         """
         bits = RUMBLE_EVDEV if WAY_EVDEV in self.methods else 0
         if WAY_HIDRAW in self.methods:
-            bits |= RUMBLE_HIDRAW | CAP_TRIGGERS | CAP_TRIG_FX | CAP_TRIG_RAW
+            bits |= RUMBLE_HIDRAW | CAP_TRIGGERS
             if self.bt:
                 bits |= CAP_HAPTICS
                 if sender_opus.available():

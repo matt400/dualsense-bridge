@@ -45,7 +45,6 @@ from proto import CAP_HAPTICS, HAPT_CHUNK, HAPT_END, HAPT_FRAMES, HAPT_RATE, HAP
 from rx_config import C
 from rx_i18n import _
 
-HAPTICS_SENDER: Final = 13                  # from this sender version the T_HAPT packet exists (with the CAP_HAPTICS bit)
 BYTES_PER_SAMPLE: Final = 2                 # the USB audio stream is 16-bit little-endian PCM
 FRAME_BYTES_MIN: Final = 8                  # smallest frame we accept: 4 channels x 2 bytes
 
@@ -475,7 +474,8 @@ class Link(PacedStream):
         if not cfg.enabled and not self._inject:
             return None
         if not sender_haptics(t):
-            self._note("sender", _("{pad}: gra daje haptykę - nadajnik w starszej wersji jej nie przekaże (kliknij Aktualizuj)"))
+            self._note("sender", _("{pad}: gra daje haptykę - ten pad jej nie odtworzy (potrzebny DualSense przez "
+                                   "Bluetooth i raport HID na nadajniku)"))
             return None
         import rx_master            # rx_master imports rx_feedback, which imports rx_settings - lazily, like rx_feedback does
         if not rx_master.allowed(t, "haptics"):
@@ -581,10 +581,15 @@ def stop_all() -> None:
     rx_speaker.stop_all()
 
 
+def no_haptics_text() -> str:
+    """Why a pad without CAP_HAPTICS plays no haptics (the window)."""
+    return _("Ten pad nie odtworzy haptyki (potrzebny DualSense przez Bluetooth i raport HID na nadajniku).")
+
+
 def sender_haptics(i: int) -> bool:
-    """Tell whether the sender of physical pad i plays haptics (v13+ and the CAP_HAPTICS bit of its version packet)."""
+    """Tell whether the sender of physical pad i plays haptics (the CAP_HAPTICS bit of its version packet)."""
     info = S.sender_info[i]
-    return info is not None and info[0] >= HAPTICS_SENDER and bool(info[1] & CAP_HAPTICS)
+    return info is not None and bool(info[1] & CAP_HAPTICS)
 
 
 def _wanted_somewhere() -> bool:
@@ -615,13 +620,13 @@ def composite_wanted(idx: int) -> bool:
 
 
 def _haptics_wanted(idx: int, t: int) -> bool:
-    """The haptics half of composite_wanted for virtual slot idx / physical pad t (says so in the event log when the sender is old)."""
+    """The haptics half of composite_wanted for virtual slot idx / physical pad t (says so in the event log when the pad cannot play it)."""
     if not rx_settings.cur.haptics.get(S.profile_key(t)).enabled:
         return False
     if not sender_haptics(t):
         if S.alive[t]:
-            link(idx)._note("sender", _("{pad}: haptyka gry jest włączona, ale nadajnik w starszej wersji jej nie obsługuje "
-                                        "(kliknij Aktualizuj)"))
+            link(idx)._note("sender", _("{pad}: haptyka gry jest włączona, ale ten pad jej nie odtworzy (potrzebny "
+                                        "DualSense przez Bluetooth i raport HID na nadajniku)"))
         return False
     import rx_master
     return rx_master.allowed(t, "haptics")
@@ -683,7 +688,7 @@ def unavailable(i: int) -> str | None:
     if not (0 <= i < C.NUM_PADS) or not S.alive[i]:
         return _("Pad nie jest podłączony.")
     if not sender_haptics(i):
-        return _("Nadajnik w starszej wersji (bez haptyki) - kliknij Aktualizuj.")
+        return no_haptics_text()
     import rx_master
     if not rx_master.allowed(i, "haptics"):     # the link would drop the tone: say so instead of "sent"
         return _("Haptyka gry jest tylko dla pada master (Ustawienia → Master).")

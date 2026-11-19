@@ -17,7 +17,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "common"))   # proto.py is shared, it lives in common/
 
 from proto import (PLAYER_LEDS_MASK, RFX_GAIN_MAX, TFX_CLICK, TFX_RES, TFX_VIB, TRG3_L2, TRG3_R2, TRIG2_OFF, TRIG_AMP_MAX,
-                   TRIG_CLICK_MAX, TRIG_CLICK_MIN, TRIG_FORCE_MAX, TRIG_FREQ_MAX, TRIG_START_MAX, UINT32_MASK, trig2_from_legacy)
+                   TRIG_CLICK_MAX, TRIG_CLICK_MIN, TRIG_FORCE_MAX, TRIG_FREQ_MAX, TRIG_START_MAX, UINT32_MASK)
 
 # ---- DualSense output report (hid-playstation, struct dualsense_output_report_common) ----
 USB_REPORT_ID: Final = 0x02                 # USB: id + common part + padding = 63 B
@@ -64,7 +64,6 @@ L2_EFFECT_AT, R2_EFFECT_AT, EFFECT_FIELDS = 0, 4, 4     # (mode, a, b, c) for L2
 RUMBLE_FX_AT = 8                                        # (flags, gain %, frequency Hz) of the game rumble on the triggers
 TRIG2_LEN: Final = 12
 TRIG3_L2_RAW_AT, TRIG3_R2_RAW_AT, TRIG3_FLAGS_AT = 12, 13, 14
-LEGACY_TRIG_LEN: Final = 4
 
 
 MOTOR_MAX: Final = 255
@@ -182,17 +181,15 @@ def game_effect(raw: bytes | None) -> bytes:
 
 
 def split_triggers(vals: Sequence[Any]) -> tuple[tuple[int, ...], tuple[bytes | None, bytes | None]]:
-    """Split a trig (4), trig2 (12) or trig3 (12 + game effects L2, R2 + flags) packet.
+    """Split trigger values: a trig3 packet (12 + game effects L2, R2 + flags) or the 12 profile values alone (TRIG2_OFF).
 
     Args:
         vals: The packet's body fields (ints, and for trig3 two raw 11-byte effects).
 
     Returns:
-        The trig2 values and the (L2, R2) game effects: raw 11 B or None.
+        The 12 profile values and the (L2, R2) game effects: raw 11 B or None.
     """
     vals = tuple(vals)
-    if len(vals) == LEGACY_TRIG_LEN:
-        return trig2_from_legacy(vals), (None, None)
     if len(vals) == len(TRIG2_OFF):
         return vals, (None, None)
     flags = vals[TRIG3_FLAGS_AT]

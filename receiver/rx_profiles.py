@@ -11,7 +11,7 @@ import rx_mouse as mouse
 import rx_net
 import rx_padcal
 import rx_state as S
-from proto import CAL_MAX_S, CAP_CALIB, CMD_GYRO_CAL, CMD_POWER_OFF, CMD_RAW_STICKS
+from proto import CAL_MAX_S, CMD_GYRO_CAL, CMD_POWER_OFF, CMD_RAW_STICKS
 from rx_i18n import _
 
 EXE_RE: Final =  re.compile(r"[a-z0-9_.()+\-][a-z0-9_.()+\- ]{0,78}\.exe")
@@ -112,9 +112,8 @@ def block(slot: int, on: bool) -> bool:
 
 
 def sender_calib(slot: int) -> bool:
-    """Tell whether the pad's sender knows CMD_GYRO_CAL and CMD_RAW_STICKS (v9+); read from the capability bits of its version packet."""
-    info = S.sender_info[slot]
-    return info is not None and bool(info[1] & CAP_CALIB)
+    """Tell whether the pad's sender can take CMD_GYRO_CAL and CMD_RAW_STICKS: it has described the pad (its version packet)."""
+    return S.sender_info[slot] is not None
 
 
 def raw_sticks(slot: int, secs: int) -> None:

@@ -124,7 +124,7 @@ def _summarize(rows: Sequence[Row]) -> Summary:
 def summary(i: int, now_ns: int | None = None) -> Summary | None:
     """Summarise all changes from the last WINDOW_S; None when there are too few samples.
 
-    That happens when the pad is idle, with an older sender or without a PC clock.
+    That happens when the pad is idle or the sender has no PC clock yet.
     """
     start = (now_ns or time.perf_counter_ns()) - int(WINDOW_S * NS_PER_S)
     with _lock:

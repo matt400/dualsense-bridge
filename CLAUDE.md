@@ -57,14 +57,14 @@ Every module has a docstring with its role; find the file here before opening an
 `sender_rumble`, `sender_bt`, `rx_net`.
 
 **Runtime files** (gitignored, never commit, no need to read): `*.toml` except `*.example.toml`, `remap.json`, `settings.json`, `console.json`, `slots.json`,
-`wol.json`, `remote_cfg.json`, `gyro_cal.json`, `bt.json`, `auth.json` (HMAC key), `padcal.json`, `receiver_ui.ini`, `receiver/backups/`, `receiver/reports/`, `receiver/hidmaestro/`.
+`wol.json`, `remote_cfg.json`, `gyro_cal.json`, `bt.json`, `padcal.json`, `receiver_ui.ini`, `receiver/backups/`, `receiver/reports/`, `receiver/hidmaestro/`.
 
 ## Hard rules
 - `common/proto.py` is the only copy of the protocol; do not add `proto.py` to `receiver/` or `sender/` (`run_tests.sh` fails on that).
   Entry scripts and tests put `common/` on `sys.path` (a new entry script or test needs the same line); mypy uses `mypy_path`.
-- The protocol is backward compatible: new fields = a longer variant of the same packet type, sent only to a peer
-  known to understand it (version / CAP_* / pong2 / scfg). An older peer drops an unknown length.
-  Never change the formats of existing packets.
+- Both sides ship from this repo and are updated together: each packet has one format, no variants for an older peer.
+  A format change bumps `proto.SENDER_VERSION` (the receiver warns on a mismatch). Keep ping, cmd (CMD_UPDATE) and the
+  update flow unchanged, so the Update button still reaches an older sender.
 - Hot path (evdev read, packing, UDP receive, HID report building) – no allocations or copies, latency is what matters.
 - Settings files are written only via `proto.write_file` / `proto.write_json` (atomic, fsync).
 - Window texts go through `rx_i18n` (PL + EN); never hardcode UI strings.

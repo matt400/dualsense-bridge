@@ -8,7 +8,7 @@ import proto
 import sender_events as events
 import sender_report as RP
 import sender_rumble as R
-from proto import BODY, T_EVENT, T_PING, T_STATE, T_STATE2, T_TRIG, T_TRIG2, TFX_CLICK, TFX_RES, TRIG2_OFF, Codec, cstr
+from proto import BODY, T_EVENT, T_PING, T_STATE, T_STATE2, T_TRIG3, TFX_CLICK, TFX_RES, TRIG2_OFF, Codec, cstr
 
 TMP = tempfile.mkdtemp()
 from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
@@ -108,20 +108,20 @@ msg = next(v[0] for t, v in out if t == proto.T_UPDMSG)
 check(len(msg) <= BODY[proto.T_UPDMSG].size and "�" not in cstr(msg), "git pull error reason without half a letter")
 
 # ---------- HMAC key on one side only ----------
-keyed, plain = Codec(b"sekret"), Codec()
+keyed, plain = Codec(b"sekret", token=lambda: 0), Codec()
 state = (128,) * 6 + (0, 0, 0, 80, 0, 0, 0, 8192, 0, 0, 0)
 legit = Codec().pack(T_STATE2, 0, *state, 1, 2, 3)
 check(plain.parse(legit)[0] == T_STATE2, "no key on both sides: state2 accepted as before")
 check(plain.parse(keyed.pack(T_PING, 255, 1)) is None and time.monotonic() - plain.mismatch_t < 1,
       "no key: a ping with HMAC (16 B) recognized as a keyed packet")
 check(plain.parse(keyed.pack(T_STATE, 0, *state)) is None, "... and state + HMAC (= state2 length) is no longer taken for state2")
-check(plain.parse(keyed.pack(T_TRIG, 0, 1, 2, 3, 4)) is None, "trig + HMAC (= trig2 length) rejected - no random trigger effects")
 plain.mismatch_t -= proto.KEY_MISMATCH_S + 1
 check(plain.parse(legit)[0] == T_STATE2, "after KEY_MISMATCH_S of silence a state2 without a key is accepted again")
 other = Codec(b"inny")
 check(other.parse(keyed.pack(T_STATE, 0, *state)) is None and time.monotonic() - other.mismatch_t < 1,
       "another key: rejected and reported")
-check(keyed.parse(Codec(b"sekret").pack(T_TRIG2, 0, *TRIG2_OFF))[0] == T_TRIG2, "the same key: works")
+check(keyed.parse(Codec(b"sekret", token=lambda: 0).pack(T_TRIG3, 0, *TRIG2_OFF, bytes(11), bytes(11), 0))[0] == T_TRIG3,
+      "the same key: works")
 fresh = Codec(b"sekret")
 fresh.parse(b"\x00garbage-from-other-app")
 check(fresh.mismatch_t == float("-inf"), "foreign datagrams on the port do not pose as another key")

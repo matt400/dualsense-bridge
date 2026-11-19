@@ -10,6 +10,7 @@ from rxenv import *                                              # noqa  (Window
 import rx_audio, rx_haptics as H, rx_master, rx_net, rx_settings, rx_speaker as K
 import rx_state as S
 from proto import CAP_HAPTICS, CAP_SPEAKER, SPK_BYTES, SPK_END, SPK_FRAME, SPK_START, T_CMD
+import proto
 
 from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
@@ -69,7 +70,7 @@ check(pkt[4:] == struct.pack("!IB", 7, SPK_START) + frame, "body: frame number m
 A = "aa:aa:aa:aa:aa:09"
 S.pad_id[0] = A
 S.alive[0] = True
-S.sender_info[0] = (14, 3 | CAP_SPEAKER, 0)
+S.sender_info[0] = (proto.SENDER_VERSION, 3 | CAP_SPEAKER, 0)
 rx_settings.apply(replace(rx_settings.cur, speaker=rx_settings.SpeakerConfig(pads={A: rx_settings.PadSpeaker(True, 100)})))
 ROLES = ["speakerLeft", "speakerRight", "hapticLeft", "hapticRight"]
 sent_pk = []
@@ -214,19 +215,19 @@ def streams(setup=lambda: None, sec=0.2):
     run_link(sec, dc, link=link, speaker=s)
     return bool(out)
 
-check(streams(), "baseline: v14 + CAP_SPEAKER + enabled = a stream")
-S.sender_info[0] = (13, 3 | CAP_HAPTICS, 0)
-check(not streams() and not K.sender_speaker(0), "old sender (v13): no stream")
-S.sender_info[0] = (14, 3, 0)
-check(not streams() and not K.sender_speaker(0), "v14 without the CAP_SPEAKER bit: no stream")
-S.sender_info[0] = (14, 3 | CAP_SPEAKER, 0)
+check(streams(), "baseline: CAP_SPEAKER + enabled = a stream")
+S.sender_info[0] = (proto.SENDER_VERSION, 3 | CAP_HAPTICS, 0)
+check(not streams() and not K.sender_speaker(0), "only CAP_HAPTICS: no stream")
+S.sender_info[0] = (proto.SENDER_VERSION, 3, 0)
+check(not streams() and not K.sender_speaker(0), "without the CAP_SPEAKER bit: no stream")
+S.sender_info[0] = (proto.SENDER_VERSION, 3 | CAP_SPEAKER, 0)
 rx_settings.apply(replace(rx_settings.cur, speaker=rx_settings.SpeakerConfig(pads={A: rx_settings.PadSpeaker(False, 100)})))
 check(not streams(), "off in the settings (default): no stream")
 rx_settings.apply(replace(rx_settings.cur, speaker=rx_settings.SpeakerConfig(pads={"*": rx_settings.PadSpeaker(True, 100)})))
 check(streams(), "the default setting * covers a pad without its own")
 S.pad_id[1] = "bb:bb:bb:bb:bb:09"
 S.alive[1] = True
-S.sender_info[1] = (14, 3 | CAP_SPEAKER, 0)
+S.sender_info[1] = (proto.SENDER_VERSION, 3 | CAP_SPEAKER, 0)
 mst = replace(rx_settings.cur.master, pad=A, only_master=("speaker",), when_absent="nobody")
 rx_settings.apply(replace(rx_settings.cur, master=mst))
 check(streams(), "the master gets the speaker")
@@ -240,19 +241,19 @@ H._composite_off_until = 0.0
 rx_settings.apply(replace(rx_settings.cur, haptics=rx_settings.HapticsConfig(pads={}),
                           speaker=rx_settings.SpeakerConfig(pads={"*": rx_settings.PadSpeaker(True, 100)})))
 check(H.composite_wanted(0), "speaker alone enabled (no haptics) = composite pad")
-S.sender_info[0] = (13, 3 | CAP_HAPTICS, 0)
-check(not H.composite_wanted(0), "speaker enabled, but an old sender: a plain pad")
-S.sender_info[0] = (14, 3 | CAP_SPEAKER, 0)
+S.sender_info[0] = (proto.SENDER_VERSION, 3 | CAP_HAPTICS, 0)
+check(not H.composite_wanted(0), "speaker enabled, but no CAP_SPEAKER: a plain pad")
+S.sender_info[0] = (proto.SENDER_VERSION, 3 | CAP_SPEAKER, 0)
 rx_settings.apply(replace(rx_settings.cur, speaker=rx_settings.SpeakerConfig(pads={})))
 check(not H.composite_wanted(0), "both off: a plain pad")
 rx_settings.apply(replace(rx_settings.cur, haptics=rx_settings.HapticsConfig(pads={"*": rx_settings.PadHaptics(True, 100)})))
-S.sender_info[0] = (14, 3 | CAP_SPEAKER | CAP_HAPTICS, 0)
+S.sender_info[0] = (proto.SENDER_VERSION, 3 | CAP_SPEAKER | CAP_HAPTICS, 0)
 check(H.composite_wanted(0), "haptics alone enabled works as before")
 rx_settings.apply(replace(rx_settings.cur, haptics=rx_settings.HapticsConfig(pads={}),
                           speaker=rx_settings.SpeakerConfig(pads={"*": rx_settings.PadSpeaker(True, 100)})))
 mst = replace(rx_settings.cur.master, pad=A, only_master=("speaker",), when_absent="nobody")
 rx_settings.apply(replace(rx_settings.cur, master=mst))
-S.sender_info[1] = (14, 3 | CAP_SPEAKER, 0)
+S.sender_info[1] = (proto.SENDER_VERSION, 3 | CAP_SPEAKER, 0)
 check(H.composite_wanted(0) and not H.composite_wanted(1), "only the master gets the composite for the speaker")
 rx_settings.apply(replace(rx_settings.cur, master=replace(mst, pad="")))
 
@@ -282,17 +283,17 @@ check(len(sent_pk) == 1 and sent_pk[0][1] & SPK_END, "detach during a stream sen
 
 # ---------- test button: the same gates, a reason instead of "sent" ----------
 rx_settings.apply(replace(rx_settings.cur, master=replace(mst, pad=A)))
-S.sender_info[0] = S.sender_info[1] = (14, 3 | CAP_SPEAKER, 0)
+S.sender_info[0] = S.sender_info[1] = (proto.SENDER_VERSION, 3 | CAP_SPEAKER, 0)
 K.speakers[:] = []
 why = K.test(1)
 check(why is not None and "master" in why and not K.speaker(1)._inject, f"speaker test: a non-master pad gets a reason, nothing waits in the queue ({why!r})")
 check(K.test(0) is None and K.speaker(0)._inject, "speaker test: the master gets the tone")
 K.speaker(0)._inject.clear()
-S.sender_info[1] = (13, 3, 0)
+S.sender_info[1] = (proto.SENDER_VERSION, 3, 0)
 why = K.test(1)
-check(why is not None and "starszej" in why, "speaker test: old sender = a reason")
+check(why is not None and "libopus" in why, "speaker test: a pad without CAP_SPEAKER = a reason")
 check(K.test(5) is not None and K.test(-1) is not None, "speaker test: non-existent pad = a reason")
-S.sender_info[1] = (14, 3 | CAP_SPEAKER, 0)
+S.sender_info[1] = (proto.SENDER_VERSION, 3 | CAP_SPEAKER, 0)
 # a tone queued before it was forbidden: the queue is cleared
 sent_pk.clear()
 sp7 = K.SpeakerLink(1, send=lambda t, n, f, c: sent_pk.append(n), clock=lambda: now[0])

@@ -1,5 +1,9 @@
 """Shared wire protocol of the sender and the receiver (v2, v3 with an HMAC key) and the atomic settings writes.
 
+Both sides come from one repository and are updated together, so each packet has one format: there are no variants for an
+older peer. The version packet carries SENDER_VERSION; the receiver warns when the sender's differs from its own (the
+Update button still reaches an older sender: ping, cmd and the update itself keep their formats).
+
 The git update code shared by both sides is in gitupdate.py, next to this file.
 
 There is one copy, in common/. The entry scripts (and the tests) add common/ to sys.path, so both sides `import proto`.
@@ -13,94 +17,77 @@ optionally 8 B of HMAC-SHA256 (when a key is set).
   4 mouse   "hhB"        dx dy flags: bit0 = tap (left button), bit1 = scrolling (dx, dy = the sum of the movements
                          of two fingers, not cursor movement), bit2 = two-finger tap (right button),
                          bits 4-7 = tap number 1..15 (a tap is sent with repeats, the receiver clicks once)
-  5 ping / 7 pong "Q"    latency measurement (idx = 255)
+  5 ping    "Q"          the sender's clock [ns], for the round trip and the clock offset (idx = 255); answered by pong2
   6 feedback (PC -> sender) "5B" small_rumble large_rumble R G B
   8 bye     ""           sender: the pad disconnected -> remove the virtual DS4
   9 ident   "17s"        sender: a fixed pad identifier (MAC) - the key of the remap profile
- 10 cmd     "BB"         PC -> sender: command, argument (CMD_POWER_OFF = switch the pad off; v9+: CMD_GYRO_CAL = calibrate
+ 10 cmd     "BB"         PC -> sender: command, argument (CMD_POWER_OFF = switch the pad off; CMD_GYRO_CAL = calibrate
                          the gyro of a pad lying still for arg seconds, 0 = only the status; CMD_RAW_STICKS = sticks without
                          the sender's deadzone for arg seconds, 0 = end - the drift measurement in the window)
  11 info    "HHH"        sender -> PC every 1 s: ping x10 [ms] (0xFFFF = none), pad report Hz, motion Hz
- 12 version "BBB"        sender -> PC together with ident: the sender version, rumble ways (bit 1 = evdev FF driver,
-                         bit 2 = HID report through hidraw; 0 = none), the reason for none (WHY_*)
- 13 build   "7sIB"       sender -> PC every 5 s and after an update (idx = 255): the sender's code commit (7 characters of the hash),
-                         the commit time (unix), the update state UPD_*; an older receiver ignores the unknown type
+ 12 version "BBB"        sender -> PC together with ident: SENDER_VERSION, rumble ways and capability bits (RUMBLE_*, CAP_*;
+                         0 = none), the reason for no rumble through the HID report (WHY_*)
  14 updmsg  "120s"       sender -> PC after an update (idx = 255): the reason for a git pull failure (UTF-8, truncated) - the window shows
-                         it instead of "details in the log on the phone"; an older receiver ignores the unknown type
- 15 trig    "4B"         PC -> sender: constant trigger resistance from the game profile: L2 start 0-9, L2 strength 0-8, R2 start,
-                         R2 strength (strength 0 = no resistance); only through the HID report (hidraw); only to a v6+ sender
+                         it instead of "details in the log on the phone"
   0 event   "HBBH56s"    sender -> PC (idx = pad slot or 255): an event for the log in the window - number (a repeat
                          does not duplicate the entry), level EV_*, code E_*, age [s] (an event from before the connection to the receiver,
                          e.g. a sent Wake-on-LAN), argument (UTF-8); only when the receiver enabled them in the scfg packet
 
-Longer variants (the same type in the header, recognised by length - the type has only 4 bits, and an older side rejects an
-unknown length, so a variant only goes to a side that is known to understand it):
+Longer variants (the same type in the header, recognised by length - the type has only 4 bits):
   state2 (type 1) "6BbbHBB6iIHH" state + a latency measurement: the send time in the PC clock [µs, low 32 bits], the time on the
                          phone from the kernel event to sending [µs], the Bluetooth delay above the minimum over the last
-                         2 s [µs] (LAT_NONE = none). The sender sends it only once it gets a pong2 (the receiver knows it)
-  pong2  (type 7) "QQ"   PC -> sender right before the plain pong: the echo of the ping, the PC time [µs] - the sender computes the clock
-                         offset (like NTP, from the measurement with the smallest RTT); an older sender rejects the length, takes the pong
+                         2 s [µs] (LAT_NONE = none). Sent while the sender's PC clock is synchronised (pong2), the plain state otherwise
+  pong2  (type 7) "QQ"   PC -> sender, the answer to every ping: the echo of the ping (the round trip), the PC time [µs] - the sender
+                         computes the clock offset (like NTP, from the measurement with the smallest RTT)
   scfg   (type 10) "B6s4sBH"  PC -> sender (idx = 255), on change and every 5 s: SCFG_* flags, the PC's MAC for Wake-on-LAN
                          (zeros = take it from the phone's ARP table), the broadcast address (zeros = automatic), the button of the
                          combination with PS (the
                          bit number in the button mask), the hold time [ms]; the sender saves this itself (wol.json), because
-                         while the PC is off there is nowhere else to get it; an older sender rejects the length
-  build2 (type 13) "7sIB6s4s" sender -> PC: build + the PC's MAC and broadcast that Wake-on-LAN will use (zeros = unknown);
-                         only to a receiver from which scfg arrived (an older one would reject the length and would not know the version)
-  build3 (type 13) "7sIB6s4sB" build2 + the battery of the sender's own device (a phone, a laptop): bits 0-6 the percentage,
-                         bit 7 = charging (BATT_CHARGING). Only from a sender device that has a battery, and only to a receiver
-                         that announced SCFG_BATT in scfg; otherwise build2 / build as before
+                         while the PC is off there is nowhere else to get it
+  build3 (type 13) "7sIB6s4sB" sender -> PC every 5 s and after an update (idx = 255): the sender's code commit (7 characters of the
+                         hash), the commit time (unix), the update state UPD_*, the PC's MAC and broadcast that Wake-on-LAN will use
+                         (zeros = unknown), the battery of the sender's own device (a phone, a laptop): bits 0-6 the percentage,
+                         bit 7 = charging (BATT_CHARGING), BATT_UNKNOWN = the device has no battery
   calres (type 11) "BB3i3iI" sender -> PC: the answer to CMD_GYRO_CAL - state CAL_*, flags CALF_*, the saved gyro bias (x, y, z
-                         in evdev units), the bias used now (from startup calibration / autobias), the save time (unix);
-                         only in answer to a command (a v9+ receiver sends it, so it knows this variant)
-  trig2  (type 15) "12B" PC -> sender: trigger effects - L2: mode TFX_*, a, b, c; R2: mode, a, b, c; game rumble on the
-                         triggers: RFX_* flags, strength [%], frequency [Hz], 0. Mode parameters:
+                         in evdev units), the bias used now (from startup calibration / autobias), the save time (unix)
+  trig3  (type 15) "12B11s11sB" PC -> sender: trigger effects. The first 12 B come from the profile - L2: mode TFX_*, a, b, c;
+                         R2: mode, a, b, c; game rumble on the triggers: RFX_* flags, strength [%], frequency [Hz], 0. Mode parameters:
                            TFX_RES   a = start 0-9 (a zone = 10 % of the travel), b = strength 1-8
                            TFX_CLICK a = click point 2-7 (20-70 % of the travel), b = strength 1-8
                            TFX_VIB   a = start 0-9, b = amplitude 1-8, c = frequency 1-255 Hz
                          Game rumble (RFX_ON): L2 vibrates by the large motor, R2 by the small one; while it vibrates it replaces
-                         the trigger effect, after RFX_HOLD_S of silence the trigger returns to its effect. Only to a sender with
-                         CAP_TRIG_FX
-                         (v8+); an older one gets the plain trig (resistance only)
-  trig3  (type 15) "12B11s11sB" PC -> sender: trig2 from the profile + trigger effects set by the game on the virtual DualSense
-                         (HIDMaestro): the raw 11 B of the L2, R2 effect (as in the pad's output report), TRG3_* flags (which
-                         game effect is valid). On every trigger the profile wins (a mode other than TFX_OFF), otherwise the game's effect;
-                         when the game sets effects, the receiver switches game rumble on the triggers off in trig2. Only to a sender
-                         with CAP_TRIG_RAW (v11+); an older one gets trig2 / trig (the profile only)
-  hapt   (type 10) "IB64s" PC -> sender (idx = pad slot): a chunk of the game's HD haptics for a Bluetooth pad (v13+) - the number of
+                         the trigger effect, after RFX_HOLD_S of silence the trigger returns to its effect.
+                         Then the trigger effects set by the game on the virtual DualSense (HIDMaestro): the raw 11 B of the L2, R2
+                         effect (as in the pad's output report), TRG3_* flags (which game effect is valid). On every trigger the
+                         profile wins (a mode other than TFX_OFF), otherwise the game's effect; when the game sets effects, the
+                         receiver switches game rumble on the triggers off. Effects work only through the HID report (CAP_TRIGGERS)
+  hapt   (type 10) "IB64s" PC -> sender (idx = pad slot): a chunk of the game's HD haptics for a Bluetooth pad - the number of
                          the chunk's first frame (3 kHz frames, wraps at 2**32: loss / reorder / drift detection), HAPT_* flags,
                          HAPT_FRAMES = 32 stereo frames (10.667 ms) of signed 8-bit samples, the left grip first. Not repeated (audio
-                         tolerates a loss, a repeat only adds latency). Only to a sender with CAP_HAPTICS; an older one rejects the
-                         unknown length
-  spk    (type 10) "IB960s" PC -> sender (idx = pad slot): 10 ms of the game's sound for the pad's speaker (v14+) - the number of the
+                         tolerates a loss, a repeat only adds latency). Only to a pad whose version packet has CAP_HAPTICS
+  spk    (type 10) "IB960s" PC -> sender (idx = pad slot): 10 ms of the game's sound for the pad's speaker - the number of the
                          frame (10 ms frames, wraps at 2**32), SPK_* flags, SPK_FRAME = 480 samples of 48 kHz mono, signed 16-bit
-                         little endian (the sender encodes them to Opus itself). Not repeated. Only to a sender with CAP_SPEAKER;
-                         an older one rejects the unknown length
-  leds   (type 6) "3B"   PC -> sender (idx = pad slot): what the game set on the virtual DualSense besides motors and colour (v15+) -
+                         little endian (the sender encodes them to Opus itself). Not repeated. Only to a pad whose version packet
+                         has CAP_SPEAKER
+  leds   (type 6) "3B"   PC -> sender (idx = pad slot): what the game set on the virtual DualSense besides motors and colour -
                          LEDS_* flags (which of the two values is valid), the mute button LED (0 off, 1 on, 2 pulsing), the player
-                         LEDs under the lightbar (5 bits, the middle LED is 0x04). Only to a v15+ sender; an older one rejects the
-                         unknown length. The mute button itself travels in the state packet: MUTE_BIT of the button mask (the sender
-                         sets it for a moment on every press; an older receiver masks the bit off)
+                         LEDs under the lightbar (5 bits, the middle LED is 0x04). The mute button itself travels in the state
+                         packet: MUTE_BIT of the button mask (the sender sets it for a moment on every press)
   cfgset (type 10) "BBHd" PC -> sender (idx = 255): operation CFG_GET (answer: a cfgval for every setting) / CFG_SET (change the setting)
                          / CFG_RESET (drop the change: back to the value from sender.toml; CFG_ALL = all of them), the id of the
                          setting (position in cfgspec.SPECS), a reference that the answer repeats, the new value as a float64 (a bool
-                         0 / 1, a choice = its index). Only v3 with an HMAC key is accepted - the sender refuses a packet without
-                         a key or in v2 (the answer says so) and changes nothing. Repeated like a command (the sender handles one)
+                         0 / 1, a choice = its index). Only with an HMAC key (so v3) - a sender without a key refuses (the answer
+                         says so) and changes nothing. Repeated like a command (the sender handles one)
   cfgval (type 14) "BBHBdd" sender -> PC (idx = 255): the id of the setting (CFG_ALL for a refusal of the whole request), the result
                          CFGR_*, the reference of the request, flags CFGF_*, the value now in use and the one from sender.toml (so the
                          window can show "changed" and offer to go back). Sent for every setting after CFG_GET and for the one
-                         changed after CFG_SET / CFG_RESET. A receiver / sender pair that does not know them drops the unknown length.
-                         In the answer to a read the last setting carries CFGF_LAST (v17+): the receiver learns how many settings the
-                         sender knows (ids are append-only), so a newer receiver does not wait for settings an older sender lacks.
-                         An older receiver ignores the unknown flag bit
-The phone's Bluetooth driven from the window (v10+; a phone with no screen). The sender announces the support itself - with a btstate
-packet (idx 255)
-to the receiver from which scfg arrived; the receiver sends btcmd only after btstate (an older sender would reject the length):
+                         changed after CFG_SET / CFG_RESET. In the answer to a read the last setting carries CFGF_LAST
+The phone's Bluetooth driven from the window (a phone with no screen). The sender announces the support itself - with a btstate
+packet (idx 255) to the receiver from which scfg arrived; the receiver sends btcmd only after btstate:
   btcmd   (type 10) "BB6s"      PC -> sender (idx 255): operation BT_*, argument (BT_SCAN_START: seconds, at most
                                BT_SCAN_MAX_S; BT_POWER: 1 / 0; BT_ADAPTER: mode BTA_AUTO / BTA_MANUAL;
                                BT_ADAPTER_USE: the number N of the hciN controller from the btctrl list), the device's MAC (zeros = none).
-                               BT_ADAPTER* only to a sender that reports the mode in btstate (an older one skips the unknown
-                               operation). BT_LIST = "panel open":
+                               BT_ADAPTER* only to a sender that reports the mode in btstate. BT_LIST = "panel open":
                                for BT_ACTIVE_S the sender sends the state and the device list every second, afterwards only the state
                                every 5 s
   btstate (type 12) "BBBBBHBB6s" sender -> PC (idx 255): the adapter state BTS_*, flags BTF_* (bits 6-7: the adapter choice
@@ -112,40 +99,33 @@ to the receiver from which scfg arrived; the receiver sends btcmd only after bts
                                once it has the whole round (a lost packet = the list from the previous round, not one with holes)
   btctrl  (type 9)  "HBBBB40s"  sender -> PC (idx 255): the sender's Bluetooth controllers (built-in, USB dongle) -
                                round, number, how many, flags BTC_*, N of hciN, device name (UTF-8); a round goes along with the
-                               device list, only from a sender with a controller choice (the mode in btstate); an older receiver
-                               rejects the unknown length
+                               device list, only from a sender with a controller choice (the mode in btstate)
   btlink  (type 12) "6sbBBB"    sender -> PC (idx 255): the radio link of one connected pad (the Diagnostics tab) - MAC, RSSI [dBm],
                                link quality 0-255, flags BTL_* (which of the two values were really read), N of hciN. One packet per
                                connected pad, with every btstate while the window is interested (BT_LIST). RSSI is the controller's
                                Read RSSI, as the controller reports it (most give dBm; the specification says dB relative to the Golden
-                               Receive Power Range). Link quality 0 = the controller does not fill it in. An older receiver rejects the
-                               unknown length
+                               Receive Power Range). Link quality 0 = the controller does not fill it in
 
-  stcmd  (type 10) "BBHIH" PC -> sender (idx = pad slot): the pad self-test from the window (v19+) - operation ST_*, argument, a reference
+  stcmd  (type 10) "BBHIH" PC -> sender (idx = pad slot): the pad self-test from the window - operation ST_*, argument, a reference
                          the answer repeats, a 32-bit value, a 16-bit value. ST_BEGIN arms the detailed measurement for the slot
                          (the sender answers with the system record), ST_SNAP asks for the counters of one audio stream (arg =
                          ST_HAPTICS / ST_SPEAKER) right now, or with arg ST_RECORDS the rumble records so far (it goes on measuring),
-                         ST_END ends the measurement and sends everything it collected. The sender knows it from
-                         SELFTEST_SENDER on (the version packet has no free ways bit left); an older one rejects the unknown length
+                         ST_END ends the measurement and sends everything it collected
   stres  (type 12) "BBH6I" sender -> PC (idx = pad slot): one record of the self-test - kind SR_*, flags, the reference of the request,
                          six 32-bit values whose meaning depends on the kind (see the SR_* constants). Times are in the PC clock
                          (low 32 bits of microseconds, like the state2 stamp), so the receiver compares them with its own. Only
                          in answer to stcmd, so a receiver that never asks never gets one
 
-Format v3 (only with an HMAC key) - protection against replaying a recorded packet (replay):
+Format v3 (every packet when an HMAC key is set; without a key: v2, no trailer) - protection against replaying a recorded packet:
   a header with version 3 instead of 2, the body as above, then the freshness token "!I" and 8 B of HMAC-SHA256 (computed over the whole
   together with the token). The token is the RECEIVER's time in ms (low 32 bits): the sender writes the PC time (from PcClock -
   pong2), the receiver the sender's time (from the last ping + the time that has passed). The receiver accepts a packet when the token
   is at most FRESH_PAST_MS in the past and FRESH_FUTURE_MS in the future, and exactly the same packet (the same HMAC)
   did not arrive within that window - a recording from a few seconds ago or from another session is rejected. The clocks of both sides
-  have a
-  random offset per process (EpochClock), so a token from a previous run (or from before a system restart)
+  have a random offset per process (EpochClock), so a token from a previous run (or from before a system restart)
   does not fall into the window. A ping (FRESH_EXEMPT) is not checked - it is how the other side learns the sender's
-  clock; a replayed ping yields at most a pong, which the sender rejects (RTT > 1 s).
-  The switch to v3: a sender with a key sends an extra v3 ping every second (an older receiver rejects it like any
-  unknown version). The side that gets a valid v3 packet sends only v3 from then on and rejects v2 with the key
-  (recordings from before the update) - permanently: the key's fingerprint is saved in a state file (auth.json), so a restart does not
-  open the window to recorded v2 packets. Changing the key = a new fingerprint = the switch starts over.
+  clock; a replayed ping yields at most a pong, which the sender rejects (RTT > 1 s). A signed v2 packet (a version from
+  before v3, or a recording of one) is always rejected.
 
 At the end: shared git functions (code version, git pull update) - the receiver and the sender update the same way.
 """
@@ -203,7 +183,6 @@ PERMISSION_BITS: Final = 0o7777                         # st_mode & this = the c
 UINT32_MODULUS: Final = 1 << 32
 NS_PER_MS: Final = 1_000_000
 EPOCH_BASE_BITS: Final = 60                             # ~36 years in ns: the clock plus its base still fits the ping's "Q"
-KEY_FINGERPRINT_BYTES: Final = 8
 KEY_MISMATCH_S: Final = 5.0     # for this long after a packet with a different HMAC key setting we also reject ambiguous lengths
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -212,22 +191,23 @@ KEY_MISMATCH_S: Final = 5.0     # for this long after a packet with a different 
 # ---------------------------------------------------------------------------------------------------------------------
 (T_EVENT, T_STATE, T_TOUCH, T_CLICK, T_MOUSE, T_PING, T_FB, T_PONG, T_BYE, T_IDENT, T_CMD, T_INFO, T_VERSION,
  T_BUILD, T_UPDMSG, T_TRIG) = range(16)
-T_STATE2, T_PONG2, T_SCFG, T_CALRES, T_BUILD2, T_TRIG2 = 0x101, 0x107, 0x10A, 0x10B, 0x10D, 0x10F   # longer variants
-T_TRIG3 = 0x20F                                                     # trigger effects from the profile and from the game (v11+)
-T_BUILD3 = 0x30D                                                    # build2 + the sender device's battery
-T_BTDEV, T_BTSTATE, T_BTCMD = 0x109, 0x10C, 0x20A                                                 # Bluetooth (v10+)
+# T_PONG, T_BUILD and T_TRIG are only wire types now: their packets are pong2, build3 and trig3 (the variant numbers stay)
+T_STATE2, T_PONG2, T_SCFG, T_CALRES = 0x101, 0x107, 0x10A, 0x10B     # longer variants
+T_TRIG3 = 0x20F                                                     # trigger effects from the profile and from the game
+T_BUILD3 = 0x30D                                                    # the sender's code version, Wake-on-LAN addresses, battery
+T_BTDEV, T_BTSTATE, T_BTCMD = 0x109, 0x10C, 0x20A                                                 # Bluetooth
 T_BTCTRL = 0x209                                                    # the sender's Bluetooth controllers (the choice from the window)
 T_BTLINK = 0x30C                                                    # the radio link of a connected pad: RSSI, link quality
-T_HAPT = 0x30A                                                      # a chunk of HD haptics for the pad (PC -> sender, v13+)
-T_SPK = 0x40A                                                       # 10 ms of sound for the pad's speaker (PC -> sender, v14+)
-T_CFGSET = 0x50A                                                    # read / change / reset a sender setting (PC -> sender, v16+)
-T_CFGVAL = 0x10E                                                    # a sender setting: the value, the file's value, the result (v16+)
-T_LEDS = 0x106                                                      # mute button LED + player LEDs from the game (PC -> sender, v15+)
-T_PADKIND = 0x40C                                                   # which kind of pad is in the slot + what it can do (sender -> PC, v18+)
-T_STCMD = 0x60A                                                     # pad self-test request (PC -> sender, v19+)
-T_STRES = 0x50C                                                     # pad self-test record (sender -> PC, v19+)
+T_HAPT = 0x30A                                                      # a chunk of HD haptics for the pad (PC -> sender)
+T_SPK = 0x40A                                                       # 10 ms of sound for the pad's speaker (PC -> sender)
+T_CFGSET = 0x50A                                                    # read / change / reset a sender setting (PC -> sender)
+T_CFGVAL = 0x10E                                                    # a sender setting: the value, the file's value, the result
+T_LEDS = 0x106                                                      # mute button LED + player LEDs from the game (PC -> sender)
+T_PADKIND = 0x40C                                                   # which kind of pad is in the slot + what it can do (sender -> PC)
+T_STCMD = 0x60A                                                     # pad self-test request (PC -> sender)
+T_STRES = 0x50C                                                     # pad self-test record (sender -> PC)
 WIRE: Final[dict[int, int]] = {
-    T_STATE2: T_STATE, T_PONG2: T_PONG, T_SCFG: T_CMD, T_CALRES: T_INFO, T_BUILD2: T_BUILD, T_TRIG2: T_TRIG,
+    T_STATE2: T_STATE, T_PONG2: T_PONG, T_SCFG: T_CMD, T_CALRES: T_INFO,
     T_BTDEV: T_IDENT, T_BTSTATE: T_VERSION, T_BTCMD: T_CMD, T_BTCTRL: T_IDENT, T_TRIG3: T_TRIG,
     T_BUILD3: T_BUILD, T_BTLINK: T_VERSION, T_HAPT: T_CMD, T_SPK: T_CMD, T_LEDS: T_FB, T_CFGSET: T_CMD, T_CFGVAL: T_UPDMSG,
     T_PADKIND: T_VERSION, T_STCMD: T_CMD, T_STRES: T_VERSION,
@@ -237,18 +217,18 @@ FRESH_EXEMPT = frozenset({T_PING})
 # ---------------------------------------------------------------------------------------------------------------------
 # Capabilities and limits announced in the version packet, trigger effects.
 # ---------------------------------------------------------------------------------------------------------------------
-SENDER_VERSION: Final = 19
-RUMBLE_EVDEV, RUMBLE_HIDRAW, CAP_TRIGGERS = 1, 2, 4     # bits of the version packet (CAP_TRIGGERS: trigger resistance works)
-CAP_TRIG_FX: Final = 8                                  # a bit of the version packet: the sender knows trig2 (click, vibration)
-CAP_CALIB: Final = 16                                   # a bit of the version packet: CMD_GYRO_CAL and CMD_RAW_STICKS (v9+)
-CAP_TRIG_RAW: Final = 32                                # a bit of the version packet: the sender knows trig3 (effects from the game)
-CAP_HAPTICS: Final = 64                                 # a bit of the version packet: the sender plays hapt chunks (v13+)
+SENDER_VERSION: Final = 20                              # 20: one format per packet (no variants for an older peer)
+# bits of the version packet: what works for this pad. CAP_TRIGGERS: trigger effects (the HID report); CAP_HAPTICS / CAP_SPEAKER:
+# hapt chunks / spk frames (a Bluetooth pad with the HID report; the speaker also needs libopus). Bits 8, 16, 32 were version
+# flags of older senders (trig2, calibration, trig3) and are left unused.
+RUMBLE_EVDEV, RUMBLE_HIDRAW, CAP_TRIGGERS = 1, 2, 4
+CAP_HAPTICS: Final = 64
 HAPT_RATE: Final = 3000                                 # HD haptics: the pad's audio-haptics sample rate [Hz] ...
 HAPT_FRAMES: Final = 32                                 # ... one chunk = 32 stereo frames = 10.667 ms ...
 HAPT_CHUNK: Final = 2 * HAPT_FRAMES                     # ... = 64 B of signed 8-bit samples, the left grip first
 HAPT_DATA_AT: Final = 5                                 # offset of the samples in the hapt body (after the u32 counter and the flags)
 HAPT_START, HAPT_END = 1, 2                             # hapt flags: the first chunk of a stream / the last one
-CAP_SPEAKER: Final = 128                                # a bit of the version packet: the sender plays spk frames (v14+)
+CAP_SPEAKER: Final = 128
 SPK_RATE: Final = 48000                                 # speaker sound: 48 kHz mono, signed 16-bit little endian ...
 SPK_FRAME: Final = 480                                  # ... one frame = 480 samples = 10 ms (one Opus frame) ...
 SPK_BYTES: Final = 2 * SPK_FRAME                        # ... = 960 B
@@ -257,8 +237,6 @@ SPK_START, SPK_END = 1, 2                               # spk flags: the first f
 PK_DUALSENSE, PK_DS4, PK_XBOX, PK_OTHER = range(4)       # padkind family: DualSense, DualShock 4, Xbox (360 / One / Series), any other pad
 # padkind features: gyro + accelerometer, touchpad, RGB lightbar, adaptive triggers + HD haptics + speaker (DualSense only), rumble motors
 PF_MOTION, PF_TOUCHPAD, PF_LIGHTBAR, PF_ADAPTIVE, PF_RUMBLE = 1, 2, 4, 8, 16
-PADKIND_SENDER: Final = 18                              # from this sender version the padkind packet is sent (older: a DualSense)
-SELFTEST_SENDER: Final = 19                             # from this sender version the stcmd / stres packets exist (no free ways bit)
 ST_BEGIN, ST_END, ST_SNAP = 1, 2, 3                     # stcmd operations: arm the measurement, end it and send the results, counters now
 ST_RECORDS, ST_HAPTICS, ST_SPEAKER = 0, 1, 2     # stcmd ST_SNAP argument: the rumble records so far (measuring goes on) / an audio stream
 ST_MAX_S: Final = 180                                   # the sender disarms by itself after this long without ST_END
@@ -276,32 +254,32 @@ SR_SYS, SR_COUNT, SR_FB, SR_WRITES, SR_HAPT, SR_SPK, SR_DONE = range(1, 8)
 SRF_LOW_LATENCY, SRF_RT, SRF_PINNED, SRF_QOS = 1, 2, 4, 8   # SR_SYS flags: low_latency, SCHED_FIFO, pinned to the fast cores, PM QoS
 SRC_PC, SRC_REPEAT, SRC_WATCHDOG = 0, 1, 2              # SR_FB source: the PC's command, the sender's repeat, its watchdog stop
 GOVERNORS: Final = ("performance", "schedutil", "ondemand", "conservative", "powersave", "userspace", "interactive")   # GOV_* = index + 1
-LEDS_SENDER: Final = 15                                 # from this sender version the leds packet is understood (no free ways bit)
 LEDS_MUTE, LEDS_PLAYER = 1, 2                           # leds flags: the mute LED value / the player LEDs value is valid
 MUTE_OFF, MUTE_ON, MUTE_PULSE = range(3)                # the pad's mute button LED: off, on, pulsing (the output report's byte)
 PLAYER_LEDS_MASK: Final = 0x1F                          # the 5 player LEDs under the lightbar, one bit each
 CFG_GET, CFG_SET, CFG_RESET = range(3)                  # cfgset operations: read, change a setting, drop the change (back to sender.toml)
 CFG_ALL: Final = 255                                    # cfgset / cfgval key id: every setting (CFG_GET, CFG_RESET) or none (a refusal)
 # cfgval result: applied now, saved but counts later (the next stream / pad connection), refused: the value is not allowed, an unknown
-# setting, the sender has no HMAC key, the packet was not v3, the sender has remote changes switched off (remote_cfg_file = "")
-CFGR_OK, CFGR_LATER, CFGR_INVALID, CFGR_UNKNOWN, CFGR_NO_KEY, CFGR_NO_V3, CFGR_OFF = range(7)
+# setting, the sender has no HMAC key, the sender has remote changes switched off (remote_cfg_file = ""); 5 was "not v3" (unused)
+CFGR_OK, CFGR_LATER, CFGR_INVALID, CFGR_UNKNOWN, CFGR_NO_KEY = range(5)
+CFGR_OFF: Final = 6
 CFGF_REMOTE: Final = 1                                  # cfgval flag: the value comes from a change made in the receiver window
 CFGF_LAST: Final = 2                                    # cfgval flag: the last setting of a full read - the sender knows id + 1 settings
 LAT_NONE: Final = 0xFFFF                                # the delay field in state2: no measurement (a repeat, no data)
 TRIG_START_MAX, TRIG_FORCE_MAX = 9, 8                   # trigger resistance: the start zone 0-9 (every 10 %), strength 1-8
-TFX_OFF, TFX_RES, TFX_CLICK, TFX_VIB = range(4)         # trigger effect mode (trig2 packet)
+TFX_OFF, TFX_RES, TFX_CLICK, TFX_VIB = range(4)         # trigger effect mode (the profile part of trig3)
 TRIG_CLICK_MIN, TRIG_CLICK_MAX = 2, 7                   # click point: zone 2-7 (pad: end = point + 1, max 8)
 TRIG_AMP_MAX, TRIG_FREQ_MAX = 8, 255                    # trigger vibration: amplitude 1-8, frequency 1-255 Hz
-RFX_ON: Final = 1                                       # trig2 flag: game rumble on the triggers
+RFX_ON: Final = 1                                       # trig3 flag: game rumble on the triggers
 RFX_GAIN_MAX: Final = 200                               # the strength of game rumble on the triggers [%]
 RFX_HOLD_S: Final = 0.3                                 # this much motor silence before a trigger returns to its own effect
-TRIG2_OFF: Final = (TFX_OFF, 0, 0, 0) * 2 + (0, 0, 0, 0)    # trig2: everything off
+TRIG2_OFF: Final = (TFX_OFF, 0, 0, 0) * 2 + (0, 0, 0, 0)    # the profile part of trig3 (12 B): everything off
 TRG3_L2, TRG3_R2 = 1, 2                                 # trig3 flags: the game effect for L2 / R2 is valid
 TRIG_RAW_LEN: Final = 11                                # a trigger effect in the DualSense output report [B]
 CLICK_RELEASED, CLICK_PRESSED, CLICK_TWO_FINGERS = 0, 1, 2   # click packet: the touchpad button state (2 = pressed with 2 fingers)
 NO_PAD: Final = 255                                     # controller idx of a packet about the sender / the link, not about one pad
 IDENT_LEN: Final = 17                                   # the ident packet's text field: the pad's MAC (or a short hash)
-BATT_UNKNOWN: Final = 255                               # the state packet's battery %: unknown (USB pad, no power-supply entry)
+BATT_UNKNOWN: Final = 255                               # battery %: unknown (state: USB pad, no power-supply entry; build3: none)
 STATE_CHARGING: Final = 0x01                            # bit 0 of the state packet's flags byte: charging or full
 BATT_CHARGING: Final = 0x80                             # bit 7 of build3's battery byte: the sender device is charging (bits 0-6 = %)
 MOUSE_TAP: Final = 0x01                                 # mouse packet flags: tap = left button ...
@@ -324,11 +302,11 @@ CALF_STORED: Final = 1                                  # calres flag: the sende
 # the sender's update state (build packet): none, running, no change, updated (restart), errors
 UPD_NONE, UPD_RUNNING, UPD_NO_CHANGE, UPD_DONE, UPD_NOT_GIT, UPD_NO_GIT, UPD_FAILED = range(7)
 RTT_NONE: Final = 0xFFFF
-SCFG_WOL, SCFG_EVENTS, SCFG_BATT = 1, 2, 4                # scfg packet flags: Wake-on-LAN, events for the log, build3 understood
+SCFG_WOL, SCFG_EVENTS = 1, 2                            # scfg packet flags: Wake-on-LAN, events for the log (4 was "build3 known")
 EV_INFO, EV_WARN, EV_ERROR = range(3)                   # event level (event packet)
 # the sender's event codes (event packet) - the text in the receiver window (rx_events.SENDER_TEXT), the argument in {arg}
 (E_START, E_PAD_ON, E_PAD_OFF, E_POWER_OFF, E_WOL, E_WOL_FAIL, E_NO_RECEIVER, E_NET_DOWN, E_ERROR,
- E_NO_SLOT) = range(1, 11)          # E_NO_SLOT: a pad over max_pads (an older receiver shows a generic text)
+ E_NO_SLOT) = range(1, 11)          # E_NO_SLOT: a pad over max_pads
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Wake-on-LAN magic packet.
@@ -375,24 +353,19 @@ BODY: Final[dict[int, struct.Struct]] = {
     T_MOUSE: struct.Struct("!hhB"),
     T_PING: struct.Struct("!Q"),
     T_FB: struct.Struct("!5B"),
-    T_PONG: struct.Struct("!Q"),
     T_BYE: struct.Struct("!"),
     T_IDENT: struct.Struct("!17s"),
     T_CMD: struct.Struct("!BB"),
     T_INFO: struct.Struct("!HHH"),
     T_VERSION: struct.Struct("!BBB"),           # the sender version, rumble ways (bits), the reason WHY_*
-    T_BUILD: struct.Struct("!7sIB"),            # the sender's commit, the commit time, the update state UPD_*
     T_UPDMSG: struct.Struct("!120s"),           # the reason for the sender's update failure (UTF-8)
-    T_TRIG: struct.Struct("!4B"),               # trigger resistance: L2 start, L2 strength, R2 start, R2 strength
     T_EVENT: struct.Struct("!HBBH56s"),         # number, level EV_*, code E_*, age [s], argument (UTF-8)
     T_STATE2: struct.Struct("!6BbbHBB6iIHH"),   # state + the send time (PC clock), phone, Bluetooth [µs]
     T_PONG2: struct.Struct("!QQ"),              # the echo of the ping, the PC time [µs]
     T_SCFG: struct.Struct("!B6s4sBH"),          # SCFG_* flags, the PC's MAC, broadcast, the combination button bit, the hold in ms
     T_CALRES: struct.Struct("!BB3i3iI"),        # state CAL_*, flags CALF_*, the saved bias xyz, the current bias xyz, the save time
-    T_BUILD2: struct.Struct("!7sIB6s4s"),       # build + the PC's MAC and broadcast that Wake-on-LAN will use
-    T_BUILD3: struct.Struct("!7sIB6s4sB"),      # build2 + the sender device's battery (% | BATT_CHARGING)
-    T_TRIG2: struct.Struct("!12B"),             # effects L2, R2 (mode, a, b, c) + game rumble (flags, %, Hz, 0)
-    T_TRIG3: struct.Struct("!12B11s11sB"),      # trig2 from the profile + the raw game effects L2, R2 + TRG3_* flags
+    T_BUILD3: struct.Struct("!7sIB6s4sB"),      # commit, commit time, UPD_*, the PC's MAC and broadcast, battery (% | BATT_CHARGING)
+    T_TRIG3: struct.Struct("!12B11s11sB"),      # the profile's effects (12 B) + the raw game effects L2, R2 + TRG3_* flags
     T_BTCMD: struct.Struct("!BB6s"),            # operation BT_*, argument, MAC
     T_BTSTATE: struct.Struct("!BBBBBHBB6s"),    # BTS_*, BTF_*, scan [s], connected, in the list, round, op, BTR_*, MAC
     T_BTDEV: struct.Struct("!HBB6sbB32s"),      # round, number, how many, MAC, RSSI, BTD_*, name
@@ -460,22 +433,6 @@ def nearest_rank(sorted_values: Sequence[_Number], pct: float) -> _Number:
         The value at rank ``ceil(pct / 100 * n)`` (the first one for pct 0).
     """
     return sorted_values[max(0, math.ceil(len(sorted_values) * pct / 100) - 1)]
-
-
-def trig2_from_legacy(vals: Sequence[int]) -> tuple[int, ...]:
-    """Convert a trig packet into trig2 values (resistance only, no game rumble).
-
-    Each side with a non-zero strength becomes a TFX_RES effect, a zero strength becomes TFX_OFF; the four trailing zeros
-    are the (disabled) game-rumble fields.
-
-    Args:
-        vals: ``(L2 start, L2 strength, R2 start, R2 strength)``.
-
-    Returns:
-        The 12 values of a trig2 packet.
-    """
-    sides = ((TFX_RES, start, force, 0) if force else (TFX_OFF, 0, 0, 0) for start, force in (vals[:2], vals[2:4]))
-    return (*(field for side in sides for field in side), 0, 0, 0, 0)
 
 
 def mac_bytes(text: str | None) -> bytes | None:
@@ -575,11 +532,6 @@ def token_fresh(token: int, now_ms: int) -> bool:
     return age <= FRESH_PAST_MS or age >= UINT32_MODULUS - FRESH_FUTURE_MS
 
 
-def key_fingerprint(key: bytes) -> str:
-    """Return a fingerprint of the HMAC key for the state file (it does not reveal the key)."""
-    return hmac.digest(key, b"dualsense-bridge v3", "sha256")[:KEY_FINGERPRINT_BYTES].hex()
-
-
 def generate_key() -> str:
     """Return a random HMAC key to enter on both sides (``key = ...`` / ``--key`` / ``PADKEY``)."""
     return secrets.token_urlsafe(24)
@@ -601,23 +553,18 @@ class Codec:
     whose length with the HMAC fits no type without it (ping, ident, info - several times a second); after such a packet
     for KEY_MISMATCH_S we also reject those ambiguous ones.
 
-    With a key: the v3 format (a freshness token, described at the top of the file).
+    With a key every packet is v3 (a freshness token, described at the top of the file); a signed v2 packet comes only
+    from an older version of the other side (or a recording of one) and is rejected.
 
     Attributes:
         key: The shared HMAC key (empty = no authentication).
         token: Returns the token for the other side (its clock in ms) or None while it is not known yet - then the packet
             does not go out and ``pack()`` returns None (a ping goes with the token 0).
         now_ms: Returns our clock (``EpochClock.ms32``) for checking incoming tokens.
-        state_path: The file in which the key's fingerprint stays after the switch to v3 (without it the switch lasts
-            only until the process ends).
-        writer: Saves the state file, called as ``writer(path, obj)``; ``write_json`` by default. It does a blocking fsync, so
-            the sender passes a writer that does it off the event loop.
-        v3: Whether this side already speaks v3.
         mismatch_t: Time of the last packet from a side with a different key setting.
-        legacy_t: Time of the last correctly signed v2 packet rejected after the switch to v3.
+        legacy_t: Time of the last correctly signed v2 packet: the other side runs a version from before protocol v3.
         stale_t: Time of the last v3 packet with an expired token (a recording / the clock).
         stale: How many v3 packets with an expired token were rejected.
-        upgraded_t: Time of the switch to v3 in this process: for a moment afterwards v2 packets are still in flight.
     """
 
     def __init__(
@@ -625,8 +572,6 @@ class Codec:
         key: bytes = b"",
         token: Callable[[], int | None] | None = None,
         now_ms: Callable[[], int] | None = None,
-        state_path: str | None = None,
-        writer: Callable[[str, object], None] | None = None,
     ) -> None:
         """Create a codec; see the class docstring for the meaning of the arguments."""
         self.key = key
@@ -634,51 +579,22 @@ class Codec:
         # threads (the receiver) still get distinct numbers - without a lock taken for every packet
         self._seq = itertools.count(random.getrandbits(16) + 1)
         self.mismatch_t = float("-inf")
-        self.token, self.now_ms, self.state_path = token, now_ms, state_path
-        self.writer: Callable[[str, object], None] = writer or write_json
+        self.token, self.now_ms = token, now_ms
         self.legacy_t = float("-inf")
         self.stale_t = float("-inf")
         self.stale = 0
-        self.upgraded_t = float("-inf")
         self._seen: dict[bytes, float] = {}     # the HMAC of accepted v3 packets -> until when it is remembered (exact replays)
-        self.v3 = bool(key) and self._stored_fingerprint() == key_fingerprint(key)
 
-    # ---- the switch to v3 (remembered in the state file) ----
-    def _stored_fingerprint(self) -> str | None:
-        """Return the key fingerprint saved in the state file by an earlier switch to v3, or None."""
-        if not self.state_path:
-            return None
-        try:
-            fingerprint = read_json_object(self.state_path).get("v3")
-        except (OSError, ValueError):
-            return None     # no file yet, unreadable or not our JSON object: behave as if v3 was never negotiated
-        return fingerprint if isinstance(fingerprint, str) else None
-
-    def _upgrade(self) -> None:
-        """Switch to v3 for good and save the key fingerprint so that a restart keeps it.
-
-        From now on only v3 is sent and v2 with the key is rejected.
-        """
-        self.v3 = True
-        self.upgraded_t = time.monotonic()
-        print("Packet authentication: peer speaks protocol v3 - replay protection on, v2 packets with the key rejected")
-        if self.state_path:
-            try:
-                self.writer(self.state_path, {"v3": key_fingerprint(self.key)})
-            except OSError as e:
-                print(f"WARNING: cannot save {self.state_path}: {e}")
-
-    def pack(self, ptype: int, idx: int, *vals: Field, v3: bool | None = None) -> bytes | None:
+    def pack(self, ptype: int, idx: int, *vals: Field) -> bytes | None:
         """Build a packet.
 
-        Layout: header (version | wire type, idx, sequence) + the struct-packed body. Without a key that is all. With a key,
-        v3 adds the freshness token, and in both versions an 8-byte truncated HMAC-SHA256 of everything before it is appended.
+        Layout: header (version | wire type, idx, sequence) + the struct-packed body. Without a key that is all (v2). With a
+        key (v3) the freshness token follows, then an 8-byte truncated HMAC-SHA256 of everything before it.
 
         Args:
             ptype: The packet type (a T_* constant).
             idx: The controller index (or 255 for a packet that is not about a pad).
             *vals: The body fields in the order of ``BODY[ptype]``.
-            v3: Force the format (a probe ping); None = the current one.
 
         Returns:
             The packet bytes, or None when v3 is in use and the other side's clock is not known yet.
@@ -687,15 +603,12 @@ class Codec:
         wire_type = WIRE.get(ptype, ptype)
         if not self.key:
             return FRAMED[ptype].pack(HDR0 | wire_type, idx, seq, *vals)
-        if self.v3 if v3 is None else v3:
-            token = self.token() if self.token is not None else None
-            if token is None:
-                if ptype not in FRESH_EXEMPT:
-                    return None
-                token = 0
-            message = FRAMED3[ptype].pack(HDR3 | wire_type, idx, seq, *vals, token & UINT32_MASK)
-        else:
-            message = FRAMED[ptype].pack(HDR0 | wire_type, idx, seq, *vals)
+        token = self.token() if self.token is not None else None
+        if token is None:
+            if ptype not in FRESH_EXEMPT:
+                return None
+            token = 0
+        message = FRAMED3[ptype].pack(HDR3 | wire_type, idx, seq, *vals, token & UINT32_MASK)
         return message + hmac.digest(self.key, message, "sha256")[:MAC_LEN]
 
     def _signature_ok(self, packet: Packet, length: int) -> bool:
@@ -720,8 +633,7 @@ class Codec:
         """Validate a v3 packet and return ``(type, idx, seq)`` or None.
 
         The length must fit a known type, the HMAC must be right, the packet must not be an exact replay and its token must
-        be fresh (except for exempt types). Accepted HMACs are remembered for the length of the freshness window. The first
-        valid v3 packet switches this side to v3.
+        be fresh (except for exempt types). Accepted HMACs are remembered for the length of the freshness window.
         """
         n = len(packet)
         ptype = BY_SIZE.get((wire, n - HEADER_LEN - TRAILER3)) if n >= HEADER_LEN + TRAILER3 else None
@@ -741,27 +653,18 @@ class Codec:
                 self.stale_t = now
                 return None
         self._seen[mac] = now + FRESH_WINDOW_S
-        if not self.v3:
-            self._upgrade()
         return _identify(packet, ptype)
 
-    def _verified_v2_length(self, packet: Packet, wire: int, n: int) -> int | None:
-        """Verify a v2 packet when a key is set; return the length without the HMAC, or None if it must be rejected.
+    def _reject_signed_v2(self, packet: Packet, wire: int, n: int) -> None:
+        """Note why a v2 packet is rejected while a key is set (with a key only v3 is accepted).
 
-        A bad signature on a length that fits a known type means the other side has a different key setting
-        (``mismatch_t``). A correctly signed v2 packet after the switch to v3 is a recording or an old version
-        (``legacy_t``), except right after the switch while v2 packets are still in flight.
+        A correct signature: the other side has the key but a version from before protocol v3 (``legacy_t``). A bad one on a
+        length that fits a known type: the other side has a different key setting (``mismatch_t``).
         """
-        if n < HEADER_LEN + MAC_LEN or not self._signature_ok(packet, n):
-            if (wire, n - HEADER_LEN) in BY_SIZE or (wire, n - HEADER_LEN - MAC_LEN) in BY_SIZE:
-                self.mismatch_t = time.monotonic()
-            return None
-        if self.v3:
-            now = time.monotonic()
-            if now - self.upgraded_t > KEY_MISMATCH_S:
-                self.legacy_t = now
-            return None
-        return n - MAC_LEN
+        if n >= HEADER_LEN + MAC_LEN and self._signature_ok(packet, n):
+            self.legacy_t = time.monotonic()
+        elif (wire, n - HEADER_LEN) in BY_SIZE or (wire, n - HEADER_LEN - MAC_LEN) in BY_SIZE:
+            self.mismatch_t = time.monotonic()
 
     def _unsigned_length_is_foreign(self, wire: int, n: int) -> bool:
         """Without a key: tell whether a length that fits a packet *with* an HMAC means the other side has a key.
@@ -799,11 +702,9 @@ class Codec:
         if version != VER:
             return None
         if self.key:
-            payload_end = self._verified_v2_length(packet, wire, n)
-            if payload_end is None:
-                return None
-            n = payload_end
-        elif self._unsigned_length_is_foreign(wire, n):
+            self._reject_signed_v2(packet, wire, n)
+            return None
+        if self._unsigned_length_is_foreign(wire, n):
             return None
         ptype = BY_SIZE.get((wire, n - HEADER_LEN))
         return None if ptype is None else _identify(packet, ptype)

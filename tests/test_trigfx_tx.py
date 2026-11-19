@@ -8,8 +8,8 @@ import sender_ctrl
 import sender_net as net
 import sender_report as RP
 import sender_rumble as R
-from proto import (BODY, CAP_TRIG_FX, RFX_HOLD_S, RFX_ON, T_TRIG, T_TRIG2, TFX_CLICK, TFX_OFF, TFX_RES, TFX_VIB,
-                   TRIG2_OFF, Codec, trig2_from_legacy)
+from proto import (BODY, CAP_TRIGGERS, RFX_HOLD_S, RFX_ON, T_TRIG3, TFX_CLICK, TFX_OFF, TFX_RES, TFX_VIB,
+                   TRIG2_OFF, Codec)
 
 TMP = tempfile.mkdtemp()
 from chk import ok
@@ -35,8 +35,6 @@ assert RP.effect(42, 1, 1, 1) == RP.OFF_EFFECT
 assert RP.rumble_amp(255, 100) == 8 and RP.rumble_amp(0, 200) == 0 and RP.rumble_amp(255, 50) == 4
 assert RP.rumble_amp(10, 100) == 0 and RP.rumble_amp(255, 255) == 8 and RP.rumble_amp(64, 200) == 4
 ok("trig2 modes -> effect; game rumble strength: motor x % -> amplitude 0-8 (weak motor rumble = none)")
-assert trig2_from_legacy((3, 6, 0, 0)) == (TFX_RES, 3, 6, 0, TFX_OFF, 0, 0, 0, 0, 0, 0, 0)
-ok("old trig (resistance only) -> trig2")
 
 
 class Dev:
@@ -65,7 +63,7 @@ async def main():
     path = os.path.join(TMP, "hidraw")
     open(path, "wb").close()
     r = R.Rumble(0, Dev(), "hidraw", hidraw=(path, True))
-    assert r.bits & CAP_TRIG_FX
+    assert r.bits & CAP_TRIGGERS
     base = (TFX_RES, 2, 5, 0, TFX_CLICK, 5, 7, 0)
     assert r.set_triggers((*base, 0, 0, 0, 0))
     assert last(path) == (RP.trigger_effect(2, 5), RP.weapon_effect(5, 7))
@@ -101,13 +99,13 @@ async def main():
     assert last(path) == (RP.trigger_effect(2, 5), RP.weapon_effect(5, 7)) and r._rv == [None, None]
     r.set_triggers((*base, RFX_ON, 50, 120, 0))
     assert last(path)[0] == RP.vibration_effect(0, 4, 120), "strength 50 % and another frequency"
-    r.set_triggers((3, 6, 0, 0))                    # old trig: resistance only, no game rumble
-    assert last(path) == (RP.trigger_effect(3, 6), RP.OFF_EFFECT) and r.fx == trig2_from_legacy((3, 6, 0, 0))
+    r.set_triggers((TFX_RES, 3, 6, 0, TFX_OFF, 0, 0, 0, 0, 0, 0, 0))   # resistance only, no game rumble
+    assert last(path) == (RP.trigger_effect(3, 6), RP.OFF_EFFECT) and r.fx == (TFX_RES, 3, 6, 0, TFX_OFF, 0, 0, 0, 0, 0, 0, 0)
     r.set_triggers((TFX_VIB, 1, 3, 25, TFX_OFF, 0, 0, 0, 0, 0, 0, 0))
     assert last(path) == (RP.vibration_effect(1, 3, 25), RP.OFF_EFFECT)
     r.close()
     assert last(path) == (RP.OFF_EFFECT, RP.OFF_EFFECT) and r._rv_timer is None, "closing removes the effects"
-    ok("settings change during rumble, old trig, trigger vibration as a mode, close = Off")
+    ok("settings change during rumble, resistance only, trigger vibration as a mode, close = Off")
 
     # game rumble without effects (all Off) and a pad without the HID report
     path2 = os.path.join(TMP, "hidraw2")
@@ -119,18 +117,19 @@ async def main():
     assert rep[0] == 0x02 and rep[1 + RP.RIGHT_TRIGGER_AT] == 0x26 and rep[1 + RP.LEFT_TRIGGER_AT] == RP.TRIG_OFF, "USB"
     r.close()
     ev = R.Rumble(2, Dev(), "off")
-    assert not ev.bits & CAP_TRIG_FX and ev.set_triggers((*TRIG2_OFF[:8], RFX_ON, 100, 40, 0)) is False
+    assert not ev.bits & CAP_TRIGGERS and ev.set_triggers((*TRIG2_OFF[:8], RFX_ON, 100, 40, 0)) is False
     ev.set(255, 255)
     ok("USB, effects Off + game rumble; without the HID report - nothing")
 
-    # Ctrl: the old trig turned into trig2, effects remembered until the pad connects
+    # Ctrl: effects remembered until the pad connects
     c = sender_ctrl.Ctrl.__new__(sender_ctrl.Ctrl)
     c.rumble = None
-    c.set_triggers((0, 0, 4, 2))
-    assert c.triggers == trig2_from_legacy((0, 0, 4, 2))
+    trig3 = (TFX_OFF, 0, 0, 0, TFX_RES, 4, 2, 0, 0, 0, 0, 0, bytes(11), bytes(11), 0)
+    c.set_triggers(trig3)
+    assert c.triggers == trig3
     c.set_triggers(TRIG2_OFF)
     assert c.triggers == TRIG2_OFF and not any(c.triggers)
-    ok("Ctrl.set_triggers: trig and trig2, memory until the pad connects")
+    ok("Ctrl.set_triggers: memory until the pad connects")
 
 
 asyncio.run(main())
@@ -152,9 +151,9 @@ class Sock:
 
 vals = (TFX_CLICK, 5, 7, 0, TFX_VIB, 0, 3, 30, RFX_ON, 120, 40, 0)
 net.link.codec = cod
-net.link.sock = Sock([cod.pack(T_TRIG2, 1, *vals), cod.pack(T_TRIG, 0, 0, 0, 3, 6)])
+net.link.sock = Sock([cod.pack(T_TRIG3, 1, *vals, bytes(11), bytes(11), 0)])
 net.on_readable()
-assert got == [(1, vals), (0, (0, 0, 3, 6))], got
-assert BODY[T_TRIG2].size == 12
-ok("sender_net: trig2 i trig -> callback")
+assert got == [(1, (*vals, bytes(11), bytes(11), 0))], got
+assert BODY[T_TRIG3].size == 12 + 2 * 11 + 1
+ok("sender_net: trig3 -> callback")
 print("TRIGFX TX OK")

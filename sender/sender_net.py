@@ -22,9 +22,9 @@ import sender_config
 import sender_events as events
 import sender_selftest as selftest
 import sender_state as state
-from proto import (BODY, E_NET_DOWN, E_NO_RECEIVER, HAPT_CHUNK, HAPT_DATA_AT, HEADER_LEN, NS_PER_MS, RTT_NONE, SCFG_BATT, SPK_BYTES,
-                   SPK_DATA_AT, T_BTCMD, T_CFGSET, T_CMD, T_FB, T_HAPT, T_LEDS, T_PING, T_PONG, T_PONG2, T_SCFG, T_SPK, T_STCMD, T_TRIG,
-                   T_TRIG2, T_TRIG3, UINT32_MASK, VER3, VER_SHIFT, Codec, EpochClock, Field, SeqFilter)
+from proto import (BODY, E_NET_DOWN, E_NO_RECEIVER, HAPT_CHUNK, HAPT_DATA_AT, HEADER_LEN, NS_PER_MS, RTT_NONE, SPK_BYTES,
+                   SPK_DATA_AT, T_BTCMD, T_CFGSET, T_CMD, T_FB, T_HAPT, T_LEDS, T_PING, T_PONG2, T_SCFG, T_SPK, T_STCMD,
+                   T_TRIG3, UINT32_MASK, VER3, VER_SHIFT, Codec, EpochClock, Field, SeqFilter)
 from sender_config import C
 
 # the packet header is 4 bytes (see proto.HDR); the body of every received packet is unpacked right after it
@@ -46,7 +46,6 @@ STATS_EVERY_S: Final = 5.0
 SOCK_RETRY_S: Final = 1.0
 RESOLVE_AFTER_S: Final = 10.0         # no pong for this long: a host NAME may point elsewhere now (the PC got a new DHCP lease)
 REPEAT_DELAYS: Final = (0.01, 0.03)   # emit_repeat repeats [s]
-PROBE_EVERY: Final = 4                # with a key, before switching to v3: an extra v3 ping every this many pings (1/s)
 # send errors that only mean "this packet did not go": a full device queue, a neighbour that does not answer (the PC is off)
 DROP_ERRNO: Final = frozenset({errno.ENOBUFS, errno.EHOSTUNREACH})
 MAX_RTT_NS: Final = 1_000_000_000     # a pong later than this answers a stale (replayed) ping, not a measurement
@@ -134,7 +133,7 @@ class PcClock:
     How it works: every pong2 gives (t0 = ping sent, pc_us = PC time when it answered, t3 = pong received). The
     offset estimate is pc_us minus the midpoint of t0 and t3. We keep the measurement with the smallest RTT out of the
     last SYNC_N (~3 s): its error is at most half that RTT (Ethernet: ~0.1 ms), and the short window limits crystal
-    drift (50 ppm = 0.15 ms per 3 s). Without a pong2 for SYNC_MAX_AGE_S (an older receiver, a network gap) there is no
+    drift (50 ppm = 0.15 ms per 3 s). Without a pong2 for SYNC_MAX_AGE_S (a network gap, a receiver restart) there is no
     clock - the state then travels in a normal packet, without a timestamp.
     """
 
@@ -205,10 +204,10 @@ class Net:
         tx_count: Datagrams sent.
         rtts: Ping round trips [ms] since the last --stats print (bounded, so it does not grow while --stats is off).
         recent_rtt: The latest round trips, for the info packet.
-        pings_sent / probes_sent / pongs: Pings sent, v3 probe pings sent (answered too), pongs received.
+        pings_sent / pongs: Pings sent, pongs received.
         fb_filter: Duplicate / reorder filter of the control packets (with a time window: a receiver restart, with a
             random sequence, does not block feedback).
-        scfg_t / batt_t: When scfg (and scfg with SCFG_BATT) last arrived: the receiver knows build2 + events (build3).
+        scfg_t: When scfg last arrived (the receiver sends it every 5 s while it runs).
         last_pong: When the last pong arrived; -inf = none yet (with a small uptime "now - 0.0" would look like a live receiver).
     """
 
@@ -223,9 +222,9 @@ class Net:
         self.tx_count = 0
         self.rtts: collections.deque[float] = collections.deque(maxlen=RTT_HISTORY)
         self.recent_rtt: collections.deque[float] = collections.deque(maxlen=RTT_RECENT)
-        self.pings_sent = self.probes_sent = self.pongs = 0
+        self.pings_sent = self.pongs = 0
         self.fb_filter = SeqFilter(1.0)
-        self.scfg_t = self.batt_t = 0.0
+        self.scfg_t = 0.0
         self.last_pong = float("-inf")
 
     def rtt_x10(self) -> int:
@@ -235,10 +234,9 @@ class Net:
         return min(RTT_NONE - 1, round(sorted(self.recent_rtt)[len(self.recent_rtt) // 2] * 10))
 
     def init(self) -> None:
-        """Create the packet codec (HMAC key, v3 freshness token from the PC clock, replay-state file) and warn if there is no key."""
+        """Create the packet codec (HMAC key, v3 freshness token from the PC clock) and warn if there is no key."""
         # the lambda looks pc_clock up at call time: the clock object is replaced when the sender resynchronises (and in tests)
-        self.codec = Codec(C.KEY, token=lambda: self.pc_clock.now_ms(), now_ms=self.clock.ms32,
-                      state_path=C.AUTH_FILE or None, writer=state.write_json_later)    # no fsync on the event loop
+        self.codec = Codec(C.KEY, token=lambda: self.pc_clock.now_ms(), now_ms=self.clock.ms32)
         if not C.KEY:
             print("WARNING: no HMAC key - anyone on the local network can send commands to this sender "
                   "(update, Bluetooth pairing, pad power-off). Set the same key on both sides (docs/SECURITY.md)")
@@ -326,8 +324,11 @@ class Net:
             loop.call_later(delay, self.send_raw, data)
 
     def _on_pong(self, data: bytes) -> None:
-        """Record the RTT of a plain pong (the receiver's answer to our ping) and note that the receiver is alive."""
-        rtt_ns = self.clock.ns() - BODY[T_PONG].unpack_from(data, HEADER_LEN)[0]
+        """Handle a pong2 (the receiver's answer to our ping): the PC clock estimate, the RTT and that the receiver is alive."""
+        now_ns = self.clock.ns()
+        t0, pc_us = BODY[T_PONG2].unpack_from(data, HEADER_LEN)
+        self.pc_clock.pong(t0, pc_us, now_ns)
+        rtt_ns = now_ns - t0
         if not 0 <= rtt_ns <= MAX_RTT_NS:
             # the answer to a replayed old ping (a ping is exempt from the v3 freshness check, the pong is fresh) or to a ping of a
             # previous process (another clock base): not a round trip, it must not reach the statistics or the info packet
@@ -339,16 +340,11 @@ class Net:
         self.pongs += 1
 
     def _on_scfg(self, sq: int, data: bytes) -> None:
-        """Take the Wake-on-LAN settings from the receiver; the arrival time also tells that it knows build2 and events.
-
-        The SCFG_BATT flag says the receiver also knows build3 (the sender device's battery); an older one never sets it.
-        """
+        """Take the Wake-on-LAN and log settings from the receiver; the arrival time also tells that the receiver runs."""
         now = time.monotonic()
         if self.fb_filter.fresh(("scfg",), sq, now):
             self.scfg_t = now
             values = BODY[T_SCFG].unpack_from(data, HEADER_LEN)
-            if values[0] & SCFG_BATT:
-                self.batt_t = now
             if self.handlers.scfg is not None:
                 self.handlers.scfg(*values)
 
@@ -385,26 +381,23 @@ class Net:
         elif t == T_CMD:
             if fresh(("cmd", idx, data[HEADER_LEN]), sq, now) and h.command is not None:
                 h.command(idx, *BODY[T_CMD].unpack_from(data, HEADER_LEN))
-        elif t in (T_TRIG, T_TRIG2, T_TRIG3):   # trig3: + game effects (v11+), trig2: profile (v8+), trig: resistance only
+        elif t == T_TRIG3:
             if fresh(("trig", idx), sq, now) and h.triggers is not None:
                 h.triggers(idx, BODY[t].unpack_from(data, HEADER_LEN))
-        elif t in (T_LEDS, T_CFGSET, T_STCMD):  # the game's LEDs (v15+), a setting from the window (v16+), the pad self-test (v19+)
+        elif t in (T_LEDS, T_CFGSET, T_STCMD):  # the game's LEDs, a setting from the window, the pad self-test
             self._on_setting(t, idx, sq, data, now)
-        elif t == T_BTCMD and fresh(("bt", data[HEADER_LEN]), sq, now) and h.bt is not None:   # phone Bluetooth (window, v10+)
+        elif t == T_BTCMD and fresh(("bt", data[HEADER_LEN]), sq, now) and h.bt is not None:   # phone Bluetooth (window)
             h.bt(*BODY[T_BTCMD].unpack_from(data, HEADER_LEN))
-        elif t == T_HAPT and fresh(("hapt", idx), sq, now) and h.haptics is not None:   # HD haptics (v13+): no copy of the samples
+        elif t == T_HAPT and fresh(("hapt", idx), sq, now) and h.haptics is not None:   # HD haptics: no copy of the samples
             frame, flags = HAPT_HEAD.unpack_from(data, HEADER_LEN)
             h.haptics(idx, frame, flags, memoryview(data)[HAPT_AT:HAPT_AT + HAPT_CHUNK])
-        elif t == T_SPK and fresh(("spk", idx), sq, now) and h.speaker is not None:   # the speaker (v14+): no copy either
+        elif t == T_SPK and fresh(("spk", idx), sq, now) and h.speaker is not None:   # the speaker: no copy either
             frame, flags = HAPT_HEAD.unpack_from(data, HEADER_LEN)
             h.speaker(idx, frame, flags, memoryview(data)[SPK_AT:SPK_AT + SPK_BYTES])
 
     def _dispatch(self, t: int, idx: int, sq: int, data: bytes) -> None:
         """Handle one authenticated packet by type; pongs update the RTT statistics and the PC clock estimate."""
-        if t == T_PONG2:                  # the PC clock for latency measurement (RTT is computed by the plain pong right after it)
-            t0, pc_us = BODY[T_PONG2].unpack_from(data, HEADER_LEN)
-            self.pc_clock.pong(t0, pc_us, self.clock.ns())
-        elif t == T_PONG:
+        if t == T_PONG2:
             self._on_pong(data)
         elif t == T_SCFG:
             self._on_scfg(sq, data)
@@ -429,12 +422,8 @@ class Net:
                 self._dispatch(p[0], p[1], p[2], data)
 
     def new_receiver(self, now: float | None = None) -> bool:
-        """Return True if the receiver sent scfg recently - it then knows the build2 and event packets."""
+        """Return True if the receiver sent scfg recently (it runs and wants the Bluetooth state)."""
         return bool(self.scfg_t) and (time.monotonic() if now is None else now) - self.scfg_t < NEW_RECEIVER_S
-
-    def batt_receiver(self, now: float | None = None) -> bool:
-        """Return True if the receiver announced SCFG_BATT recently - it then knows the build3 packet (the device's battery)."""
-        return bool(self.batt_t) and (time.monotonic() if now is None else now) - self.batt_t < NEW_RECEIVER_S
 
     def _receiver_watch(self, alive: bool, was: bool) -> None:
         """On every ping: flush events to the receiver while it answers; losing the answer is an event too (sent after it returns)."""
@@ -444,17 +433,8 @@ class Net:
             events.warn(E_NO_RECEIVER)
 
     def _send_pings(self) -> None:
-        """Send the ping carrying the sender's clock, plus (while a key is set but v3 is not active) an occasional v3 ping.
-
-        A v3-capable receiver answers the v3 ping with v3, which switches both sides; an older one rejects it.
-        """
-        t0 = self.clock.ns()
-        self.emit(T_PING, BROADCAST_ALL, t0)
-        if self.codec.key and not self.codec.v3 and self.pings_sent % PROBE_EVERY == 0:
-            probe = self.codec.pack(T_PING, BROADCAST_ALL, t0, v3=True)
-            if probe is not None:
-                self.send_raw(probe)
-                self.probes_sent += 1
+        """Send the ping carrying the sender's clock (the receiver answers with pong2)."""
+        self.emit(T_PING, BROADCAST_ALL, self.clock.ns())
         self.pings_sent += 1
 
     def _print_stats(self, last_print: float, tx_prev: int) -> tuple[float, int]:
@@ -469,7 +449,7 @@ class Net:
         if self.rtts:
             avg = sum(self.rtts) / len(self.rtts)
             print(f"RTT avg {avg:.1f} ms, max {max(self.rtts):.1f} ms, jitter {max(self.rtts) - min(self.rtts):.1f} ms "
-                  f"({len(self.rtts)} pongs, {self.pings_sent + self.probes_sent - self.pongs} lost total)")
+                  f"({len(self.rtts)} pongs, {self.pings_sent - self.pongs} lost total)")
             self.rtts.clear()
         else:
             print("RTT: no pongs in last 5 s")
@@ -501,8 +481,7 @@ class Net:
                 import sender_wol                   # sender_wol imports sender_net
                 sender_wol.learn()
             if self.pings_sent >= NO_REPLY_WARN_S / PING_S and self.pongs == 0 and not warned:
-                print("WARNING: no reply from receiver - check IP/port, firewall and --key (receiver downgraded to a "
-                      "version without protocol v3? delete auth.json next to the sender)")
+                print("WARNING: no reply from receiver - check IP/port, firewall, --key and that both sides run the same version")
                 warned = True
             if C.STATS and time.monotonic() - last_print >= STATS_EVERY_S:
                 last_print, tx_prev = self._print_stats(last_print, tx_prev)
@@ -556,5 +535,5 @@ handlers = link.handlers
 # the module-level API (``net.emit(...)`` etc. everywhere in the sender) - bound to the one link
 init, open_sock, close_sock = link.init, link.open_sock, link.close_sock
 send_raw, emit, emit_repeat, on_readable = link.send_raw, link.emit, link.emit_repeat, link.on_readable
-new_receiver, batt_receiver, rtt_x10 = link.new_receiver, link.batt_receiver, link.rtt_x10
+new_receiver, rtt_x10 = link.new_receiver, link.rtt_x10
 pinger, sock_keeper = link.pinger, link.sock_keeper

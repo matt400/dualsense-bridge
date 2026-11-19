@@ -20,7 +20,7 @@ import cfgspec
 import rx_sender_cfg
 import rx_settings
 import rx_state as S
-from proto import CFGR_NO_KEY, CFGR_NO_V3, CFGR_OFF
+from proto import CFGR_NO_KEY, CFGR_OFF
 from rx_i18n import _
 from rx_qt_style import set_prop
 from rx_qt_widgets import Combo, button, group, label, spinbox
@@ -361,7 +361,6 @@ class SenderCfgPanel:
             return _("Zmiana ustawień nadajnika wymaga klucza HMAC w odbiorniku i protokołu v3 (klucz w obu miejscach, "
                      "ten sam)."), "warn"
         refusals = {CFGR_NO_KEY: _("Nadajnik nie ma klucza HMAC, więc odmawia zmian."),
-                    CFGR_NO_V3: _("Nadajnik nie przeszedł jeszcze na protokół v3 i odmawia zmian."),
                     CFGR_OFF: _("Nadajnik ma wyłączone zmiany z odbiornika (remote_cfg_file = \"\")."),
                     }
         if result in refusals:

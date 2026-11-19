@@ -6,7 +6,7 @@ from sender_config import C
 import sender_net as net, sender_ctrl, sender_control as ctl, sender_state as state
 net.link.clock.base = 0   # pings on the perf_counter clock (the test gives the pong times)
 from sender_ctrl import Ctrl
-from proto import Codec, T_CMD, T_INFO, T_PONG, CMD_POWER_OFF, RTT_NONE
+from proto import Codec, T_CMD, T_INFO, T_PONG2, CMD_POWER_OFF, RTT_NONE
 out = []
 net.emit = sender_ctrl.net.emit = lambda t, i, *v: out.append((t, i, v))
 net.init()
@@ -52,7 +52,7 @@ print("OK   pad over USB skipped, missing bluetoothctl does not crash the sender
 
 # a ping for the info packet
 net.link.recent_rtt.clear(); assert net.rtt_x10() == RTT_NONE
-net.link.sock = FakeSock([pc.pack(T_PONG, 255, time.perf_counter_ns() - 2_000_000)]); net.on_readable()
+net.link.sock = FakeSock([pc.pack(T_PONG2, 255, net.link.clock.ns() - 2_000_000, 0)]); net.on_readable()
 assert 15 <= net.rtt_x10() <= 40, net.rtt_x10()
 
 # info every second + power-off after idle

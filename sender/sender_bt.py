@@ -659,7 +659,7 @@ class Bluetooth:
 
         Every IDLE_S just the state; with the panel open, during a scan or an operation every TICK_S, with the list.
 
-        Only a receiver that knows the new packets (it sent scfg) gets them - an older one rejects unknown lengths.
+        The state goes only to a running receiver (it sent scfg recently).
         When no receiver is present, the loop still runs the controller choice every IDLE_S. It sleeps on an Event, so
         a command (poke) wakes it immediately instead of waiting for the next tick.
         """

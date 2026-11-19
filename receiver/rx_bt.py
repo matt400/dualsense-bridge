@@ -6,7 +6,7 @@ Packets arrive in the network thread (on_packet), the window reads them in its o
 with a single assignment, so no locks are needed. The sender's list comes in rounds (btstate with BTF_LIST and the device count, then
 btdev with numbers); it is replaced only after the whole round - a lost packet leaves the previous list, not a gappy one.
 Commands go out 3x (UDP, the same packet spread over time), the sender drops repeats. A command goes only to a sender
-that has sent btstate - an older one would reject the unknown length and the window would wait forever.
+that has sent btstate (one that manages Bluetooth).
 """
 import time
 from dataclasses import dataclass, field

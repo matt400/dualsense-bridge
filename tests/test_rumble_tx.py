@@ -7,7 +7,7 @@ import sender_opus
 import sender_report as RP
 import sender_rumble as R
 from evdev import ecodes as ec
-from proto import CAP_HAPTICS, CAP_SPEAKER, CAP_TRIG_FX, CAP_TRIG_RAW, CAP_TRIGGERS, RUMBLE_EVDEV, RUMBLE_HIDRAW
+from proto import CAP_HAPTICS, CAP_SPEAKER, CAP_TRIGGERS, RUMBLE_EVDEV, RUMBLE_HIDRAW
 
 TMP = tempfile.mkdtemp()
 from chk import ok
@@ -169,8 +169,8 @@ async def main():
     open(path3, "wb").close()
     d = FFDev()
     r = R.Rumble(5, d, "auto", hidraw=(path3, True))
-    assert r.methods == ["evdev", "hidraw"] and r.bits == (RUMBLE_EVDEV | RUMBLE_HIDRAW | CAP_TRIGGERS | CAP_TRIG_FX
-                                                        | CAP_TRIG_RAW | CAP_HAPTICS | (CAP_SPEAKER if sender_opus.available() else 0)), (r.methods, r.bits)   # triggers only through HID
+    assert r.methods == ["evdev", "hidraw"] and r.bits == (RUMBLE_EVDEV | RUMBLE_HIDRAW | CAP_TRIGGERS
+                                                        | CAP_HAPTICS | (CAP_SPEAKER if sender_opus.available() else 0)), (r.methods, r.bits)   # triggers only through HID
     r.set(70, 140)
     assert ("upload", 140 * 257, 70 * 257) in d.log and frames(path3)[-1][5:7] == bytes([70, 140]), "obie drogi naraz"
     d.fail = True

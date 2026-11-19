@@ -12,9 +12,8 @@ Without `key`, anyone on the local network can:
 - move the mouse and click on the PC (touchpad as a mouse) and trigger master pad actions (sleep, shutdown),
 - send commands to the sender: update and restart, pair Bluetooth devices, turn pads off.
 
-With the same `key` on both sides every packet is signed (HMAC-SHA256). Both programs then switch to **protocol v3**
-by themselves: each packet also carries a freshness token, so a recorded packet sent again later is rejected (replay
-protection). The switch is remembered in `auth.json` next to each program; changing the key starts it over.
+With the same `key` on both sides every packet is signed (HMAC-SHA256) and sent in **protocol v3**: each packet also
+carries a freshness token, so a recorded packet sent again later is rejected (replay protection).
 
 ## Setting a key
 
@@ -26,7 +25,8 @@ protection). The switch is remembered in `auth.json` next to each program; chang
    `ps`.
 4. Restart both. The window warns about a mismatched key in the event log.
 
-After going back to a version without protocol v3 on one side, delete `auth.json` on the other side.
+Both sides must run the same version (update them together with the Update button). A leftover `auth.json` from an
+older version is no longer used and can be deleted.
 
 ## Other settings
 

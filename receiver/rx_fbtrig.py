@@ -1,29 +1,23 @@
 """Receiver: trigger effects and game LEDs sent to the pad (see rx_feedback).
 
 What goes to the sender for the triggers: the profile's resistance / click / vibration, the effects the game set through the
-virtual DualSense (trig3), the master-only restriction, and the game's mute / player LEDs (leds packet). Which packet a
-sender understands is decided by its version and CAP_* bits. The per-slot state lives in rx_fbstate; the loop that calls
-these ticks is rx_feedback.feedback_thread.
+virtual DualSense, the master-only restriction (all in one trig3 packet), and the game's mute / player LEDs (leds packet).
+The per-slot state lives in rx_fbstate; the loop that calls these ticks is rx_feedback.feedback_thread.
 """
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, Final
 
 import rx_state as S
-from proto import (
-    CAP_TRIG_FX, CAP_TRIG_RAW, LEDS_MUTE, LEDS_PLAYER, LEDS_SENDER, TRG3_L2, TRG3_R2, TRIG2_OFF, TRIG_RAW_LEN,
-)
+from proto import LEDS_MUTE, LEDS_PLAYER, TRG3_L2, TRG3_R2, TRIG2_OFF, TRIG_RAW_LEN
 from rx_fbstate import (
-    FX_SENDER, IDLE_REFRESH_S, NO_GAME_TRIG, RAW_SENDER, SendLeds, SendTriggers, TRIG_OFF_MODES, TRIG_REFRESH_S,
-    TRIG_REPEAT, Trig, fb, leds_sent, trig_sent,
+    IDLE_REFRESH_S, NO_GAME_TRIG, SendLeds, SendTriggers, TRIG_OFF_MODES, TRIG_REFRESH_S, TRIG_REPEAT, Trig, fb, leds_sent,
+    trig_sent,
 )
-from rx_shape import legacy_values, trigger_values
+from rx_shape import trigger_values
 
-def sender_leds(i: int) -> bool:
-    """Tell whether this pad's sender understands the leds packet (v15+; the ways byte has no free bit left, so the version decides)."""
-    info = S.sender_info[i]
-    return info is not None and info[0] >= LEDS_SENDER
+TRIG3_OFF: Final = (*TRIG2_OFF, bytes(TRIG_RAW_LEN), bytes(TRIG_RAW_LEN), 0)   # trig3: no effects (profile or game)
 
 
 def leds_target(i: int) -> tuple[int, int, int] | None:
@@ -37,11 +31,11 @@ def leds_target(i: int) -> tuple[int, int, int] | None:
 def leds_tick(i: int, now: float, send_leds: SendLeds) -> None:
     """Send the LEDs the game set: a change at once (several times), the same values again every IDLE_REFRESH_S.
 
-    Nothing is sent while the game has set no LED (the pad's driver keeps both) or to a sender that does not know the packet.
-    The refresh brings the LEDs back after the pad reconnected or a packet was lost.
+    Nothing is sent while the game has set no LED (the pad's driver keeps both) or before the sender introduced the pad
+    (its version packet). The refresh brings the LEDs back after the pad reconnected or a packet was lost.
     """
     vals = leds_target(i)
-    if vals is None or not sender_leds(i):
+    if vals is None or S.sender_info[i] is None:
         return
     last = leds_sent[i]
     if last is None or last[0] != vals:
@@ -52,30 +46,17 @@ def leds_tick(i: int, now: float, send_leds: SendLeds) -> None:
         send_leds(i, vals, 1)
 
 
-def sender_fx(i: int) -> bool:
-    """Tell whether this pad's sender knows trig2 (click, trigger vibration, game rumble)."""
-    info = S.sender_info[i]
-    return info is not None and info[0] >= FX_SENDER and bool(info[1] & CAP_TRIG_FX)
-
-
-def sender_raw(i: int) -> bool:
-    """Tell whether this pad's sender knows trig3 (trigger effects set by the game)."""
-    info = S.sender_info[i]
-    return info is not None and info[0] >= RAW_SENDER and bool(info[1] & CAP_TRIG_RAW)
-
-
 def game_drives(game: Trig) -> bool:
     """Tell whether the game holds an effect (other than none / Off) on some trigger."""
     return any(t is not None and t[0] not in TRIG_OFF_MODES for t in game)
 
 
 def trigger_target(i: int) -> tuple[Any, ...]:
-    """Return the values to send to the sender.
+    """Return the trig3 values to send to the sender: the profile's 12 values, the game's raw L2 / R2 effects, TRG3_* flags.
 
-    trig3 (profile + the game's trigger effects) when the game set them and the sender knows them, else trig2 for a new
-    sender, trig (resistance only) for an older one; no effects (game ones too) when trigger effects are master-only and
-    this is not the master. On a trigger with a profile effect the profile wins (the sender decides - any mode other than
-    TFX_OFF); when the game itself drives the triggers, game rumble on the profile's triggers is switched off.
+    No effects (game ones too) when trigger effects are master-only and this is not the master. On a trigger with a profile
+    effect the profile wins (the sender decides - any mode other than TFX_OFF); when the game itself drives the triggers,
+    game rumble on the profile's triggers is switched off.
     """
     import rx_master        # rx_master imports this module
     vals: tuple[int, ...]
@@ -83,12 +64,10 @@ def trigger_target(i: int) -> tuple[Any, ...]:
         vals, game = TRIG2_OFF, NO_GAME_TRIG
     else:
         vals, game = trigger_values(S.remap_maps[i]["triggers"]), fb[i]["trig"] if i < len(fb) else NO_GAME_TRIG
-    if game != NO_GAME_TRIG and sender_raw(i):
-        if game_drives(game):
-            vals = (*vals[:8], 0, 0, 0, 0)
-        flags = (TRG3_L2 if game[0] is not None else 0) | (TRG3_R2 if game[1] is not None else 0)
-        return (*vals, *(t if t is not None else bytes(TRIG_RAW_LEN) for t in game), flags)
-    return vals if sender_fx(i) else legacy_values(vals)
+    if game_drives(game):
+        vals = (*vals[:8], 0, 0, 0, 0)
+    flags = (TRG3_L2 if game[0] is not None else 0) | (TRG3_R2 if game[1] is not None else 0)
+    return (*vals, *(t if t is not None else bytes(TRIG_RAW_LEN) for t in game), flags)
 
 
 def _has_effect(vals: Sequence[Any]) -> bool:
@@ -126,6 +105,5 @@ def release_triggers(send_trig: SendTriggers) -> None:
     """
     for i, last in enumerate(trig_sent):
         if last is not None and _has_effect(last[0]):
-            # trig3 (game effects) also releases trig2 - a v11 sender then forgets the game effects
-            send_trig(i, TRIG2_OFF if len(last[0]) >= len(TRIG2_OFF) else (0, 0, 0, 0), TRIG_REPEAT)
+            send_trig(i, TRIG3_OFF, TRIG_REPEAT)
             trig_sent[i] = None

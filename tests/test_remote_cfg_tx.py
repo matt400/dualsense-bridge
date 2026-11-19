@@ -13,8 +13,8 @@ import sender_net as net
 import sender_remotecfg as R
 import sender_rt
 import sender_state as state
-from proto import (BODY, CFG_ALL, CFG_GET, CFG_RESET, CFG_SET, CFGF_LAST, CFGF_REMOTE, CFGR_INVALID, CFGR_LATER, CFGR_NO_KEY, CFGR_NO_V3, CFGR_OFF,
-                   CFGR_OK, CFGR_UNKNOWN, T_CFGSET, T_CFGVAL, T_PING, T_PONG, T_PONG2, Codec, EpochClock)
+from proto import (BODY, CFG_ALL, CFG_GET, CFG_RESET, CFG_SET, CFGF_LAST, CFGF_REMOTE, CFGR_INVALID, CFGR_LATER, CFGR_NO_KEY, CFGR_OFF,
+                   CFGR_OK, CFGR_UNKNOWN, T_CFGSET, T_CFGVAL, T_PING, T_PONG2, Codec, EpochClock)
 from sender_ctrl import Ctrl
 
 from chk import check, fails, raises                          # noqa: E402  (shared helper, tests/chk.py)
@@ -35,7 +35,6 @@ class FakeSock:
 
 
 TMP = tempfile.mkdtemp()
-C.AUTH_FILE = os.path.join(TMP, "auth.json")
 C.REMOTE_CFG_FILE = os.path.join(TMP, "remote_cfg.json")
 net.init()
 net.handlers.cfg = R.on_packet
@@ -49,19 +48,18 @@ def pc_token():
     t0, at = sender_t0[-1]
     return ((t0 + time.perf_counter_ns() - at) // 1_000_000) & 0xFFFFFFFF
 pc = Codec(b"sekret", token=pc_token, now_ms=pc_clock.ms32)
-pc.v3 = True
 t0 = net.link.clock.ns()
 sender_t0.append((t0, time.perf_counter_ns()))
-net.link.sock = FakeSock([pc.pack(T_PONG2, 255, t0, pc_clock.ns() // 1000), pc.pack(T_PONG, 255, t0)])
+net.link.sock = FakeSock([pc.pack(T_PONG2, 255, t0, pc_clock.ns() // 1000)])
 net.on_readable()
-check(net.link.codec.v3 and net.link.codec.key == b"sekret", "setup: the sender with a key is already on v3")
+check(net.link.codec.key == b"sekret" and net.link.pc_clock.offset_us is not None, "setup: the sender with a key knows the PC clock")
 
 
 def sync():
     """Refresh the sender's PC clock (it expires after 3 s without pong2): without it no v3 packets leave the sender."""
     t = net.link.clock.ns()
     sender_t0.append((t, time.perf_counter_ns()))
-    net.link.sock = FakeSock([pc.pack(T_PONG2, 255, t, pc_clock.ns() // 1000), pc.pack(T_PONG, 255, t)])
+    net.link.sock = FakeSock([pc.pack(T_PONG2, 255, t, pc_clock.ns() // 1000)])
     net.on_readable()
 
 
@@ -93,10 +91,10 @@ def saved():
 # ---------- spec: consistent with what the sender clamps by itself ----------
 check(len({s.key for s in cfgspec.SPECS}) == N and N < CFG_ALL, "setting ids unique and fit in a byte (255 = all)")
 check(all(s.key in sender_config.DEFAULTS for s in cfgspec.SPECS), "every setting from cfgspec exists in the sender's DEFAULTS")
-for name in ("host", "port", "key", "stats", "bt_adapter", "slots_file", "wol_file", "gyro_cal_file", "bt_file", "auth_file", "remote_cfg_file"):
+for name in ("host", "port", "key", "stats", "bt_adapter", "slots_file", "wol_file", "gyro_cal_file", "bt_file", "remote_cfg_file"):
     check(name not in ID, f"{name} cannot be changed from the receiver")
 check(set(sender_config.DEFAULTS) - set(ID) == {"host", "port", "key", "stats", "bt_adapter", "slots_file", "wol_file", "gyro_cal_file",
-                                                "bt_file", "auth_file", "remote_cfg_file"}, "outside the list only the connection, the key, paths, bt_adapter and stats")
+                                                "bt_file", "remote_cfg_file"}, "outside the list only the connection, the key, paths, bt_adapter and stats")
 from sender_opus import OPUS_BYTES_MAX, OPUS_BYTES_MIN
 from sender_config import HAPTICS_BUFFER_MAX_MS, HAPTICS_BUFFER_MIN_MS, SPEAKER_BUFFER_MAX_MS, SPEAKER_BUFFER_MIN_MS, RT_PRIORITY_MAX
 for name, lo, hi in (("haptics_buffer_ms", HAPTICS_BUFFER_MIN_MS, HAPTICS_BUFFER_MAX_MS), ("speaker_buffer_ms", SPEAKER_BUFFER_MIN_MS, SPEAKER_BUFFER_MAX_MS),
@@ -238,20 +236,8 @@ check(out == ["normal scheduler", "CPU sleep allowed", "all cores", "GIL switch 
       and abs(sys.getswitchinterval() - 0.005) < 1e-9, f"apply: turns off real-time, the PM QoS request, core pinning and the short GIL interval: {out}")
 check(sender_rt.apply(False, 50, 0) == [], "apply: turning off again changes nothing")
 
-# ---------- v2 with a key (before switching to v3) and no key: refusal ----------
+# ---------- no key: refusal ----------
 state.flush_writes()
-os.remove(C.AUTH_FILE)                                          # the remembered switch to v3 removed: a new codec starts in v2
-net.init()                                                      # new codec: a key, not switched to v3 yet
-net.link.fb_filter = proto.SeqFilter(1.0)                            # another "receiver process": a random start of the numbers (the filter accepts it after 1 s of silence)
-check(net.link.codec.key == b"sekret" and not net.link.codec.v3, "codec with a key before the switch")
-v2 = Codec(b"sekret")
-before = dict(sender_config.CHANGES)
-r = ask(setting("tap_click", False, 20, codec=v2), codec=v2)
-check(r and r[0][0] == CFG_ALL and r[0][1] == CFGR_NO_V3 and r[0][2] == 20, f"signed v2 packet: refusal NO_V3 (without v3 a recording could be replayed): {r}")
-check(sender_config.CHANGES == before and C.TAP_CLICK is True, "v2 changes nothing")
-r = ask(v2.pack(T_CFGSET, 255, CFG_GET, CFG_ALL, 21, 0.0), codec=v2)
-check(len(r) == 1 and r[0][1] == CFGR_NO_V3, "a read in v2 refused too - one reply, not 35")
-
 C.KEY = b""
 net.init()
 net.link.fb_filter = proto.SeqFilter(1.0)
@@ -261,7 +247,6 @@ check(r and r[0][1] == CFGR_NO_KEY and C.TAP_CLICK is True, f"sender without a k
 check(not any(s[0] >> 4 == proto.VER3 for s in net.link.sock.sent), "the reply without a key is a plain v2 packet (unsigned)")
 C.KEY = b"sekret"
 net.init()
-net.link.codec.v3 = True
 net.link.fb_filter = proto.SeqFilter(1.0)
 
 # ---------- remote changes off: remote_cfg_file = "" ----------

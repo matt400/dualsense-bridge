@@ -19,8 +19,6 @@ SendLeds: TypeAlias = Callable[[int, tuple[int, int, int], int], None]
 Leds: TypeAlias = tuple[int | None, int | None]       # the game's (mute button LED, player LEDs); None = not set
 
 
-FX_SENDER: Final = 8          # from this version the sender knows trig2 (with the CAP_TRIG_FX bit in the version packet)
-RAW_SENDER: Final = 11        # from this version the sender knows trig3 - trigger effects from the game (the CAP_TRIG_RAW bit)
 NO_GAME_TRIG: Final[Trig] = (None, None)    # the game has set no trigger effects (L2, R2)
 NO_LEDS: Final[Leds] = (None, None)         # the game has set neither the mute LED nor the player LEDs
 TRIG_OFF_MODES: Final = (0x00, 0x05)  # first byte of a trigger effect: none / Off - the game released the trigger

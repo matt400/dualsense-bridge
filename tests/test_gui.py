@@ -3,6 +3,7 @@ from dataclasses import replace
 sys.path.insert(0, os.path.dirname(__file__))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")            # no screen and no Xvfb
 from rxenv import *                                              # noqa
+import proto
 import rx_i18n; rx_i18n.set_lang("en")              # assertions on the English window texts
 from proto import T_CMD
 from PySide6.QtCore import QPoint, QPointF, Qt
@@ -98,15 +99,15 @@ pp.fx["force"].slider.setValue(5); pp.fx["start"].slider.setValue(3); pump(300)
 assert store.get(base)["triggers"] == {"r2": {"mode": "res", "start": 3, "force": 6}}, store.get(base)["triggers"]
 assert any(b[3] == "fx" and b[2] == "resist 6" for b in win.pad.badges)
 assert any("Resistance R2: from 30%, strength 6/8" == t for t, _u in win.ed.changes())
-assert pp.fx_warn.isVisible() and "older sender" in pp.fx_warn.text(), "pad without v6 sender info"
-S.sender_info[0] = (6, 7, 0); win.slow_tick(); assert not pp.fx_warn.isVisible()
-S.sender_info[0] = (6, 1, 0); win.slow_tick(); assert pp.fx_warn.isVisible() and "HID" in pp.fx_warn.text()
-S.sender_info[0] = (7, 7, 0)
+S.sender_info[0] = (proto.SENDER_VERSION - 1, 7, 0); win.slow_tick()
+assert pp.fx_warn.isVisible() and "different version" in pp.fx_warn.text(), "a sender in another version"
+S.sender_info[0] = (proto.SENDER_VERSION, 7, 0); win.slow_tick(); assert not pp.fx_warn.isVisible()
+S.sender_info[0] = (proto.SENDER_VERSION, 1, 0); win.slow_tick(); assert pp.fx_warn.isVisible() and "HID" in pp.fx_warn.text()
+S.sender_info[0] = (proto.SENDER_VERSION, 7, 0)
 pp.fx_mode.changed.emit("click"); pump(300)
 assert pp.fx["pos"].isVisible() and not pp.fx["start"].isVisible() and pp.fx["force"].val.text() == "6 / 8"
 assert store.get(base)["triggers"] == {"r2": {"mode": "click", "pos": 5, "force": 6}}, "strength remembered on a mode change"
-win.slow_tick(); assert pp.fx_warn.isVisible() and "newer sender" in pp.fx_warn.text(), "click needs a v8 sender"
-S.sender_info[0] = (8, 15, 0); win.slow_tick(); assert not pp.fx_warn.isVisible()
+win.slow_tick(); assert not pp.fx_warn.isVisible(), "click works with the HID report"
 rp.mode.changed.emit("on"); pump(300)
 assert rp.gain.isVisibleTo(rp) and store.get(base)["triggers"]["rumble"] == {"on": True, "gain": 100, "freq": 40}
 assert any(b[3] == "fx" and b[2] == "click 6 + game rumble" for b in win.pad.badges)
@@ -114,7 +115,7 @@ assert any(b[3] == "fx" and b[2] == "game rumble" for b in win.pad.badges), "L2 
 rp.gain.slider.setValue(5); pump(300)
 assert store.get(base)["triggers"]["rumble"]["gain"] == 60
 assert not rp.warn.isVisibleTo(rp)
-S.sender_info[0] = (7, 7, 0); win.slow_tick(); assert rp.warn.isVisibleTo(rp) and "newer sender" in rp.warn.text()
+S.sender_info[0] = (proto.SENDER_VERSION, 1, 0); win.slow_tick(); assert rp.warn.isVisibleTo(rp) and "HID" in rp.warn.text()
 S.sender_info[0] = None
 pp.fx_mode.changed.emit("off"); rp.mode.changed.emit("off"); pump(300)
 assert not rp.gain.isVisibleTo(rp) and not rp.warn.isVisibleTo(rp)

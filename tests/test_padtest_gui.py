@@ -5,6 +5,7 @@ import sys, os, time
 sys.path.insert(0, os.path.dirname(__file__))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from rxenv import *                                              # noqa
+import proto
 from PySide6.QtCore import QPointF, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QWidget
@@ -14,7 +15,7 @@ import rx_drift as D
 import rx_padcal
 import rx_profiles as P
 import rx_qt
-from proto import (BODY, CAL_OK, CAL_RUNNING, CALF_STORED, CAP_CALIB, CMD_GYRO_CAL, CMD_RAW_STICKS, RUMBLE_HIDRAW,
+from proto import (BODY, CAL_OK, CAL_RUNNING, CALF_STORED, CMD_GYRO_CAL, CMD_RAW_STICKS, RUMBLE_HIDRAW,
                    T_CALRES, T_CLICK, T_CMD, T_IDENT, T_TOUCH)
 from chk import ok
 pump = lambda ms=40: QTest.qWait(ms)
@@ -32,7 +33,7 @@ def activate(w):
 cmds = lambda: [BODY[T_CMD].unpack_from(pkt, 4) for t, _i, _sq, pkt in sent if t == T_CMD]
 
 feed(T_IDENT, 0, A.encode()); state(0)
-S.sender_info[0] = (9, RUMBLE_HIDRAW | CAP_CALIB, 0)
+S.sender_info[0] = (proto.SENDER_VERSION, RUMBLE_HIDRAW, 0)
 win = rx_qt.create_window(os.path.join(TMP, "ui.ini")); win.resize(1180, 860); win.show(); pump(150)
 panel = win.test_panel
 
@@ -139,10 +140,10 @@ panel.start_cal()
 panel.cal_t0 -= 10                                               # 10 s without a reply
 panel._cal_tick(time.monotonic()); panel.refresh()
 assert "Brak odpowiedzi" in panel.cal_text.text(), "no reply after the time - a message instead of waiting forever"
-S.sender_info[0] = (8, RUMBLE_HIDRAW, 0); panel.refresh()
-assert not panel.cal_btn.isEnabled() and "nowszego nadajnika" in panel.cal_text.text()
-S.sender_info[0] = (9, RUMBLE_HIDRAW | CAP_CALIB, 0)
-ok("calibration: command with a time, progress, result with date and offset, no reply, old sender = a hint")
+S.sender_info[0] = None; panel.refresh()
+assert not panel.cal_btn.isEnabled() and "nie opisał" in panel.cal_text.text()
+S.sender_info[0] = (proto.SENDER_VERSION, RUMBLE_HIDRAW, 0)
+ok("calibration: command with a time, progress, result with date and offset, no reply, the pad not described yet = a hint")
 
 # ---------- leaving the test ----------
 win.set_view("in"); pump()

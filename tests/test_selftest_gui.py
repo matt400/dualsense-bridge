@@ -30,7 +30,7 @@ def until(pred, timeout=15.0):
 
 A = "aa:aa:aa:aa:aa:01"
 feed(T_IDENT, 0, A.encode()); state(0)
-S.sender_info[0] = (T.SELFTEST_SENDER - 1, RUMBLE_HIDRAW, 0)         # an old sender: no simulated sender is needed, its steps are skipped
+S.sender_info[0] = None         # the sender has not described the pad: no simulated sender is needed, its steps are skipped
 S.pad_kind[0] = (PK_DUALSENSE, 0)
 S.info[0] = (9.0, 250.0, 250.0, time.monotonic())
 
@@ -78,7 +78,7 @@ check("latency_window_s\": 1" in box.text or '"window_s": 1' in box.text, "the r
 box.copy_btn.click(); pump()
 check(QApplication.clipboard().text() == box.text and "skopiowany" in box.status.text(), "Copy report puts the same text on the clipboard")
 check(open(box.path, encoding="utf-8").read() == box.text, "the clipboard text is the file's text")
-check("older than the self-test" in box.text, "against an old sender the report says what was skipped")
+check("has not described" in box.text, "without the sender's description the report says what was skipped")
 
 # ---------- stopping: the button, leaving the view, another pad ----------
 panel.block.setChecked(True); pump()

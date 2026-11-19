@@ -8,9 +8,9 @@ import rx_backup as BK
 import rx_latency as L
 import rx_net
 import rx_status as ST
-from proto import (BODY, LAT_NONE, STATE_FIELDS, T_PONG, T_PONG2, T_STATE, T_STATE2, T_TRIG, TRIG_FORCE_MAX, Codec)
+from proto import (BODY, LAT_NONE, STATE_FIELDS, T_PONG2, T_STATE, T_STATE2, T_TRIG3, TFX_OFF, TFX_RES, TRIG_FORCE_MAX, Codec)
 from rx_buttons import normalize_profile
-from rx_shape import legacy_values, normalize_triggers, trigger_values
+from rx_shape import normalize_triggers, trigger_values
 
 from chk import ok
 C.CONSOLE_PATH = os.path.join(TMP, "console.json")
@@ -68,9 +68,9 @@ assert len(st) == STATE_FIELDS
 p1, p2 = cod.pack(T_STATE, 0, *st), cod.pack(T_STATE2, 0, *st, 123456, 1500, LAT_NONE)
 assert p1[0] & 0x0F == p2[0] & 0x0F == T_STATE and len(p2) - len(p1) == 8
 assert cod.parse(p1)[0] == T_STATE and cod.parse(p2)[0] == T_STATE2
-assert cod.parse(cod.pack(T_PONG2, 255, 1, 2))[0] == T_PONG2 and cod.parse(cod.pack(T_PONG, 255, 1))[0] == T_PONG
-assert cod.parse(p2[:-1]) is None and cod.parse(cod.pack(T_TRIG, 0, 1, 2, 3, 4))[0] == T_TRIG
-kc = Codec(b"klucz")
+assert cod.parse(cod.pack(T_PONG2, 255, 1, 2))[0] == T_PONG2
+assert cod.parse(p2[:-1]) is None
+kc = Codec(b"klucz", token=lambda: 0, now_ms=lambda: 0)
 assert kc.parse(kc.pack(T_STATE2, 1, *st, 1, 2, 3))[0] == T_STATE2, "with an HMAC signature too"
 root = os.path.abspath(os.path.join(os.path.dirname(proto.__file__), ".."))
 assert os.path.basename(os.path.dirname(os.path.abspath(proto.__file__))) == "common"
@@ -138,7 +138,8 @@ assert normalize_triggers({"l2": {"start": 15, "force": 99}, "r2": {"force": 0},
     {"l2": {"mode": "res", "start": 9, "force": TRIG_FORCE_MAX}}, "old format: ranges, strength 0 = no entry"
 assert normalize_triggers("x") == {} and normalize_triggers({"r2": "x"}) == {}
 p = normalize_profile({"triggers": {"r2": {"start": 3, "force": 6}}})
-assert legacy_values(trigger_values(p["triggers"])) == (0, 0, 3, 6) and trigger_values({}) == (0,) * 12
+RES = (TFX_OFF, 0, 0, 0, TFX_RES, 3, 6, 0, 0, 0, 0, 0)
+assert trigger_values(p["triggers"]) == RES and trigger_values({}) == (0,) * 12
 ok("trigger resistance: normalization and packet values")
 
 trig = []
@@ -147,7 +148,7 @@ S.alive[0] = True
 F.trig_sent[0] = None
 S.remap_maps[0] = normalize_profile({})
 F.triggers_tick(0, 100.0, send)
-assert trig == [(0, (0, 0, 0, 0), F.TRIG_REPEAT)], \
+assert trig == [(0, F.TRIG3_OFF, F.TRIG_REPEAT)], \
     "after connecting the state always goes out - the pad may still have effects from the previous receiver run"
 F.triggers_tick(0, 100.0 + 3 * F.TRIG_REFRESH_S, send)
 assert len(trig) == 1, "no effects - no refresh"
@@ -155,29 +156,30 @@ trig.clear()
 F.trig_sent[0] = None
 S.remap_maps[0] = p
 F.triggers_tick(0, 100.0, send); F.triggers_tick(0, 100.5, send)
-assert trig == [(0, (0, 0, 3, 6), F.TRIG_REPEAT)], "change at once, a few copies (UDP)"
+T3_RES = (*RES, bytes(11), bytes(11), 0)
+assert trig == [(0, T3_RES, F.TRIG_REPEAT)], "change at once, a few copies (UDP)"
 F.triggers_tick(0, 100.0 + F.TRIG_REFRESH_S, send)
-assert trig[-1] == (0, (0, 0, 3, 6), 1), "refresh (pad after reconnecting)"
+assert trig[-1] == (0, T3_RES, 1), "refresh (pad after reconnecting)"
 S.remap_maps[0] = normalize_profile({})
 F.triggers_tick(0, 103.0, send)
-assert trig[-1] == (0, (0, 0, 0, 0), F.TRIG_REPEAT), "removing the resistance reaches the pad too"
+assert trig[-1] == (0, F.TRIG3_OFF, F.TRIG_REPEAT), "removing the resistance reaches the pad too"
 n = len(trig); F.triggers_tick(0, 110.0, send)
 assert len(trig) == n, "no resistance - no refresh"
 ok("feedback: resistance on a profile change, refresh, turning off")
 
 sent.clear()
-rx_net.send_triggers(1, (0, 0, 3, 6), 2); rx_net.flush_repeats()
-pk = [x for x in sent if x[0] == T_TRIG]
-assert len(pk) == 2 and pk[0][1] == 1 and BODY[T_TRIG].unpack_from(pk[0][3], 4) == (0, 0, 3, 6), pk
-ok("rx_net.send_triggers: trig packet to the sender")
+rx_net.send_triggers(1, T3_RES, 2); rx_net.flush_repeats()
+pk = [x for x in sent if x[0] == T_TRIG3]
+assert len(pk) == 2 and pk[0][1] == 1 and BODY[T_TRIG3].unpack_from(pk[0][3], 4) == T3_RES, pk
+ok("rx_net.send_triggers: trig3 packet to the sender")
 
 S.alive[0] = True
 S.sender_info[0] = None
-assert "older" in ST.triggers_status(0)[0] or "starszej" in ST.triggers_status(0)[0]
-S.sender_info[0] = (6, 3, 0); assert ST.triggers_status(0)[1] == "warn"
-S.sender_info[0] = (6, 7, 0); assert ST.triggers_status(0) == ("", "")
+assert ST.triggers_status(0) == ("", ""), "the sender has not described the pad yet: no warning"
+S.sender_info[0] = (proto.SENDER_VERSION, 3, 0); assert ST.triggers_status(0)[1] == "warn"
+S.sender_info[0] = (proto.SENDER_VERSION, 7, 0); assert ST.triggers_status(0) == ("", "")
 S.alive[0] = False; S.sender_info[0] = None; assert ST.triggers_status(0) == ("", "")
-ok("resistance status: old sender / no HID / works / pad not connected")
+ok("resistance status: unknown / no HID / works / pad not connected")
 
 # ---------- attaching the virtual DS4: a change from before it is not latency ----------
 import threading

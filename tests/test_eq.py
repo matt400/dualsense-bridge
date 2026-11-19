@@ -9,6 +9,7 @@ from rxenv import *                                              # noqa  (Window
 import rx_eq as E, rx_haptics as H, rx_settings, rx_speaker as K
 import rx_state as S
 from proto import CAP_SPEAKER, SPK_BYTES
+import proto
 
 from chk import check, fails, raises                          # noqa: E402  (shared helper, tests/chk.py)
 
@@ -141,7 +142,7 @@ check(rx_settings.SpeakerConfig().get("x").eq == E.FLAT, "with nothing: flat equ
 A = "aa:aa:aa:aa:aa:09"
 S.pad_id[0] = A
 S.alive[0] = True
-S.sender_info[0] = (14, 3 | CAP_SPEAKER, 0)
+S.sender_info[0] = (proto.SENDER_VERSION, 3 | CAP_SPEAKER, 0)
 ROLES = ["speakerLeft", "speakerRight", "hapticLeft", "hapticRight"]
 
 

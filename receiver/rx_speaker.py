@@ -16,8 +16,7 @@ Why 48 -> 45 kHz. The pad's Bluetooth speaker plays every 480-sample Opus frame 
 real pad: a 1234 Hz tone comes out at 1157 Hz, exactly x 15/16), i.e. at an effective 45 kHz. Sound sent as it is would play 6.25 %
 too low and too slow, and the sender would have to drop a frame in 16 to stay in real time. So the receiver resamples 16 : 15: each
 frame stands for 512 source samples, and the pad plays them over the 10.667 ms they last. The audio keeps its pitch and its tempo, and
-the sender's buffer neither fills nor needs to drop anything (the two clocks only differ by the PC's drift). The packet format is
-unchanged: an older sender just plays what it gets (it dropped frames because it expected 100 per second, now it gets 93.75).
+the sender's buffer neither fills nor needs to drop anything (the two clocks only differ by the PC's drift).
 
 A stream: the first frame with sound is sent with SPK_START; digital silence sends nothing once SILENCE_END_S has passed (the frames
 of that short tail go out as zeros, so the sender's stream stays continuous) and the last packet carries SPK_END. The sender wants
@@ -48,7 +47,6 @@ from proto import CAP_SPEAKER, SPK_BYTES, SPK_END, SPK_FRAME, SPK_RATE, SPK_STAR
 from rx_config import C
 from rx_i18n import _
 
-SPEAKER_SENDER: Final = 14                  # from this sender version the T_SPK packet exists (with the CAP_SPEAKER bit)
 SRC_FRAME: Final = 512                      # source samples one frame stands for (10.667 ms of the game's 48 kHz sound) ...
 FRAME_S: Final = SRC_FRAME / SPK_RATE       # ... = the pad's report period: one packet (SPK_FRAME = 480 samples at 45 kHz) per this time
 BLOCK_IN, BLOCK_OUT = 16, 15                # the resampler's unit: 16 source samples -> 15 output samples (48 -> 45 kHz)
@@ -288,7 +286,8 @@ class SpeakerLink(H.PacedStream):
         if not cfg.enabled and not self._inject:
             return None
         if not sender_speaker(t):
-            self._note("sender", _("{pad}: gra daje dźwięk - nadajnik w starszej wersji nie przekaże go na głośnik (kliknij Aktualizuj)"))
+            self._note("sender", _("{pad}: gra daje dźwięk - głośnik tego pada go nie odtworzy (potrzebny DualSense "
+                                   "przez Bluetooth, raport HID i libopus na nadajniku)"))
             return None
         import rx_master            # rx_master imports rx_feedback, which imports rx_settings - lazily, like rx_haptics does
         if not rx_master.allowed(t, "speaker"):
@@ -418,10 +417,15 @@ def wake_all() -> None:
         sp.wake()
 
 
+def no_speaker_text() -> str:
+    """Why a pad without CAP_SPEAKER plays nothing on its speaker (the window)."""
+    return _("Głośnik tego pada nie odtworzy dźwięku (potrzebny DualSense przez Bluetooth, raport HID i libopus na nadajniku).")
+
+
 def sender_speaker(i: int) -> bool:
-    """Tell whether the sender of physical pad i plays the speaker (v14+ and the CAP_SPEAKER bit of its version packet)."""
+    """Tell whether the sender of physical pad i plays the speaker (the CAP_SPEAKER bit of its version packet)."""
     info = S.sender_info[i]
-    return info is not None and info[0] >= SPEAKER_SENDER and bool(info[1] & CAP_SPEAKER)
+    return info is not None and bool(info[1] & CAP_SPEAKER)
 
 
 def wanted_somewhere() -> bool:
@@ -440,8 +444,8 @@ def wanted(idx: int, t: int) -> bool:
         return False
     if not sender_speaker(t):
         if S.alive[t]:
-            speaker(idx)._note("sender", _("{pad}: głośnik pada jest włączony, ale nadajnik w starszej wersji go nie obsługuje "
-                                           "(kliknij Aktualizuj)"))
+            speaker(idx)._note("sender", _("{pad}: głośnik pada jest włączony, ale ten pad go nie odtworzy (potrzebny "
+                                           "DualSense przez Bluetooth, raport HID i libopus na nadajniku)"))
         return False
     import rx_master
     return rx_master.allowed(t, "speaker")
@@ -450,12 +454,12 @@ def wanted(idx: int, t: int) -> bool:
 def unavailable(i: int) -> str | None:
     """Why a test stream cannot reach the speaker of physical pad i (for the window), None when it can.
 
-    The same gates as the real path: the pad must be connected, its sender must know the speaker and the pad may use it (master only).
+    The same gates as the real path: the pad must be connected, its sender must play the speaker and the pad may use it (master only).
     """
     if not (0 <= i < C.NUM_PADS) or not S.alive[i]:
         return _("Pad nie jest podłączony.")
     if not sender_speaker(i):
-        return _("Nadajnik w starszej wersji (bez głośnika) - kliknij Aktualizuj.")
+        return no_speaker_text()
     import rx_master
     if not rx_master.allowed(i, "speaker"):     # the link would drop the tone: say so instead of "sent"
         return _("Głośnik pada jest tylko dla pada master (Ustawienia → Master).")

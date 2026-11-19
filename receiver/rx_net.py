@@ -5,7 +5,6 @@ import contextlib
 import functools
 import heapq
 import itertools
-import os
 import socket
 import threading
 import time
@@ -28,14 +27,13 @@ import rx_state as S
 import rx_swap
 import rx_testmode as testmode
 from proto import (BATT_CHARGING, BATT_UNKNOWN, BODY, CAL_MOVED, CAL_OK, CLICK_PRESSED, CLICK_TWO_FINGERS, HEADER_LEN, LAT_NONE, MUTE_BIT,
-                   NO_PAD, PAD_KEYS, PK_DS4, PK_OTHER, PK_XBOX, RTT_NONE, SCFG_BATT, SCFG_EVENTS, SCFG_WOL, STATE_CHARGING, STATE_FIELDS,
-                   UINT32_MASK, WIRE, Codec,
-                   EpochClock, T_BTCTRL, T_BTDEV, T_BTLINK, T_BTSTATE, T_BUILD, T_BUILD2, T_BUILD3, T_BYE, T_CALRES, T_CFGVAL, T_CLICK,
+                   NO_PAD, PAD_KEYS, PK_DS4, PK_OTHER, PK_XBOX, RTT_NONE, SCFG_EVENTS, SCFG_WOL, STATE_CHARGING, STATE_FIELDS,
+                   SENDER_VERSION, UINT32_MASK, WIRE, Codec,
+                   EpochClock, T_BTCTRL, T_BTDEV, T_BTLINK, T_BTSTATE, T_BUILD3, T_BYE, T_CALRES, T_CFGVAL, T_CLICK,
                    T_CMD, T_EVENT, T_FB, T_HAPT, T_IDENT, T_INFO, T_LEDS, SEQ_MASK,
-                   T_MOUSE, T_PADKIND, T_PING, T_PONG, T_PONG2, T_SCFG, T_SPK, T_STATE, T_STATE2, T_STCMD, T_STRES, T_TOUCH, T_TRIG,
-                   T_TRIG2, T_TRIG3,
+                   T_MOUSE, T_PADKIND, T_PING, T_PONG2, T_SCFG, T_SPK, T_STATE, T_STATE2, T_STCMD, T_STRES, T_TOUCH, T_TRIG3,
                    T_UPDMSG,
-                   T_VERSION, TRIG2_OFF, clamp, cstr, mac_bytes, mac_text)
+                   T_VERSION, clamp, cstr, mac_bytes, mac_text)
 from rx_buttons import BUTTON_CODES, MASK_ALL, PS_BIT, TRIG_ON
 from rx_config import C
 from rx_i18n import _
@@ -169,9 +167,8 @@ def note_ping(t0: int, arr: int) -> None:
 
 
 def make_codec() -> Codec:
-    """Build a Codec with the key from the configuration; the switch to v3 is remembered in auth.json next to remap.json."""
-    return Codec(C.KEY, token=sender_token, now_ms=clock.ms32,
-                 state_path=os.path.join(os.path.dirname(C.REMAP_PATH), "auth.json"))
+    """Build a Codec with the key from the configuration (with a key: protocol v3, see proto)."""
+    return Codec(C.KEY, token=sender_token, now_ms=clock.ms32)
 
 
 def init() -> None:
@@ -311,13 +308,8 @@ def send_cmd(i: int, cmd: int, arg: int = 0) -> None:
 
 
 def send_triggers(i: int, vals: Sequence[Any], repeat: int = 1) -> None:
-    """Send trigger effects to the sender.
-
-    15 values = trig3 (with the game's effects), 12 = trig2, 4 = the old trig (resistance only); a change goes several
-    times (a lost packet).
-    """
-    t = T_TRIG3 if len(vals) > len(TRIG2_OFF) else T_TRIG2 if len(vals) == len(TRIG2_OFF) else T_TRIG
-    send_repeat(codec.pack(t, i, *vals), repeat)
+    """Send trigger effects to the sender: the 15 trig3 values (rx_fbtrig.trigger_target); a change goes several times."""
+    send_repeat(codec.pack(T_TRIG3, i, *vals), repeat)
 
 
 def send_leds(i: int, vals: Sequence[int], repeat: int = 1) -> None:
@@ -356,13 +348,10 @@ def send_speaker(i: int, frame: int, flags: int, pcm: bytes) -> None:
 
 
 def scfg_values(s: rx_settings.Settings | None = None) -> tuple[Any, ...]:
-    """Return the settings for the sender (the scfg packet): Wake-on-LAN and events for the log.
-
-    SCFG_BATT is always on: it only tells the sender that this receiver understands build3 (the sender device's battery).
-    """
+    """Return the settings for the sender (the scfg packet): Wake-on-LAN and events for the log."""
     s = s or rx_settings.cur
     w = s.wol
-    flags = SCFG_BATT | (SCFG_WOL if w.enabled else 0) | (SCFG_EVENTS if s.log.sender else 0)
+    flags = (SCFG_WOL if w.enabled else 0) | (SCFG_EVENTS if s.log.sender else 0)
     return (flags, mac_bytes(w.mac) or bytes(6), socket.inet_aton(w.bcast) if w.bcast else bytes(4),
             PAD_KEYS.index(BUTTON_CODES[w.button]), w.hold_ms)
 
@@ -692,8 +681,13 @@ def _on_version(i: int, data: bytes) -> None:
     """The sender's version, the rumble methods it found and the reason for the choice - logged once per change."""
     v = BODY[T_VERSION].unpack_from(data, 4)
     if v != S.sender_info[i]:
+        old = S.sender_info[i]
         S.sender_info[i] = v
         print(f"Controller {i}: sender v{v[0]}, rumble methods {v[1]}, reason {v[2]}")
+        if v[0] != SENDER_VERSION and (old is None or old[0] != v[0]):
+            print(f"Controller {i}: the sender speaks protocol v{v[0]}, this receiver v{SENDER_VERSION} - update both sides")
+            ev.warn(_("{pad}: nadajnik w innej wersji (v{tx}, odbiornik v{rx}) - kliknij Aktualizuj").format(
+                pad=ev.pad_name(i), tx=v[0], rx=SENDER_VERSION))
 
 
 def _on_info(i: int, data: bytes) -> None:
@@ -744,21 +738,19 @@ def on_calres(i: int, data: bytes) -> None:
         ev.warn(_("{pad}: kalibracja żyroskopu przerwana - pad się ruszał").format(pad=ev.pad_name(i)))
 
 
-def on_build(data: bytes, now: float, t: int = T_BUILD) -> None:
-    """Handle a build / build2 / build3 packet.
+def on_build(data: bytes, now: float) -> None:
+    """Handle a build3 packet.
 
-    (the sender's commit, the commit time, the update state UPD_*) go to S.sender_build; build2 / build3 also the addresses
-    the sender's Wake-on-LAN will use (S.sender_wol); build3 the battery of the sender's device (S.sender_batt). A packet
-    without the battery clears it: the sender lost its battery or runs an older version.
+    The sender's commit, the commit time and the update state UPD_* go to S.sender_build, the addresses the sender's
+    Wake-on-LAN will use to S.sender_wol, the battery of the sender's own device to S.sender_batt (None: it has none).
     """
-    v = BODY[t].unpack_from(data, 4)
+    v = BODY[T_BUILD3].unpack_from(data, 4)
     b = (cstr(v[0]), v[1], v[2])
     if S.sender_build is None or S.sender_build[:3] != b:
         print(f"Sender build {b[0] or '?'} (update state {v[2]})")
     S.sender_build = (*b, now)
-    if t in (T_BUILD2, T_BUILD3):
-        S.sender_wol = (mac_text(v[3]), socket.inet_ntoa(v[4]) if any(v[4]) else "")
-    S.sender_batt = (min(v[5] & ~BATT_CHARGING, 100), bool(v[5] & BATT_CHARGING)) if t == T_BUILD3 else None
+    S.sender_wol = (mac_text(v[3]), socket.inet_ntoa(v[4]) if any(v[4]) else "")
+    S.sender_batt = None if v[5] == BATT_UNKNOWN else (min(v[5] & ~BATT_CHARGING, 100), bool(v[5] & BATT_CHARGING))
 
 
 def on_event(i: int, data: bytes) -> ev.Event | None:
@@ -801,8 +793,7 @@ def check_key(now: float) -> None:
                   "albo usuń go z obu"))
     if now - codec.legacy_t < 1.0 and now - _auth_warned["legacy"] >= KEY_WARN_S:
         _auth_warned["legacy"] = now
-        print("Rejecting signed v2 packets: the sender switched to protocol v3 earlier - an old sender version or a "
-              "replayed recording (after a downgrade delete auth.json next to the receiver)")
+        print("Rejecting signed v2 packets: a sender version from before protocol v3, or a replayed recording")
         ev.warn(_("Odrzucono podpisane pakiety starego formatu (v2): nadajnik w starej wersji albo powtórzone nagranie "
                   "- zaktualizuj nadajnik"))
     if (now - codec.stale_t < 1.0 and now - _auth_warned["stale"] >= KEY_WARN_S
@@ -896,9 +887,9 @@ def _on_control(t: int, i: int, sq: int, data: bytes, addr: tuple[str, int], now
     if t == T_UPDMSG:  # the reason for a sender update failure (arrives before the build packet with the result)
         _adopt_peer(addr, now)
         S.sender_update_msg = BODY[T_UPDMSG].unpack_from(data, 4)[0].rstrip(b"\0").decode("utf-8", "ignore")
-    elif t in (T_BUILD, T_BUILD2, T_BUILD3):  # the sender's code version and its update state (the whole sender, idx 255)
+    elif t == T_BUILD3:  # the sender's code version and its update state (the whole sender, idx 255)
         _adopt_peer(addr, now)
-        on_build(data, now, t)
+        on_build(data, now)
     elif t in (T_BTSTATE, T_BTDEV, T_BTCTRL):  # the sender's Bluetooth (idx 255): state, devices, controllers
         _adopt_peer(addr, now)
         if S.seen.fresh((WIRE[t], NO_PAD), sq, now):
@@ -915,13 +906,12 @@ def _on_control(t: int, i: int, sq: int, data: bytes, addr: tuple[str, int], now
         on_event(i, data)
     elif t == T_STRES:  # a record of the pad self-test (only an answer to our request, see rx_selftest)
         _on_selftest_record(i, sq, data, addr, now)
-    elif t == T_PING:   # ping -> pong2 (the PC clock for latency measurement) and pong (RTT; an older sender knows only this)
+    elif t == T_PING:   # ping -> pong2: the echo (the sender's round trip) and the PC clock (latency measurement)
         _adopt_peer(addr, now, from_ping=True)
         t0 = BODY[T_PING].unpack_from(data, 4)[0]
         note_ping(t0, arr)
         rx_diag.on_ping(t0, arr)
         send_peer(codec.pack(T_PONG2, i, t0, clock.ns() // 1000))
-        send_peer(codec.pack(T_PONG, i, t0))
     else:
         return False
     return True

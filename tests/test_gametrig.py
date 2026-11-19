@@ -9,7 +9,8 @@ import rx_events as ev
 import rx_games
 import rx_settings
 from dataclasses import replace
-from proto import (BODY, TRIG_RAW_LEN, CAP_TRIG_FX, CAP_TRIG_RAW, RFX_ON, T_TRIG2, T_TRIG3, TFX_OFF, TFX_RES, TRG3_L2, TRG3_R2,
+import proto
+from proto import (BODY, TRIG_RAW_LEN, RFX_ON, T_TRIG3, TFX_OFF, TFX_RES, TRG3_L2, TRG3_R2,
                    TRIG2_OFF, Codec)
 from rx_buttons import normalize_profile
 
@@ -26,8 +27,8 @@ store.save(A, normalize_profile({"triggers": {"r2": {"mode": "res", "start": 2, 
                                               "rumble": {"on": True, "gain": 80, "freq": 40}}}))
 S.reload_profile(0)
 prof = (TFX_OFF, 0, 0, 0, TFX_RES, 2, 5, 0, RFX_ON, 80, 40, 0)
-S.sender_info[0] = (11, 3 | CAP_TRIG_FX | CAP_TRIG_RAW, 0)
-assert F.trigger_target(0) == prof, "the game set nothing - a plain trig2"
+S.sender_info[0] = (proto.SENDER_VERSION, 7, 0)
+assert F.trigger_target(0) == (*prof, Z, Z, 0), "the game set nothing - the profile, no game effect flags"
 
 S.game = "forza.exe"
 F.game(0, trig=(G_L2, None))
@@ -52,14 +53,11 @@ N.send_triggers(0, v, 1)
 assert sent[-1][0] == T_TRIG3, sent[-1]
 ok("rx_net.send_triggers: 15 values -> trig3")
 
-S.sender_info[0] = (10, 3 | CAP_TRIG_FX, 0)
-assert F.trigger_target(0) == prof, "v10 sender - profile only (trig2, an older one would drop the length)"
-S.sender_info[0] = (11, 3 | CAP_TRIG_FX | CAP_TRIG_RAW, 0)
 rx_settings.apply(replace(rx_settings.cur, master=replace(rx_settings.cur.master, pad="bb:bb:bb:bb:bb:bb",
                                                           only_master=("triggers",), when_absent="nobody")))
-assert F.trigger_target(0) == TRIG2_OFF, "effects only for the master - the game does not set the triggers of other pads either"
+assert F.trigger_target(0) == F.TRIG3_OFF, "effects only for the master - the game does not set the triggers of other pads either"
 rx_settings.apply(replace(rx_settings.cur, master=replace(rx_settings.cur.master, pad="", only_master=())))
-ok("sender without CAP_TRIG_RAW - trig2; the master feature covers game effects")
+ok("the master feature covers game effects")
 
 calls = []
 F.triggers_tick(0, 100.0, lambda i, v, n: calls.append((v, n)))
@@ -68,7 +66,7 @@ F.triggers_tick(0, 100.0 + F.TRIG_REFRESH_S, lambda i, v, n: calls.append((v, n)
 assert len(calls) == 2 and calls[-1][1] == 1, "game effects refreshed like the profile (sender watchdog)"
 got = []
 F.release_triggers(lambda i, v, n: got.append(v))
-assert got == [TRIG2_OFF], "closing the receiver: trig2 without effects releases the game effects too"
+assert got == [F.TRIG3_OFF], "closing the receiver: trig3 without effects releases the game effects too"
 ok("refresh and release on close")
 
 seq = ev.since(0)[-1].seq if ev.since(0) else 0
@@ -90,7 +88,7 @@ W.running_exes = lambda: {"explorer.exe"}
 rx_games.release_closed(now=1001.0)
 assert F.fb[0]["trig"] == (G_L2, G_R2), "process snapshot at most every PROCS_S"
 rx_games.release_closed(now=1000.0 + rx_games.PROCS_S)
-assert F.fb[0]["trig"] == F.NO_GAME_TRIG and F.trigger_target(0) == prof, "game closed - triggers released"
+assert F.fb[0]["trig"] == F.NO_GAME_TRIG and F.trigger_target(0) == (*prof, Z, Z, 0), "game closed - triggers released"
 S.game = "steam.exe"
 F.game(0, trig=(G_L2, None))
 def boom():

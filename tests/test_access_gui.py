@@ -5,6 +5,7 @@ import math, os, sys
 sys.path.insert(0, os.path.dirname(__file__))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from rxenv import *                                              # noqa
+import proto
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QTabWidget
@@ -15,7 +16,7 @@ import rx_padcal
 import rx_profiles as P
 import rx_qt
 import rx_reach as R
-from proto import BODY, CAP_CALIB, CMD_RAW_STICKS, RUMBLE_HIDRAW, T_CMD, T_IDENT
+from proto import BODY, CMD_RAW_STICKS, RUMBLE_HIDRAW, T_CMD, T_IDENT
 from chk import ok
 pump = lambda ms=40: QTest.qWait(ms)
 PAD = "aa:aa:aa:aa:aa:03"
@@ -44,7 +45,7 @@ def run_wizard(ap, rim, rest=(128, 128, 130, 127)):
 
 
 feed(T_IDENT, 0, PAD.encode()); state(0)
-S.sender_info[0] = (9, RUMBLE_HIDRAW | CAP_CALIB, 0)
+S.sender_info[0] = (proto.SENDER_VERSION, RUMBLE_HIDRAW, 0)
 rx_padcal.reload()
 win = rx_qt.create_window(os.path.join(TMP, "ui.ini")); win.resize(1180, 900); win.show(); pump(150)
 win.activateWindow(); win.tabs.setCurrentWidget(win.access_scroll); pump()

@@ -3,11 +3,12 @@
 import json, math, os, sys, time
 sys.path.insert(0, os.path.dirname(__file__))
 from rxenv import *                                              # noqa
+import proto
 import rx_drift as D
 import rx_padcal
 import rx_profiles as P
 import rx_status as ST
-from proto import (BODY, CAL_MOVED, CAL_OK, CALF_STORED, CAP_CALIB, CMD_GYRO_CAL, CMD_RAW_STICKS, RUMBLE_EVDEV, T_CALRES,
+from proto import (BODY, CAL_MOVED, CAL_OK, CALF_STORED, CMD_GYRO_CAL, CMD_RAW_STICKS, RUMBLE_EVDEV, T_CALRES,
                    T_CLICK, T_CMD, T_IDENT, T_MOUSE, T_TOUCH)
 from rx_buttons import normalize_profile
 from chk import ok
@@ -161,12 +162,13 @@ ok("lock: DS4 / DSU neutral (real battery), gyro mouse and shortcuts paused, the
 
 # ---------- gyro calibration: commands and result ----------
 sent.clear()
-S.sender_info[0] = (8, 3, 0)
-assert not P.calibrate_gyro(0, 3) and not sent, "old sender - no command"
-assert ST.rumble_status(0)[0].startswith("wibracja: ") and "stary" not in ST.rumble_status(0)[0]
-S.sender_info[0] = (9, CAP_CALIB, 0)
-assert ST.rumble_status(0)[1] == "bad", "the CAP_CALIB bit is not a rumble method"
-S.sender_info[0] = (9, RUMBLE_EVDEV | CAP_CALIB, 0)
+S.sender_info[0] = None
+assert not P.calibrate_gyro(0, 3) and not sent, "the pad not described yet - no command"
+S.sender_info[0] = (proto.SENDER_VERSION, 4, 0)
+assert ST.rumble_status(0)[1] == "bad", "a capability bit (CAP_TRIGGERS) is not a rumble method"
+S.sender_info[0] = (proto.SENDER_VERSION - 1, RUMBLE_EVDEV, 0)
+assert ST.rumble_status(0)[2] == ST.version_text(), "a sender in another version"
+S.sender_info[0] = (proto.SENDER_VERSION, RUMBLE_EVDEV, 0)
 assert ST.rumble_status(0)[1] == "" and P.sender_calib(0)
 assert P.calibrate_gyro(0, 30)
 cmds = [BODY[T_CMD].unpack_from(pkt, 4) for t, i, _sq, pkt in sent if t == T_CMD]

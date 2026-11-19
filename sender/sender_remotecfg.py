@@ -1,9 +1,9 @@
 """Sender: settings changed from the receiver window (the cfgset / cfgval packets, the Sender tab).
 
 How a change goes:
-  1. The receiver sends cfgset (read / change / reset). Only a packet in protocol v3 that passed the HMAC check is obeyed: a sender
-     without a key, or a packet in v2, gets a refusal (CFGR_NO_KEY / CFGR_NO_V3) and changes nothing. v3 also protects against a
-     recorded packet being replayed later. remote_cfg_file = "" switches remote changes off altogether (CFGR_OFF).
+  1. The receiver sends cfgset (read / change / reset). Only a packet in protocol v3 that passed the HMAC check is obeyed (with a key
+     the codec accepts nothing else): a sender without a key gets a refusal (CFGR_NO_KEY) and changes nothing. v3 also protects
+     against a recorded packet being replayed later. remote_cfg_file = "" switches remote changes off altogether (CFGR_OFF).
   2. The value is checked against cfgspec (type and limits) and put into sender_config.CHANGES; sender_config.refresh() recomputes
      C.*, so a module that reads C.* when it needs the value sees the new one at once. What is copied at the start of something
      takes the new value the next time: the cfgspec WHEN_STREAM settings at the next haptics / speaker stream, the WHEN_PAD ones
@@ -26,7 +26,7 @@ import sender_config
 import sender_net as net
 import sender_rt
 import sender_state as state
-from proto import (CFG_ALL, CFG_GET, CFG_RESET, CFG_SET, CFGF_LAST, CFGF_REMOTE, CFGR_INVALID, CFGR_LATER, CFGR_NO_KEY, CFGR_NO_V3,
+from proto import (CFG_ALL, CFG_GET, CFG_RESET, CFG_SET, CFGF_LAST, CFGF_REMOTE, CFGR_INVALID, CFGR_LATER, CFGR_NO_KEY,
                    CFGR_OFF, CFGR_OK, CFGR_UNKNOWN, NO_PAD, T_CFGVAL)
 from sender_config import C
 
@@ -137,7 +137,7 @@ def on_packet(authenticated: bool, op: int, key: int, ref: int, number: float) -
         number: The new value (CFG_SET only).
     """
     if not authenticated:
-        _reply(CFG_ALL, CFGR_NO_V3 if net.link.codec.key else CFGR_NO_KEY, ref)
+        _reply(CFG_ALL, CFGR_NO_KEY, ref)
         return
     if not C.REMOTE_CFG_FILE:
         _reply(CFG_ALL, CFGR_OFF, ref)

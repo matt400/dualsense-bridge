@@ -5,7 +5,7 @@ from typing import Final, TypeAlias
 
 import rx_latency
 import rx_state as S
-from proto import (CAP_TRIG_FX, CAP_TRIGGERS, RUMBLE_EVDEV, RUMBLE_HIDRAW, STATE_CHARGING, WHY_ACCESS, WHY_NO_HIDRAW, WHY_NOT_FOUND,
+from proto import (CAP_TRIGGERS, RUMBLE_EVDEV, SENDER_VERSION, RUMBLE_HIDRAW, STATE_CHARGING, WHY_ACCESS, WHY_NO_HIDRAW, WHY_NOT_FOUND,
                    WHY_OFF)
 from rx_i18n import _
 
@@ -20,7 +20,6 @@ LINK_WARN_LOSS_PCT: Final = 1.0
 LINK_BAD_LOSS_PCT: Final = 5.0
 BATT_WARN_PCT: Final = 30
 PCT_MAX: Final = 100                    # a battery level above this means "unknown"
-FX_SENDER_MIN: Final = 6                # the first sender version that sets trigger resistance
 
 
 def fresh_info(i: int, now: float) -> Info | None:
@@ -129,12 +128,24 @@ def is_low(i: int, low_batt: float) -> bool:
     return bool(S.alive[i]) and pct <= PCT_MAX and not flags & STATE_CHARGING and pct <= low_batt
 
 
+def sender_mismatch(i: int) -> bool:
+    """Tell whether the sender of pad i runs another version than this receiver (its version packet; unknown = no)."""
+    info = S.sender_info[i]
+    return info is not None and info[0] != SENDER_VERSION
+
+
+def version_text() -> str:
+    """The hint for a sender in another version (both sides are updated together)."""
+    return _("Nadajnik jest w innej wersji niż odbiornik - kliknij Aktualizuj.")
+
+
 def rumble_status(i: int) -> tuple[str, str, str]:
     """Describe the pad rumble according to the sender: (text, level, tooltip) for the card in the window."""
     info = S.sender_info[i]
     if info is None:
-        return (_("wibracja: stary nadajnik"), "warn",
-                _("Skopiuj nowe pliki sender/ na telefon - starszy nadajnik nie wibruje bez obsługi wibracji w jądrze."))
+        return _("wibracja: brak danych"), "warn", _("Nadajnik nie przysłał jeszcze opisu tego pada.")
+    if sender_mismatch(i):
+        return _("wibracja: inna wersja nadajnika"), "warn", version_text()
     bits, why = info[1] & (RUMBLE_EVDEV | RUMBLE_HIDRAW), info[2]     # the remaining bits are other capabilities of the sender
     if not bits:
         text, tip = {
@@ -152,21 +163,18 @@ def rumble_status(i: int) -> tuple[str, str, str]:
     return _("wibracja: {ways}").format(ways=" + ".join(ways)), "", ""
 
 
-def triggers_status(i: int, fx: bool = False) -> tuple[str, str]:
+def triggers_status(i: int) -> tuple[str, str]:
     """Tell whether the sender will set trigger effects for this pad: (text, level).
 
-    ("", "") = works or the pad is disconnected. fx: the profile uses click / trigger vibration / game vibration (needs
-    a sender with CAP_TRIG_FX).
+    ("", "") = works, the pad is disconnected or the sender has not described the pad yet.
     """
-    if not S.alive[i]:
-        return "", ""
     info = S.sender_info[i]
-    if info is None or info[0] < FX_SENDER_MIN:
-        return _("Nadajnik w starszej wersji nie ustawia oporu - kliknij Aktualizuj."), "warn"
+    if not S.alive[i] or info is None:
+        return "", ""
+    if sender_mismatch(i):
+        return version_text(), "warn"
     if not info[1] & CAP_TRIGGERS:
         return _("Opór wymaga raportu HID na telefonie (jak wibracja przez HID) - nadajnik go nie ma."), "warn"
-    if fx and not info[1] & CAP_TRIG_FX:
-        return _("Klik i wibracja spustu wymagają nowszego nadajnika - kliknij Aktualizuj (opór działa)."), "warn"
     import rx_master        # lazily: rx_master pulls in threads and WinAPI, and the status is also read without them
     if not rx_master.allowed(i, "triggers"):
         return _("Efekty spustów są tylko dla pada master (Ustawienia -> Master)."), "warn"

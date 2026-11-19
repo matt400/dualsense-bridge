@@ -69,7 +69,7 @@ pps: list[float] = []                   # state packets per second
 sender_info: list[tuple | None] = []    # (sender version, rumble ways, reason); None = old sender
 probe: list[list | None] = []           # drift measurement samples (lx, ly, rx, ry) or None
 gyro_cal: list[tuple | None] = []       # the last calres packet
-pad_kind: list[tuple[int, int] | None] = []   # (family PK_*, features PF_*) from the padkind packet; None = an older sender (a DualSense)
+pad_kind: list[tuple[int, int] | None] = []   # (family PK_*, features PF_*) from the padkind packet; None = not known yet (a DualSense)
 
 
 def new_state() -> PadState:
@@ -127,7 +127,7 @@ def init(store_: RemapStore) -> None:
     sender_info = [None] * n                         # (sender version, rumble ways, reason) from the version packet; None = old
     probe = [None] * n                               # drift measurement (rx_drift): a list of samples (lx, ly, rx, ry) or None
     gyro_cal = [None] * n                            # the last calres packet: (state, flags, saved, current, time, received)
-    pad_kind = [None] * n                            # the padkind packet: (family, features); None = an older sender - a DualSense
+    pad_kind = [None] * n                            # the padkind packet: (family, features); None = not known yet - a DualSense
 
 
 RESTART_PAUSE_STEP_S: Final = 0.2            # the pause before restarting a failed thread grows by this much per error ...
