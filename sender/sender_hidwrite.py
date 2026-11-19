@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import errno
 import os
 import queue
 import threading
@@ -31,6 +32,10 @@ import time
 from collections.abc import Callable
 from typing import Any, Final
 
+KIND_HID, KIND_AUDIO = "hid", "audio"       # the kinds Rumble writes with: which error counter a write belongs to (fails / _haptics_fails)
+# hidraw write errors that will not go away by retrying: the pad is gone, no kernel support, a bad report, permissions
+FATAL_ERRNO: Final = frozenset({errno.ENODEV, errno.ENOENT, errno.ENXIO, errno.EBADF, errno.ENOSYS, errno.EOPNOTSUPP,
+                                errno.EINVAL, errno.EACCES, errno.EPERM})
 MAX_PENDING: Final = 16         # reports waiting for the thread: a few 0x31 reports go out back to back (a stop, the triggers, a setup)
 AUDIO_PENDING: Final = 4        # an audio report is refused above this depth (40 ms): a late burst would overrun the pad's buffer
 SLOTS: Final = MAX_PENDING + 2  # copy buffers: the queued ones, the one being written and the one being filled

@@ -21,12 +21,12 @@ Effects set by a game on the virtual DualSense (HIDMaestro, trig3 packet) go to 
 them) - on a trigger for which the profile sets nothing (the profile wins).
 The pad keeps the last motor strength - the receiver refreshes rumble every 0.5 s, and the watchdog here stops it when
 the refreshes cease (lost packets, a closed game), so the pad does not rumble forever.
-HD haptics (Bluetooth only, the stream itself is in sender_haptics): while it runs, the pad's actuators play audio, and
-a report with a rumble bit (valid_flag0 0x01 / 0x02) takes them out of that mode. So during a stream every report of
-this module is built without rumble bits (lightbar and trigger flags are harmless), the kernel driver's own rumble
-reports (evdev FF) are not triggered, and a game's motor rumble waits (haptics_motors = haptics) or pauses the haptics
-until the motors stop (haptics_motors = rumble). Rumble.write_haptics is the only place that writes a haptics report, so the
-file descriptor and the sequence counter stay owned by Rumble.
+HD haptics and the speaker (Bluetooth only): while a stream runs, the pad's actuators play audio, and a report with a
+rumble bit (valid_flag0 0x01 / 0x02) takes them out of that mode. So during a stream every report of this module is built
+without rumble bits (lightbar and trigger flags are harmless) and the kernel driver's own rumble reports (evdev FF) are not
+triggered. Entering and leaving audio mode, the speaker volume and the policy for a game's motors are the AudioMode mixin
+(sender_audiomode); Rumble keeps the file descriptor, the writer thread and the sequence counter, so every write of both
+goes through Rumble._write.
 """
 
 import asyncio
@@ -35,8 +35,8 @@ import errno
 import os
 import sys
 import time
-from collections.abc import Callable, Sequence
-from typing import Any, Final, Protocol
+from collections.abc import Sequence
+from typing import Any, Final
 
 from evdev import InputDevice
 from evdev import ecodes as ec
@@ -46,11 +46,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 
 import sender_opus
 import sender_selftest as probe
-from sender_report import (BT_SEQ_MASK, BYTE_MASK, COMMON_LEN, EFFECT_FIELDS, L2_EFFECT_AT, MOTOR_MAX, R2_EFFECT_AT, RUMBLE_FX_AT,
-                           TRIG_OFF, VALID_FLAG0_AT, _bt_report, effect, game_effect, haptics_setup_report, output_report,
-                           rumble_amp, split_triggers, vibration_effect)
+from sender_report import (BT_SEQ_MASK, EFFECT_FIELDS, L2_EFFECT_AT, MOTOR_MAX, R2_EFFECT_AT, RUMBLE_FX_AT, TRIG_OFF, effect,
+                           game_effect, output_report, rumble_amp, split_triggers, vibration_effect)
 from sender_hidraw import VIBRATION_V2_FROM, ensure_node, find_hidraw, firmware_version, has_ff, kernel_has_hidraw
-from sender_hidwrite import AUDIO_PENDING, MAX_PENDING, HidWriter
+from sender_audiomode import MOTORS_HAPTICS, AudioMode
+from sender_hidwrite import FATAL_ERRNO, KIND_AUDIO, KIND_HID, MAX_PENDING, HidWriter
+from sender_tick import call_later
 from proto import (CAP_HAPTICS, CAP_SPEAKER, CAP_TRIGGERS, PLAYER_LEDS_MASK, RFX_HOLD_S,
                    RFX_ON, RUMBLE_EVDEV, RUMBLE_HIDRAW, SRC_PC, SRC_REPEAT, SRC_WATCHDOG, TFX_OFF, TRIG2_OFF,
                    WHY_ACCESS,
@@ -61,13 +62,6 @@ MODE_AUTO: Final = "auto"
 MODE_OFF: Final = "off"
 WAY_EVDEV: Final = "evdev"
 WAY_HIDRAW: Final = "hidraw"
-
-# ---- audio haptics: the 0x31 report that switches the actuators to audio, and the policy for a game's motors ----
-MOTORS_HAPTICS, MOTORS_RUMBLE = "haptics", "rumble"   # haptics_motors: the haptics win (log once) / the game's rumble wins
-HAPTICS_RESEND_S: Final = 0.05              # the setup report goes out a second time this much later (see Rumble._write_setup)
-HAPTICS_FAIL_MAX: Final = 50                # this many write errors in a row (~0.5 s of the stream) end the stream, not the HID way
-FLAG0_SPEAKER_VOLUME: Final = 0x20          # valid_flag0: the speaker volume byte of this report (P3a: safe on its own)
-SPEAKER_VOLUME_AT: Final = 5                # the speaker volume in the common part, 0..255 (0 = silent)
 
 # ---- rumble motors ----
 FF_MAGNITUDE_SCALE: Final = 257             # 0..255 -> 0..65535
@@ -89,9 +83,6 @@ LOGGED_COMMANDS: Final = 3                  # how many of the first rumble comma
 # A pad that is gone (ENODEV...) and an error that will not change (no kernel support, a bad report, permissions)
 # switch it off at once.
 FAIL_MAX: Final = 5
-KIND_HID, KIND_AUDIO = "hid", "audio"       # which error counter a queued write belongs to (Rumble.fails / _haptics_fails)
-FATAL_ERRNO: Final = frozenset({errno.ENODEV, errno.ENOENT, errno.ENXIO, errno.EBADF, errno.ENOSYS, errno.EOPNOTSUPP,
-                                errno.EINVAL, errno.EACCES, errno.EPERM})
 
 WHY_TEXT: Final = {
     WHY_OK: "ok", WHY_OFF: "rumble = off / evdev in config",
@@ -101,23 +92,7 @@ WHY_TEXT: Final = {
 }
 
 
-def _call_later(delay: float, callback: Callable[[], None]) -> asyncio.TimerHandle | None:
-    """Schedule ``callback`` on the running event loop; None when there is no running loop (the --test command, unit tests)."""
-    try:
-        return asyncio.get_running_loop().call_later(delay, callback)
-    except RuntimeError:
-        return None
-
-
-class HapticsReport(Protocol):
-    """A Bluetooth output report that carries haptics audio (0x32 now; a 0x33..0x36 variant or the speaker report may follow)."""
-
-    def finish(self, seq: int) -> bytes | bytearray | memoryview:
-        """Complete the report with the sequence number (and its own counter and CRC) and return the bytes to write."""
-        ...
-
-
-class Rumble:
+class Rumble(AudioMode):
     """Rumble of one pad. ``set(small, large)`` on every feedback packet; ``close()`` on disconnect.
 
     In "auto" mode BOTH ways work at once if they are available: the driver (evdev FF) and the HID report (hidraw).
@@ -168,15 +143,7 @@ class Rumble:
         self.logged = 0
         self.fails: dict[str, int] = {}       # way -> number of consecutive write errors (FAIL_MAX)
         self.cur = (0, 0)
-        self.motor_policy = haptics_motors
-        self.haptics = False                      # audio-haptics stream running: no rumble bits in any report (see output_report)
-        self.speaker = False                      # a speaker stream runs: the pad is in audio mode for it, like for haptics
-        self.t_audio = 0.0                        # when the last audio report was written (monotonic): the speaker follows this clock
-        self.ducked = False                       # policy "rumble": the game's motors paused the haptics
-        self._resume = False                      # the report being sent stops the motors of a paused stream: audio mode follows it
-        self._motors_noted = False                # "game rumble ignored" is logged once per stream
-        self._haptics_fails = 0                   # haptics writes that failed in a row (HAPTICS_FAIL_MAX)
-        self._haptics_timer: asyncio.TimerHandle | None = None   # the second setup report (HAPTICS_RESEND_S)
+        self._init_audio(haptics_motors)          # haptics / speaker state (sender_audiomode)
         self.rgb: Sequence[int] | None = None   # the lightbar colour sent together with rumble (HID report only)
         self.leds: tuple[int | None, int | None] = (None, None)   # (mute LED, player LEDs) set by the game; None = the kernel's own
         self.trig: tuple[bytes, bytes] | None = None       # trigger effects sent to the pad, or None = never touched
@@ -209,6 +176,11 @@ class Rumble:
     def mode(self) -> str | None:
         """The main way (for logs and tests): the first working one, or None."""
         return self.methods[0] if self.methods else None
+
+    @property
+    def hid(self) -> bool:
+        """Whether the HID report way works (it carries the lightbar, the triggers, the LEDs and the audio modes)."""
+        return WAY_HIDRAW in self.methods
 
     @property
     def owns_lightbar(self) -> bool:
@@ -382,7 +354,7 @@ class Rumble:
             self._trig_watch.cancel()
             self._trig_watch = None
         if on:
-            self._trig_watch = _call_later(TRIG_WATCHDOG_S, self._trig_expired)
+            self._trig_watch = call_later(TRIG_WATCHDOG_S, self._trig_expired)
 
     def _trig_expired(self) -> None:
         """Watchdog fired: no trigger refresh from the PC for TRIG_WATCHDOG_S - release the triggers (switch all effects off)."""
@@ -459,7 +431,7 @@ class Rumble:
             self._rv_timer.cancel()
             self._rv_timer = None
         if hold:
-            self._rv_timer = _call_later(RFX_HOLD_S, self._rv_expired)
+            self._rv_timer = call_later(RFX_HOLD_S, self._rv_expired)
 
     def _rv_expired(self) -> None:
         """Hold time over: resend the report so the trigger falls back to its normal effect."""
@@ -471,7 +443,7 @@ class Rumble:
         """Schedule one extra send REPEAT_S from now (replacing a pending one) to protect a change against a lost report."""
         if self._repeat is not None:
             self._repeat.cancel()
-        self._repeat = _call_later(REPEAT_S, self._send_again)
+        self._repeat = call_later(REPEAT_S, self._send_again)
 
     def _send_again(self) -> None:
         """Timer callback of _arm_repeat: resend the current rumble over the HID report."""
@@ -569,6 +541,16 @@ class Rumble:
             self._close_fd()                          # without this the descriptor leaked (reopening overwrote fd)
         return True
 
+    def _hid_failed(self, error: OSError) -> None:
+        """Count a write error of the HID report way (the AudioMode hook)."""
+        self._failed(WAY_HIDRAW, error)
+
+    def _refresh_hid(self) -> None:
+        """Resend the current motors, colour and triggers over the HID report, plus one repeat (the AudioMode hook)."""
+        if self.hid:
+            self._send(*self.cur, only=WAY_HIDRAW)
+            self._arm_repeat()
+
     def _close_fd(self, wait: bool = False) -> None:
         """Close the hidraw file descriptor if one is open (with a writer thread: after it has written what is queued).
 
@@ -618,7 +600,7 @@ class Rumble:
         if kind == KIND_AUDIO:
             self._haptics_failed(error)
         else:
-            self._failed(WAY_HIDRAW, error)
+            self._hid_failed(error)
 
     def _write_ok(self, kind: str) -> None:
         """Loop callback of the writer thread: a write went out again after errors - the run of errors is over."""
@@ -681,7 +663,7 @@ class Rumble:
             self._watch.cancel()
             self._watch = None
         if self.cur != (0, 0):
-            self._watch = _call_later(WATCHDOG_S, self._expired)
+            self._watch = call_later(WATCHDOG_S, self._expired)
 
     def _expired(self) -> None:
         """Watchdog fired: the receiver stopped refreshing the rumble, so switch the motors off."""
@@ -693,208 +675,11 @@ class Rumble:
             finally:
                 self._src = SRC_PC
 
-    # ---------- audio haptics (the stream itself is HapticsStream in sender_haptics) ----------
-    @property
-    def audio(self) -> bool:
-        """Whether reports must keep the actuators in audio mode: a haptics or speaker stream runs, no game motors paused it."""
-        return (self.haptics or self.speaker) and not self.ducked
-
-    def _audio_for(self, small: int, large: int) -> bool:
-        """Decide whether a report with these motor values goes out in the audio flavour (no rumble bits).
-
-        Policy "haptics": always while the stream runs; the first motor request of a stream is logged. Policy "rumble": motors
-        above zero pause the haptics (``ducked``: normal reports), and so does the report that stops them - ``_resume`` then
-        puts the pad back into audio mode right after it (see _send).
-        """
-        if not (self.haptics or self.speaker):
-            return False
-        motors = bool(small or large)
-        if self.motor_policy == MOTORS_RUMBLE:
-            if motors and not self.ducked:
-                self.ducked = True
-                print(f"Controller {self.idx}: game rumble pauses the haptics until the motors stop (haptics_motors = rumble)")
-            elif self.ducked and not motors:
-                self._resume = True
-        elif motors and not self._motors_noted:
-            self._motors_noted = True
-            print(f"Controller {self.idx}: game rumble ignored while haptics play (haptics_motors = haptics)")
-        return not self.ducked
-
-    def haptics_begin(self) -> bool:
-        """Put the pad into audio-haptics mode for a stream (HapticsStream calls it with the first chunk).
-
-        Motors that are running are stopped first: once reports carry no rumble bits their stop would never arrive. The game's
-        value stays in ``cur`` and haptics_end applies it again. Policy "rumble" with the motors running starts paused instead.
-
-        Returns:
-            True when the pad is in audio mode (or waits for the motors to stop); False when it cannot play haptics (USB, no HID
-            report).
-        """
-        if self.haptics:
-            return True
-        if not self._can_audio():
-            return False
-        if self.speaker:                    # already in audio mode: the speaker's setup report is in effect
-            self.haptics = True
-            return True
-        self._enter_audio(haptics=True)
-        return True
-
-    def _can_audio(self) -> bool:
-        """Whether the pad can take audio reports: a Bluetooth pad with a working HID report way."""
-        return WAY_HIDRAW in self.methods and self.fd is not None and self.bt
-
-    def _enter_audio(self, haptics: bool) -> None:
-        """Switch the pad from the normal mode to audio mode for the first stream (haptics or speaker).
-
-        Args:
-            haptics: True for a haptics stream, False for a speaker stream.
-        """
-        rumbling = any(self.cur)
-        if rumbling and self.motor_policy != MOTORS_RUMBLE:
-            self._send(0, 0)        # before the flags below: this report must still carry the stop
-        self.haptics, self.speaker = haptics, not haptics
-        self.ducked = rumbling and self.motor_policy == MOTORS_RUMBLE
-        self._motors_noted, self._haptics_fails = False, 0
-        if not self.ducked:
-            self._write_setup()
-
-    def speaker_begin(self, volume: int) -> bool:
-        """Put the pad into audio mode for a speaker stream and set the speaker volume (SpeakerStream calls it with the first frame).
-
-        Args:
-            volume: The speaker volume byte, 0..255.
-
-        Returns:
-            True when the pad is in audio mode; False when it cannot play audio (USB, no HID report).
-        """
-        if self.speaker:
-            return True
-        if not self._can_audio():
-            return False
-        if self.haptics:                    # already in audio mode: the haptics setup report is in effect
-            self.speaker = True
-        else:
-            self._enter_audio(haptics=False)
-        self._write_volume(volume)
-        return True
-
-    def speaker_end(self) -> None:
-        """End a speaker stream: the volume goes to 0 first (it removed the pop at the end of a stream in P3a), then the normal mode."""
-        if not self.speaker:
-            return
-        self.speaker = False
-        self._write_volume(0)
-        if not self.haptics:
-            self._leave_audio()
-
-    def _write_volume(self, volume: int) -> None:
-        """Write a report that only sets the speaker volume (valid_flag0 0x20: no rumble bit, so audio mode is not left)."""
-        if self.fd is None:
-            return
-        common = bytearray(COMMON_LEN)
-        common[VALID_FLAG0_AT] = FLAG0_SPEAKER_VOLUME
-        common[SPEAKER_VOLUME_AT] = max(0, min(BYTE_MASK, volume))
-        self.seq = (self.seq + 1) & BT_SEQ_MASK
-        try:
-            self._write(_bt_report(common, self.seq), KIND_AUDIO)
-        except (BlockingIOError, InterruptedError):
-            pass
-        except OSError as e:
-            self._haptics_failed(e)
-
-    def _write_setup(self) -> None:
-        """Send the setup report now and once more HAPTICS_RESEND_S later.
-
-        The second copy covers a lost report and the kernel driver's own rumble report that may still be queued behind the
-        one that stopped the motors: re-sending the setup report brought the haptics back every time in the P0 measurements.
-        """
-        self._setup_report()
-        if self._haptics_timer is not None:
-            self._haptics_timer.cancel()
-        self._haptics_timer = _call_later(HAPTICS_RESEND_S, self._resend_setup)
-
-    def _setup_report(self) -> None:
-        """Write one setup report; a full queue is not an error (the second copy follows)."""
-        if self.fd is None:
-            return
-        self.seq = (self.seq + 1) & BT_SEQ_MASK
-        try:
-            self._write(haptics_setup_report(self.seq), KIND_AUDIO)
-        except (BlockingIOError, InterruptedError):
-            pass
-        except OSError as e:
-            self._haptics_failed(e)
-
-    def _resend_setup(self) -> None:
-        """Timer callback of _write_setup: the second setup report, unless the stream ended or the motors paused it meanwhile."""
-        self._haptics_timer = None
-        if self.audio:
-            self._setup_report()
-
-    def write_haptics(self, report: HapticsReport) -> bool:
-        """Write one haptics report (the stream's tick); Rumble owns the file descriptor and the sequence counter.
-
-        Args:
-            report: The report; ``finish(seq)`` gives the bytes to write.
-
-        Returns:
-            True when the report was written; False when it was not (no stream, paused by the game's motors, a full queue, an
-            error). A run of errors ends the stream (``haptics`` becomes False), but never switches the HID way off.
-        """
-        if not self.audio or self.fd is None:
-            return False
-        self.seq = (self.seq + 1) & BT_SEQ_MASK
-        try:
-            self._write(report.finish(self.seq), KIND_AUDIO, reused=True, limit=AUDIO_PENDING)
-        except (BlockingIOError, InterruptedError):
-            return False
-        except OSError as e:
-            self._haptics_failed(e)
-            return False
-        if self._writer is None:              # queued: the writer thread reports the outcome (_write_failed / _write_ok)
-            self._haptics_fails = 0
-        self.t_audio = time.monotonic()
-        return True
-
-    def _haptics_failed(self, error: OSError) -> None:
-        """Count a failed haptics write: a pad that is gone goes through _failed, a long run of errors ends only the stream."""
-        self._haptics_fails += 1
-        if error.errno in FATAL_ERRNO:
-            self.haptics = self.speaker = self.ducked = False
-            self._failed(WAY_HIDRAW, error)
-        elif self._haptics_fails >= HAPTICS_FAIL_MAX:
-            print(f"Controller {self.idx}: audio stopped after {self._haptics_fails} write errors ({error!r})")
-            self.haptics = self.speaker = False
-            self._leave_audio()
-        elif self._haptics_fails == 1:
-            print(f"Controller {self.idx}: haptics write failed ({error!r}) - retrying")
-
-    def haptics_end(self) -> None:
-        """Leave audio-haptics mode: a normal report (rumble, lightbar and trigger state) takes the actuators back from audio."""
-        if not self.haptics:
-            return
-        self.haptics = False
-        if not self.speaker:                # a running speaker stream keeps the pad in audio mode
-            self._leave_audio()
-
-    def _leave_audio(self) -> None:
-        """Back to the normal mode after the last audio stream: a normal report brings rumble, lightbar and triggers back."""
-        self.ducked = self._resume = False
-        if self._haptics_timer is not None:
-            self._haptics_timer.cancel()
-            self._haptics_timer = None
-        if WAY_HIDRAW in self.methods:
-            self._send(*self.cur, only=WAY_HIDRAW)
-            self._arm_repeat()
-
     def close(self) -> None:
         """Shut rumble down cleanly: cancel timers, stop the motors, release hard triggers, erase the FF effect, close the fd."""
         self._closed = True
-        if self.haptics or self.speaker:
-            self.haptics = self.speaker = False
-            self._leave_audio()                     # back to the normal mode before the final reports
-        for name in ("_watch", "_repeat", "_rv_timer", "_trig_watch", "_haptics_timer"):
+        self._close_audio()                         # back to the normal mode before the final reports
+        for name in ("_watch", "_repeat", "_rv_timer", "_trig_watch"):
             timer = getattr(self, name)
             if timer is not None:
                 timer.cancel()

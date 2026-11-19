@@ -11,6 +11,7 @@ import sender_ctrl
 import sender_haptics as H
 import sender_net as net
 import sender_opus as O
+import sender_audiomode as A
 import sender_rumble as R
 import sender_speaker as S
 import sender_state as state
@@ -592,7 +593,7 @@ async def rumble_scenarios():
         os.write = lambda fd, buf: (_ for _ in ()).throw(OSError(5, "io")) if buf[0] == 0x36 else real(fd, buf)
         rep.attach(lambda: None, 80)
         with contextlib.redirect_stdout(io.StringIO()):
-            for _ in range(R.HAPTICS_FAIL_MAX):
+            for _ in range(A.HAPTICS_FAIL_MAX):
                 r.write_haptics(rep)
         assert not r.speaker and not r.haptics and R.WAY_HIDRAW in r.methods, "a run of errors ends the audio mode, not the HID way"
     finally:
