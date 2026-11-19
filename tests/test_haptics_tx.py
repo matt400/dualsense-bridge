@@ -10,6 +10,7 @@ import sender_ctrl
 import sender_haptics as H
 import sender_net as net
 import sender_report as RP
+import sender_audiomode as A
 import sender_rumble as R
 import sender_state as state
 import sender_supervisor as sup
@@ -153,7 +154,7 @@ async def scenarios():
     assert r.haptics_begin() and r.haptics and r.audio
     out = reports(path)
     assert out[-1] == RP.haptics_setup_report(out[-1][1] >> 4) and common(out[-1])[0] == 0 and common(out[-1])[1] == 0x62
-    await asyncio.sleep(R.HAPTICS_RESEND_S + 0.03)
+    await asyncio.sleep(A.HAPTICS_RESEND_S + 0.03)
     out = reports(path)
     assert [common(x)[1] for x in out].count(0x62) == 2 and common(out[-1])[1] == 0x62 and crc_ok(out[-1]), "the setup report goes out twice"
     assert all(common(x)[0] & 0x03 == 0 for x in out[1:]), "the pending repeat of the earlier rumble set does not cut the haptics"
@@ -260,7 +261,7 @@ async def scenarios():
         mode["err"] = OSError(errno.EIO, "io")
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
-            for _ in range(R.HAPTICS_FAIL_MAX - 1):
+            for _ in range(A.HAPTICS_FAIL_MAX - 1):
                 assert not r.write_haptics(rep)
             assert r.haptics and R.WAY_HIDRAW in r.methods
             assert not r.write_haptics(rep)

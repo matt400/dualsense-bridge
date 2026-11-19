@@ -5,6 +5,7 @@ sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
 import sender_hidwrite as HW
 import sender_report as RP
+import sender_audiomode as A
 import sender_rumble as R
 from sender_haptics import REPORT_LEN, Report32
 
@@ -120,7 +121,7 @@ async def main():
         raise OSError(errno.EIO, "io")
     HW.os.write = failing
     try:
-        for _ in range(R.HAPTICS_FAIL_MAX + 5):
+        for _ in range(A.HAPTICS_FAIL_MAX + 5):
             r.write_haptics(rep)
             await asyncio.sleep(0.001)
         await settle(r._writer)

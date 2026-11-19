@@ -24,6 +24,16 @@ from collections.abc import Callable
 from typing import Any, Final
 
 NS_PER_S: Final = 1_000_000_000
+
+
+def call_later(delay: float, callback: Callable[[], None]) -> asyncio.TimerHandle | None:
+    """Schedule ``callback`` on the running event loop; None when there is no running loop (the --test command, unit tests)."""
+    try:
+        return asyncio.get_running_loop().call_later(delay, callback)
+    except RuntimeError:
+        return None
+
+
 # looked up by name: os.timerfd_* exist only on Linux with Python 3.13+, and the type checker targets 3.11
 _create: Any = getattr(os, "timerfd_create", None)
 _settime: Any = getattr(os, "timerfd_settime_ns", None)
