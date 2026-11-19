@@ -19,8 +19,8 @@ Rollback: the previous version stays on disk next to the new one (KEEP = 2). Whe
 one to fall back to) it is written to hidmaestro/state.json as bad: candidates() skips it, the updater does not download it
 again, and after a restart the previous version loads. Delete state.json to try the version again.
 
-  receiver/hm_pin.json                              the pin: {"tag": "v2.1.0", "files": {name: sha256}}
-  receiver/hidmaestro/v2.1.0/HIDMaestro.Core.dll    a version in its own folder: a newer one does not overwrite a DLL loaded
+  receiver/hm_pin.json                              the pin: {"tag": "v2.2.0", "files": {name: sha256}}
+  receiver/hidmaestro/v2.2.0/HIDMaestro.Core.dll    a version in its own folder: a newer one does not overwrite a DLL loaded
                                                     in the running process (the CLR holds the file) - it works after a restart
 
   read_pin(path)    parse and validate a pin file
@@ -117,7 +117,7 @@ class Pin:
 
 
 def read_pin(path: str) -> Pin:
-    """Read and validate a pin file: {"tag": "v2.1.0", "files": {"<file name>": "<sha256>", ...}}.
+    """Read and validate a pin file: {"tag": "v2.2.0", "files": {"<file name>": "<sha256>", ...}}.
 
     The files must include the DLL and its dependencies; every name is a plain file name (it becomes a path in the version folder).
 
