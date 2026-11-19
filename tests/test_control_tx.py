@@ -1,6 +1,8 @@
 import asyncio, os, sys, time
 sys.path.insert(0, sys.argv[1])
 sys.path.insert(1, sys.argv[1] + "/../common")
+sys.path.insert(0, os.path.dirname(__file__))
+from fakenet import PacketSock
 import sender_config; sender_config.init(["127.0.0.1"])
 from sender_config import C
 import sender_net as net, sender_ctrl, sender_control as ctl, sender_state as state
@@ -22,16 +24,11 @@ c.pad[0] = 128; c.mask = 1; c.note_input(12.0); assert c.last_input == 12.0
 print("OK   activity: noise ignored, stick / button counted")
 
 # a command from the PC through the socket: on_readable -> on_command -> bluetoothctl disconnect
-class FakeSock:
-    def __init__(s, pkts): s.pkts = list(pkts)
-    def recv(s, n):
-        if s.pkts: return s.pkts.pop(0)
-        raise BlockingIOError
 pc = Codec()
 async def t_cmd():
     state.active.clear(); state.active[mac] = c; c.mask = 0
     net.handlers.command = ctl.on_command
-    net.link.sock = FakeSock([pc.pack(T_CMD, 0, CMD_POWER_OFF, 0)] * 3 + [pc.pack(T_CMD, 1, CMD_POWER_OFF, 0)])
+    net.link.sock = PacketSock([pc.pack(T_CMD, 0, CMD_POWER_OFF, 0)] * 3 + [pc.pack(T_CMD, 1, CMD_POWER_OFF, 0)])
     net.on_readable()
     await asyncio.sleep(0.5)
 asyncio.run(t_cmd())
@@ -52,7 +49,7 @@ print("OK   pad over USB skipped, missing bluetoothctl does not crash the sender
 
 # a ping for the info packet
 net.link.recent_rtt.clear(); assert net.rtt_x10() == RTT_NONE
-net.link.sock = FakeSock([pc.pack(T_PONG2, 255, net.link.clock.ns() - 2_000_000, 0)]); net.on_readable()
+net.link.sock = PacketSock([pc.pack(T_PONG2, 255, net.link.clock.ns() - 2_000_000, 0)]); net.on_readable()
 assert 15 <= net.rtt_x10() <= 40, net.rtt_x10()
 
 # info every second + power-off after idle

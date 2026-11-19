@@ -15,6 +15,7 @@ from sender_motion import BtDelay
 
 TMP = tempfile.mkdtemp()
 from chk import ok
+from fakenet import PacketSock
 
 # ---------- efekt spustu ----------
 off = RP.trigger_effect(0, 0)
@@ -151,18 +152,9 @@ net.handlers.triggers = lambda idx, vals: got.append((idx, vals))
 net.link.pc_clock = net.PcClock()
 
 
-class Sock:
-    def __init__(self, pkts):
-        self.pkts = list(pkts)
-    def recv(self, n):
-        if not self.pkts:
-            raise BlockingIOError
-        return self.pkts.pop(0)
-
-
 TRIG3_RES = (TFX_OFF, 0, 0, 0, TFX_RES, 3, 6, 0, 0, 0, 0, 0)
 net.link.codec = cod
-net.link.sock = Sock([cod.pack(T_TRIG3, 1, *TRIG3_RES, bytes(11), bytes(11), 0), cod.pack(T_PONG2, 255, time.perf_counter_ns() - 100_000, 5_000_000)])
+net.link.sock = PacketSock([cod.pack(T_TRIG3, 1, *TRIG3_RES, bytes(11), bytes(11), 0), cod.pack(T_PONG2, 255, time.perf_counter_ns() - 100_000, 5_000_000)])
 net.on_readable()
 assert got == [(1, (*TRIG3_RES, bytes(11), bytes(11), 0))] and net.link.pc_clock.offset_us is not None
 ok("sender_net: trig3 packet -> callback, pong2 -> PC clock")
@@ -170,7 +162,7 @@ ok("sender_net: trig3 packet -> callback, pong2 -> PC clock")
 own = net.Net()                                          # a second link: its own socket, codec, handlers and counters
 cmds = []
 own.handlers.command = lambda idx, cmd, arg: cmds.append((idx, cmd, arg))
-own.codec, own.sock = cod, Sock([cod.pack(T_CMD, 2, 7, 9)])
+own.codec, own.sock = cod, PacketSock([cod.pack(T_CMD, 2, 7, 9)])
 own.on_readable()
 assert cmds == [(2, 7, 9)] and net.link.handlers.command is not own.handlers.command and own.pongs == 0
 assert own.pc_clock is not net.link.pc_clock and own.clock is net.link.clock, "one process clock, a PC clock per link"

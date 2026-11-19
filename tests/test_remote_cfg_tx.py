@@ -18,20 +18,10 @@ from proto import (BODY, CFG_ALL, CFG_GET, CFG_RESET, CFG_SET, CFGF_LAST, CFGF_R
 from sender_ctrl import Ctrl
 
 from chk import check, fails, raises                          # noqa: E402  (shared helper, tests/chk.py)
+from fakenet import PacketSock
 
 ID = cfgspec.BY_KEY
 N = len(cfgspec.SPECS)
-
-
-class FakeSock:
-    def __init__(s, pkts=()):
-        s.pkts, s.sent = list(pkts), []
-    def recv(s, n):
-        if s.pkts:
-            return s.pkts.pop(0)
-        raise BlockingIOError
-    def send(s, data):
-        s.sent.append(data)
 
 
 TMP = tempfile.mkdtemp()
@@ -50,7 +40,7 @@ def pc_token():
 pc = Codec(b"sekret", token=pc_token, now_ms=pc_clock.ms32)
 t0 = net.link.clock.ns()
 sender_t0.append((t0, time.perf_counter_ns()))
-net.link.sock = FakeSock([pc.pack(T_PONG2, 255, t0, pc_clock.ns() // 1000)])
+net.link.sock = PacketSock([pc.pack(T_PONG2, 255, t0, pc_clock.ns() // 1000)])
 net.on_readable()
 check(net.link.codec.key == b"sekret" and net.link.pc_clock.offset_us is not None, "setup: the sender with a key knows the PC clock")
 
@@ -59,7 +49,7 @@ def sync():
     """Refresh the sender's PC clock (it expires after 3 s without pong2): without it no v3 packets leave the sender."""
     t = net.link.clock.ns()
     sender_t0.append((t, time.perf_counter_ns()))
-    net.link.sock = FakeSock([pc.pack(T_PONG2, 255, t, pc_clock.ns() // 1000)])
+    net.link.sock = PacketSock([pc.pack(T_PONG2, 255, t, pc_clock.ns() // 1000)])
     net.on_readable()
 
 
@@ -67,7 +57,7 @@ def ask(*packets, codec=pc):
     """Send packets to the sender, return the cfgval replies as tuples (id, result, ref, flags, value, from file)."""
     if codec is pc:
         sync()
-    net.link.sock = FakeSock(list(packets))
+    net.link.sock = PacketSock(list(packets))
     net.on_readable()
     out = []
     for raw in net.link.sock.sent:

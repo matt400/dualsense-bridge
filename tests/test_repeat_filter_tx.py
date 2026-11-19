@@ -12,15 +12,7 @@ import sender_net as net
 from proto import BT_CONNECT, BT_LIST, CFG_SET, CMD_GYRO_CAL, CMD_POWER_OFF, T_BTCMD, T_CFGSET, T_CMD, Codec, SeqFilter
 
 from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
-
-
-class FakeSock:
-    def __init__(s, pkts=()):
-        s.pkts = list(pkts)
-    def recv(s, n):
-        if s.pkts:
-            return s.pkts.pop(0)
-        raise BlockingIOError
+from fakenet import PacketSock
 
 
 net.init()
@@ -36,7 +28,7 @@ def deliver(*packets):
     net.link.fb_filter = SeqFilter(1.0)
     for lst in (cfgs, cmds, bts):
         lst.clear()
-    net.link.sock = FakeSock(packets)
+    net.link.sock = PacketSock(packets)
     net.on_readable()
     return list(cfgs), list(cmds), list(bts)
 

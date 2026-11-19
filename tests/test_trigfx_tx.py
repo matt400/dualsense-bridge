@@ -13,6 +13,7 @@ from proto import (BODY, CAP_TRIGGERS, RFX_HOLD_S, RFX_ON, T_TRIG3, TFX_CLICK, T
 
 TMP = tempfile.mkdtemp()
 from chk import ok
+from fakenet import PacketSock
 
 # ---------- effect encoding ----------
 w = RP.weapon_effect(5, 6)
@@ -140,18 +141,9 @@ got = []
 net.handlers.triggers = lambda idx, vals: got.append((idx, vals))
 
 
-class Sock:
-    def __init__(self, pkts):
-        self.pkts = list(pkts)
-    def recv(self, n):
-        if not self.pkts:
-            raise BlockingIOError
-        return self.pkts.pop(0)
-
-
 vals = (TFX_CLICK, 5, 7, 0, TFX_VIB, 0, 3, 30, RFX_ON, 120, 40, 0)
 net.link.codec = cod
-net.link.sock = Sock([cod.pack(T_TRIG3, 1, *vals, bytes(11), bytes(11), 0)])
+net.link.sock = PacketSock([cod.pack(T_TRIG3, 1, *vals, bytes(11), bytes(11), 0)])
 net.on_readable()
 assert got == [(1, (*vals, bytes(11), bytes(11), 0))], got
 assert BODY[T_TRIG3].size == 12 + 2 * 11 + 1
