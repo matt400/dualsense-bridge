@@ -1,7 +1,7 @@
 {
-  "tag": "v2.1.0",
+  "tag": "v2.2.0",
   "files": {
-    "HIDMaestro.Core.dll": "f13e32591404db0f418af9265b8e240f71257297cfae5a41dcd696fd87e9b4d5",
+    "HIDMaestro.Core.dll": "dbf1baa5a9268085aeb3d6ed08db0878a19dd742514ffc0f1c56350cd4893dd1",
     "Microsoft.Windows.SDK.NET.dll": "c633ab241cd09846c2aa409f0bee2026962610404a7bf132c75cbd66b0e5a9f4",
     "WinRT.Runtime.dll": "bcf3a14e8712a90837fc5c0d8c8a24696af2bd7f74e9767597ec81ededfb23db"
   }
