@@ -11,7 +11,7 @@ DualSense pad → Bluetooth → **sender** (Linux, evdev) → UDP 5005 → **rec
 ## Layout
 ```
 sender/    sender_controller.py (entry point) + sender_*.py; install-service.sh, service/
-common/    proto.py (wire protocol, atomic writes), gitupdate.py (git version + update for both sides), cfgspec.py (sender settings changeable from the receiver; ids are append-only), the one copy used by sender and receiver
+common/    proto.py (wire protocol), fileio.py (atomic writes, JSON state files, config loading), gitupdate.py (git version + update for both sides), cfgspec.py (sender settings changeable from the receiver; ids are append-only), the one copy used by sender and receiver
 receiver/  receiver_controller.py (entry point) + rx_*.py (logic) + rx_qt*.py (window)
 tests/     Linux tests with Windows/evdev stubs (rxenv.py); fakebin/ = fake bluetoothctl; run_tests.sh = the CI entry (finds tests by name)
 docs/      EN by default, PL as *.pl.md (user docs, not needed for code work)
@@ -34,7 +34,7 @@ Every module has a docstring with its role; find the file here before opening an
   `sender_migrate` (sender.toml migration), `sender_ioctl`.
 
 **Common** (`common/`, used by both sides)
-- `proto` (wire protocol: packet codec, HMAC, atomic file writes), `gitupdate` (git version + update), `cfgspec` (sender settings changeable from the receiver; ids are append-only).
+- `proto` (wire protocol: packet codec, HMAC), `fileio` (atomic file writes, `read_json_object`, `load_config`), `gitupdate` (git version + update), `cfgspec` (sender settings changeable from the receiver; ids are append-only).
 
 **Receiver** (`receiver/`)
 - Core: `receiver_controller` (main), `rx_config` (DEFAULTS + CLI), `rx_state` (`S.xxx`, `run_forever`), `rx_net` (packet receive, events, silence),
@@ -60,13 +60,14 @@ Every module has a docstring with its role; find the file here before opening an
 `wol.json`, `remote_cfg.json`, `gyro_cal.json`, `bt.json`, `padcal.json`, `receiver_ui.ini`, `receiver/backups/`, `receiver/reports/`, `receiver/hidmaestro/`.
 
 ## Hard rules
-- `common/proto.py` is the only copy of the protocol; do not add `proto.py` to `receiver/` or `sender/` (`run_tests.sh` fails on that).
+- `common/` holds the only copy of `proto.py`, `fileio.py`, `gitupdate.py`, `cfgspec.py`; never copy them into `receiver/` or `sender/`
+  (`run_tests.sh` fails on that).
   Entry scripts and tests put `common/` on `sys.path` (a new entry script or test needs the same line); mypy uses `mypy_path`.
 - Both sides ship from this repo and are updated together: each packet has one format, no variants for an older peer.
   A format change bumps `proto.SENDER_VERSION` (the receiver warns on a mismatch). Keep ping, cmd (CMD_UPDATE) and the
   update flow unchanged, so the Update button still reaches an older sender.
 - Hot path (evdev read, packing, UDP receive, HID report building) – no allocations or copies, latency is what matters.
-- Settings files are written only via `proto.write_file` / `proto.write_json` (atomic, fsync).
+- Settings files are written only via `fileio.write_file` / `fileio.write_json` (atomic, fsync).
 - Window texts go through `rx_i18n` (PL + EN); never hardcode UI strings.
 - Windows code (ctypes, pythonnet, COM) must import on Linux using the stubs from `tests/rxenv.py`.
 

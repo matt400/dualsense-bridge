@@ -46,7 +46,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, replace
 from typing import Any, Final
 
-from proto import read_json_object, write_json
+from fileio import read_json_object, write_json
 from rx_config import HERE
 
 REPO: Final = "hifihedgehog/HIDMaestro"

@@ -156,7 +156,7 @@ def elevate() -> None:
         return
     if not autostart and not _recent_try():
         import rx_autostart
-        from proto import write_file
+        from fileio import write_file
         try:
             write_file(_guard_path(), str(os.getpid()))        # atomic: a half-written guard would still carry a fresh mtime
         except OSError:

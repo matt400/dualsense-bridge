@@ -56,7 +56,7 @@ The tests cover:
   CoUninitialize; shortcuts, master actions and the console mode button at the edge of the Test view computed from
   held inputs, sender Bluetooth without busctl / permissions, autobias after calibration from the window
   (`test_input_state_boundaries.py`, `test_bt_window_errors_tx.py`); a new DSU client gets the state immediately, atomic settings file writes
-  with fsync - `proto.write_file` / `write_json` (`test_atomic_writes.py`, `test_atomic_writes_tx.py`); HIDMaestro downloaded with
+  with fsync - `fileio.write_file` / `write_json` (`test_atomic_writes.py`, `test_atomic_writes_tx.py`); HIDMaestro downloaded with
   a single Range request per file (a 200 response = error), starting as administrator without a UAC prompt for a
   second instance and without a loop for a read-only folder, the administrator receiver's lock seen from an
   unelevated process, autostart tasks with custom arguments (`test_hm_download_elevation.py`);

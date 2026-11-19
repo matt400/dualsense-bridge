@@ -23,7 +23,7 @@ from typing import Final
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "common"))   # proto.py is shared, it lives in common/
 
-from proto import PERMISSION_BITS, write_file
+from fileio import PERMISSION_BITS, write_file
 
 Change = tuple[str, str, str, str]      # (key, old text, new text, reason)
 
@@ -112,7 +112,7 @@ def migrate(path: str, log: Callable[[str], None] = print) -> list[Change]:
     """Migrate the file in place and return the list of changes (empty = nothing to do, no file, or a write error - logged).
 
     Order of operations: read the file, compute the new text, save the old text as <path>.bak, write the new text
-    atomically (proto.write_file), then restore the original owner - the service runs as root and must not take over
+    atomically (fileio.write_file), then restore the original owner - the service runs as root and must not take over
     a file that belongs to the user. If writing fails, the old defaults simply stay in use.
     """
     try:

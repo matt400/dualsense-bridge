@@ -9,6 +9,7 @@ sys.path.insert(0, sys.argv[1])
 sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
 import proto
+import fileio
 import sender_btadapter as BA
 import sender_net as net
 import sender_state as state
@@ -31,7 +32,7 @@ check(calls == [(os.path.join(TMP, "bt.json"), {"mode": "pick", "device": "hci1"
 async def loop_not_blocked():
     """While save_mode runs inside the loop, the write happens in the writer thread."""
     seen = []
-    real = proto.write_file
+    real = fileio.write_file
     import threading
     main_thread = threading.get_ident()
     def spy(path, content):

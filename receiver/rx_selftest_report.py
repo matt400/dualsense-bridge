@@ -8,7 +8,7 @@ The layout is fixed (``REPORT_VERSION``): a change that renames or moves a field
     then ```json with everything (the same numbers, every series with n / percentiles).
 
 Every measured series carries its sample count and percentiles (never just a mean); the latency tables say the window and the sample count.
-Files go to ``reports/`` next to settings.json (``save``), written with proto.write_file.
+Files go to ``reports/`` next to settings.json (``save``), written with fileio.write_file.
 """
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from datetime import datetime
 from typing import Any, Final
 
 import rx_selftest as T
-from proto import write_file
+from fileio import write_file
 from rx_config import C
 
 REPORT_VERSION: Final = 1

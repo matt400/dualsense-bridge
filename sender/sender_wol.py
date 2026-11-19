@@ -25,8 +25,8 @@ from typing import TYPE_CHECKING, Final
 import sender_events as events
 import sender_net as net
 import sender_state as state
-from proto import (E_WOL, E_WOL_FAIL, KEY_BIT, PAD_KEYS, SCFG_EVENTS, SCFG_WOL, WOL_PORTS, mac_bytes, mac_text, magic_packet,
-                   read_json_object)
+from proto import E_WOL, E_WOL_FAIL, KEY_BIT, PAD_KEYS, SCFG_EVENTS, SCFG_WOL, WOL_PORTS, mac_bytes, mac_text, magic_packet
+from fileio import read_json_object
 from sender_config import C
 
 if TYPE_CHECKING:

@@ -46,7 +46,7 @@ import rx_settings
 import rx_state as S
 import rx_winapi as W
 from rx_buttons import BIT, BUTTON_CODES, DIRS, INPUTS, TRIG_ON, pressed_inputs
-from proto import write_json
+from fileio import write_json
 from rx_config import C
 from rx_i18n import _
 from rx_settings import _bool, _choice, _num

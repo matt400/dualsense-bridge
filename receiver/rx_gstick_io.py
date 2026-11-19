@@ -17,7 +17,7 @@ from typing import Any
 
 import rx_feedback as F
 import rx_state as S
-from proto import read_json_object, write_json
+from fileio import read_json_object, write_json
 from rx_buttons import pressed_inputs
 from rx_config import C
 from rx_gstick import (EV_DEAD_IN, EV_NONE, EV_OUTER_IN, ST_OFF, Config, Engine, Sink, Snapshot, normalize, sprint_mask,
@@ -69,7 +69,7 @@ class Store:
             return self._load().get(key.lower()) or Config()
 
     def set(self, key: str, cfg: Config) -> bool:
-        """Remembers and saves atomically (proto.write_json)."""
+        """Remembers and saves atomically (fileio.write_json)."""
         with self._lock:
             cfgs = self._load()
             cfgs[key.lower()] = cfg

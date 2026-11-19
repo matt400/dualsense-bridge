@@ -15,7 +15,8 @@ from evdev import ecodes as ec
 
 import cfgspec
 import sender_migrate
-from proto import PERMISSION_BITS, clamp, load_config, read_json_object
+from proto import clamp
+from fileio import PERMISSION_BITS, load_config, read_json_object
 from sender_opus import DEFAULT_MODE as DEFAULT_OPUS_MODE
 from sender_opus import MODES as OPUS_MODES
 from sender_opus import COMPLEXITY_AUTO as OPUS_COMPLEXITY_AUTO

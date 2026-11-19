@@ -32,7 +32,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
 
-from proto import BTA_AUTO, BTA_MANUAL, BTA_PICK, read_json_object
+from proto import BTA_AUTO, BTA_MANUAL, BTA_PICK
+from fileio import read_json_object
 from sender_state import write_json_later
 
 SYSFS: Final = Path("/sys/class/bluetooth")

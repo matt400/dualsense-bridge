@@ -18,7 +18,8 @@ import sender_events as events
 import sender_padtype as padtype
 import sender_state as state
 import sender_streams as streams
-from proto import CAL_FEW, E_ERROR, E_NO_SLOT, E_PAD_OFF, E_PAD_ON, LAT_NONE, T_BYE, TRIG2_OFF, read_json_object
+from proto import CAL_FEW, E_ERROR, E_NO_SLOT, E_PAD_OFF, E_PAD_ON, LAT_NONE, T_BYE, TRIG2_OFF
+from fileio import read_json_object
 from sender_config import BURST_DELAYS, C, IDLE_TP, SETTLE_S
 from sender_ctrl import Ctrl
 from sender_mute import stream_mute

@@ -27,7 +27,8 @@ from typing import Any, ClassVar, Final, TypeAlias
 
 import cfgspec
 import rx_eq
-from proto import mac_bytes, mac_text, read_json_object, write_json
+from proto import mac_bytes, mac_text
+from fileio import read_json_object, write_json
 from rx_buttons import BUTTON_CODES
 from rx_i18n import _
 

@@ -18,7 +18,8 @@ if python3 -m mypy --version >/dev/null 2>&1; then      # python3 -m: the same i
   (cd $RX && python3 -m mypy --config-file ../pyproject.toml --platform win32 --no-error-summary .) || fail=1
   (cd $TX && python3 -m mypy --config-file ../pyproject.toml --no-error-summary .) || fail=1
 fi
-if [ -e $RX/proto.py ] || [ -e $TX/proto.py ]; then echo "FAIL  proto.py belongs only in $CM/ (no copies in receiver/ or sender/)"; fail=1; fi
+for f in $CM/*.py; do n=$(basename "$f")      # common/ is the one copy: no proto.py / fileio.py / ... in receiver/ or sender/
+  if [ -e $RX/$n ] || [ -e $TX/$n ]; then echo "FAIL  $n belongs only in $CM/ (no copies in receiver/ or sender/)"; fail=1; fi; done
 # The tests are found by name, so a new file runs without being listed here:
 #   test_*_tx.py  -> the sender           test_*_gui.py -> the window (only with PySide6)
 #   BOTH below    -> receiver and sender  every other test_*.py -> the receiver

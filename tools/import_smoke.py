@@ -2,7 +2,8 @@
 
 The Linux tests run the receiver against stubs for ctypes / pythonnet / COM (tests/rxenv.py), so a wrong DLL name, a missing
 attribute of a real package or a broken import order only shows on Windows. This script has no stubs: run on Windows
-(the ``windows-imports`` CI job) it fails on whatever really does not import. The entry point is only imported (its main() sits behind ``__name__``), never run.
+(the ``windows-imports`` CI job) it fails on whatever really does not import. The entry point is only imported (its main() sits
+behind ``__name__``), never run.
 """
 from __future__ import annotations
 

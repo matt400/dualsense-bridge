@@ -33,7 +33,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "common"), str(ROOT / "receiver")]
 
 import rx_hm_update as U  # noqa: E402
-from proto import write_file  # noqa: E402
+from fileio import write_file  # noqa: E402
 
 PIN_PATH: Final = ROOT / "receiver" / U.PIN_FILE
 NOTES_API: Final = f"https://api.github.com/repos/{U.REPO}/releases/tags/"
