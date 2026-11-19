@@ -1,4 +1,4 @@
-"""Sender + common: the settings / state JSON files are read through proto.read_json_object.
+"""Sender + common: the settings / state JSON files are read through fileio.read_json_object.
   - a file whose top level is not an object is refused with a ValueError (not an AttributeError from .get)
   - one malformed entry in gyro_cal.json / slots.json drops that entry only, the rest of the file still loads
 python3 tests/test_json_files_tx.py sender"""
@@ -8,6 +8,7 @@ sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config
 sender_config.init(["127.0.0.1"])
 import proto
+import fileio
 import sender_calib as calib
 import sender_state as state
 import sender_supervisor as sup
@@ -26,11 +27,11 @@ def put(name, obj):
 
 
 # ---- read_json_object ----
-check(proto.read_json_object(put("ok.json", {"a": 1})) == {"a": 1}, "an object is returned as a dict")
+check(fileio.read_json_object(put("ok.json", {"a": 1})) == {"a": 1}, "an object is returned as a dict")
 for name, content in (("list.json", [1, 2]), ("num.json", 5), ("bad.json", "{not json")):
     path = put(name, content)
-    raises(ValueError, lambda: proto.read_json_object(path), f"{name}: refused with ValueError")
-raises(FileNotFoundError, lambda: proto.read_json_object(os.path.join(TMP, "missing.json")), "a missing file raises FileNotFoundError")
+    raises(ValueError, lambda: fileio.read_json_object(path), f"{name}: refused with ValueError")
+raises(FileNotFoundError, lambda: fileio.read_json_object(os.path.join(TMP, "missing.json")), "a missing file raises FileNotFoundError")
 
 # ---- gyro_cal.json: a bad entry does not throw away the good ones ----
 C.GYRO_CAL_FILE = put("gyro_cal.json", {"AA:BB:CC:DD:EE:01": {"bias": [1, 2, 3], "t": 5},

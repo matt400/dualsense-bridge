@@ -5,6 +5,7 @@ import json, os, socket, struct, sys, time
 sys.path.insert(0, os.path.dirname(__file__))
 from rxenv import *                                              # noqa
 import proto
+import fileio
 import rx_console
 import rx_dsu
 import rx_settings
@@ -58,14 +59,14 @@ path = os.path.join(TMP, "atomic.json")
 synced = []
 real_fsync, real_replace = os.fsync, os.replace
 os.fsync = lambda fd: synced.append(fd) or real_fsync(fd)
-proto.write_json(path, {"a": "ą"}, ensure_ascii=False)
+fileio.write_json(path, {"a": "ą"}, ensure_ascii=False)
 os.fsync = real_fsync
 check(synced and json.load(open(path, encoding="utf-8")) == {"a": "ą"}, "write_json does fsync before replacing the file")
 
 def boom(*_a):
     raise OSError("disk full")
 os.replace = boom
-raises(OSError, lambda: proto.write_json(path, {"a": 2}), "write error is passed on")
+raises(OSError, lambda: fileio.write_json(path, {"a": 2}), "write error is passed on")
 os.replace = real_replace
 check(not os.path.exists(path + ".tmp"), "a failed write removes the .tmp file")
 check(json.load(open(path, encoding="utf-8")) == {"a": "ą"}, "a failed write keeps the previous file")

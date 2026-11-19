@@ -12,6 +12,7 @@ import sys
 
 sys.path.insert(0, sys.argv[1])
 sys.path.insert(1, sys.argv[1] + "/../common")
+import fileio
 import gitupdate
 import proto
 
@@ -595,12 +596,13 @@ def _canonical(name, value):
 def check_constants():
     """Every public constant keeps its name and value: other modules (and older peers) depend on them.
 
-    The git paths (DEPLOY_KEY, KNOWN_HOSTS, GIT_PATHS) live in gitupdate, next to proto.
+    The git paths (DEPLOY_KEY, KNOWN_HOSTS, GIT_PATHS) live in gitupdate, PERMISSION_BITS in fileio, next to proto.
     """
     for name, expected in CONSTANTS.items():
         if name == "BY_SIZE":
             expected = sorted(([a, b], v) for (a, b), v in expected)
-        actual = _canonical(name, getattr(proto if hasattr(proto, name) else gitupdate, name))
+        home = next(m for m in (proto, fileio, gitupdate) if hasattr(m, name))
+        actual = _canonical(name, getattr(home, name))
         assert actual == expected, f"{name}: {actual!r} != {expected!r}"
 
 

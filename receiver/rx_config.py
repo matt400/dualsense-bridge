@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from types import SimpleNamespace
 from typing import Any, Final
 
-from proto import load_config
+from fileio import load_config
 
 DEFAULTS: dict[str, Any] = {
     "in_port": 5005,

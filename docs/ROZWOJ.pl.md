@@ -54,7 +54,7 @@ Testy obejmują:
   receiver bez ViGEmBus, obiekty COM audio zwalniane przed CoUninitialize; skróty, akcje mastera i przycisk trybu
   konsoli na granicy widoku Test liczone od trzymanych wejść, Bluetooth nadajnika bez busctl / uprawnień, autobias
   po kalibracji z okna (`test_input_state_boundaries.py`, `test_bt_window_errors_tx.py`); nowy klient DSU od razu dostaje stan, zapis plików
-  ustawień atomowy z fsync - `proto.write_file` / `write_json` (`test_atomic_writes.py`, `test_atomic_writes_tx.py`); HIDMaestro
+  ustawień atomowy z fsync - `fileio.write_file` / `write_json` (`test_atomic_writes.py`, `test_atomic_writes_tx.py`); HIDMaestro
   pobierany jednym zapytaniem Range na plik (odpowiedź 200 = błąd), start jako administrator bez okna UAC dla drugiej
   kopii i bez pętli przy folderze tylko do odczytu, blokada receivera-administratora widziana z procesu bez uprawnień,
   zadania autostartu z własnymi argumentami (`test_hm_download_elevation.py`);

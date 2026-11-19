@@ -5,6 +5,7 @@ import json, os, sys, threading
 sys.path.insert(0, os.path.dirname(__file__))
 from rxenv import *                                              # noqa
 import proto
+import fileio
 from proto import T_STATE, SeqFilter
 
 from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
@@ -16,7 +17,7 @@ errors = []
 def writer(n):
     try:
         for k in range(50):
-            proto.write_json(path, {"w": n, "k": k})
+            fileio.write_json(path, {"w": n, "k": k})
     except OSError as e:
         errors.append(e)
 threads = [threading.Thread(target=writer, args=(n,)) for n in range(6)]
@@ -30,7 +31,7 @@ temps = []
 real_replace = os.replace
 os.replace = lambda src, dst: temps.append(src) or real_replace(src, dst)
 try:
-    proto.write_file(path, "a"); proto.write_file(path, "b")
+    fileio.write_file(path, "a"); fileio.write_file(path, "b")
 finally:
     os.replace = real_replace
 check(len(temps) == 2 and all(t.endswith(".tmp") and t != path + ".tmp" for t in temps), "the temp file name contains the pid and the thread")

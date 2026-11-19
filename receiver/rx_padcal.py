@@ -17,7 +17,7 @@ import threading
 from typing import Any, Final
 
 import rx_access
-from proto import read_json_object, write_json
+from fileio import read_json_object, write_json
 from rx_config import C
 from rx_i18n import _
 from rx_shape import STICK_DEF, STICK_LIMITS, Profile
@@ -135,7 +135,7 @@ def set_access(key: str | None, cfg: Any) -> tuple[bool, str]:
 
 
 def _write() -> tuple[bool, str]:
-    """Write atomically (temporary file + replace) through proto.write_json; call with _lock held, after _load()."""
+    """Write atomically (temporary file + replace) through fileio.write_json; call with _lock held, after _load()."""
     p = path()
     pads = _load()
     entries: dict[str, dict[str, Any]] = {}

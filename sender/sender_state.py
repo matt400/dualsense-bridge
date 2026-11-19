@@ -7,7 +7,7 @@ from collections.abc import Callable, Coroutine
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any
 
-from proto import write_file
+from fileio import write_file
 
 if TYPE_CHECKING:
     from sender_ctrl import Ctrl
@@ -23,7 +23,7 @@ _file_writer = ThreadPoolExecutor(max_workers=1, thread_name_prefix="state-files
 
 
 def write_json_later(path: str, obj: object, *, indent: int | None = None, sort_keys: bool = False) -> None:
-    """Write ``obj`` as JSON like :func:`proto.write_json` (atomic, fsync), without stopping the event loop for the fsync.
+    """Write ``obj`` as JSON like :func:`fileio.write_json` (atomic, fsync), without stopping the event loop for the fsync.
 
     The fsync of a phone's flash can take tens of milliseconds, and the event loop is also what reads every pad, so inside
     the loop the file is written by a worker thread. The JSON text is made here, at call time: a later change of ``obj``

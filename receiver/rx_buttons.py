@@ -20,7 +20,8 @@ import threading
 from collections.abc import Mapping
 from typing import Any, Final
 
-from proto import PAD_KEYS, read_json_object, write_json
+from proto import PAD_KEYS
+from fileio import read_json_object, write_json
 from rx_i18n import _
 from rx_shape import AXIS_CENTRE, BYTE_MAX, Profile, to_byte, unit, normalize_gyro, normalize_triggers, normalize_tuning
 

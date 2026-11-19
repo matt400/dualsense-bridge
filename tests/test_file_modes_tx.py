@@ -1,5 +1,5 @@
 """Sender: files that can hold the HMAC key keep their permissions.
-  - proto.write_file (atomic: temp file + replace) gave the new file the default 0644 - sender.toml (0600, set by
+  - fileio.write_file (atomic: temp file + replace) gave the new file the default 0644 - sender.toml (0600, set by
     install-service.sh) became readable by every user after the first config migration, and so did sender.toml.bak
   - a warning in the log when sender.toml holds a key but other users can read it (installs hit by the bug above)
 python3 tests/test_file_modes_tx.py sender"""
@@ -8,6 +8,7 @@ sys.path.insert(0, sys.argv[1])
 sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
 import proto, sender_migrate
+import fileio
 
 from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
@@ -23,10 +24,10 @@ for want in (0o600, 0o640, 0o664):
     with open(path, "w") as f:
         f.write("old")
     os.chmod(path, want)
-    proto.write_file(path, "new")
+    fileio.write_file(path, "new")
     check(open(path).read() == "new" and mode(path) == want, f"write_file over a {want:o} file keeps {want:o} ({mode(path):o})")
 path = os.path.join(TMP, "fresh.txt")
-proto.write_file(path, b"bytes")
+fileio.write_file(path, b"bytes")
 check(open(path, "rb").read() == b"bytes" and mode(path) == 0o644, "a new file gets the default permissions")
 check(not [n for n in os.listdir(TMP) if n.endswith(".tmp")], "no .tmp left behind")
 

@@ -20,7 +20,7 @@ import time
 from dataclasses import dataclass
 from typing import Final
 
-from proto import read_json_object, write_file, write_json
+from fileio import read_json_object, write_file, write_json
 from rx_config import HERE, C
 from rx_i18n import _
 

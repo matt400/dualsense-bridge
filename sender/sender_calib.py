@@ -16,7 +16,8 @@ from typing import TYPE_CHECKING, Any, Final, TypeAlias
 
 import sender_net as net
 import sender_state as state
-from proto import CAL_FEW, CAL_MAX_S, CAL_MOVED, CAL_OK, CALF_STORED, T_CALRES, clamp, read_json_object
+from proto import CAL_FEW, CAL_MAX_S, CAL_MOVED, CAL_OK, CALF_STORED, T_CALRES, clamp
+from fileio import read_json_object
 from sender_config import BURST_DELAYS, C
 
 if TYPE_CHECKING:
@@ -78,7 +79,7 @@ def save(key: str | None, bias: Iterable[float]) -> bool:
     """Save a pad's bias (only pads with a MAC - a USB pad without uniq has a changing key).
 
     The table is updated in memory first (so the new value is used even if the file cannot be written), then written
-    atomically (proto.write_file, in a worker thread - see sender_state.write_json_later).
+    atomically (fileio.write_file, in a worker thread - see sender_state.write_json_later).
 
     Returns:
         True if saved.
