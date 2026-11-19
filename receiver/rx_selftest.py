@@ -52,7 +52,6 @@ OK, SKIPPED, ABORTED, FAILED, NO_DATA = "ok", "skipped", "aborted", "failed", "n
 LATENCY_WINDOWS: Final = (5, 15, 30, 60)         # the windows the user may pick [s]
 MIN_LATENCY_SAMPLES: Final = 10                  # fewer samples than this is "no data" (as the pad card)
 SENDER_WATCHDOG_S: Final = 1.5                   # sender_rumble.WATCHDOG_S: the motors stop this long after the last refresh
-MOTORS_OFF: Final = (0, 0)
 POLL_S: Final = 0.25                             # how often the latency step reads the samples
 TICK_S: Final = 0.05                             # the granularity of every wait (abort reacts within this)
 WRAP: Final = 1 << 32

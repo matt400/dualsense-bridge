@@ -471,11 +471,11 @@ def _publish(idx: int, pad: Any, kind: str) -> Out:
     with S.lock:       # a change from before plugging waited for the pad creation (wait_turn, PnP: up to several s) - that is not
         S.states[idx]["lat"] = S.states[idx]["blat"] = None     # latency, just a spike of the max and mean after connecting
     kinds[idx] = kind
+    outs[idx] = o          # before the flag: whoever sees S.plugged (the window, tests) also finds the pad
     S.plugged[idx] = True
     failing[idx] = False
     role = "" if S.want[idx].is_set() else " (placeholder - keeps player order)"
     print(f"Controller {idx}: virtual {LABELS[kind]} plugged in{role}")
-    outs[idx] = o
     S.wake[idx].set()   # send the current state at once
     return o
 
