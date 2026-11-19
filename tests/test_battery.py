@@ -1,10 +1,10 @@
-"""Receiver: the sender device's battery (build3 -> S.sender_batt) and the SCFG_BATT announcement."""
+"""Receiver: the sender device's battery (build3 -> S.sender_batt)."""
 import os, socket, sys, time
 sys.path.insert(0, os.path.dirname(__file__))
 from rxenv import *                                              # noqa  (Windows stubs, TMP, S)
 import rx_events as ev
 import rx_net
-from proto import BATT_CHARGING, SCFG_BATT, T_BUILD, T_BUILD2, T_BUILD3, Codec
+from proto import BATT_CHARGING, BATT_UNKNOWN, T_BUILD3, Codec
 
 from chk import ok
 cod = Codec()
@@ -12,7 +12,7 @@ MAC, BC = bytes.fromhex("112233445566"), socket.inet_aton("10.0.0.255")
 
 
 def build3(byte):
-    rx_net.on_build(cod.pack(T_BUILD3, 255, b"abc1234", 5, 0, MAC, BC, byte), time.monotonic(), T_BUILD3)
+    rx_net.on_build(cod.pack(T_BUILD3, 255, b"abc1234", 5, 0, MAC, BC, byte), time.monotonic())
 
 
 # ---------- build3 ----------
@@ -23,15 +23,12 @@ build3(40)
 assert S.sender_batt == (40, False)
 build3(0x7F)
 assert S.sender_batt == (100, False), "a value above 100 is clamped"
-ok("build3: percent and charging flag go to S.sender_batt, build / Wake-on-LAN fields as in build2")
+ok("build3: percent and charging flag go to S.sender_batt, the build and Wake-on-LAN fields too")
 
-# ---------- a packet without a battery clears it ----------
-rx_net.on_build(cod.pack(T_BUILD2, 255, b"abc1234", 5, 0, MAC, BC), time.monotonic(), T_BUILD2)
-assert S.sender_batt is None, "the sender lost its battery / is older: no stale percentage"
-build3(50)
-rx_net.on_build(cod.pack(T_BUILD, 255, b"abc1234", 5, 0), time.monotonic(), T_BUILD)
-assert S.sender_batt is None
-ok("build / build2 clear the battery")
+# ---------- BATT_UNKNOWN clears it ----------
+build3(BATT_UNKNOWN)
+assert S.sender_batt is None, "the sender lost its battery (or has none): no stale percentage"
+ok("BATT_UNKNOWN clears the battery")
 
 # ---------- the dispatch path (a real packet) ----------
 S.sender_batt = None
@@ -51,6 +48,3 @@ w.tick(100.5 + S.SENDER_TIMEOUT + 1)
 assert not w.online and S.sender_batt is None
 ok("the sender goes offline -> the battery is forgotten")
 
-# ---------- scfg announces build3 ----------
-assert rx_net.scfg_values()[0] & SCFG_BATT, "every receiver of this version understands build3"
-ok("scfg always carries SCFG_BATT")

@@ -59,7 +59,7 @@
   - the **sender pill** in the header ("● Sender online"): when the sender device has a battery (a phone, a laptop), the
     percentage is shown in brackets and the pill is filled to the charge level (green, amber up to 30 %, red when low);
     a wave runs along its top edge while the device charges. A Raspberry Pi or another device without a battery shows
-    no percentage; an older sender simply doesn't send it;
+    no percentage;
   - in the middle, a live pad drawing: click a button, trigger or stick to remap or tune it;
   - on the right, the profile (default / per game), the **Selected**, **Rumble**, **Gyro**, **Accessibility**, **Changes**
     tabs (vertical, on the left edge) and the **Save** button (Ctrl+S);
@@ -334,8 +334,8 @@
   pad until the report is handed to the virtual DS4. The sender knows the PC clock from ping replies (like NTP, the
   sample with the lowest RTT), so the network is measured one-way, not as half the ping. Segments: **Bluetooth** -
   radio latency above the best case over 2 s (pad timestamps; the constant part of ~1-2 ms can't be measured),
-  **sender** - kernel → send, **network**, **PC** - receive → virtual pad. With an older sender the card shows ping
-  only; an older receiver gets regular packets from a new sender.
+  **sender** - kernel → send, **network**, **PC** - receive → virtual pad. Until the sender's clock is synchronised
+  the card shows ping only.
   **Button → game** is the same measurement only for button, D-pad and trigger changes (crossing the press
   threshold, no sticks or gyro): the last 100 presses / releases with no time limit (presses are rare - 5 s would give
   only a few samples), cleared when the pad in the slot changes or with the ↻ icon on the card.

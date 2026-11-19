@@ -13,7 +13,7 @@ TX = os.path.abspath(sys.argv[1])
 import sender_config; sender_config.init(["127.0.0.1"])
 import gitupdate
 import proto, sender_net as net, sender_state as state, sender_update as U
-from proto import BODY, T_BUILD, T_UPDMSG, UPD_DONE, UPD_FAILED
+from proto import BODY, T_BUILD3, T_UPDMSG, UPD_DONE, UPD_FAILED
 
 from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
@@ -121,7 +121,7 @@ kinds = [s[0] for s in sent]
 msgs = [s[2].rstrip(b"\0").decode() for s in sent if s[0] == T_UPDMSG]
 check(msgs and "Permission denied (publickey)" in msgs[0] and BODY[T_UPDMSG].size == 120,
       f"packet with the error reason: {msgs[:1]}")
-check(kinds.index(T_UPDMSG) < len(kinds) - 1 - kinds[::-1].index(T_BUILD) and sent[-1][4] == UPD_FAILED,
+check(kinds.index(T_UPDMSG) < len(kinds) - 1 - kinds[::-1].index(T_BUILD3) and sent[-1][4] == UPD_FAILED,
       "reason sent before the build packet with the result")
 long = "ż" * 200
 U.ROOT = os.path.join(tmp, "nie-ma")                                    # not a clone -> no reason
@@ -133,10 +133,10 @@ check(len(long.encode()[:120].decode("utf-8", "ignore")) == 60, "a long reason c
 # ---------- the error reason repeated with the build packet (lost packet, another click within 30 s) ----------
 U.status, U.fail_msg = UPD_FAILED, "git@github.com: Permission denied (publickey)."
 sent.clear(); U.send_build()
-check([s[0] for s in sent] == [T_UPDMSG, T_BUILD], f"the periodic build on an error carries the reason too: {[s[0] for s in sent]}")
+check([s[0] for s in sent] == [T_UPDMSG, T_BUILD3], f"the periodic build on an error carries the reason too: {[s[0] for s in sent]}")
 U.status, U.fail_msg = 0, ""
 sent.clear(); U.send_build()
-check([s[0] for s in sent] == [T_BUILD], "no error - build only")
+check([s[0] for s in sent] == [T_BUILD3], "no error - build only")
 
 # ---------- a clear reason: local changes, diverged branches (no hint: and no fetch progress) ----------
 loc = os.path.join(tmp, "loc")

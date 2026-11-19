@@ -17,7 +17,7 @@ import proto
 import sender_batt
 import sender_net as net
 import sender_state as state
-from proto import T_BUILD, T_BUILD2, T_BUILD3, T_UPDMSG, UPD_DONE, UPD_NONE, UPD_RUNNING, utf8_field
+from proto import BATT_UNKNOWN, T_BUILD3, T_UPDMSG, UPD_DONE, UPD_NONE, UPD_RUNNING, utf8_field
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REQUIREMENTS = "sender/requirements.txt"
@@ -43,30 +43,22 @@ def init() -> None:
 
 
 def send_build() -> None:
-    """Send the build packet (commit, commit time, update status) to the receiver.
+    """Send the build3 packet: commit, commit time, update status, the Wake-on-LAN target and the device's battery.
 
     After a failed update the failure reason (updmsg) goes first - the window shows it even if the build packet is
     lost, and also after the user clicks Update again within REPEAT_GUARD_S (the sender then does not try twice).
-    A receiver that understands the extended packet (new_receiver) additionally gets the Wake-on-LAN target MAC and
-    broadcast address, so the window can show the detected MAC; an older receiver gets the plain build packet.
-    A device with a battery (a phone) also sends its charge level in build3 - only to a receiver that announced it
-    (SCFG_BATT), and only when there is a battery to read.
+    The Wake-on-LAN MAC and broadcast address let the window show what was detected; a device without a battery sends
+    BATT_UNKNOWN.
     """
     if status == proto.UPD_FAILED and fail_msg:
         net.emit(T_UPDMSG, 255, utf8_field(fail_msg, T_UPDMSG_MAX, "…"))   # git speaks Polish here: no half letters
     commit = version[0].encode("ascii", "replace")[:7]
-    if net.new_receiver():            # new receiver: together with the Wake-on-LAN addresses (the window shows the detected MAC)
-        import sender_wol
-        mac = sender_wol.target_mac() or bytes(6)
-        bcast = sender_wol.cfg.bcast or sender_wol.auto_bcast()
-        addr = socket.inet_aton(bcast) if bcast else bytes(4)
-        batt = sender_batt.read() if net.batt_receiver() else None
-        if batt is None:
-            net.emit(T_BUILD2, 255, commit, version[1], status, mac, addr)
-        else:
-            net.emit(T_BUILD3, 255, commit, version[1], status, mac, addr, batt)
-    else:
-        net.emit(T_BUILD, 255, commit, version[1], status)
+    import sender_wol                 # sender_wol imports sender_net, which imports this module
+    mac = sender_wol.target_mac() or bytes(6)
+    bcast = sender_wol.cfg.bcast or sender_wol.auto_bcast()
+    addr = socket.inet_aton(bcast) if bcast else bytes(4)
+    batt = sender_batt.read()
+    net.emit(T_BUILD3, 255, commit, version[1], status, mac, addr, BATT_UNKNOWN if batt is None else batt)
 
 
 async def run() -> None:

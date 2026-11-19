@@ -1,5 +1,5 @@
-"""End to end over UDP with an HMAC key: the sender and the receiver without auth.json switch to protocol v3 by themselves (probe
-ping), the pad state and a PC command work, and a recorded packet sent again does nothing.
+"""End to end over UDP with an HMAC key: both sides speak protocol v3 from the start, the pad state and a PC command work, and a
+recorded packet sent again does nothing.
     python3 tests/test_e2e_key.py receiver sender"""
 import asyncio, os, socket, sys, threading, time
 sys.path.insert(0, os.path.dirname(__file__))
@@ -18,7 +18,7 @@ threading.Thread(target=N.net_loop, daemon=True).start()
 # --- sender with the same key ---
 import sender_config; sender_config.init(["127.0.0.1", "--key", "wspolny klucz"])
 from sender_config import C as TC
-TC.PORT, TC.AUTH_FILE = port, os.path.join(TMP, "auth_tx.json")
+TC.PORT = port
 import sender_net as net, sender_state as state, sender_streams as streams
 from sender_ctrl import Ctrl
 net.init()
@@ -43,9 +43,9 @@ async def main():
     state.active[c.key] = c
     pinger = asyncio.create_task(net.pinger())
     hb = asyncio.create_task(streams.heartbeat())
-    await asyncio.sleep(1.6)                      # the v3 probe ping goes with every 4th ping (1/s)
-    assert net.link.codec.v3 and N.codec.v3, (net.link.codec.v3, N.codec.v3)
-    print("OK   both sides switched to v3 without configuration (probe ping)")
+    await asyncio.sleep(0.6)                      # a ping and its pong2: both sides know the other's clock
+    assert net.link.pc_clock.offset_us is not None and N.sender_token() is not None
+    print("OK   v3 from the start: both clocks known after the first ping")
     c.send_ident(); c.pad[0] = 255; c.send_state(True)
     await asyncio.sleep(0.4)
     assert S.alive[0] and S.pad_id[0] == "aa:bb:cc:dd:ee:01" and S.states[0]["lx"] == 255, (S.alive[0], S.pad_id[0])

@@ -9,7 +9,7 @@ import sender_batt as B
 import sender_net as net
 import sender_update
 import sender_wol as W
-from proto import BATT_CHARGING, BODY, SCFG_BATT, SCFG_WOL, T_BUILD, T_BUILD2, T_BUILD3, T_SCFG, Codec
+from proto import BATT_CHARGING, BATT_UNKNOWN, BODY, T_BUILD3, Codec
 
 from chk import ok
 cod = Codec()
@@ -65,44 +65,24 @@ assert B.read(empty, now=2200.0) is None and B._path is None, "a battery that we
 ok("sender_batt.read: no battery -> None, a late battery is found after RESCAN_S, a vanished one is forgotten")
 
 # ---------- protocol ----------
-assert BODY[T_BUILD3].size == 23 and proto.WIRE[T_BUILD3] == proto.WIRE[T_BUILD2] == T_BUILD
+assert BODY[T_BUILD3].size == 23 and proto.WIRE[T_BUILD3] == proto.T_BUILD
 p = cod.pack(T_BUILD3, 255, b"abc", 1, 0, b"\1" * 6, b"\0" * 4, 87 | BATT_CHARGING)
 assert cod.parse(p)[0] == T_BUILD3
-assert cod.parse(cod.pack(T_BUILD2, 255, b"abc", 1, 0, b"\1" * 6, b"\0" * 4))[0] == T_BUILD2, "build2 unchanged"
-key = Codec(b"0123456789abcdef")
-assert key.parse(key.pack(T_BUILD3, 255, b"abc", 1, 0, b"\1" * 6, b"\0" * 4, 5, v3=False))[0] == T_BUILD3, "signed v2"
-ok("protocol: build3 is told apart from build / build2 by its length, also with an HMAC")
+key = Codec(b"0123456789abcdef", token=lambda: 5, now_ms=lambda: 5)
+assert key.parse(key.pack(T_BUILD3, 255, b"abc", 1, 0, b"\1" * 6, b"\0" * 4, 5))[0] == T_BUILD3, "with a key (v3)"
+ok("protocol: build3 by its length, also with an HMAC")
 
-# ---------- scfg: SCFG_BATT announces build3 ----------
-net.link.batt_t = net.link.scfg_t = 0.0
-assert not net.batt_receiver()
-net.link._on_scfg(1, cod.pack(T_SCFG, 255, SCFG_WOL, bytes(6), bytes(4), 7, 1000))
-assert net.link.scfg_t and not net.batt_receiver(), "an older receiver: scfg without SCFG_BATT"
-net.link._on_scfg(2, cod.pack(T_SCFG, 255, SCFG_WOL | SCFG_BATT, bytes(6), bytes(4), 7, 1000))
-assert net.batt_receiver() and net.batt_receiver(time.monotonic() + 1)
-assert not net.batt_receiver(time.monotonic() + net.NEW_RECEIVER_S + 1), "the announcement expires like scfg"
-ok("scfg with SCFG_BATT -> batt_receiver() (and it expires when the receiver goes silent)")
-
-# ---------- send_build: build3 only with a battery AND a receiver that knows it ----------
+# ---------- send_build: build3 always, BATT_UNKNOWN without a battery ----------
 out = []
 real_emit = net.emit
 net.emit = lambda t, i, *v: out.append((t, i, *v))
 W.cfg = W.WolCfg(); W.learned = "11:22:33:44:55:66"; W._bcast_cache = ("192.168.1.20", "192.168.1.255")
 sender_update.version = ("abc1234", 1_700_000_000, "x")
-now = time.monotonic()
 with mock.patch.object(B, "read", lambda: 87 | BATT_CHARGING):
-    net.link.scfg_t, net.link.batt_t = 0.0, 0.0
-    sender_update.send_build()
-    assert out[-1][0] == T_BUILD, "no scfg at all: the plain build"
-    net.link.scfg_t, net.link.batt_t = now, 0.0
-    sender_update.send_build()
-    assert out[-1][0] == T_BUILD2, "a receiver without SCFG_BATT must never get build3 (it would reject the length)"
-    net.link.scfg_t = net.link.batt_t = now
     sender_update.send_build()
     assert out[-1][0] == T_BUILD3 and out[-1][-1] == 87 | BATT_CHARGING and out[-1][5] == bytes.fromhex("112233445566"), out[-1]
 with mock.patch.object(B, "read", lambda: None):
     sender_update.send_build()
-    assert out[-1][0] == T_BUILD2, "a device without a battery (Raspberry Pi) keeps sending build2"
+    assert out[-1][0] == T_BUILD3 and out[-1][-1] == BATT_UNKNOWN, "a device without a battery (Raspberry Pi): BATT_UNKNOWN"
 net.emit = real_emit
-net.link.scfg_t = net.link.batt_t = 0.0
-ok("send_build: build3 only with a battery and a receiver that announced SCFG_BATT, otherwise build2 / build as before")
+ok("send_build: build3 with the battery, or BATT_UNKNOWN without one")

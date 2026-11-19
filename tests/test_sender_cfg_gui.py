@@ -76,7 +76,7 @@ S.last_pkt = time.monotonic()
 N.codec = Codec()
 panel.refresh()
 check("HMAC" in panel.status.text() and panel.status.property("level") == "warn", "no key: the window says what is missing")
-N.codec = Codec(b"k" * 32); N.codec.v3 = True
+N.codec = Codec(b"k" * 32)
 S.sender_cfg_result = CFGR_NO_KEY
 panel.refresh()
 check("nie ma klucza" in panel.status.text() or "HMAC" in panel.status.text(), "a sender refusal shown with the reason")

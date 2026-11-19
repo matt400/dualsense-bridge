@@ -26,21 +26,19 @@ import rx_state as S
 import rx_swap
 from proto import STATE_CHARGING, clamp
 from rx_fbstate import (
-    FX_SENDER, GAME_RUMBLE_DT_ALPHA, GAME_RUMBLE_GAP_S, GAME_RUMBLE_STALE_FRAMES, GAME_RUMBLE_STALE_MIN_S, GAME_RUMBLE_STALE_S,
+    GAME_RUMBLE_DT_ALPHA, GAME_RUMBLE_GAP_S, GAME_RUMBLE_STALE_FRAMES, GAME_RUMBLE_STALE_MIN_S, GAME_RUMBLE_STALE_S,
     IDLE_REFRESH_S, FeedbackState, Leds, NO_GAME_TRIG, NO_LEDS,
-    PCT_MAX, PULSES, Pulse, RAW_SENDER, RUMBLE_REFRESH_S, SendFeedback, SendLeds, SendTriggers, TRIG_OFF_MODES,
+    PCT_MAX, PULSES, Pulse, RUMBLE_REFRESH_S, SendFeedback, SendLeds, SendTriggers, TRIG_OFF_MODES,
     TRIG_REFRESH_S, TRIG_REPEAT, Trig, cbs, fb, fb_event, fb_sent, hold_until, leds_sent, pulses, trig_sent,
 )
 from rx_fbtrig import (
-    _has_effect, game_drives, leds_target, leds_tick, release_triggers, sender_fx, sender_leds, sender_raw,
-    trigger_target, triggers_tick,
+    TRIG3_OFF, _has_effect, game_drives, leds_target, leds_tick, release_triggers, trigger_target, triggers_tick,
 )
 from rx_config import C
 from rx_i18n import _
 from rx_shape import BYTE_MAX
 
 __all__ = [  # the state and the trigger / LED ticks moved out (rx_fbstate, rx_fbtrig); this module stays their one public face
-    "FX_SENDER",
     "GAME_RUMBLE_DT_ALPHA",
     "GAME_RUMBLE_GAP_S",
     "GAME_RUMBLE_STALE_FRAMES",
@@ -51,8 +49,8 @@ __all__ = [  # the state and the trigger / LED ticks moved out (rx_fbstate, rx_f
     "NO_LEDS",
     "PCT_MAX",
     "PULSES",
-    "RAW_SENDER",
     "RUMBLE_REFRESH_S",
+    "TRIG3_OFF",
     "TRIG_OFF_MODES",
     "TRIG_REFRESH_S",
     "TRIG_REPEAT",
@@ -78,9 +76,6 @@ __all__ = [  # the state and the trigger / LED ticks moved out (rx_fbstate, rx_f
     "pulses",
     "release",
     "release_triggers",
-    "sender_fx",
-    "sender_leds",
-    "sender_raw",
     "trig_sent",
     "trigger_target",
     "triggers_tick",
@@ -297,10 +292,7 @@ def _note_game_triggers(i: int) -> None:
     f = fb[i]
     f["trig_note"] = False
     who = f["trig_owner"] or "?"
-    if not sender_raw(i):
-        why, text = "sender too old", _("{pad}: {exe} ustawia efekty spustów - nadajnik w starszej wersji ich nie przekaże "
-                                         "(kliknij Aktualizuj)")
-    elif not rx_master.allowed(i, "triggers"):
+    if not rx_master.allowed(i, "triggers"):
         why, text = "master only", _("{pad}: {exe} ustawia efekty spustów - pominięte (efekty spustów tylko dla pada "
                                      "master)")
     else:

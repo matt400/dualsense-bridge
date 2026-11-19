@@ -46,7 +46,7 @@ import rx_settings
 import rx_state as S
 from rx_config import C
 from rx_i18n import _
-from proto import PADKIND_SENDER, PK_DS4, PK_DUALSENSE, PK_OTHER, PK_XBOX
+from proto import PK_DS4, PK_DUALSENSE, PK_OTHER, PK_XBOX
 from rx_report import build_report
 from rx_winapi import boost_thread
 
@@ -375,7 +375,7 @@ def xbox_pad(idx: int) -> rx_xbox.XboxPad:
 
 
 def physical_family(idx: int) -> int:
-    """The family (PK_*) of the physical pad in a slot; a DualSense when the sender did not say (an older sender, a placeholder)."""
+    """The family (PK_*) of the physical pad in a slot; a DualSense when the sender did not say (a lost padkind, a placeholder)."""
     k = S.pad_kind[idx] if idx < len(S.pad_kind) else None
     return PK_DUALSENSE if k is None else k[0]
 
@@ -388,15 +388,13 @@ def virtual_family(idx: int) -> int:
 def wait_kind(idx: int, timeout: float = KIND_WAIT_S) -> None:
     """Give a connecting pad's padkind packet a moment to arrive, so its virtual pad is plugged right the first time.
 
-    Only a pad that is connected (not a placeholder) with a sender that sends the packet waits; a sender older than
-    PADKIND_SENDER, or one whose version is not known yet and never comes, costs at most ``timeout`` once per connection.
+    Only a pad that is connected (not a placeholder) waits; a lost padkind costs at most ``timeout`` once per connection.
     """
     if not S.want[idx].is_set() or S.pad_kind[idx] is not None:
         return
     end = time.monotonic() + timeout
     while not S.stop.is_set() and time.monotonic() < end:
-        info = S.sender_info[idx]
-        if S.pad_kind[idx] is not None or (info is not None and info[0] < PADKIND_SENDER):
+        if S.pad_kind[idx] is not None:
             return
         time.sleep(0.01)
 

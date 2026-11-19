@@ -25,7 +25,7 @@ for t, vals in ((T_BTCMD, (BT_PAIR, 0, mac_bytes(PAD))), (T_BTSTATE, (BTS_OK, 1,
     assert cod.parse(pkt)[0] == t and BODY[t].unpack_from(pkt, 4)[:3] == vals[:3], t
 assert cod.parse(cod.pack(T_CMD, 0, 1, 0))[0] == T_CMD and cod.parse(cod.pack(T_VERSION, 0, 9, 3, 0))[0] == T_VERSION
 assert cod.parse(cod.pack(T_IDENT, 0, PAD.encode()))[0] == T_IDENT, "old types with the same headers unchanged"
-k = Codec(b"klucz")
+k = Codec(b"klucz", token=lambda: 0, now_ms=lambda: 0)
 assert k.parse(k.pack(T_BTSTATE, 255, BTS_OFF, 0, 0, 0, 0, 1, 0, 0, bytes(6)))[0] == T_BTSTATE, "with HMAC too"
 f = proto.utf8_field("Pad Łukasza – żółty ąęść", 24)                      # 26 characters, 33 bytes
 assert len(f) <= 24 and f.decode("utf-8").startswith("Pad Łukasza"), "cut on a UTF-8 character boundary"

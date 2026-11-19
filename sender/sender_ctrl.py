@@ -16,9 +16,9 @@ from evdev import InputDevice
 import sender_net as net
 import sender_padtype as padtype
 import sender_state as state
-from proto import (CAP_CALIB, CAP_HAPTICS, CAP_SPEAKER, IDENT_LEN, KEY_BIT, LAT_NONE, LEDS_MUTE, LEDS_PLAYER, MOUSE_TAP_ID_MAX,
+from proto import (CAP_HAPTICS, CAP_SPEAKER, IDENT_LEN, KEY_BIT, LAT_NONE, LEDS_MUTE, LEDS_PLAYER, MOUSE_TAP_ID_MAX,
                    MOUSE_TAP_ID_SHIFT, MUTE_BIT, RAW_STICKS_MAX_S, SENDER_VERSION, T_CLICK, T_IDENT, T_MOUSE, T_PADKIND, T_STATE, T_STATE2,
-                   T_TOUCH, T_VERSION, TRIG2_OFF, UINT32_MASK, WHY_OFF, clamp, trig2_from_legacy)
+                   T_TOUCH, T_VERSION, TRIG2_OFF, UINT32_MASK, WHY_OFF, clamp)
 from sender_config import (AXIS_MAX, BURST_DELAYS, C, DEVICE_READ_ERRORS, HAT_AXES, IDLE_TP, L2_AXIS, NEUTRAL_PAD, PAD_ABS,
                            R2_AXIS, STICK_AXES, STICK_CENTER, US_PER_S)
 from sender_haptics import HapticsStream
@@ -279,9 +279,9 @@ class Ctrl:
         """Tell the receiver which pad this is (identifier) and what the sender can do (version, capability bits, rumble mode)."""
         net.emit(T_IDENT, self.idx, pad_ident(self.key).encode("ascii", "replace")[:IDENT_LEN])
         k = self.kind
-        net.emit(T_PADKIND, self.idx, k.family, k.features, k.vendor, k.product)     # an older receiver drops it (an unknown length)
+        net.emit(T_PADKIND, self.idx, k.family, k.features, k.vendor, k.product)
         r = self.rumble
-        net.emit(T_VERSION, self.idx, SENDER_VERSION, (r.bits if r is not None else 0) | CAP_CALIB,
+        net.emit(T_VERSION, self.idx, SENDER_VERSION, r.bits if r is not None else 0,
                  r.why if r is not None else WHY_OFF)
 
     def mark_event(self, event_us: int) -> None:
@@ -338,7 +338,7 @@ class Ctrl:
         self.t_state = now
         event_us, self.t_event = self.t_event, None
         pc = net.link.pc_clock.now_us(now)
-        if pc is None:                                   # a receiver without pong2 (older) or no synchronisation
+        if pc is None:                                   # the PC clock is not synchronised (no pong2 yet, a network gap)
             net.emit(T_STATE, self.idx, *key)
             return
         phone, bt = self._delay_fields(fresh, event_us, now)
@@ -577,10 +577,9 @@ class Ctrl:
         """Take trigger effects from the PC; only the HID report can apply them - the kernel driver has no such function.
 
         Args:
-            vals: A trig3 packet (profile + game effects), trig2 (profile) or the old trig (resistance only).
+            vals: A trig3 packet (profile + game effects).
         """
-        vals = tuple(vals)
-        self.triggers = trig2_from_legacy(vals) if len(vals) == len(TRIG2_OFF) // 3 else vals
+        self.triggers = tuple(vals)
         if self.rumble is not None:
             self.rumble.set_triggers(self.triggers)
 

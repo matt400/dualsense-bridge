@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (QCheckBox, QCompleter, QFrame, QHBoxLayout, QLine
 import rx_buttons as B
 import rx_status as ST
 from proto import RFX_GAIN_MAX, TRIG_AMP_MAX, TRIG_CLICK_MAX, TRIG_CLICK_MIN, TRIG_FORCE_MAX, TRIG_FREQ_MAX, TRIG_START_MAX
-from rx_shape import RUMBLE_LIMITS, needs_fx
+from rx_shape import RUMBLE_LIMITS
 from rx_editor import GYRO_MODES, L3_OF, SHORT, STICK_NAME, STICK_OF, Editor
 from rx_i18n import _
 from rx_qt_style import set_prop
@@ -396,8 +396,7 @@ class PartPage(QWidget):
 
     def update_caps(self) -> None:
         """A warning under the trigger effects when this pad's sender will not apply them (every 400 ms from the window - a cheap read)."""
-        text, level = (ST.triggers_status(self.ed.slot, needs_fx(self.ed.prof["triggers"]))
-                       if self.name in B.TRIGGERS else ("", ""))
+        text, level = ST.triggers_status(self.ed.slot) if self.name in B.TRIGGERS else ("", "")
         if text != self.fx_warn.text():
             self.fx_warn.setText(("⚠  " + text) if text else "")
         self.fx_warn.setVisible(bool(text))
@@ -458,7 +457,7 @@ class RumblePage(QWidget):
 
     def update_caps(self) -> None:
         """A warning when this pad's sender will not apply the rumble (every 400 ms from the window - a cheap read)."""
-        text, level = ST.triggers_status(self.ed.slot, True) if self.ed.rumble_fx()["on"] else ("", "")
+        text, level = ST.triggers_status(self.ed.slot) if self.ed.rumble_fx()["on"] else ("", "")
         if text != self.warn.text():
             self.warn.setText(("⚠  " + text) if text else "")
         self.warn.setVisible(bool(text))

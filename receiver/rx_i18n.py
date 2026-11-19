@@ -51,9 +51,6 @@ EN: Final[dict[str, str]] = {
     "Haptyka gry jest tylko dla pada master (Ustawienia → Master).": "Game haptics are for the master pad only (Settings → Master).",
     "Haptyka gry (HD haptics)": "Game haptics (HD haptics)",
     "Haptyka gry (HD haptics) na tym padzie": "Game haptics (HD haptics) on this pad",
-    "Nadajnik tego pada jest w starszej wersji i nie przekaże haptyki (kliknij Aktualizuj).":
-        "This pad's sender is an older version and will not pass haptics on (click Update).",
-    "Nadajnik w starszej wersji (bez haptyki) - kliknij Aktualizuj.": "Older sender (no haptics) - click Update.",
     "Pad nie jest podłączony.": "The pad is not connected.",
     "Próba": "Test",
     "Test haptyki": "Test haptics",
@@ -63,14 +60,10 @@ EN: Final[dict[str, str]] = {
         "Turning it on or off applies when the pad reconnects; the strength applies at once.",
     "{pad}: Windows przełączył domyślne wyjście dźwięku na pada - przywrócono poprzednie":
         "{pad}: Windows switched the default audio output to the pad - the previous one was restored",
-    "{pad}: gra daje haptykę - nadajnik w starszej wersji jej nie przekaże (kliknij Aktualizuj)":
-        "{pad}: the game sends haptics - an older sender will not pass them on (click Update)",
     "{pad}: gra daje haptykę - pominięta (haptyka gry tylko dla pada master)":
         "{pad}: the game sends haptics - skipped (game haptics are for the master pad only)",
     "{pad}: haptyka gry - nie udało się utworzyć pada USB (composite): {err} - pad działa bez haptyki":
         "{pad}: game haptics - the USB (composite) pad could not be created: {err} - the pad works without haptics",
-    "{pad}: haptyka gry jest włączona, ale nadajnik w starszej wersji jej nie obsługuje (kliknij Aktualizuj)":
-        "{pad}: game haptics are on, but an older sender does not support them (click Update)",
     "{pad}: pad z haptyką gry (HD haptics przez nadajnik)": "{pad}: pad with game haptics (HD haptics through the sender)",
     "Haptyka i głośnik": "Haptics and speaker",
     "GŁOŚNIK PADA": "PAD SPEAKER",
@@ -95,16 +88,9 @@ EN: Final[dict[str, str]] = {
         "library on the sender. It is off by default. The pad settings above (own or default) apply to the speaker as well.",
     "Zmiana włączenia działa po ponownym połączeniu pada; głośność - od razu.":
         "Turning it on or off applies when the pad reconnects; the volume applies at once.",
-    "Nadajnik tego pada jest w starszej wersji i nie przekaże dźwięku na głośnik (kliknij Aktualizuj).":
-        "This pad's sender is an older version and will not pass sound to the speaker on (click Update).",
-    "Nadajnik w starszej wersji (bez głośnika) - kliknij Aktualizuj.": "Older sender (no speaker) - click Update.",
     "Głośnik pada jest tylko dla pada master (Ustawienia → Master).": "The pad speaker is for the master pad only (Settings → Master).",
-    "{pad}: gra daje dźwięk - nadajnik w starszej wersji nie przekaże go na głośnik (kliknij Aktualizuj)":
-        "{pad}: the game sends sound - an older sender will not pass it to the speaker (click Update)",
     "{pad}: gra daje dźwięk - pominięty (głośnik pada tylko dla pada master)":
         "{pad}: the game sends sound - skipped (the pad speaker is for the master pad only)",
-    "{pad}: głośnik pada jest włączony, ale nadajnik w starszej wersji go nie obsługuje (kliknij Aktualizuj)":
-        "{pad}: the pad speaker is on, but an older sender does not support it (click Update)",
     "{pad}: pad z głośnikiem (dźwięk gry przez nadajnik)": "{pad}: pad with a speaker (game sound through the sender)",
     "Odrzucono pakiety nadajnika: inny klucz HMAC (key) w nadajniku i w receiverze - ustaw ten sam albo usuń go z obu":
         "Sender packets rejected: the HMAC key differs between the sender and the receiver - set the same key on both "
@@ -465,9 +451,6 @@ EN: Final[dict[str, str]] = {
     "Wibracja": "Rumble",
     "Wibracje": "Rumble",
     # ---------- rumble ----------
-    "wibracja: stary nadajnik": "rumble: old sender",
-    "Skopiuj nowe pliki sender/ na telefon - starszy nadajnik nie wibruje bez obsługi wibracji w jądrze.":
-        "Copy the new sender/ files to the phone - an older sender cannot rumble without kernel rumble support.",
     "wibracja: niedostępna": "rumble: unavailable",
     "Na telefonie: doas python3 sender_rumble.py --test": "On the phone: doas python3 sender_rumble.py --test",
     "wibracja: wyłączona": "rumble: off",
@@ -592,8 +575,6 @@ EN: Final[dict[str, str]] = {
     "po chwili ciszy efekt wraca. Wspólne dla L2 i R2.":
         "A stand-in for trigger rumble: L2 vibrates like the pad's large motor, R2 like the small one. While it "
         "vibrates it replaces the trigger effect, which comes back after a short pause. Shared by L2 and R2.",
-    "Klik i wibracja spustu wymagają nowszego nadajnika - kliknij Aktualizuj (opór działa).":
-        "Trigger click and vibration need a newer sender - click Update (resistance works).",
     "Efekty spustów są tylko dla pada master (Ustawienia -> Master).":
         "Trigger effects are for the master pad only (Settings -> Master).",
     "Efekty spustów (opór, klik, wibracja)": "Trigger effects (resistance, click, vibration)",
@@ -606,8 +587,6 @@ EN: Final[dict[str, str]] = {
     "drgania {n}": "vibr {n}",
     "bez efektu": "no effect",
     "wibr. gry": "game rumble",
-    "Nadajnik w starszej wersji nie ustawia oporu - kliknij Aktualizuj.":
-        "An older sender can't set the resistance - click Update.",
     "Opór wymaga raportu HID na telefonie (jak wibracja przez HID) - nadajnik go nie ma.":
         "Resistance needs the HID report on the phone (like rumble via HID) - the sender doesn't have it.",
     "Opór {b}: od {start}%, siła {force}/8": "Resistance {b}: from {start}%, strength {force}/8",
@@ -626,8 +605,6 @@ EN: Final[dict[str, str]] = {
         "(the last {n} are kept). Restoring first backs up the current files - so it can be undone too - and then restarts "
         "the receiver.",
     "Zrób kopię teraz": "Back up now",
-    "{pad}: {exe} ustawia efekty spustów - nadajnik w starszej wersji ich nie przekaże (kliknij Aktualizuj)":
-        "{pad}: {exe} sets trigger effects - the older sender cannot pass them on (click Update)",
     "{pad}: {exe} ustawia efekty spustów - pominięte (efekty spustów tylko dla pada master)":
         "{pad}: {exe} sets trigger effects - ignored (trigger effects are master pad only)",
     "{pad}: {exe} ustawia efekty spustów - idą do pada (spust z efektem w profilu zostaje z profilu)":
@@ -944,8 +921,6 @@ EN: Final[dict[str, str]] = {
     "Lewa": "Left",
     "Prawa": "Right",
     "{s}: dryf {peak} → strefa martwa {dz}": "{s}: drift {peak} → deadzone {dz}",
-    "Nadajnik w starszej wersji przycina odchyłki do ~2% - kliknij Aktualizuj, żeby mierzyć dokładnie.":
-        "An older sender trims deviations up to ~2% - click Update to measure precisely.",
     "ŻYROSKOP - KALIBRACJA": "GYRO - CALIBRATION",
     "Kalibracja żyroskopu": "Gyro calibration",
     "Połóż pad na płaskiej, stabilnej powierzchni i nie dotykaj go przez {s} s.":
@@ -963,8 +938,6 @@ EN: Final[dict[str, str]] = {
     "Brak danych z czujnika ruchu pada.": "No data from the pad's motion sensor.",
     "Brak odpowiedzi nadajnika.": "No reply from the sender.",
     "Pad niepodłączony.": "Pad not connected.",
-    "Kalibracja z okna wymaga nowszego nadajnika - kliknij Aktualizuj.":
-        "Calibrating from the window needs a newer sender - click Update.",
     "Sprawdzam stan kalibracji…": "Checking calibration…",
     "Zapisana kalibracja z {date}.": "Saved calibration from {date}.",
     "Brak zapisanej kalibracji - nadajnik kalibruje pad przy starcie (pad musi wtedy leżeć).":
@@ -1409,8 +1382,6 @@ EN: Final[dict[str, str]] = {
         ("Changing the sender's settings needs an HMAC key in the receiver and protocol v3 (the same key on "
          "both sides)."),
     "Nadajnik nie ma klucza HMAC, więc odmawia zmian.": "The sender has no HMAC key, so it refuses changes.",
-    "Nadajnik nie przeszedł jeszcze na protokół v3 i odmawia zmian.":
-        "The sender has not switched to protocol v3 yet and refuses changes.",
     "Nadajnik ma wyłączone zmiany z odbiornika (remote_cfg_file = \"\").":
         "The sender has changes from the receiver switched off (remote_cfg_file = \"\").",
     ("Brak odpowiedzi nadajnika - starsza wersja nie zna tych pakietów, albo odpowiedź jeszcze nie "
@@ -1422,4 +1393,33 @@ EN: Final[dict[str, str]] = {
         "The sender knows {n} of {total} settings - the others need a newer sender version (click Update).",
     "Nadajnik odrzucił wartość ustawienia {name}": "The sender rejected the value of the setting {name}",
     "Ustawienia nadajnika z tego komputera wysłane ponownie ({n})": "Sender settings from this computer sent again ({n})",
+    "Głośnik tego pada nie odtworzy dźwięku (potrzebny DualSense przez Bluetooth, raport HID i libopus na nadajniku).":
+        "This pad's speaker will not play sound (it needs a DualSense over Bluetooth, the HID report and libopus on the sender).",
+    "Nadajnik jest w innej wersji niż odbiornik - kliknij Aktualizuj.":
+        "The sender runs a different version than the receiver - click Update.",
+    "Nadajnik jeszcze nie opisał tego pada - chwilę…":
+        "The sender has not described this pad yet - one moment…",
+    "Nadajnik nie przysłał jeszcze opisu tego pada.":
+        "The sender has not described this pad yet.",
+    "Ten pad nie odtworzy haptyki (potrzebny DualSense przez Bluetooth i raport HID na nadajniku).":
+        "This pad will not play haptics (it needs a DualSense over Bluetooth and the HID report on the sender).",
+    "wibracja: brak danych":
+        "rumble: no data",
+    "wibracja: inna wersja nadajnika":
+        "rumble: different sender version",
+    "{pad}: gra daje dźwięk - głośnik tego pada go nie odtworzy (potrzebny DualSense przez Bluetooth, raport HID i libopus na nadajniku)":
+        "{pad}: the game plays sound - this pad's speaker will not play it (it needs a DualSense over Bluetooth, the "
+        "HID report and libopus on the sender)",
+    "{pad}: gra daje haptykę - ten pad jej nie odtworzy (potrzebny DualSense przez Bluetooth i raport HID na nadajniku)":
+        "{pad}: the game sends haptics - this pad will not play them (it needs a DualSense over Bluetooth and the HID "
+        "report on the sender)",
+    "{pad}: głośnik pada jest włączony, ale ten pad go nie odtworzy (potrzebny DualSense przez Bluetooth, raport "
+    "HID i libopus na nadajniku)":
+        "{pad}: the pad speaker is on, but this pad will not play it (it needs a DualSense over Bluetooth, the HID "
+        "report and libopus on the sender)",
+    "{pad}: haptyka gry jest włączona, ale ten pad jej nie odtworzy (potrzebny DualSense przez Bluetooth i raport HID na nadajniku)":
+        "{pad}: game haptics are on, but this pad will not play them (it needs a DualSense over Bluetooth and the HID "
+        "report on the sender)",
+    "{pad}: nadajnik w innej wersji (v{tx}, odbiornik v{rx}) - kliknij Aktualizuj":
+        "{pad}: the sender runs another version (v{tx}, receiver v{rx}) - click Update",
 }

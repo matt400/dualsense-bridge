@@ -10,6 +10,7 @@ from rxenv import *                                              # noqa  (Window
 import rx_haptics as H, rx_hm, rx_settings, rx_speaker as K
 import rx_state as S
 from proto import CAP_SPEAKER
+import proto
 
 from chk import check, fails, ok                              # noqa: E402  (shared helper, tests/chk.py)
 
@@ -47,7 +48,7 @@ check(sp.host_gain == 1.0, "a new pad starts at full level again")
 A = "aa:aa:aa:aa:aa:0b"
 S.pad_id[0] = A
 S.alive[0] = True
-S.sender_info[0] = (14, 3 | CAP_SPEAKER, 0)
+S.sender_info[0] = (proto.SENDER_VERSION, 3 | CAP_SPEAKER, 0)
 rx_settings.apply(replace(rx_settings.cur, speaker=rx_settings.SpeakerConfig(pads={A: rx_settings.PadSpeaker(True, 100)})))
 ROLES = ["speakerLeft", "speakerRight", "hapticLeft", "hapticRight"]
 now = [100.0]

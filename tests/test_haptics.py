@@ -9,6 +9,7 @@ from rxenv import *                                              # noqa  (Window
 import rx_audio, rx_haptics as H, rx_master, rx_settings
 import rx_state as S
 from proto import CAP_HAPTICS, HAPT_CHUNK, HAPT_END, HAPT_FRAMES, HAPT_START, T_CMD
+import proto
 
 from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
@@ -90,7 +91,7 @@ check(body in pkt, "packet body: !IB64s, frame number modulo 2**32")
 A = "aa:aa:aa:aa:aa:09"
 S.pad_id[0] = A
 S.alive[0] = True
-S.sender_info[0] = (13, 3 | CAP_HAPTICS, 0)
+S.sender_info[0] = (proto.SENDER_VERSION, 3 | CAP_HAPTICS, 0)
 rx_settings.apply(replace(rx_settings.cur, haptics=rx_settings.HapticsConfig(pads={A: rx_settings.PadHaptics(True, 100)})))
 sent_pk = []
 now = [100.0]
@@ -161,12 +162,12 @@ check(all(b[0] - a[0] > 0.008 for a, b in zip(sent_pk, sent_pk[1:] if len(sent_p
 check(sent_pk and sent_pk[0][2] == HAPT_START, "START on the first one sent")
 
 # ---------- bramki ----------
-S.sender_info[0] = (12, 3, 0)
-check(not H.sender_haptics(0) and not H.composite_wanted(0), "old sender: no composite")
-S.sender_info[0] = (13, 3, 0)
-check(not H.sender_haptics(0), "v13 without the CAP_HAPTICS bit: no haptics")
-S.sender_info[0] = (13, 3 | CAP_HAPTICS, 0)
-check(H.sender_haptics(0) and H.composite_wanted(0), "v13 + CAP_HAPTICS + enabled = composite")
+S.sender_info[0] = (proto.SENDER_VERSION, 3, 0)
+check(not H.sender_haptics(0) and not H.composite_wanted(0), "no CAP_HAPTICS: no composite")
+S.sender_info[0] = (proto.SENDER_VERSION, 3, 0)
+check(not H.sender_haptics(0), "without the CAP_HAPTICS bit: no haptics")
+S.sender_info[0] = (proto.SENDER_VERSION, 3 | CAP_HAPTICS, 0)
+check(H.sender_haptics(0) and H.composite_wanted(0), "CAP_HAPTICS + enabled = composite")
 rx_settings.apply(replace(rx_settings.cur, haptics=rx_settings.HapticsConfig(pads={A: rx_settings.PadHaptics(False, 100)})))
 check(not H.composite_wanted(0), "off in the settings (default): a plain pad")
 rx_settings.apply(replace(rx_settings.cur, haptics=rx_settings.HapticsConfig(pads={"*": rx_settings.PadHaptics(True, 100)})))
@@ -174,7 +175,7 @@ check(H.composite_wanted(0), "the default setting * covers a pad without its own
 # master-only
 S.pad_id[1] = "bb:bb:bb:bb:bb:09"
 S.alive[1] = True
-S.sender_info[1] = (13, 3 | CAP_HAPTICS, 0)
+S.sender_info[1] = (proto.SENDER_VERSION, 3 | CAP_HAPTICS, 0)
 m = replace(rx_settings.cur.master, pad=A, only_master=("haptics",), when_absent="none")
 rx_settings.apply(replace(rx_settings.cur, master=m))
 check(H.composite_wanted(0) and not H.composite_wanted(1), "only the master gets haptics")
@@ -235,7 +236,7 @@ check(all("Wireless" not in n for _i, n in rx_audio.list_outputs()), "list_outpu
 # ---------- test button: a pad without permission gets no tone and no "sent" ----------
 m = replace(rx_settings.cur.master, pad=A, only_master=("haptics",), when_absent="none")
 rx_settings.apply(replace(rx_settings.cur, master=m))
-S.sender_info[0] = S.sender_info[1] = (13, 3 | CAP_HAPTICS, 0)
+S.sender_info[0] = S.sender_info[1] = (proto.SENDER_VERSION, 3 | CAP_HAPTICS, 0)
 H.links[:] = []
 why = H.test(1)
 check(why is not None and "master" in why and not H.link(1)._inject, f"haptics test: a non-master pad gets a reason, nothing waits in the queue ({why!r})")

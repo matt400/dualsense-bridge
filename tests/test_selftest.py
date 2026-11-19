@@ -8,7 +8,7 @@ from rxenv import *                                              # noqa
 
 import proto
 from chk import check, fails, wait_for                          # noqa: E402  (shared helper, tests/chk.py)
-from proto import (BODY, PK_DUALSENSE, RUMBLE_HIDRAW, SELFTEST_SENDER, SR_COUNT, SR_DONE, SR_FB, SR_HAPT, SR_SPK, SR_SYS, SR_WRITES,
+from proto import (BODY, PK_DUALSENSE, RUMBLE_HIDRAW, SENDER_VERSION, SR_COUNT, SR_DONE, SR_FB, SR_HAPT, SR_SPK, SR_SYS, SR_WRITES,
                    SRC_PC, SRC_REPEAT, SRC_WATCHDOG, SRF_PINNED, SRF_RT, ST_BEGIN, ST_END, ST_HAPTICS, ST_RECORDS, ST_SNAP, ST_SPEAKER,
                    T_STCMD, T_STRES)
 import rx_diag
@@ -31,9 +31,9 @@ def deliver(data, i=0):
     N._on_selftest_record(i, int.from_bytes(data[2:4], "big"), data, ADDR, time.monotonic())
 
 
-def pad_ready(version=SELFTEST_SENDER):
+def pad_ready(version=SENDER_VERSION):
     S.alive[0] = True
-    S.sender_info[0] = (version, RUMBLE_HIDRAW, 0)
+    S.sender_info[0] = (version, RUMBLE_HIDRAW, 0) if version else None
     S.pad_kind[0] = (PK_DUALSENSE, 0)
     S.pad_id[0] = "aa:bb:cc:dd:ee:01"
     S.info[0] = (12.0, 250.0, 250.0, time.monotonic())          # (rtt ms, pad Hz, motion Hz, time): fresh round-trip data
@@ -112,10 +112,6 @@ check(N.codec.parse(req) == (T_STCMD, 0, (req[2] << 8) | req[3]), "stcmd packs a
 check(BODY[T_STCMD].unpack_from(req, 4) == (ST_SNAP, ST_HAPTICS, 513, 0, 0), "stcmd body round trip")
 ans = stres_bytes(SR_FB, SRC_PC | HID, 9, 1, 2, 3, 4, 5, 6)
 check(N.codec.parse(ans)[0] == T_STRES and len(ans) == 4 + 28, "stres packs and parses (wire type 12, 28 bytes)")
-saved = {k: proto.BY_SIZE.pop(k) for k in ((10, 10), (12, 28))}      # an older peer does not know these lengths
-check(Codec().parse(req) is None and Codec().parse(ans) is None, "an older peer drops stcmd / stres (unknown length) and nothing else breaks")
-check(Codec().parse(N.codec.pack(proto.T_CMD, 0, 1, 0)) is not None, "... while the old cmd of the same wire type still parses")
-proto.BY_SIZE.update(saved)
 
 # ---------- refusals ----------
 S.alive[0] = False
@@ -245,7 +241,7 @@ feeder.halt = sim.halt = True
 res = {r.id: r for r in run.results}
 check([r.id for r in run.results] == list(T.STEPS), f"every step ran, in order ({[r.id for r in run.results]})")
 check({"latency", "vibration"} <= seen_steps, f"the window sees the long steps go by ({seen_steps})")
-check(res["meta"].status == T.OK and res["meta"].data["sender_version"] == SELFTEST_SENDER and res["meta"].data["rumble_ways"] == ["hidraw"],
+check(res["meta"].status == T.OK and res["meta"].data["sender_version"] == SENDER_VERSION and res["meta"].data["rumble_ways"] == ["hidraw"],
       f"meta: versions and rumble ways ({res['meta'].data})")
 check(res["meta"].data["pad_mac"] == "aa:bb:cc:xx:xx:xx" and res["meta"].data["pad_firmware"] == "0x0123", "meta: the pad MAC is masked, the firmware comes from the sender")
 check(res["meta"].data["pad_family"] == "DualSense" and "backend" in res["meta"].data, "meta: the pad family and the virtual pad backend")
@@ -317,21 +313,21 @@ ad = R.build(run)
 check(ad["result"] == "aborted" and "latency" in ad["steps"] and "vibration" not in ad["steps"], "the report of an aborted run has what was measured so far")
 check(json.loads(re.search(r"```json\n(.*)\n```", R.render(ad), re.S).group(1))["result"] == "aborted", "... and says so")
 
-# ---------- an old sender: nothing of the test is sent to it ----------
-pad_ready(version=SELFTEST_SENDER - 1)
+# ---------- a pad the sender has not described (no version packet): nothing of the test is sent ----------
+pad_ready(version=0)
 sent.clear()
 run = T.SelfTest(0, PLAN)
 run.start()
 run.join(30)
 res = {r.id: r for r in run.results}
-check(run.finished and [r.id for r in run.results] == list(T.STEPS), "a run against an old sender goes through every step")
-check([p for p in sent if p[0] == T_STCMD] == [], "no stcmd packet reaches a sender older than the self-test")
+check(run.finished and [r.id for r in run.results] == list(T.STEPS), "a run without the sender's description goes through every step")
+check([p for p in sent if p[0] == T_STCMD] == [], "no stcmd packet goes out")
 check(all(res[s].status == T.SKIPPED for s in ("vibration", "audio", "cpu", "mic")), "the steps that need the sender are skipped")
-check("older than the self-test" in res["meta"].note and res["meta"].data["sender_version"] == SELFTEST_SENDER - 1, f"meta says why ({res['meta'].note})")
+check("has not described" in res["meta"].note and res["meta"].data["sender_version"] == 0, f"meta says why ({res['meta'].note})")
 check(res["idle"].status == T.OK and res["latency"].status == T.NO_DATA, "the receiver-only steps still run (idle: measured, latency: nobody pressed anything)")
-check(all(p[3][4] == 0 and p[3][5] == 0 for p in sent if p[0] == proto.T_FB), "no motor command in a run against an old sender")
+check(all(p[3][4] == 0 and p[3][5] == 0 for p in sent if p[0] == proto.T_FB), "no motor command in that run")
 text = R.render(R.build(run))
-check("older than the self-test" in text and "skipped" in text, "the report of that run says what was skipped and why")
+check("has not described" in text and "skipped" in text, "the report of that run says what was skipped and why")
 
 # ---------- the radio link: the run keeps the sender's btlink reporting alive (it stops BT_ACTIVE_S after the last BT_LIST) ----------
 import rx_bt

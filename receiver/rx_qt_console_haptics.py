@@ -118,15 +118,14 @@ class HapticsTab(TabBase):
         return None
 
     def _haptics_enable(self) -> None:
-        """Enable the test buttons only for a connected pad; say when its sender is too old."""
+        """Enable the test buttons only for a connected pad; say when the pad cannot play haptics / the speaker."""
         slot = self._haptics_pad_slot()
         self.hap_test.setEnabled(slot is not None)
         self.spk_test.setEnabled(slot is not None)
         old = slot is not None and not rx_haptics.sender_haptics(slot)
-        self.hap_note.setText(_("Nadajnik tego pada jest w starszej wersji i nie przekaże haptyki (kliknij Aktualizuj).") if old else "")
+        self.hap_note.setText(rx_haptics.no_haptics_text() if old else "")
         old = slot is not None and not rx_speaker.sender_speaker(slot)
-        self.spk_note.setText(_("Nadajnik tego pada jest w starszej wersji i nie przekaże dźwięku na głośnik (kliknij Aktualizuj).")
-                              if old else "")
+        self.spk_note.setText(rx_speaker.no_speaker_text() if old else "")
 
     def _haptics_edited(self, *_args: Any) -> None:
         """Record the edited fields under the current entry: for a pad without one this is the copy of the defaults plus the change."""

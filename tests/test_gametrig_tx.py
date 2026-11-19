@@ -8,7 +8,7 @@ import sender_config; sender_config.init(["127.0.0.1"])
 import sender_net as net
 import sender_report as RP
 import sender_rumble as R
-from proto import (BODY, CAP_TRIG_RAW, RFX_ON, SENDER_VERSION, T_TRIG3, TFX_CLICK, TFX_OFF, TFX_RES, TRG3_L2, TRG3_R2,
+from proto import (BODY, CAP_TRIGGERS, RFX_ON, T_TRIG3, TFX_CLICK, TFX_OFF, TFX_RES, TRG3_L2, TRG3_R2,
                    TRIG2_OFF, Codec)
 
 TMP = tempfile.mkdtemp()
@@ -25,11 +25,9 @@ def trig3(vals=TRIG2_OFF, l2=None, r2=None):
 
 
 # ---------- packet parsing ----------
-assert RP.split_triggers((3, 6, 0, 0)) == ((TFX_RES, 3, 6, 0, *(0,) * 8), (None, None))
 assert RP.split_triggers(TRIG2_OFF) == (TRIG2_OFF, (None, None))
 assert RP.split_triggers(trig3(l2=G_L2)) == (TRIG2_OFF, (G_L2, None)), "TRG3_R2 flag cleared - R2 without the game effect"
 assert RP.game_effect(G_R2) == G_R2 and RP.game_effect(None) == RP.OFF_EFFECT and RP.game_effect(Z) == RP.OFF_EFFECT
-assert SENDER_VERSION >= 11
 ok("trig3 -> trig2 + game effects (flags), mode 0 = Off, sender version 11")
 
 c = Codec()
@@ -78,7 +76,7 @@ async def main():
     path = os.path.join(TMP, "hidraw")
     open(path, "wb").close()
     r = R.Rumble(0, Dev(), "hidraw", hidraw=(path, True))
-    assert r.bits & CAP_TRIG_RAW, "HID report = the sender knows the game effects"
+    assert r.bits & CAP_TRIGGERS, "HID report = trigger effects (the game ones too)"
     assert r.set_triggers(trig3(l2=G_L2, r2=G_R2))
     assert last(path) == (G_L2, G_R2), last(path)
     ok("profile without effects: game effects reach the pad unchanged")

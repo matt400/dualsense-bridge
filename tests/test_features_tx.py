@@ -9,7 +9,7 @@ import sender_net as net
 net.link.clock.base = 0   # pings and the PC clock on perf_counter (the test gives the pong2 times)
 import sender_report as RP
 import sender_rumble as R
-from proto import BODY, CAP_TRIGGERS, LAT_NONE, T_CMD, T_PONG2, T_STATE, T_STATE2, T_TRIG, Codec
+from proto import BODY, CAP_TRIGGERS, LAT_NONE, T_CMD, T_PONG2, T_STATE, T_STATE2, T_TRIG3, TFX_OFF, TFX_RES, Codec
 from sender_ctrl import Ctrl
 from sender_motion import BtDelay
 
@@ -50,7 +50,7 @@ async def rumble():
     assert r.bits & CAP_TRIGGERS
     r.rgb = (1, 2, 3)
     r.cur = (10, 20)
-    assert r.set_triggers((0, 0, 3, 7))
+    assert r.set_triggers((TFX_OFF, 0, 0, 0, TFX_RES, 3, 7, 0, 0, 0, 0, 0))
     data = open(path, "rb").read()
     last = data[-78:][3:]
     assert last[RP.RIGHT_TRIGGER_AT] == 0x21 and last[2:4] == bytes([10, 20]) and last[44:47] == bytes([1, 2, 3]), \
@@ -62,7 +62,7 @@ async def rumble():
     assert all(rep[3:][2:4] == b"\0\0" for rep in (tail[k:k + 78] for k in range(0, len(tail), 78))), \
         "reports on close without rumble - removing the resistance must not start the motors again (the pad keeps the power)"
     ev = R.Rumble(1, Dev(), "off")
-    assert not ev.bits & CAP_TRIGGERS and ev.set_triggers((1, 1, 1, 1)) is False
+    assert not ev.bits & CAP_TRIGGERS and ev.set_triggers((TFX_RES, 1, 1, 0) * 2 + (0, 0, 0, 0)) is False
 asyncio.run(rumble())
 ok("Rumble.set_triggers: HID report, CAP_TRIGGERS bit, off on close, no HID - nothing")
 
@@ -160,11 +160,12 @@ class Sock:
         return self.pkts.pop(0)
 
 
+TRIG3_RES = (TFX_OFF, 0, 0, 0, TFX_RES, 3, 6, 0, 0, 0, 0, 0)
 net.link.codec = cod
-net.link.sock = Sock([cod.pack(T_TRIG, 1, 0, 0, 3, 6), cod.pack(T_PONG2, 255, time.perf_counter_ns() - 100_000, 5_000_000)])
+net.link.sock = Sock([cod.pack(T_TRIG3, 1, *TRIG3_RES, bytes(11), bytes(11), 0), cod.pack(T_PONG2, 255, time.perf_counter_ns() - 100_000, 5_000_000)])
 net.on_readable()
-assert got == [(1, (0, 0, 3, 6))] and net.link.pc_clock.offset_us is not None
-ok("sender_net: trig packet -> callback, pong2 -> PC clock")
+assert got == [(1, (*TRIG3_RES, bytes(11), bytes(11), 0))] and net.link.pc_clock.offset_us is not None
+ok("sender_net: trig3 packet -> callback, pong2 -> PC clock")
 
 own = net.Net()                                          # a second link: its own socket, codec, handlers and counters
 cmds = []

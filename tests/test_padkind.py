@@ -5,9 +5,10 @@ import os, sys, threading, time
 from dataclasses import replace
 sys.path.insert(0, os.path.dirname(__file__))
 from rxenv import *                                              # noqa
+import proto
 import rx_ds4, rx_settings, rx_xbox
 import rx_state as S
-from proto import PF_MOTION, PF_RUMBLE, PK_DS4, PK_DUALSENSE, PK_OTHER, PK_XBOX, T_PADKIND, PADKIND_SENDER
+from proto import PF_MOTION, PF_RUMBLE, PK_DS4, PK_DUALSENSE, PK_OTHER, PK_XBOX, T_PADKIND
 
 from chk import check, fails                                  # noqa: E402
 
@@ -144,12 +145,12 @@ check(rx_ds4.gen == g, "the mirror switch does not re-plug every pad (gen unchan
 
 # ---------- a pad's virtual pad: plugged, driven, replaced when another kind arrives ----------
 S.pad_kind[0] = None
-S.sender_info[0] = (PADKIND_SENDER - 1, 0, 0)               # an older sender never sends the packet: no waiting for it
+S.sender_info[0] = (proto.SENDER_VERSION, 0, 0)                 # the padkind packet got lost: the pad waits KIND_WAIT_S at most
 log.clear()
 t = threading.Thread(target=rx_ds4.slot_thread, args=(0,), daemon=True)
 t.start()
 S.want[0].set()
-check(wait(lambda: rx_ds4.kinds[0] == "vigem"), "a pad of an older sender gets a DS4")
+check(wait(lambda: rx_ds4.kinds[0] == "vigem"), "a pad without a padkind packet gets a DS4")
 feed(T_PADKIND, 0, PK_XBOX, PF_RUMBLE, 0x045E, 0x0B13)
 check(wait(lambda: rx_ds4.kinds[0] == "x360"), f"the padkind packet re-plugs the slot as an Xbox 360 pad ({rx_ds4.kinds[0]})")
 check(any(e[0] == "ds4" and e[2] == "unplug" for e in log), "the DS4 was unplugged first")

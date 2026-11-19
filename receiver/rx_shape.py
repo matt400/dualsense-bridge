@@ -136,21 +136,6 @@ def trigger_values(t: Triggers) -> Trig2:
     return (*side(t.get("l2")), *side(t.get("r2")), *rumble)
 
 
-def legacy_values(vals: Sequence[int]) -> tuple[int, int, int, int]:
-    """Convert trig2 values to the old trig packet for a sender without CAP_TRIG_FX (resistance only; click / vibration = none)."""
-    from proto import TFX_RES
-
-    def side(mode: int, a: int, b: int, _c: int) -> tuple[int, int]:
-        return (a, b) if mode == TFX_RES else (0, 0)
-    return (*side(*vals[0:4]), *side(*vals[4:8]))
-
-
-def needs_fx(t: Triggers) -> bool:
-    """Tell whether the effects need a sender with CAP_TRIG_FX (click, trigger vibration, game vibration)."""
-    return any((t.get(n) or {}).get("mode") in ("click", "vib") for n in ("l2", "r2")) or \
-        bool((t.get("rumble") or {}).get("on"))
-
-
 def normalize_gyro(g: Any, inputs: Collection[str]) -> dict[str, Any]:
     """Return {} (default, disabled) or a full settings dict; `inputs` = input names allowed as "hold"."""
     if not isinstance(g, dict):

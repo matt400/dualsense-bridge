@@ -8,21 +8,17 @@ import rx_state as S
 import rx_events as ev
 import rx_feedback as F
 import rx_update as U
-from proto import T_PING, T_STATE, TRIG2_OFF, UPD_DONE, UPD_FAILED, UPD_NO_CHANGE, UPD_NONE, UPD_RUNNING, Codec
+from proto import T_PING, T_STATE, UPD_DONE, UPD_FAILED, UPD_NO_CHANGE, UPD_NONE, UPD_RUNNING, Codec
 
 from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
 # ---------- releasing trigger effects when the receiver closes ----------
 out = []
 send = lambda i, vals, n: out.append((i, tuple(vals), n))
-F.trig_sent[:] = [((1, 2, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0), 0.0), (TRIG2_OFF, 0.0)]
+F.trig_sent[:] = [((1, 2, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, bytes(11), bytes(11), 0), 0.0), (F.TRIG3_OFF, 0.0)]
 F.release_triggers(send)
-check(out == [(0, TRIG2_OFF, F.TRIG_REPEAT)] and F.trig_sent[0] is None,
+check(out == [(0, F.TRIG3_OFF, F.TRIG_REPEAT)] and F.trig_sent[0] is None,
       f"closing: a pad with effects gets 'no effects' (a pad without effects - nothing): {out}")
-out.clear()
-F.trig_sent[:] = [((3, 6, 0, 0), 0.0), None]
-F.release_triggers(send)
-check(out == [(0, (0, 0, 0, 0), F.TRIG_REPEAT)], "older sender (trig packet) - release with the same packet")
 out.clear(); F.release_triggers(send)
 check(out == [], "nothing the second time (already released)")
 

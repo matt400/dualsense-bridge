@@ -20,7 +20,7 @@ overruns, drift drops, the depth of the buffer, the time of a write), not the so
 times are in the PC clock through the offset it keeps from the pong2 packets, so a segment that spans both machines carries an error of
 up to half the round trip.
 
-An older sender (before SELFTEST_SENDER) is never sent a self-test packet: the steps that need it are skipped and the rest runs.
+Until the sender has described the pad (its version packet) no self-test packet goes out: the steps that need it are skipped.
 
 The run is a thread (``SelfTest.start``); the window polls ``snapshot()``. ``Plan`` holds every duration, so tests run the whole
 scenario in a second. The report is built by rx_selftest_report.
@@ -43,7 +43,7 @@ import rx_latency
 import rx_state as S
 import rx_swap
 import rx_testmode as testmode
-from proto import (BODY, GOVERNORS, HEADER_LEN, PK_DS4, PK_DUALSENSE, PK_OTHER, PK_XBOX, RUMBLE_EVDEV, RUMBLE_HIDRAW, SELFTEST_SENDER,
+from proto import (BODY, GOVERNORS, HEADER_LEN, PK_DS4, PK_DUALSENSE, PK_OTHER, PK_XBOX, RUMBLE_EVDEV, RUMBLE_HIDRAW,
                    SR_COUNT, SR_DONE, SR_FB, SR_HAPT, SR_SPK, SR_SYS, SR_WRITES, SRC_REPEAT, SRC_WATCHDOG, SRF_PINNED, SRF_QOS, SRF_RT,
                    ST_BEGIN, ST_END, ST_HAPTICS, ST_RECORDS, ST_SNAP, ST_SPEAKER, T_STRES, UINT32_MASK, nearest_rank)
 
@@ -398,13 +398,13 @@ class SelfTest:
             return list(self._taps)
 
     def _ask(self, op: int, arg: int = 0) -> None:
-        """Send a request to the sender (never to one that does not know the self-test)."""
-        if self._sender_version() >= SELFTEST_SENDER:
+        """Send a request to the sender (only once it has described the pad: its version packet)."""
+        if self._sender_version():
             self._ref += 1
             _net().send_selftest(self.slot, op, arg, self._ref)
 
     def _sender_version(self) -> int:
-        """The sender's version for this pad (0 = an older sender that sent no version packet)."""
+        """The sender's version for this pad (0 = no version packet yet)."""
         info = S.sender_info[self.slot] if self.slot < len(S.sender_info) else None
         return info[0] if info else 0
 
@@ -483,22 +483,22 @@ class SelfTest:
             "sender_version": ver,
             "rumble_ways": [name for bit, name in ((RUMBLE_EVDEV, "evdev"), (RUMBLE_HIDRAW, "hidraw")) if ways & bit],
             "no_hidraw_reason": why,
-            "pad_family": FAMILY_NAMES.get(kind[0], "?") if kind else "DualSense (older sender, no padkind)",
+            "pad_family": FAMILY_NAMES.get(kind[0], "?") if kind else "DualSense (no padkind packet)",
             "pad_mac": _mask_mac(S.pad_id[i]),
             "backend": self._backend(),
             "bluetooth": self._adapter(),
             "channel": None,                # the radio channel / band is not known to the sender
         }
         r.data.update(_versions())
-        if ver >= SELFTEST_SENDER:
+        if ver:
             self.collecting = True
             self._began = True
             self._ask(ST_BEGIN, 0)
             self.sender_ok = inbox.wait(lambda: bool(inbox.sys), self.plan.ack_s)
         if self.sender_ok:
             r.data["pad_firmware"] = _firmware(inbox.sys[0][5])
-        elif ver < SELFTEST_SENDER:
-            r.note = f"the sender is older than the self-test (version {ver} < {SELFTEST_SENDER}): its steps are skipped"
+        elif not ver:
+            r.note = "the sender has not described the pad (no version packet): its steps are skipped"
         else:
             r.note = "the sender did not answer the self-test request"
 
@@ -695,7 +695,7 @@ class SelfTest:
             why, link = rx_speaker.unavailable(i), rx_speaker.speaker(rx_swap.route(i))
             units, seconds = _speaker_stream(self.plan.tone_s, self.plan.sweep_s)
         if why is not None:
-            return {"skipped": "not available for this pad (not connected, an older sender, or not the master pad)"}
+            return {"skipped": "not available for this pad (not connected, no CAP_HAPTICS / CAP_SPEAKER, or not the master pad)"}
         before = (link.sent, link.dropped, link.overruns)
         self._ask_stream_reset(snap)
         link.inject(units)

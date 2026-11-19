@@ -15,7 +15,7 @@ import sender_ctrl
 import sender_net
 import sender_state
 import sender_streams
-from proto import (BODY, CAL_FEW, CAL_MOVED, CAL_OK, CAL_RUNNING, CAL_STATUS, CALF_STORED, CAP_CALIB, CMD_GYRO_CAL,
+from proto import (BODY, CAL_FEW, CAL_MOVED, CAL_OK, CAL_RUNNING, CAL_STATUS, CALF_STORED, CMD_GYRO_CAL,
                    CMD_RAW_STICKS, T_CALRES, T_CMD, T_STATE, T_VERSION, Codec)
 
 from chk import ok
@@ -158,7 +158,7 @@ async def startup():
     assert states and states[0][14:17] == (0, 0, 0), "stored bias at once, no 1 s calibration at start"
     c2.send_ident()
     ver = next(v for t, _i, v in sent if t == T_VERSION)
-    assert ver[0] == proto.SENDER_VERSION and ver[1] & CAP_CALIB, ver
+    assert ver[0] == proto.SENDER_VERSION, ver
 
 asyncio.run(startup())
-ok("pad start with a stored calibration: no start-up calibration, motion from the first report; version with CAP_CALIB")
+ok("pad start with a stored calibration: no start-up calibration, motion from the first report; the version packet")

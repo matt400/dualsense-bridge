@@ -1,16 +1,17 @@
 """Receiver: trigger effects - modes in the profile (resistance, click, vibration), game rumble on the triggers, inheritance
-from the pad profile in a game profile, trig2 / trig by sender version, the master feature "triggers", the editor."""
+from the pad profile in a game profile, the trig3 packet, the master feature "triggers", the editor."""
 import os, sys
 sys.path.insert(0, os.path.dirname(__file__))
 from rxenv import *                                              # noqa  (Windows stubs, TMP, store, sent)
 import rx_net
 import rx_settings
 import rx_status as ST
-from proto import (BODY, CAP_TRIG_FX, RFX_ON, T_TRIG, T_TRIG2, TFX_CLICK, TFX_OFF, TFX_RES, TFX_VIB, TRIG2_OFF)
+import proto
+from proto import (BODY, RFX_ON, T_TRIG3, TFX_CLICK, TFX_OFF, TFX_RES, TFX_VIB, TRIG2_OFF)
 from rx_buttons import normalize_profile
 from rx_editor import Editor
 from rx_settings import MasterConfig, MouseConfig, Settings
-from rx_shape import legacy_values, needs_fx, normalize_triggers, trigger_values
+from rx_shape import normalize_triggers, trigger_values
 
 from chk import ok
 
@@ -29,10 +30,8 @@ v = trigger_values(t)
 assert v == (TFX_RES, 3, 6, 0, TFX_CLICK, 7, 1, 0, RFX_ON, 200, 1, 0), v
 assert trigger_values({"r2": {"mode": "vib", "start": 2, "amp": 5, "freq": 90}, "rumble": {"on": False, "gain": 50, "freq": 9}}) \
     == (TFX_OFF, 0, 0, 0, TFX_VIB, 2, 5, 90, 0, 0, 0, 0), "game rumble off = zeros (no refresh)"
-assert trigger_values({}) == TRIG2_OFF and legacy_values(v) == (3, 6, 0, 0) and legacy_values(TRIG2_OFF) == (0, 0, 0, 0)
-assert needs_fx(t) and not needs_fx({"l2": {"mode": "res", "start": 0, "force": 3}}) and not needs_fx({})
-assert needs_fx({"rumble": {"on": True, "gain": 100, "freq": 40}})
-ok("trig2 values, the old trig (resistance only), whether a new sender is needed")
+assert trigger_values({}) == TRIG2_OFF
+ok("profile trigger values (the first 12 of trig3)")
 
 # ---------- a game profile inherits the trigger effects from the pad profile ----------
 A = "aa:aa:aa:aa:aa:01"
@@ -53,29 +52,26 @@ assert trigger_values(S.remap_maps[0]["triggers"]) == TRIG2_OFF, "an explicit of
 S.set_game(None)
 ok("game profile: trigger effects from the pad profile when it does not set them; off in the game turns them off; buttons without inheritance")
 
-# ---------- sending from the feedback loop: trig2 for v8, trig for an older one ----------
+# ---------- sending from the feedback loop: always trig3 ----------
+def T3(vals):
+    """The trig3 values without game effects."""
+    return (*vals, bytes(11), bytes(11), 0)
+
+
 trig = []
 send = lambda i, vals, n: trig.append((i, vals, n))
 S.alive[0] = True
 F.trig_sent[0] = None
-S.sender_info[0] = (8, 15, 0)
+S.sender_info[0] = (proto.SENDER_VERSION, 15, 0)
 F.triggers_tick(0, 100.0, send)
-assert trig == [(0, trigger_values(S.remap_maps[0]["triggers"]), F.TRIG_REPEAT)] and len(trig[0][1]) == 12, trig
-S.sender_info[0] = (7, 7, 0)
-F.triggers_tick(0, 100.5, send)
-assert trig[-1] == (0, (2, 5, 0, 0), F.TRIG_REPEAT), "older sender: resistance only with the old packet"
-S.sender_info[0] = (8, 7, 0)
-assert not F.sender_fx(0), "v8 without the HID report (no CAP_TRIG_FX) - the old packet"
-S.sender_info[0] = (8, 3 | CAP_TRIG_FX, 0)
-assert F.sender_fx(0)
-S.sender_info[0] = (8, 15, 0)
-ok("feedback: trig2 to a v8 sender with CAP_TRIG_FX, trig (resistance only) to an older one")
+assert trig == [(0, T3(trigger_values(S.remap_maps[0]["triggers"])), F.TRIG_REPEAT)] and len(trig[0][1]) == 15, trig
+ok("feedback: the profile's effects go in trig3")
 
 # ---------- master only ----------
 B = "bb:bb:bb:bb:bb:02"
 rx_settings.apply(Settings(MouseConfig(), MasterConfig(pad=B, when_absent="nobody", only_master=("triggers",))))
 F.triggers_tick(0, 101.0, send)
-assert trig[-1] == (0, TRIG2_OFF, F.TRIG_REPEAT), "non-master: effects removed"
+assert trig[-1] == (0, T3(TRIG2_OFF), F.TRIG_REPEAT), "non-master: effects removed"
 assert "master" in ST.triggers_status(0)[0]
 rx_settings.apply(Settings(MouseConfig(), MasterConfig(pad=A, only_master=("triggers",))))
 F.triggers_tick(0, 101.5, send)
@@ -86,21 +82,19 @@ assert trig[-1][1][0] == TFX_RES, "trigger effects not restricted - any pad"
 rx_settings.apply(Settings())
 ok("master feature: trigger effects only on the master pad (the others = Off)")
 
-S.sender_info[0] = (7, 7, 0)
-assert "newer" in ST.triggers_status(0, fx=True)[0] or "nowszego" in ST.triggers_status(0, fx=True)[0]
-assert ST.triggers_status(0, fx=False) == ("", "")
-S.sender_info[0] = (8, 15, 0)
-assert ST.triggers_status(0, fx=True) == ("", "")
-ok("status: click / vibration / game rumble need a v8 sender")
+S.sender_info[0] = (proto.SENDER_VERSION - 1, 15, 0)
+assert ST.triggers_status(0) == (ST.version_text(), "warn")
+S.sender_info[0] = (proto.SENDER_VERSION, 15, 0)
+assert ST.triggers_status(0) == ("", "")
+ok("status: a sender in another version is reported")
 
-# ---------- rx_net: trig2 / trig ----------
+# ---------- rx_net: trig3 ----------
 sent.clear()
-vals = (TFX_CLICK, 5, 7, 0, TFX_VIB, 0, 3, 30, RFX_ON, 120, 40, 0)
+vals = T3((TFX_CLICK, 5, 7, 0, TFX_VIB, 0, 3, 30, RFX_ON, 120, 40, 0))
 rx_net.send_triggers(1, vals, 2)
-rx_net.send_triggers(0, (0, 0, 3, 6))
-assert [(x[0], x[1]) for x in sent] == [(T_TRIG2, 1), (T_TRIG2, 1), (T_TRIG, 0)], sent
-assert BODY[T_TRIG2].unpack_from(sent[0][3], 4) == vals
-ok("rx_net.send_triggers: 12 values = trig2, 4 = trig")
+assert [(x[0], x[1]) for x in sent] == [(T_TRIG3, 1), (T_TRIG3, 1)], sent
+assert BODY[T_TRIG3].unpack_from(sent[0][3], 4) == vals
+ok("rx_net.send_triggers: trig3")
 
 # ---------- editor: modes, inheritance, slider memory ----------
 ed = Editor(0)

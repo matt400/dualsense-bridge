@@ -214,14 +214,14 @@ ok("master only for a pad with an identifier")
 
 # ---------- sender version and rumble on the pad card ----------
 import rx_status
-from proto import T_VERSION
+from proto import SENDER_VERSION, T_VERSION
 S.sender_info[0] = None
 check(rx_status.rumble_status(0)[1] == "warn", "no version packet = old sender")
 from proto import WHY_ACCESS, WHY_NO_HIDRAW, WHY_NOT_FOUND, WHY_OK, WHY_OPEN
-feed(T_VERSION, 0, 5, 3, WHY_OK)
-check(S.sender_info[0] == (5, 3, WHY_OK) and "HID" in rx_status.rumble_status(0)[0], rx_status.rumble_status(0))
+feed(T_VERSION, 0, SENDER_VERSION, 3, WHY_OK)
+check(S.sender_info[0] == (SENDER_VERSION, 3, WHY_OK) and "HID" in rx_status.rumble_status(0)[0], rx_status.rumble_status(0))
 for why, word in ((WHY_ACCESS, "uprawnień"), (WHY_NO_HIDRAW, "jądrze"), (WHY_NOT_FOUND, "nie znaleziono"), (WHY_OPEN, "niedostępna")):
-    feed(T_VERSION, 0, 5, 0, why)
+    feed(T_VERSION, 0, SENDER_VERSION, 0, why)
     st = rx_status.rumble_status(0)
     check(st[1] == "bad" and word in st[0] and st[2], f"reason for no rumble on the card: {st}")
 ok("version packet: sender version and rumble methods")

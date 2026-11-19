@@ -12,10 +12,8 @@ Bez `key` każdy w sieci lokalnej może:
 - ruszać myszą i klikać na PC (touchpad jako mysz) oraz wywołać akcje pada master (uśpienie, wyłączenie),
 - wysyłać polecenia do nadajnika: aktualizacja i restart, parowanie urządzeń Bluetooth, wyłączanie padów.
 
-Z tym samym `key` po obu stronach każdy pakiet jest podpisany (HMAC-SHA256). Oba programy same przechodzą wtedy na
-**protokół v3**: każdy pakiet ma też znacznik świeżości, więc nagrany pakiet wysłany ponownie później jest odrzucany
-(ochrona przed replay). Przejście jest zapamiętane w `auth.json` obok każdego programu; zmiana klucza zaczyna je od
-nowa.
+Z tym samym `key` po obu stronach każdy pakiet jest podpisany (HMAC-SHA256) i wysyłany w **protokole v3**: każdy
+pakiet ma też znacznik świeżości, więc nagrany pakiet wysłany ponownie później jest odrzucany (ochrona przed replay).
 
 ## Ustawienie klucza
 
@@ -26,7 +24,8 @@ nowa.
    klucz do `/etc/dualsense-sender.env` (prawa 0600), a nie do polecenia usługi, które każdy użytkownik widzi w `ps`.
 4. Uruchom oba ponownie. Inny klucz po obu stronach okno zgłasza w dzienniku zdarzeń.
 
-Po powrocie po jednej stronie do wersji bez protokołu v3 usuń `auth.json` po drugiej.
+Obie strony muszą mieć tę samą wersję (aktualizuj je razem przyciskiem Aktualizuj). Plik `auth.json` po starszej
+wersji nie jest już używany i można go usunąć.
 
 ## Inne ustawienia
 

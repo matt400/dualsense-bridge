@@ -105,6 +105,7 @@ ok("Settings -> Lightbar: default + per pad (MAC), mode, colour, blinking, thres
 
 # ---------- Settings: Haptics ----------
 import rx_haptics
+import proto
 from proto import CAP_HAPTICS
 dlg.close(); win.open_settings(); pump()
 dlg.tabs.setCurrentIndex(4); pump()
@@ -118,8 +119,8 @@ assert dlg.hap_on.isChecked() and dlg.hap_gain.value() == 60, "a pad without an 
 dlg.hap_on.setChecked(False); dlg.hap_gain.setValue(120)
 S.alive[0], S.pad_id[0], S.sender_info[0] = True, A, (12, 3, 0)
 dlg._haptics_enable()
-assert dlg.hap_test.isEnabled() and "starszej" in dlg.hap_note.text(), "old sender: a note"
-S.sender_info[0] = (13, 3 | CAP_HAPTICS, 0)
+assert dlg.hap_test.isEnabled() and "raport HID" in dlg.hap_note.text(), "no CAP_HAPTICS: a note"
+S.sender_info[0] = (proto.SENDER_VERSION, 3 | CAP_HAPTICS, 0)
 dlg._haptics_enable()
 assert not dlg.hap_note.text()
 dlg.grab().save(os.path.join(SHOTS, "gui_haptics.png"))
@@ -132,7 +133,7 @@ rx_haptics.link(0).detach()
 dlg.close(); win.open_settings(); pump()
 assert dlg.hap_scope.key() == A and not dlg.hap_scope.use_default.isChecked() and dlg.hap_gain.value() == 120, \
     "after the window is opened again the last chosen pad with its own setting stays"
-ok("Settings -> Haptics: default + per pad, strength, old sender note, test, save without a restart")
+ok("Settings -> Haptics: default + per pad, strength, note without CAP_HAPTICS, test, save without a restart")
 
 # ---------- Settings: speaker equalizer ----------
 import rx_eq

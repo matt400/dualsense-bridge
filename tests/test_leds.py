@@ -4,10 +4,11 @@ thread sends to the sender (gating by version, repeats, refresh), and the mute b
 import os, sys, time
 sys.path.insert(0, os.path.dirname(__file__))
 from rxenv import *                                              # noqa
+import proto
 import rx_hm
 import rx_report
 from rx_buttons import BUTTON_CODES
-from proto import LEDS_MUTE, LEDS_PLAYER, LEDS_SENDER, MUTE_BIT, MUTE_ON, MUTE_PULSE, T_FB, T_LEDS, Codec
+from proto import LEDS_MUTE, LEDS_PLAYER, MUTE_BIT, MUTE_ON, MUTE_PULSE, T_FB, T_LEDS, Codec
 
 from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
 
@@ -41,19 +42,16 @@ check(F.fb_event.is_set(), "player LEDs wake the thread")
 F.game(0, large=10, small=10)
 check(F.fb[0]["leds"] == (MUTE_ON, 0x0A), "a report with motors and no LEDs does not clear them")
 
-# ---------- leds_tick: version gate, repeats, refresh, reset ----------
+# ---------- leds_tick: sender info gate, repeats, refresh, reset ----------
 sent = []
 send = lambda i, vals, repeat: sent.append((i, tuple(vals), repeat))
-S.sender_info[0] = (LEDS_SENDER - 1, 0xFF, 0)
 F.leds_sent[0] = None
-F.leds_tick(0, 100.0, send)
-check(not sent and F.leds_sent[0] is None, "v14 sender (no leds packet): nothing is sent")
 S.sender_info[0] = None
 F.leds_tick(0, 100.0, send)
 check(not sent, "no sender info: nothing")
-S.sender_info[0] = (LEDS_SENDER, 3, 0)
+S.sender_info[0] = (proto.SENDER_VERSION, 3, 0)
 F.leds_tick(0, 100.0, send)
-check(sent == [(0, (LEDS_MUTE | LEDS_PLAYER, MUTE_ON, 0x0A), 3)], f"v15: a change goes at once, TRIG_REPEAT times: {sent}")
+check(sent == [(0, (LEDS_MUTE | LEDS_PLAYER, MUTE_ON, 0x0A), 3)], f"a change goes at once, TRIG_REPEAT times: {sent}")
 F.leds_tick(0, 101.0, send)
 check(len(sent) == 1, "no change: nothing before the refresh")
 F.leds_tick(0, 100.0 + F.IDLE_REFRESH_S + 0.1, send)
@@ -86,7 +84,7 @@ F.fb_event.set()
 time.sleep(0.2)
 check(F.leds_sent[0] is None, "pad without a signal: sent values forgotten (when it comes back the pad gets the LEDs at once)")
 S.alive[0] = True
-S.sender_info[0] = (LEDS_SENDER, 3, 0)
+S.sender_info[0] = (proto.SENDER_VERSION, 3, 0)
 S.stop.set(); F.fb_event.set(); th.join(2); S.stop.clear()
 
 # ---------- the packet from rx_net.send_leds ----------

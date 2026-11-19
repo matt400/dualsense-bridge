@@ -1,4 +1,4 @@
-"""Sender: HD haptics - the hapt packet (plain, HMAC v2, v3, old parsers), the bytes of report 0x32 and of the setup report checked
+"""Sender: HD haptics - the hapt packet (plain, v3), the bytes of report 0x32 and of the setup report checked
 against independent code, the flags of every other report while a stream runs, the motors policy, write errors, the whole way from
 the UDP packet to the pad's HID file, and the new settings."""
 import asyncio, contextlib, errno, io, os, struct, sys, zlib
@@ -51,12 +51,10 @@ assert plain[0] == (2 << 4) | 0x0A and plain[1] == 1 and len(plain) == 4 + 69, p
 assert plain[4:] == struct.pack(">IB", frame_no, HAPT_START) + data, "body: counter (big endian), flags, 64 B of samples"
 assert Codec().parse(plain) == (T_HAPT, 1, int.from_bytes(plain[2:4], "big"))
 assert proto.BODY[T_HAPT].unpack_from(plain, 4) == (frame_no, HAPT_START, data)
-v2 = Codec(KEY).pack(T_HAPT, 1, frame_no, 0, data, v3=False)
-assert len(v2) == 4 + 69 + 8 and Codec(KEY).parse(v2)[0] == T_HAPT
-v3 = Codec(KEY, token=lambda: 1234).pack(T_HAPT, 1, frame_no, 0, data, v3=True)
+v3 = Codec(KEY, token=lambda: 1234).pack(T_HAPT, 1, frame_no, 0, data)
 assert len(v3) == 4 + 69 + 12 and v3[0] >> 4 == 3 and Codec(KEY, now_ms=lambda: 1234).parse(v3)[0] == T_HAPT
-assert Codec(KEY).parse(v2[:-1]) is None and Codec(b"another key 1234").parse(v2) is None
-ok("hapt packet: 69 B body, plain / HMAC v2 / v3 round trip")
+assert Codec(KEY, now_ms=lambda: 1234).parse(v3[:-1]) is None and Codec(b"another key 1234", now_ms=lambda: 1234).parse(v3) is None
+ok("hapt packet: 69 B body, plain / v3 round trip")
 
 # a received packet reaches the hook once, with the samples cut out of the datagram (also with a v3 trailer)
 got = []
@@ -82,31 +80,14 @@ assert got[-1] == (5, 7, HAPT_END, chunk(4)) and len(got) == 2
 net.link.fb_filter = SeqFilter(1.0)
 net.link.codec = Codec(KEY, token=lambda: 77, now_ms=lambda: 77)
 del got[:]
-deliver(net.link.codec.pack(T_HAPT, 1, 99, HAPT_START, chunk(9), v3=True))
+deliver(net.link.codec.pack(T_HAPT, 1, 99, HAPT_START, chunk(9)))
 assert got == [(1, 99, HAPT_START, chunk(9))], "the samples are found with the HMAC trailer behind them"
 net.link.codec = Codec()
 ok("sender_net: one call per new packet, late / repeated packets dropped, separate filter per pad")
 
 
-@contextlib.contextmanager
-def old_tables():
-    """The parser of a peer from before this change: it does not know T_HAPT."""
-    saved = proto.BY_SIZE
-    proto.BY_SIZE = {k: v for k, v in saved.items() if v != T_HAPT}
-    try:
-        yield
-    finally:
-        proto.BY_SIZE = saved
 
 
-with old_tables():
-    assert Codec().parse(plain) is None, "an older sender drops the unknown length"
-    keyed = Codec(KEY)
-    assert keyed.parse(v2) is None and keyed.mismatch_t == float("-inf"), "...also with a key, and it is not taken for a key mismatch"
-    assert Codec(KEY, now_ms=lambda: 1234).parse(v3) is None
-    assert Codec().parse(Codec().pack(proto.T_TRIG2, 0, *TRIG2_OFF))[0] == proto.T_TRIG2, "known packets are not affected"
-assert Codec().parse(plain)[0] == T_HAPT
-ok("an older peer ignores the hapt packet (plain, v2, v3) without a key-mismatch warning")
 
 # ---------- report 0x32 ----------
 rep32 = H.Report32()

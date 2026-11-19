@@ -954,8 +954,8 @@ class MainWindow(UpdateFlow, ScreenPlacement):
     def _sender_label(self, online: bool, build: tuple[Any, ...] | None, batt: tuple[int, bool] | None = None) -> None:
         """"● Sender online (87%) · a1b2c3d"; a different version than the receiver -> yellow and a hint to update.
 
-        `batt` = (percent, charging) of the sender device's own battery, None when it has none (a Raspberry Pi) or is an
-        older sender: the pill then shows no percentage and no charge fill.
+        `batt` = (percent, charging) of the sender device's own battery, None when it has none (a Raspberry Pi): the pill
+        then shows no percentage and no charge fill.
         """
         if not online:
             self._sender_stale = None

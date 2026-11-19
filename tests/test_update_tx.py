@@ -6,7 +6,7 @@ sys.path.insert(1, sys.argv[1] + "/../common")
 import sender_config; sender_config.init(["127.0.0.1"])
 import gitupdate
 import proto, sender_control, sender_net as net, sender_state as state, sender_update as U
-from proto import BODY, CMD_UPDATE, T_BUILD, UPD_DONE, UPD_NO_CHANGE, UPD_NOT_GIT, UPD_RUNNING
+from proto import BODY, CMD_UPDATE, T_BUILD3, UPD_DONE, UPD_NO_CHANGE, UPD_NOT_GIT, UPD_RUNNING
 
 from chk import ok
 ENV = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
@@ -42,7 +42,7 @@ U.init()
 sent = []
 net.emit = lambda t, i, *v: sent.append((t, i, *v))
 U.send_build()
-assert sent[-1] == (T_BUILD, 255, h.encode(), ts, 0) and BODY[T_BUILD].size == 12
+assert sent[-1][:5] == (T_BUILD3, 255, h.encode(), ts, 0) and BODY[T_BUILD3].size == 23
 ok("code version (commit, time, title) and the build packet")
 
 
@@ -51,7 +51,7 @@ async def main():
     state.main_task = asyncio.get_running_loop().create_future()
     sent.clear()
     await U.run()
-    states = [v[4] for v in sent if v[0] == T_BUILD]
+    states = [v[4] for v in sent if v[0] == T_BUILD3]
     assert states[0] == UPD_RUNNING and states[-1] == UPD_NO_CHANGE and not state.restart, states
     U._last = 0.0
     commit(origin, "sender/sender_x.py", "a = 2\n", "Nowa funkcja")

@@ -45,7 +45,7 @@ Testy obejmują:
 - okno receivera (Qt offscreen, bez ekranu);
 - kopie ustawień, pomiar opóźnienia (state2 / pong2, zegar PC, Bluetooth) i opór spustów w raporcie HID
   (`test_features.py`, `test_features_tx.py`);
-- efekty spustów: klik, drgania, wibracja z gry, trig2 / trig wg wersji nadajnika, dziedziczenie w profilu gry,
+- efekty spustów: klik, drgania, wibracja z gry, efekty gry w trig3, dziedziczenie w profilu gry,
   tylko master (`test_trigfx.py`, `test_trigfx_tx.py`); efekty spustów z gry (HIDMaestro, trig3): odczyt z raportu
   wyjściowego, profil wygrywa per spust, zwolnienie po zamknięciu programu (`test_gametrig.py`, `test_gametrig_tx.py`);
 - regresje z przeglądu bugów (testy nazwane tematem, np. `test_master_follow.py`, `test_hidraw_write_retry_tx.py`, i te poniżej) - m.in. start / stop skanu
@@ -97,8 +97,8 @@ Testy obejmują:
 - wirtualne pady: backend HIDMaestro / ViGEmBus i ich zmiana w trakcie, pad zastępczy dla stałej kolejności graczy,
   raport DualSense, feedback z raportu wyjściowego DualSense (`test_vpad.py`, zakładka Pady w `test_settings_gui.py`),
   pobieranie HIDMaestro przez HTTP Range, wersje, błędy zipa / sieci i uruchamianie jako administrator (`test_hm_update.py`);
-- bezpieczeństwo: protokół v3 z kluczem - samoczynne przejście (próbny ping), znacznik świeżości, dokładne powtórki,
-  podpisane v2 po przejściu, zapamiętanie w `auth.json`, zegar PC nadajnika po restarcie receivera, powtórzony ping nie
+- bezpieczeństwo: protokół v3 z kluczem - znacznik świeżości, dokładne powtórki, podpisane v2 zawsze odrzucane,
+  zegar PC nadajnika po restarcie receivera, powtórzony ping nie
   cofa zegara nadajnika, koniec do końca przez UDP z ponownie wysłanym nagraniem (`test_security_tx.py`,
   `test_security.py`, `test_e2e_key.py`); DSU tylko na 127.0.0.1 z limitem klientów, nowe wydanie HIDMaestro czeka,
   lista w zakładce Bezpieczeństwo, zwykły tekst w etykietach okna (`test_security.py`); parowanie z okna tylko padów,

@@ -45,7 +45,7 @@ The tests cover:
 - the receiver window (Qt offscreen, no display);
 - settings backups, latency measurement (state2 / pong2, PC clock, Bluetooth) and trigger resistance in the HID report
   (`test_features.py`, `test_features_tx.py`);
-- trigger effects: click, vibration, game rumble, trig2 / trig depending on sender version, inheritance in game
+- trigger effects: click, vibration, game rumble, game effects in trig3, inheritance in game
   profiles, master only (`test_trigfx.py`, `test_trigfx_tx.py`); trigger effects from games (HIDMaestro, trig3):
   reading from the output report, the profile wins per trigger, release after the program closes (`test_gametrig.py`,
   `test_gametrig_tx.py`);
@@ -101,8 +101,8 @@ The tests cover:
   player order, DualSense report, feedback from the DualSense output report (`test_vpad.py`, the Pads tab in
   `test_settings_gui.py`), downloading HIDMaestro via HTTP Range, versions, zip / network errors and running as
   administrator (`test_hm_update.py`);
-- security: protocol v3 with a key - switching over by itself (trial ping), freshness token, exact replays, signed v2
-  after the switch, remembered in `auth.json`, the sender's PC clock after a receiver restart, a replayed ping can't
+- security: protocol v3 with a key - freshness token, exact replays, signed v2 always rejected, the sender's PC clock
+  after a receiver restart, a replayed ping can't
   move the sender clock back, end to end over UDP including a recorded packet sent again (`test_security_tx.py`,
   `test_security.py`, `test_e2e_key.py`); DSU only on 127.0.0.1 with a client limit, a new HIDMaestro release waits,
   the Security list, plain text in window labels (`test_security.py`); pairing from the window only for pads, the

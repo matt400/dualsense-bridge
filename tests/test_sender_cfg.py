@@ -26,10 +26,9 @@ check(rx_settings.load(os.path.join(TMP, "nie_ma.json")).sender.values == {}, "n
 
 # ---------- codecs: sender (tx) and receiver (N.codec) with a v3 key ----------
 clock = [1_000_000]
-def codecs(v3=True, key=b"k" * 32):
+def codecs(key=b"k" * 32):
     a = Codec(key, token=lambda: clock[0], now_ms=lambda: clock[0])
     b = Codec(key, token=lambda: clock[0], now_ms=lambda: clock[0])
-    a.v3 = b.v3 = v3
     return a, b
 tx, N.codec = codecs()
 S.peer = ("127.0.0.1", 5005)
@@ -73,12 +72,11 @@ check(requests()[0][:2] == (CFG_RESET, CFG_ALL), "everything back = RESET for CF
 SC.request_all()
 check(requests()[0][:2] == (CFG_GET, CFG_ALL), "read = GET for CFG_ALL")
 
-# ---------- gate: without a key or without v3 nothing goes out ----------
-for label, (v3, key) in {"no v3": (False, b"k" * 32), "no key": (False, b"")}.items():
-    _t, N.codec = codecs(v3, key)
-    check(not SC.can_send(), f"{label}: can_send = False")
-    SC.set_value("max_pads", 3); SC.request_all(); SC.reset("max_pads")
-    check(not wire, f"{label}: nothing sent")
+# ---------- gate: without a key nothing goes out ----------
+_t, N.codec = codecs(b"")
+check(not SC.can_send(), "no key: can_send = False")
+SC.set_value("max_pads", 3); SC.request_all(); SC.reset("max_pads")
+check(not wire, "no key: nothing sent")
 tx, N.codec = codecs()
 
 # ---------- cfgval trafia do tabeli ----------
@@ -166,7 +164,7 @@ check(S.sender_cfg_result == CFGR_NO_KEY, "a refusal of the whole request (CFG_A
 
 # ---------- an older sender knows fewer settings: the read still completes, the differences go out ----------
 def answer_read(count, last_flag):
-    """The sender's answer to a read: settings 0..count-1, the last one with CFGF_LAST when the sender is v17+."""
+    """The sender's answer to a read: settings 0..count-1, the last one with CFGF_LAST."""
     for k in range(count):
         spec = cfgspec.SPECS[k]
         v = cfgspec.to_wire(spec, cfgspec.check(spec, spec_default(spec)))
@@ -184,29 +182,11 @@ check(cfgspec.BY_KEY["max_pads"] < OLD, "the setting from the test is known to t
 
 watch = SC.Watch(); watch.online(); watch.tick(2000.0); wire.clear()
 answer_read(OLD, last_flag=True)
-check(S.sender_cfg_count == OLD and SC.complete(), "v17+: CFGF_LAST tells how many settings the sender knows - the read is complete")
+check(S.sender_cfg_count == OLD and SC.complete(), "CFGF_LAST tells how many settings the sender knows - the read is complete")
 watch.tick(2000.1)
 r = requests()
 check(not watch.pending and [x[:2] for x in r[::3]] == [(CFG_SET, cfgspec.BY_KEY["max_pads"])], "the reconcile goes out at once")
 
-watch = SC.Watch(); watch.online(); watch.tick(3000.0); wire.clear()
-answer_read(OLD, last_flag=False)                           # a v16 sender: no flag
-watch.tick(3000.0 + SC.RETRY_S + 0.1)
-check(watch.pending and S.sender_cfg_count is None, "no flag: one more query first (it could have been a loss)")
-requests()
-answer_read(OLD, last_flag=False)                           # the repeat brings nothing new
-watch.tick(3000.0 + 2 * SC.RETRY_S + 0.2)
-check(S.sender_cfg_count == OLD and SC.complete(), "no flag: the list did not grow during the whole period - that is all the sender knows")
-watch.tick(3000.0 + 2 * SC.RETRY_S + 0.3)
-r = requests()
-check(not watch.pending and [x[:2] for x in r[::3]] == [(CFG_SET, cfgspec.BY_KEY["max_pads"])], "no flag: the reconcile goes out too")
-
-watch = SC.Watch(); watch.online(); watch.tick(4000.0); wire.clear()
-answer_read(OLD, last_flag=False)
-S.sender_cfg.pop(cfgspec.SPECS[2].key)                      # a hole in the run: a lost packet, not the end of the list
-watch.tick(4000.0 + SC.RETRY_S + 0.1); requests()
-watch.tick(4000.0 + 2 * SC.RETRY_S + 0.2)
-check(S.sender_cfg_count is None and watch.pending, "a hole in the list is a loss: keep asking, the count stays unsettled")
 rx_settings.cur = rx_settings.Settings()
 
 sys.exit(1 if fails else 0)

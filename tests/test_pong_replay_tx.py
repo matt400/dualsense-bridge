@@ -10,14 +10,14 @@ sys.path.insert(1, sys.argv[1] + "/../common")
 from chk import check, fails
 import sender_config; sender_config.init(["127.0.0.1"])
 import sender_net as net
-from proto import BODY, HEADER_LEN, T_PONG
+from proto import BODY, HEADER_LEN, T_PONG2
 
 net.init()
 
 
 def pong(t0: int) -> bytes:
-    """A pong body behind a dummy header, as _on_pong reads it."""
-    return bytes(HEADER_LEN) + BODY[T_PONG].pack(t0)
+    """A pong2 body behind a dummy header, as _on_pong reads it (the PC time does not matter here)."""
+    return bytes(HEADER_LEN) + BODY[T_PONG2].pack(t0, 1_000_000)
 
 
 now = net.link.clock.ns()
@@ -27,6 +27,6 @@ check(net.link.last_pong == float("-inf"), "a reply to an old ping does not pose
 net.link._on_pong(pong(now + net.MAX_RTT_NS))                  # "sent" in the future: another clock base
 check(not net.link.rtts and net.link.pongs == 0, "a ping from another clock base (the future) rejected too")
 net.link._on_pong(pong(net.link.clock.ns() - 3_000_000))            # an ordinary 3 ms round trip
-check(len(net.link.rtts) == 1 and 2.5 < net.link.rtts[0] < 1000 and net.link.pongs == 1, "a plain pong counts as before")
+check(len(net.link.rtts) == 1 and 2.5 < net.link.rtts[0] < 1000 and net.link.pongs == 1, "an ordinary pong2 counts")
 check(net.rtt_x10() != net.RTT_NONE, "info gets the RTT median")
 sys.exit(1 if fails else 0)

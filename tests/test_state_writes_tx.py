@@ -18,17 +18,6 @@ from chk import check, fails                                  # noqa: E402  (sha
 
 
 # ---------- 3: state files are written through the worker thread, not with an fsync on the loop ----------
-saved = []
-codec = proto.Codec(b"k" * 16, state_path=os.path.join(TMP, "auth.json"), writer=lambda path, obj: saved.append((path, obj)))
-codec._upgrade()
-check(saved == [(os.path.join(TMP, "auth.json"), {"v3": proto.key_fingerprint(b"k" * 16)})] and codec.v3,
-      "Codec._upgrade saves the fingerprint through the given writer")
-plain = proto.Codec(b"k" * 16, state_path=os.path.join(TMP, "auth2.json"))
-plain._upgrade()
-check(os.path.exists(os.path.join(TMP, "auth2.json")), "without a writer the default write_json still saves the file")
-net.init()
-check(net.link.codec.writer is state.write_json_later, "the sender's codec uses state.write_json_later")
-
 calls = []
 real_later = BA.write_json_later
 BA.write_json_later = lambda path, obj, **kw: calls.append((path, obj, kw))

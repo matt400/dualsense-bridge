@@ -331,11 +331,11 @@ ok("Update: confirmation, git pull in the background, message, restart only afte
 
 # ---------- versions and the sender update ----------
 import rx_net
-from proto import BODY, CMD_UPDATE, T_BUILD, T_CMD, UPD_DONE
+from proto import BATT_UNKNOWN, BODY, CMD_UPDATE, T_BUILD3, T_CMD, UPD_DONE
 assert win.version_lbl.text().startswith("wersja ") and win.version_lbl.toolTip()
 rx_update._version = ("1111111", 1791700000, "Receiver")
 def build(h, st):
-    rx_net.on_build(rx_net.codec.pack(T_BUILD, 255, h, 1791600000, st), time.monotonic())
+    rx_net.on_build(rx_net.codec.pack(T_BUILD3, 255, h, 1791600000, st, bytes(6), bytes(4), BATT_UNKNOWN), time.monotonic())
 S.last_pkt = time.monotonic(); build(b"2222222", 0); win.slow_tick(); pump()
 assert "2222222" in win.sender.text() and win.sender.property("level") == "warn" and "Aktualizuj" in win.sender.toolTip(), \
     "a sender version other than the receiver -> yellow, a hint"

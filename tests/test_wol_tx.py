@@ -13,7 +13,7 @@ import sender_net as net
 import sender_update
 import sender_wol as W
 from proto import (BODY, E_NO_RECEIVER, E_WOL, E_WOL_FAIL, EV_ERROR, EV_INFO, KEY_BIT, PAD_KEYS, SCFG_EVENTS, SCFG_WOL,
-                   T_BUILD, T_BUILD2, T_EVENT, T_SCFG, Codec, mac_bytes, magic_packet)
+                   T_BUILD3, T_EVENT, T_SCFG, Codec, mac_bytes, magic_packet)
 from sender_ctrl import Ctrl
 
 from chk import ok
@@ -22,13 +22,12 @@ cod = Codec()
 # ---------- protocol ----------
 assert cod.parse(cod.pack(T_SCFG, 255, 3, b"\1" * 6, b"\0" * 4, 7, 1000))[0] == T_SCFG
 assert cod.parse(cod.pack(T_EVENT, 1, 5, 0, 1, 0, b"x"))[0] == T_EVENT
-assert cod.parse(cod.pack(T_BUILD2, 255, b"abc", 1, 0, b"\1" * 6, b"\0" * 4))[0] == T_BUILD2
-assert cod.parse(cod.pack(T_BUILD, 255, b"abc", 1, 0))[0] == T_BUILD, "plain build unchanged"
+assert cod.parse(cod.pack(T_BUILD3, 255, b"abc", 1, 0, b"\1" * 6, b"\0" * 4, 255))[0] == T_BUILD3
 pkt = magic_packet(bytes.fromhex("aabbccddeeff"))
 assert len(pkt) == 102 and pkt[:6] == b"\xff" * 6 and pkt[6:12] == pkt[-6:] == bytes.fromhex("aabbccddeeff")
 assert mac_bytes("AA-BB-CC-DD-EE-FF") == bytes.fromhex("aabbccddeeff") and mac_bytes("00:00:00:00:00:00") is None
 assert mac_bytes("aa:bb") is None and mac_bytes("zz:bb:cc:dd:ee:ff") is None
-ok("protocol: scfg / event / build2 by length, magic packet, MAC storage")
+ok("protocol: scfg / event / build3 by length, magic packet, MAC storage")
 
 # ---------- events: only enabled ones, queued until the receiver replies, repeats ----------
 out = []
@@ -211,19 +210,15 @@ ok("combo: PS + button held for hold_ms with a silent receiver; release cancels;
    "repeats; a running receiver / off / no MAC")
 
 
-# ---------- build2 only for a new receiver ----------
+# ---------- build3 carries the Wake-on-LAN target ----------
 out.clear()
 real_emit = net.emit
 net.emit = emit
 W.cfg = W.WolCfg(); W.learned = "11:22:33:44:55:66"; W._bcast_cache = ("192.168.1.20", "192.168.1.255")
-net.link.scfg_t = 0.0
 sender_update.send_build()
-assert out[-1][0] == T_BUILD, "older receiver (no scfg) gets a plain build"
-net.link.scfg_t = time.monotonic()
-sender_update.send_build()
-assert out[-1][0] == T_BUILD2 and out[-1][5] == bytes.fromhex("112233445566") and out[-1][6] == socket.inet_aton("192.168.1.255")
+assert out[-1][0] == T_BUILD3 and out[-1][5] == bytes.fromhex("112233445566") and out[-1][6] == socket.inet_aton("192.168.1.255")
 net.emit = real_emit
-ok("build2 with the MAC and the Wake-on-LAN broadcast only after scfg from the receiver")
+ok("build3 with the MAC and the Wake-on-LAN broadcast")
 
 # ---------- local confirmation on the pad (without a receiver) ----------
 

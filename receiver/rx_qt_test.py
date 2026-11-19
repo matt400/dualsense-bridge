@@ -525,8 +525,6 @@ class TestPanel(QWidget):
         lines = [_("{s}: dryf {peak} → strefa martwa {dz}").format(
                      s=_("Lewa") if n == "left" else _("Prawa"), peak=pct(res.stick(n).peak, 1), dz=pct(res.stick(n).dz))
                  for n in ("left", "right")]
-        if not P.sender_calib(self.slot):
-            lines.append(_("Nadajnik w starszej wersji przycina odchyłki do ~2% - kliknij Aktualizuj, żeby mierzyć dokładnie."))
         self._result("\n".join(lines), "")
 
     # ---------- gyroscope ----------
@@ -570,7 +568,7 @@ class TestPanel(QWidget):
         if not S.alive[i]:
             return _("Pad niepodłączony."), ""
         if not P.sender_calib(i):
-            return _("Kalibracja z okna wymaga nowszego nadajnika - kliknij Aktualizuj."), "warn"
+            return _("Nadajnik jeszcze nie opisał tego pada - chwilę…"), "warn"
         if self.cal_t0 is not None:
             return _("Kalibruję - nie ruszaj pada…"), ""
         r = S.gyro_cal[i]

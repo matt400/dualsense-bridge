@@ -11,7 +11,7 @@ import sender_net as net
 import sender_rt
 import sender_rumble as R
 import sender_selftest as ST
-from proto import (BODY, GOVERNORS, SELFTEST_SENDER, SENDER_VERSION, SR_COUNT, SR_DONE, SR_FB, SR_HAPT, SR_SPK, SR_SYS, SR_WRITES, SRC_PC,
+from proto import (BODY, GOVERNORS, SENDER_VERSION, SR_COUNT, SR_DONE, SR_FB, SR_HAPT, SR_SPK, SR_SYS, SR_WRITES, SRC_PC,
                    SRC_REPEAT, SRC_WATCHDOG, SRF_RT, ST_BEGIN, ST_END, ST_HAPTICS, ST_MAX_S, ST_RECORDS, ST_SNAP, ST_SPEAKER, T_FB, T_STCMD, T_STRES)
 
 TMP = tempfile.mkdtemp()
@@ -68,7 +68,6 @@ check(ST.cpu_info(os.path.join(TMP, "nothing")) == (0, 0, 0, 0), "cpu_info: noth
 put(os.path.join(fq, "scaling_governor"), "something-new\n")
 check(ST.cpu_info(sysroot)[0] == 0, "a governor this code does not know is code 0")
 check(ST.write_summary([]) == (0, 0, 0, 0, 0) and ST.write_summary([5, 1, 3, 2, 4, 100]) == (6, 3, 100, 100, 100), "write_summary: count, p50, p95, p99, max")
-check(SENDER_VERSION == SELFTEST_SENDER, "the sender announces the version that knows the self-test")
 
 
 async def main():

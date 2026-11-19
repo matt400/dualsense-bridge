@@ -9,7 +9,7 @@ import rx_latency as L
 import rx_lightbar as LB
 import rx_net
 import rx_settings as R
-from proto import (BODY, E_PAD_ON, E_WOL, EV_WARN, LAT_NONE, PAD_KEYS, SCFG_BATT, SCFG_EVENTS, SCFG_WOL, T_BUILD2, T_EVENT, T_SCFG,
+from proto import (BODY, E_PAD_ON, E_WOL, EV_WARN, LAT_NONE, PAD_KEYS, SCFG_EVENTS, SCFG_WOL, T_BUILD3, T_EVENT, T_SCFG,
                    T_STATE2, Codec)
 from rx_buttons import TRIG_ON
 
@@ -126,14 +126,14 @@ assert not sent, "sender not known yet (receiver start) - nothing sent"
 R.apply(R.defaults())
 S.peer = ("192.168.1.50", 5005)
 v = rx_net.scfg_values()
-assert v == (SCFG_WOL | SCFG_BATT, bytes(6), bytes(4), PAD_KEYS.index(315), 1000), v
+assert v == (SCFG_WOL, bytes(6), bytes(4), PAD_KEYS.index(315), 1000), v
 sent.clear()
 R.update(None, wol=R.WolConfig(mac="AA-BB-CC-DD-EE-FF".lower().replace("-", ":"), bcast="192.168.1.255", button="triangle",
                                hold_ms=2000), log=R.LogConfig(sender=True))
 rx_net.flush_repeats()
 sc = [x for x in sent if x[0] == T_SCFG]
 assert len(sc) == 3 and sc[0][1] == 255, "change at once, 3 copies (UDP)"
-assert BODY[T_SCFG].unpack_from(sc[0][3], 4) == (SCFG_WOL | SCFG_EVENTS | SCFG_BATT, bytes.fromhex("aabbccddeeff"),
+assert BODY[T_SCFG].unpack_from(sc[0][3], 4) == (SCFG_WOL | SCFG_EVENTS, bytes.fromhex("aabbccddeeff"),
                                                  socket.inet_aton("192.168.1.255"), PAD_KEYS.index(307), 2000)
 sent.clear()
 R.update(None, mouse=R.MouseConfig(sens=1.0))
@@ -156,12 +156,12 @@ w.tick(S.last_pkt + S.SENDER_TIMEOUT + 1)
 assert not w.online and ev.since(0)[-1].level == "warn" and S.sender_wol is None
 ok("sender online / offline in the log, scfg on first contact and every 5 s")
 
-rx_net.on_build(cod.pack(T_BUILD2, 255, b"abc1234", 5, 0, bytes.fromhex("112233445566"), socket.inet_aton("10.0.0.255")),
-                time.monotonic(), T_BUILD2)
+rx_net.on_build(cod.pack(T_BUILD3, 255, b"abc1234", 5, 0, bytes.fromhex("112233445566"), socket.inet_aton("10.0.0.255"), 255),
+                time.monotonic())
 assert S.sender_wol == ("11:22:33:44:55:66", "10.0.0.255") and S.sender_build[0] == "abc1234"
-rx_net.on_build(cod.pack(T_BUILD2, 255, b"abc1234", 5, 0, bytes(6), bytes(4)), time.monotonic(), T_BUILD2)
+rx_net.on_build(cod.pack(T_BUILD3, 255, b"abc1234", 5, 0, bytes(6), bytes(4), 255), time.monotonic())
 assert S.sender_wol == ("", "")
-ok("build2: the MAC and broadcast the sender will use")
+ok("build3: the MAC and broadcast the sender will use")
 
 # ---------- settings.json: nowe sekcje ----------
 path = os.path.join(TMP, "s_extras.json")

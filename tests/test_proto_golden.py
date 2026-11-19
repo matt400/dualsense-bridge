@@ -1,4 +1,4 @@
-"""Protocol golden test: the wire format of proto.py must not change (UDP/Bluetooth compatibility).
+"""Protocol golden test: the wire format of proto.py must not change by accident (a change bumps SENDER_VERSION).
 
 The vectors were generated from proto.py as it was before the refactor. Every packet body is compared byte for byte,
 the header / HMAC / v3 token layout is checked with an independent implementation, and the public constants
@@ -488,6 +488,20 @@ CONSTANTS.update({
 })
 
 
+# Sender version 20 dropped the formats kept for older peers (plain pong, build, build2, trig, trig2), the version gates and the
+# v2 -> v3 switch. The remaining packets and the vectors above are untouched; the variant numbers of the old types are not reused.
+DROPPED = (7, 13, 15, 269, 271)       # pong, build, trig, build2, trig2
+for _t in DROPPED:
+    del PACKETS[_t]
+    CONSTANTS["BODY_LEN"].pop(_t)
+    CONSTANTS["WIRE"].pop(_t, None)
+CONSTANTS["BY_SIZE"] = [e for e in CONSTANTS["BY_SIZE"] if e[1] not in DROPPED]
+for _name in ("CAP_CALIB", "CAP_TRIG_FX", "CAP_TRIG_RAW", "CFGR_NO_V3", "LEDS_SENDER", "PADKIND_SENDER", "SELFTEST_SENDER",
+              "SCFG_BATT", "T_BUILD2", "T_TRIG2", "KEY_FINGERPRINT_BYTES"):
+    CONSTANTS.pop(_name, None)
+CONSTANTS["SENDER_VERSION"] = 20
+
+
 KEY = b"0123456789abcdef"
 FIXED_TOKEN = 0xDEADBEEF
 IDX = 7
@@ -531,38 +545,36 @@ def check_plain_packets():
 
 
 def check_signed_v2_packets():
-    """With a key, before the switch to v3: header 2 + body + 8 B of truncated HMAC-SHA256 over everything before it."""
-    sender = proto.Codec(KEY)
+    """With a key only v3 is accepted: the old signed v2 layout (header 2 + body + 8 B of HMAC) is rejected and noted."""
     receiver = proto.Codec(KEY)
     for ptype, name, body in _packet_vectors():
-        pkt = sender.pack(ptype, IDX, *_unpack(ptype, body), v3=False)
-        msg, tag = pkt[:-8], pkt[-8:]
-        assert pkt[0] >> 4 == 2 and msg[4:] == body, (ptype, name)
-        assert tag == hmac.digest(KEY, msg, "sha256")[:8], (ptype, name)
-        assert receiver.parse(pkt) == (ptype, IDX, (pkt[2] << 8) | pkt[3]), (ptype, name)
+        msg = struct.pack("!BBH", (2 << 4) | PACKETS[ptype]["wire"], IDX, 1) + body
+        assert receiver.parse(msg + hmac.digest(KEY, msg, "sha256")[:8]) is None, (ptype, name)
+    assert receiver.legacy_t > 0, "a signed v2 packet is noted (an old version on the other side)"
 
 
 def check_signed_v3_packets():
     """v3: header 3 + body + "!I" freshness token + 8 B of HMAC computed over header, body and token."""
     sender = proto.Codec(KEY, token=lambda: FIXED_TOKEN)
     for ptype, name, body in _packet_vectors():
-        pkt = sender.pack(ptype, IDX, *_unpack(ptype, body), v3=True)
+        pkt = sender.pack(ptype, IDX, *_unpack(ptype, body))
         msg, tag = pkt[:-8], pkt[-8:]
         assert pkt[0] >> 4 == 3 and pkt[0] & 0x0F == PACKETS[ptype]["wire"], ptype
         assert msg[4:-4] == body, (ptype, name)
         assert struct.unpack("!I", msg[-4:])[0] == FIXED_TOKEN
         assert tag == hmac.digest(KEY, msg, "sha256")[:8], (ptype, name)
     no_token = proto.Codec(KEY)
-    assert no_token.pack(proto.T_CLICK, 0, 1, v3=True) is None, "v3 without a token for the peer must not go out"
-    probe = no_token.pack(proto.T_PING, 0, 1, v3=True)
+    assert no_token.pack(proto.T_CLICK, 0, 1) is None, "v3 without a token for the peer must not go out"
+    probe = no_token.pack(proto.T_PING, 0, 1)
     assert probe is not None and struct.unpack("!I", probe[-12:-8])[0] == 0, "a ping goes out with token 0"
 
 
 def check_rejections():
     """Wrong key, truncated packets, unknown versions and unknown lengths are all dropped."""
-    good = proto.Codec(KEY).pack(proto.T_CLICK, 0, 1, v3=False)
-    assert proto.Codec(b"another key 1234").parse(good) is None
-    assert proto.Codec(KEY).parse(good[:-1]) is None
+    good = proto.Codec(KEY, token=lambda: 0).pack(proto.T_CLICK, 0, 1)
+    assert proto.Codec(KEY, now_ms=lambda: 0).parse(good) is not None
+    assert proto.Codec(b"another key 1234", now_ms=lambda: 0).parse(good) is None
+    assert proto.Codec(KEY, now_ms=lambda: 0).parse(good[:-1]) is None
     assert proto.Codec().parse(b"\x00\x00\x00") is None
     plain = proto.Codec().pack(proto.T_CLICK, 0, 1)
     assert proto.Codec().parse(bytes([(9 << 4) | (plain[0] & 0x0F)]) + plain[1:]) is None, "unknown version"
@@ -599,8 +611,6 @@ def check_helpers():
         assert (got.hex() if got else None) == expected, text
     assert proto.mac_text(bytes.fromhex("aabbccddeeff")) == HELPERS["mac_text"]
     assert proto.magic_packet(bytes.fromhex("aabbccddeeff")).hex() == HELPERS["magic"]
-    for legacy, expected in zip([(0, 0, 0, 0), (3, 5, 9, 8), (1, 0, 2, 4)], HELPERS["trig2_legacy"], strict=True):
-        assert list(proto.trig2_from_legacy(legacy)) == expected, legacy
     assert proto.utf8_field("zażółć gęślą jaźń", 9, "…").hex() == HELPERS["utf8"][0][0]
     assert proto.utf8_field("abc", 8).hex() == HELPERS["utf8"][1][0]
 

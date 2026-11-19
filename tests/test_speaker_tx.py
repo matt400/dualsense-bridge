@@ -1,4 +1,4 @@
-"""Sender: the pad's speaker - the spk packet (plain, HMAC v2, v3, old parsers), the bytes of report 0x36 against independent code,
+"""Sender: the pad's speaker - the spk packet (plain, v3), the bytes of report 0x36 against independent code,
 the jitter buffer (SpeakerStream) on a fake clock, one clock for haptics and speaker, the audio mode in Rumble (setup, volume,
 volume 0 at the end), the flags of every other report during a stream, the settings, and the whole way from the UDP packet through
 a real libopus to the pad's HID file."""
@@ -64,13 +64,11 @@ assert plain[4:] == struct.pack(">IB", frame_no, SPK_START) + data, "body: count
 assert Codec().parse(plain) == (T_SPK, 1, int.from_bytes(plain[2:4], "big"))
 assert proto.BODY[T_SPK].unpack_from(plain, 4) == (frame_no, SPK_START, data)
 assert (proto.WIRE[T_SPK], proto.CAP_SPEAKER) == (proto.T_CMD, 128) and proto.SENDER_VERSION >= 14 and CAP_SPEAKER not in (CAP_HAPTICS, 1, 2, 4, 8, 16, 32)
-v2 = Codec(KEY).pack(T_SPK, 1, frame_no, 0, data, v3=False)
-assert len(v2) == 4 + 965 + 8 and Codec(KEY).parse(v2)[0] == T_SPK
-v3 = Codec(KEY, token=lambda: 1234).pack(T_SPK, 1, frame_no, 0, data, v3=True)
+v3 = Codec(KEY, token=lambda: 1234).pack(T_SPK, 1, frame_no, 0, data)
 assert len(v3) == 4 + 965 + 12 and v3[0] >> 4 == 3 and Codec(KEY, now_ms=lambda: 1234).parse(v3)[0] == T_SPK
 assert len(v3) <= net.RECV_SIZE, "the socket read is large enough for the largest packet"
-assert Codec(KEY).parse(v2[:-1]) is None and Codec(b"another key 1234").parse(v2) is None
-ok("spk packet: 965 B body, plain / HMAC v2 / v3 round trip, fits the receive buffer")
+assert Codec(KEY, now_ms=lambda: 1234).parse(v3[:-1]) is None and Codec(b"another key 1234", now_ms=lambda: 1234).parse(v3) is None
+ok("spk packet: 965 B body, plain / v3 round trip, fits the receive buffer")
 
 got = []
 net.handlers.speaker = lambda idx, frame, flags, view: got.append((idx, frame, flags, bytes(view)))
@@ -95,7 +93,7 @@ assert got[-1] == (5, 7, SPK_END, frame(4)) and len(got) == 2
 net.link.fb_filter = SeqFilter(1.0)
 net.link.codec = Codec(KEY, token=lambda: 77, now_ms=lambda: 77)
 del got[:]
-deliver(net.link.codec.pack(T_SPK, 1, 99, SPK_START, frame(9), v3=True))
+deliver(net.link.codec.pack(T_SPK, 1, 99, SPK_START, frame(9)))
 assert got == [(1, 99, SPK_START, frame(9))], "the samples are found with the HMAC trailer behind them"
 net.link.codec = Codec()
 net.handlers.speaker = None
@@ -103,25 +101,8 @@ deliver(tx.pack(T_SPK, 1, 1, 0, frame(1)))                  # no hook: silently 
 ok("sender_net: one call per new packet, late / repeated packets dropped, separate filter per pad")
 
 
-@contextlib.contextmanager
-def old_tables():
-    """The parser of a peer from before this change: it does not know T_SPK."""
-    saved = proto.BY_SIZE
-    proto.BY_SIZE = {k: v for k, v in saved.items() if v != T_SPK}
-    try:
-        yield
-    finally:
-        proto.BY_SIZE = saved
 
 
-with old_tables():
-    assert Codec().parse(plain) is None, "an older sender drops the unknown length"
-    keyed = Codec(KEY)
-    assert keyed.parse(v2) is None and keyed.mismatch_t == float("-inf"), "...also with a key, and it is not taken for a key mismatch"
-    assert Codec(KEY, now_ms=lambda: 1234).parse(v3) is None
-    assert Codec().parse(Codec().pack(proto.T_HAPT, 0, 0, 0, bytes(64)))[0] == proto.T_HAPT, "other packets are not affected"
-assert Codec().parse(plain)[0] == T_SPK
-ok("an older peer ignores the spk packet (plain, v2, v3) without a key-mismatch warning")
 
 # ---------- report 0x32 / 0x36 ----------
 rep = S.Report3x()
