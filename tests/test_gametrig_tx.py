@@ -13,6 +13,7 @@ from proto import (BODY, CAP_TRIGGERS, RFX_ON, T_TRIG3, TFX_CLICK, TFX_OFF, TFX_
 
 TMP = tempfile.mkdtemp()
 from chk import ok
+from fakenet import PacketSock
 
 G_L2 = bytes([0x25, 0x30, 0x00, 0x05] + [0] * 7)          # click from the game
 G_R2 = bytes([0x21, 0xFF, 0x03, 0x92, 0x24, 0x49, 0x12] + [0] * 4)   # resistance from the game
@@ -40,17 +41,7 @@ net.handlers.triggers = lambda i, v: got.append((i, v))
 net.link.fb_filter = net.link.fb_filter.__class__(1.0)
 
 
-class Sock:
-    def __init__(self, pkts):
-        self.pkts = list(pkts)
-
-    def recv(self, n):
-        if not self.pkts:
-            raise BlockingIOError
-        return self.pkts.pop(0)
-
-
-net.link.codec, net.link.sock = c, Sock([data, data])
+net.link.codec, net.link.sock = c, PacketSock([data, data])
 net.on_readable()
 assert got == [(1, trig3((TFX_RES, 2, 5, 0, *(0,) * 8), G_L2, G_R2))], got
 ok("trig3 packet: 35 B body, received by the sender once (repeat dropped)")
@@ -106,7 +97,6 @@ async def main():
     r.close()
     assert last(path) == (RP.OFF_EFFECT, RP.OFF_EFFECT), "closing removes the game effects"
     ok("the refresh watchdog and closing release the game triggers")
-
 
 
 asyncio.run(main())

@@ -13,7 +13,7 @@ DualSense pad → Bluetooth → **sender** (Linux, evdev) → UDP 5005 → **rec
 sender/    sender_controller.py (entry point) + sender_*.py; install-service.sh, service/
 common/    proto.py (wire protocol, atomic writes), gitupdate.py (git version + update for both sides), cfgspec.py (sender settings changeable from the receiver; ids are append-only), the one copy used by sender and receiver
 receiver/  receiver_controller.py (entry point) + rx_*.py (logic) + rx_qt*.py (window)
-tests/     Linux tests with Windows/evdev stubs (rxenv.py); fakebin/ = fake bluetoothctl; run_tests.sh = the CI entry
+tests/     Linux tests with Windows/evdev stubs (rxenv.py); fakebin/ = fake bluetoothctl; run_tests.sh = the CI entry (finds tests by name)
 docs/      EN by default, PL as *.pl.md (user docs, not needed for code work)
 tools/     screenshots.py (offscreen window screenshots -> docs/img), hm_pin.py (move / check the HIDMaestro pin, receiver/hm_pin.json),
            import_smoke.py (imports every receiver module without stubs; the Windows CI job)
@@ -90,8 +90,9 @@ python3 tests/test_x.py receiver|sender                          # one test (e2e
 ruff check receiver sender tests                                 # lint only
 (cd receiver && python3 -m mypy --config-file ../pyproject.toml --platform win32 .)   # types; sender: same without --platform
 ```
-- Tests are plain scripts, no pytest. `*_tx.py` = sender, the rest = receiver, `test_e2e*` / `test_bt` = both.
-- Add a new test file to the matching list in `tests/run_tests.sh`, otherwise it won't run in CI.
+- Tests are plain scripts, no pytest. `run_tests.sh` finds them by name: `test_*_tx.py` = sender, `test_*_gui.py` = window,
+  the rest = receiver; a test that needs both sides goes into `BOTH` in `run_tests.sh` (`test_e2e*`, `test_bt`).
+- Shared helpers: `chk.py` (check / raises / wait_for), `fakenet.py` (PacketSock: queued datagrams in, sends recorded), `rxenv.py`.
 - Regressions from bug reviews go into topic-named tests (e.g. `test_atomic_writes.py`, `test_bt_scan_lifecycle_tx.py`), not numbered ones.
 - Manual only (can't be done in CI): a real pad, ViGEm, HIDMaestro, DisplaySwitch, pycaw, notifications.
 

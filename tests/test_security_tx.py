@@ -12,17 +12,7 @@ from proto import (BODY, CMD_POWER_OFF, FRESH_PAST_MS, T_CMD, T_PING, T_PONG2, T
                    token_fresh)
 
 from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
-
-
-class FakeSock:
-    def __init__(s, pkts=()):
-        s.pkts, s.sent = list(pkts), []
-    def recv(s, n):
-        if s.pkts:
-            return s.pkts.pop(0)
-        raise BlockingIOError
-    def send(s, data):
-        s.sent.append(data)
+from fakenet import PacketSock
 
 
 net.init()
@@ -42,7 +32,7 @@ cmds = []
 net.handlers.command = lambda i, cmd, arg: cmds.append((i, cmd, arg))
 
 # ---------- with a key every packet is v3 from the start ----------
-net.link.sock = FakeSock()
+net.link.sock = PacketSock()
 t0 = net.link.clock.ns()
 net.emit(T_PING, 255, t0)
 (ping,) = net.link.sock.sent
@@ -54,41 +44,41 @@ signed_v2 = proto.FRAMED[T_PING].pack(proto.HDR0 | T_PING, 255, 1, t0)
 signed_v2 += __import__("hmac").digest(b"sekret", signed_v2, "sha256")[:proto.MAC_LEN]
 check(pc.parse(signed_v2) is None and pc.legacy_t > 0, "a signed v2 packet (a version from before v3) is rejected and noted")
 
-net.link.sock = FakeSock([pc.pack(T_PONG2, 255, t0, pc_clock.ns() // 1000)])
+net.link.sock = PacketSock([pc.pack(T_PONG2, 255, t0, pc_clock.ns() // 1000)])
 net.on_readable()
 check(net.link.pc_clock.offset_us is not None and net.link.pongs == 1, "pong2 from the receiver: PC clock known, RTT counted")
 
 # ---------- commands: fresh once, repeat rejected, expired rejected, v2 rejected ----------
 cmd = pc.pack(T_CMD, 0, CMD_POWER_OFF, 0)
-net.link.sock = FakeSock([cmd, cmd])
+net.link.sock = PacketSock([cmd, cmd])
 net.on_readable()
 check(cmds == [(0, CMD_POWER_OFF, 0)], f"v3 command run once, an exact repeat rejected: {cmds}")
 
 old = Codec(b"sekret", token=lambda: (net.link.clock.ms32() - FRESH_PAST_MS - 2000) & 0xFFFFFFFF)
 cmds.clear(); stale = net.link.codec.stale
-net.link.sock = FakeSock([old.pack(T_CMD, 0, CMD_POWER_OFF, 0)])
+net.link.sock = PacketSock([old.pack(T_CMD, 0, CMD_POWER_OFF, 0)])
 net.on_readable()
 check(not cmds and net.link.codec.stale == stale + 1, "nagranie sprzed kilku sekund (znacznik poza oknem) odrzucone")
 
 other = EpochClock()                              # a recording from a previous sender run: a different clock
 rec = Codec(b"sekret", token=other.ms32)
-net.link.sock = FakeSock([rec.pack(T_CMD, 0, CMD_POWER_OFF, 0)])
+net.link.sock = PacketSock([rec.pack(T_CMD, 0, CMD_POWER_OFF, 0)])
 net.on_readable()
 check(not cmds, "a token from another run (random clock offset) rejected")
 
 wrong = Codec(b"inny", token=pc_token)
-net.link.sock = FakeSock([wrong.pack(T_CMD, 0, CMD_POWER_OFF, 0)])
+net.link.sock = PacketSock([wrong.pack(T_CMD, 0, CMD_POWER_OFF, 0)])
 net.on_readable()
 check(not cmds and time.monotonic() - net.link.codec.mismatch_t < 1, "another key: rejected and reported as a key mismatch")
 
 # ---------- sender on v3: state with the PC time, without the PC clock nothing goes out ----------
-net.link.sock = FakeSock()
+net.link.sock = PacketSock()
 net.emit(T_STATE, 0, *([0] * 17))
 p = pc.parse(net.link.sock.sent[-1])
 check(p is not None and p[0] == T_STATE, "v3 state with the PC time token accepted by the receiver")
 saved = net.link.pc_clock
 net.link.pc_clock = net.PcClock()
-net.link.sock = FakeSock()
+net.link.sock = PacketSock()
 net.emit(T_STATE, 0, *([0] * 17))
 net.emit(T_PING, 255, net.link.clock.ns())
 check(len(net.link.sock.sent) == 1 and pc.parse(net.link.sock.sent[0])[0] == T_PING,
