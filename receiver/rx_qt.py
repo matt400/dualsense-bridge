@@ -1305,7 +1305,7 @@ class MainWindow(UpdateFlow, ScreenPlacement):
         if self.diag_btn.isChecked() and self.isVisible():
             self.diag_page.refresh(now)
         online = S.sender_online(now)
-        self._refresh_sender_label(now, online)
+        self._refresh_sender_label(online)
         self._refresh_banner()
         self._bt_refresh(now)
         low_any, tips = self._refresh_cards(now)
@@ -1316,7 +1316,7 @@ class MainWindow(UpdateFlow, ScreenPlacement):
         self._refresh_tray(online, tips, low_any)
         self.log_panel.tick()
 
-    def _refresh_sender_label(self, now: float, online: bool) -> None:
+    def _refresh_sender_label(self, online: bool) -> None:
         """Redraw the sender label when its online state, build or battery changed."""
         build = S.sender_build[:2] if S.sender_build else None
         batt = S.sender_batt if online else None
