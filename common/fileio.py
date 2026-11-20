@@ -8,22 +8,55 @@ There is one copy, in common/ (like proto.py); the entry scripts and the tests p
 """
 import contextlib
 import json
+import math
 import os
 import sys
 import threading
 import tomllib
-from collections.abc import Collection
+from collections.abc import Collection, Mapping
 from typing import Any, Final
 
+KEY_SETTING: Final = "key"          # the shared HMAC key: the one text setting that may be written as a number in the file
 PERMISSION_BITS: Final = 0o7777    # st_mode & this = the chmod value (rwx for user / group / other + setuid etc.)
 
 
+def _fits_default(key: str, value: Any, default: Any) -> bool:
+    """Tell whether a config value has a type the code can use, judging by the default value it replaces.
+
+    A number must be finite (``nan`` / ``inf`` break rates and timeouts), a text is a text (but the HMAC key may be written as a
+    number: ``key = 1234``), a flag must be
+    true / false (or 0 / 1: ``bool("false")`` would be true) and a list must be a list (of numbers when the default is one). A
+    default of another type is not checked.
+    """
+    if isinstance(default, bool):
+        return isinstance(value, bool) or (isinstance(value, int) and value in (0, 1))
+    if isinstance(default, int | float):
+        if isinstance(value, bool) or not isinstance(value, int | float | str):
+            return False
+        try:
+            number = (int(value) if isinstance(default, int) else float(value)) if isinstance(value, str) else float(value)
+        except (ValueError, OverflowError):
+            return False
+        return math.isfinite(number)
+    if isinstance(default, str):
+        return isinstance(value, str) or (key == KEY_SETTING and isinstance(value, int | float) and not isinstance(value, bool))
+    if isinstance(default, list):
+        numbers = bool(default) and all(isinstance(item, int | float) for item in default)    # [1, 1, 1], [0, 0, 128]
+        return isinstance(value, list) and (not numbers or all(_fits_default(key, item, 0.0) for item in value))
+    return True
+
+
 def load_config(path: str | None, defaults: Collection[str] | None = None) -> dict[str, Any]:
-    """Load a ``.toml`` or ``.json`` configuration file and warn about unknown keys (typos).
+    """Load a ``.toml`` or ``.json`` configuration file and warn about unknown keys (typos) and values of the wrong type.
+
+    A value that cannot be used (text where a number is expected, ``nan``, a number where a list is expected) is reported with
+    its key and left out of the result, so the default is used: a typo in the file must not end the program with a bare
+    ``ValueError`` (an autostarted receiver has no console to show it in) or silently turn into something else.
 
     Args:
         path: The file to load; None or empty means "no file" and yields an empty dict.
-        defaults: The known keys; any other key in the file is reported (and kept).
+        defaults: The known keys; any other key in the file is reported (and kept). When it is a mapping, its values are the
+            defaults the type of a file's value is checked against.
 
     Returns:
         The parsed top-level mapping.
@@ -33,9 +66,13 @@ def load_config(path: str | None, defaults: Collection[str] | None = None) -> di
     with open(path, "rb") as f:
         cfg = json.load(f) if path.lower().endswith(".json") else tomllib.load(f)
     if defaults:
-        for key in cfg:
+        for key in list(cfg):
             if key not in defaults:
                 print(f"WARNING: unknown config key {key!r} in {path} (ignored)")
+            elif isinstance(defaults, Mapping) and not _fits_default(key, cfg[key], defaults[key]):
+                print(f"WARNING: {key} = {cfg[key]!r} in {path} is not usable here (expected {type(defaults[key]).__name__}) "
+                      f"- using the default {defaults[key]!r}")
+                del cfg[key]
     return cfg
 
 
