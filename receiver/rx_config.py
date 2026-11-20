@@ -193,8 +193,9 @@ def _apply_network(cfg: dict[str, Any]) -> None:
     C.DSU_BIND = str(cfg["dsu_bind"] or DEFAULT_DSU_BIND)
     C.DSU_MAX_CLIENTS = max(1, int(cfg["dsu_max_clients"]))
     C.NUM_PADS = max(1, min(MAX_PADS, int(cfg["pads"])))
-    C.MOUSE_PADS = {int(p) for p in cfg["mouse_pads"] if 0 <= int(p) < C.NUM_PADS}
-    if len(C.MOUSE_PADS) != len(set(cfg["mouse_pads"])):
+    given = list(cfg["mouse_pads"])
+    C.MOUSE_PADS = {p for p in given if isinstance(p, int) and not isinstance(p, bool) and 0 <= p < C.NUM_PADS}    # a text is no slot
+    if len(C.MOUSE_PADS) != len({repr(p) for p in given}):
         print(f"Note: mouse_pads restricted to slots 0..{C.NUM_PADS - 1} -> {sorted(C.MOUSE_PADS)}")
     C.PAD_HZ = max(0.0, float(cfg["pad_hz"]))
     C.DSU_HZ = max(0.0, float(cfg["dsu_hz"]))
@@ -202,13 +203,24 @@ def _apply_network(cfg: dict[str, Any]) -> None:
     C.DSU_BATCH = bool(cfg["dsu_batch"])
 
 
+def _signs(cfg: dict[str, Any], key: str) -> tuple[float, ...]:
+    """Return the x, y, z factors of a sensor axis setting; a list of another length (the DSU code unpacks three) = the default."""
+    signs = tuple(cfg[key])
+    if len(signs) != len(DEFAULTS[key]):
+        print(f"WARNING: {key} = {list(signs)!r} needs {len(DEFAULTS[key])} values - using the default {DEFAULTS[key]!r}")
+        return tuple(DEFAULTS[key])
+    return signs
+
+
 def _apply_motion(cfg: dict[str, Any]) -> None:
     """Fill C with the motion-sensor scaling, mouse and timeout settings."""
     C.ACC_RES = float(cfg["acc_res"])
     C.GYRO_RES = float(cfg["gyro_res"])
+    if C.GYRO_RES == 0:                                # the divisor below
+        print(f"WARNING: gyro_res = 0 is not usable - using the default {DEFAULTS['gyro_res']!r}")
+        C.GYRO_RES = float(DEFAULTS["gyro_res"])
     C.GYRO_TO_DS4 = GYRO_DS4_RAW / C.GYRO_RES          # raw gyro -> DS4 report units
-    C.ACC_SIGN = tuple(cfg["acc_sign"])
-    C.GYRO_SIGN = tuple(cfg["gyro_sign"])
+    C.ACC_SIGN, C.GYRO_SIGN = _signs(cfg, "acc_sign"), _signs(cfg, "gyro_sign")
     C.MOUSE_SENS = float(cfg["mouse_sens"])
     C.SCROLL_SENS = float(cfg["scroll_sens"])
     C.SCROLL_NATURAL = bool(cfg["scroll_natural"])
