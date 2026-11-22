@@ -125,5 +125,12 @@ state(0, batt=37)
 check((S.states[0]["batt_dsu"], S.states[0]["batt_ds4"], S.states[0]["batt_ds5"]) == rx_net.batt_bytes(37, 0),
       "a state packet stores the memoised battery codes")
 
+# ---------- the DSU packet counter is a 32-bit field: it wraps instead of overflowing struct.pack ----------
+tx = rx_dsu._TxState(1)
+tx.counters[0] = 0xFFFFFFFF
+S.alive[0] = True
+pk = tx.collect(1e9)
+check(len(pk) == 1 and tx.counters[0] == 0, f"DSU counter wraps at 2**32: {tx.counters[0]}")
+
 print("HOT PATH OK" if not fails else f"HOT PATH FAILURES: {len(fails)}")
 sys.exit(1 if fails else 0)

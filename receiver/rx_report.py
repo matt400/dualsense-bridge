@@ -5,7 +5,7 @@ import struct
 from collections.abc import Mapping
 from typing import Any, Final, TypeAlias
 
-from proto import clamp
+from proto import UINT32_MASK, clamp
 from rx_buttons import PS_BIT, bits_from
 from rx_config import C
 
@@ -17,6 +17,7 @@ SHOULDER: Final = {310: 0x01, 311: 0x02, 314: 0x10, 315: 0x20, 317: 0x40, 318: 0
 DPAD: Final = {(0, -1): 0, (1, -1): 1, (1, 0): 2, (1, 1): 3, (0, 1): 4,
         (-1, 1): 5, (-1, 0): 6, (-1, -1): 7, (0, 0): 8}
 NO_TOUCH: Final = (0, 0, 0, 0)
+S16_MIN, S16_MAX = -32768, 32767     # the motion fields of both reports are signed 16-bit
 _cache: dict[int, tuple[int, ...]] = {}
 # precompiled once: struct.pack_into(fmt, ...) looks the format up on every call, a Struct does not
 _U16: Final = struct.Struct("<H")
@@ -68,10 +69,10 @@ def build_report(s: Mapping[str, Any], counter: int, mmode: bool, b: bytearray |
     ax, ay, az = s["acc"]
     k = C.GYRO_TO_DS4
     _DS4_MOTION.pack_into(b, 12,
-                          clamp(int(gx * k), -32768, 32767),
-                          clamp(int(gy * k), -32768, 32767),
-                          clamp(int(gz * k), -32768, 32767),
-                          clamp(ax, -32768, 32767), clamp(ay, -32768, 32767), clamp(az, -32768, 32767))
+                          clamp(int(gx * k), S16_MIN, S16_MAX),
+                          clamp(int(gy * k), S16_MIN, S16_MAX),
+                          clamp(int(gz * k), S16_MIN, S16_MAX),
+                          clamp(ax, S16_MIN, S16_MAX), clamp(ay, S16_MIN, S16_MAX), clamp(az, S16_MIN, S16_MAX))
     b[29] = s["batt_ds4"]
     b[32] = 1
     b[33] = counter & 0xFF
@@ -116,11 +117,11 @@ def build_ds5_report(s: Mapping[str, Any], counter: int, mmode: bool, b: bytearr
     # sensor timestamp in units of 1/3 us (like on the real pad - apps compute dt from it), taken from the time the sample
     # arrived (s["ts"], us) rather than from the report build time: less jitter when reports are merged (pad_hz)
     _DS5_MOTION.pack_into(b, 15,
-                          clamp(int(gx * k), -32768, 32767),
-                          clamp(int(gy * k), -32768, 32767),
-                          clamp(int(gz * k), -32768, 32767),
-                          clamp(ax, -32768, 32767), clamp(ay, -32768, 32767), clamp(az, -32768, 32767),
-                          s["ts"] * 3 & 0xFFFFFFFF)
+                          clamp(int(gx * k), S16_MIN, S16_MAX),
+                          clamp(int(gy * k), S16_MIN, S16_MAX),
+                          clamp(int(gz * k), S16_MIN, S16_MAX),
+                          clamp(ax, S16_MIN, S16_MAX), clamp(ay, S16_MIN, S16_MAX), clamp(az, S16_MIN, S16_MAX),
+                          s["ts"] * 3 & UINT32_MASK)
     t1, t2 = (NO_TOUCH, NO_TOUCH) if mmode else s["touch"]
     put_touch_ds5(b, 32, t1)
     put_touch_ds5(b, 36, t2)

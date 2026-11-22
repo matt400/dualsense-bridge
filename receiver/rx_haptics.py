@@ -41,7 +41,7 @@ import rx_hm
 import rx_settings
 import rx_state as S
 import rx_swap
-from proto import CAP_HAPTICS, HAPT_CHUNK, HAPT_END, HAPT_FRAMES, HAPT_RATE, HAPT_START
+from proto import CAP_HAPTICS, HAPT_CHUNK, HAPT_END, HAPT_FRAMES, HAPT_RATE, HAPT_START, UINT32_MASK
 from rx_config import C
 from rx_i18n import _
 
@@ -313,7 +313,7 @@ class PacedStream:
             for k, queued in enumerate(self._queue):
                 if queued is not None:
                     del self._queue[k]
-                    self._counter = (self._counter + self.STEP) & 0xFFFFFFFF
+                    self._counter = (self._counter + self.STEP) & UINT32_MASK
                     self.dropped += 1
                     break
         self._queue.append(item)
@@ -348,7 +348,7 @@ class PacedStream:
             flags, self._sent_started = (0 if self._sent_started else self.START), True
         send = self._send or self._default_send()
         send(rx_swap.route(self.idx), self._counter, flags, item)
-        self._counter = (self._counter + self.STEP) & 0xFFFFFFFF
+        self._counter = (self._counter + self.STEP) & UINT32_MASK
         self.sent += 1
 
     def _drop_stream(self) -> None:
@@ -445,10 +445,17 @@ class Link(PacedStream):
         n = (w - r) // frame * frame
         if n <= 0:
             return None, r
+        return self._copy_out(r, n), r + n
+
+    def _copy_out(self, r: int, n: int) -> bytes:
+        """The n bytes of the ring from byte position r as one bytes object (two pieces joined when they wrap)."""
+        ring = self._ring
         i = r & RING_MASK
         first = RING_BYTES - i
-        data = bytes(self._ring[i:i + n]) if n <= first else bytes(self._ring[i:]) + bytes(self._ring[:n - first])
-        return data, r + n
+        if n <= first:
+            return bytes(ring[i:i + n])
+        view = memoryview(ring)
+        return b"".join((view[i:], view[:n - first]))
 
     # ----- the link's thread -----
     def step(self, now: float) -> float:
@@ -498,11 +505,8 @@ class Link(PacedStream):
         if n <= 0:
             self._r = r
             return None
-        i = r & RING_MASK
-        first = RING_BYTES - i
-        data = bytes(self._ring[i:i + n]) if n <= first else bytes(self._ring[i:]) + bytes(self._ring[:n - first])
         self._r = r + n
-        return data
+        return self._copy_out(r, n)
 
     def _feed(self, data: bytes, gain: float) -> None:
         """Audio -> 3 kHz -> s8 -> chunks."""

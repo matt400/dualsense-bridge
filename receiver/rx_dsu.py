@@ -12,7 +12,7 @@ from collections.abc import Mapping
 from typing import Any, Final
 
 import rx_state as S
-from proto import clamp
+from proto import UINT32_MASK, clamp
 from rx_buttons import PS_BIT, bits_from
 from rx_config import C
 from rx_winapi import bind_udp, boost_thread
@@ -210,7 +210,7 @@ class _TxState:
                     self.last_ver[slot] = s["ver"]
                     self.last_sent[slot] = mono
                     self.sent_alive[slot] = al
-                    self.counters[slot] += 1
+                    self.counters[slot] = (self.counters[slot] + 1) & UINT32_MASK     # the packet's "I" field: wrap, never overflow
                     pkts.append(build_data_packet(slot, S.output(slot), self.counters[slot]))   # Test view: neutral
         return pkts
 
