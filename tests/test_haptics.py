@@ -279,5 +279,15 @@ rows = [c for _n, _f, c in sent_pk if c != H.ZERO_CHUNK]
 check(bool(rows) and all(0 < v < 128 for v in rows[-1][0::2]) and all(v >= 128 for v in rows[-1][1::2]),
       "after the overflow the left channel is still +, the right -: the haptics channels did not swap")
 
+# ---------- reading across the end of the ring: both consumers get the same bytes in order ----------
+lk5 = H.Link(0, send=lambda *a: None, clock=lambda: now[0])
+check(lk5.configure(4, 48000, 16, []) is None, "4-channel format accepted")
+lk5._w = lk5._r = H.RING_BYTES - 800                    # the next write wraps around the end of the ring
+chunk = bytes(range(256)) * 8                           # 2048 B = 256 frames, not silence
+lk5.write(memoryview(chunk), len(chunk))
+spk_data, spk_r = lk5.read_from(H.RING_BYTES - 800)
+check(spk_data == chunk and spk_r == lk5._w, "read_from across the wrap returns the bytes written, in order")
+check(lk5._read() == chunk and lk5._r == lk5._w, "_read across the wrap returns the same bytes")
+
 print("FAILS:" if fails else "HAPTICS OK", fails or "")
 sys.exit(1 if fails else 0)

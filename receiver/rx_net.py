@@ -30,12 +30,12 @@ from proto import (BATT_CHARGING, BATT_UNKNOWN, BODY, CAL_MOVED, CAL_OK, CLICK_P
                    NO_PAD, PAD_KEYS, PK_DS4, PK_OTHER, PK_XBOX, RTT_NONE, SCFG_EVENTS, SCFG_WOL, STATE_CHARGING, STATE_FIELDS,
                    SENDER_VERSION, UINT32_MASK, WIRE, Codec,
                    EpochClock, T_BTCTRL, T_BTDEV, T_BTLINK, T_BTSTATE, T_BUILD3, T_BYE, T_CALRES, T_CFGVAL, T_CLICK,
-                   T_CMD, T_EVENT, T_FB, T_HAPT, T_IDENT, T_INFO, T_LEDS, SEQ_MASK,
+                   T_CMD, T_EVENT, T_FB, T_HAPT, T_IDENT, T_INFO, T_LEDS, NS_PER_MS, SEQ_MASK,
                    T_MOUSE, T_PADKIND, T_PING, T_PONG2, T_SCFG, T_SPK, T_STATE, T_STATE2, T_STCMD, T_STRES, T_TOUCH, T_TRIG3,
                    T_UPDMSG,
                    T_VERSION, clamp, cstr, mac_bytes, mac_text)
 from rx_buttons import BUTTON_CODES, MASK_ALL, PS_BIT, TRIG_ON
-from rx_config import C
+from rx_config import MAX_PADS, C
 from rx_i18n import _
 from rx_winapi import bind_udp, boost_thread, recv_timeout
 
@@ -135,9 +135,9 @@ in_sock: socket.socket | None = None   # bound by init()
 _sender_clock: tuple[int, int] | None = None
 _warned_idx: set[int] = set()
 # the last button state (mask, d-pad, triggers pressed) per slot - a change = shortcut handling
-_digital: list[tuple[int, ...] | None] = [None] * 4
+_digital: list[tuple[int, ...] | None] = [None] * MAX_PADS
 # (mask, d-pad, L2 >= TRIG_ON, R2 >= TRIG_ON) per slot - a change = a "button -> game" sample
-_pressed: list[tuple[int, ...] | None] = [None] * 4
+_pressed: list[tuple[int, ...] | None] = [None] * MAX_PADS
 _key_warned: list[float] = [float("-inf")]   # when we last warned about a different HMAC key
 _auth_warned: dict[str, float] = {"legacy": float("-inf"), "stale": float("-inf")}
 _first_ping: list[float | None] = [None]     # when (monotonic) this process got the sender's first ping
@@ -149,7 +149,7 @@ def sender_token() -> int | None:
     sc = _sender_clock
     if sc is None:
         return None
-    return ((sc[0] + time.perf_counter_ns() - sc[1]) // 1_000_000) & 0xFFFFFFFF
+    return ((sc[0] + time.perf_counter_ns() - sc[1]) // NS_PER_MS) & UINT32_MASK
 
 
 def note_ping(t0: int, arr: int) -> None:
@@ -469,7 +469,7 @@ def _latency(lat: Sequence[int], arr: int) -> tuple[int, int, int, int] | None:
     pc_us, phone, bt = lat
     if not arr or not pc_us or phone == LAT_NONE:
         return None
-    net = ((arr + clock.base) // 1000 - pc_us) & 0xFFFFFFFF      # pc_us in the pong2 clock (with the offset)
+    net = ((arr + clock.base) // 1000 - pc_us) & UINT32_MASK      # pc_us in the pong2 clock (with the offset)
     if net >= U32_HALF:          # received "before" it was sent: a clock offset error (up to half the RTT) - this is ~0
         net -= U32_WRAP
     if not -MAX_NET_US < net < MAX_NET_US:
@@ -886,7 +886,7 @@ def _on_control(t: int, i: int, sq: int, data: bytes, addr: tuple[str, int], now
     """Handle the packets about the sender itself (update, build, Bluetooth, events, ping); False = a per-pad packet."""
     if t == T_UPDMSG:  # the reason for a sender update failure (arrives before the build packet with the result)
         _adopt_peer(addr, now)
-        S.sender_update_msg = BODY[T_UPDMSG].unpack_from(data, 4)[0].rstrip(b"\0").decode("utf-8", "ignore")
+        S.sender_update_msg = cstr(BODY[T_UPDMSG].unpack_from(data, 4)[0])
     elif t == T_BUILD3:  # the sender's code version and its update state (the whole sender, idx 255)
         _adopt_peer(addr, now)
         on_build(data, now)
