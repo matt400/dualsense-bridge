@@ -742,7 +742,11 @@ async def ctrl_scenarios():
     assert complexity_of(c.speaker.encoder) == 1, "speaker_opus_complexity reaches the real encoder"
     sender_config.C.SPEAKER_OPUS_COMPLEXITY = O.COMPLEXITY_AUTO
     gaps = [(b - a) * 1000 for a, b in zip(stamps, stamps[1:], strict=False)]
-    mean = (stamps[-1] - stamps[0]) * 1000 / (len(stamps) - 1)
+    # a loop stalled for longer than RESYNC_S (a busy CI runner) restarts the timeline on purpose - no burst of catch-up reports - so
+    # that one gap is left out of the mean; shorter stalls are made up for by the next ticks and stay in it, and so would a drift
+    steady = [g for g in gaps if g < H.RESYNC_S * 1000]
+    mean = statistics.fmean(steady)
+    assert len(gaps) - len(steady) <= 2, gaps
     assert 10.55 < mean < 10.78 and 9.5 < statistics.median(gaps) < 11.5, (mean, statistics.median(gaps))   # the pad's clock is 10.667 ms
     assert "speaker start" in buf.getvalue() and "speaker end (end of stream)" in buf.getvalue(), buf.getvalue()
     # the packets are valid Opus and carry our 440 Hz sine
