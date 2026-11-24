@@ -1,12 +1,14 @@
 """Receiver: the HIDMaestro backend - a virtual DualSense (a user-mode UMDF2 driver, MIT, actively developed).
 
-Compatible with HIDMaestro 1.x, 2.0.x, 2.1.x and 2.2.x (the calls below were checked against the v2.2.0 source: no signature
+Compatible with HIDMaestro 1.x, 2.0.x, 2.1.x, 2.2.x and 2.3.x (the calls below were checked against the v2.3.0 notes: no signature
 used here changed since 2.0.3; 2.1.0 only snapshots HMProfile.ButtonMap / AxisMap / ExtendedReport / Layout, which this
 module never touches; 2.2.0 only makes a frame wait for a pending protocol reply on profiles with a protocol host, which
-the DualSense profiles do not have). Calls used: LoadDefaultProfiles, InstallDriver, GetProfile, CreateControllerAt, SubmitRawReport,
+the DualSense profiles do not have; 2.3.0 adds a backend choice (HMBackend), and its default Auto keeps the plain DualSense
+on the UMDF2 driver on x64 and the composite on USB/IP, as before - this module never names a backend). Calls used:
+LoadDefaultProfiles, InstallDriver, GetProfile, CreateControllerAt, SubmitRawReport,
 OutputReceived, Dispose - the same in all versions; 2.0 only adds diagnostics: ProfileLoadIssues, LastDriverInstall,
 TransportIndex and exceptions derived from InvalidOperationException - see describe_error. Composite pads also use
-UsbAudio.Output (FramesReceived, Channels, SampleRateHz, BitsPerSample, ChannelRoles), unchanged in 2.2.0.
+UsbAudio.Output (FramesReceived, Channels, SampleRateHz, BitsPerSample, ChannelRoles), unchanged in 2.3.0.
 
 HIDMaestro is a .NET library (HIDMaestro.Core.dll, .NET 10) - called from Python through pythonnet (CoreCLR). The driver
 lives inside the DLL and installs on first use (InstallDriver, idempotent). Creating a device needs administrator
@@ -158,12 +160,15 @@ def get(cfg_path: str = "") -> "Backend":
         return hit
 
 
-# HIDMaestro 2.0 exceptions (all derive from InvalidOperationException) -> what they usually mean
+# HIDMaestro 2.0+ exceptions (all derive from InvalidOperationException) -> what they usually mean
 _HM_HINTS = {
-    "HMResourceInUseException": "another program or a second receiver holds this controller's index or identity",
+    "HMResourceInUseException": "another program or a second receiver holds this controller's index or identity,"
+                                " or all USB/IP ports are taken (2.3.0: 30, shared by every program on the machine)",
     "HMDriverVersionException": "the installed driver does not serve this HIDMaestro version",
     "HMPayloadMissingException": "this HIDMaestro build lacks the driver it needs",
     "HMProfileException": "the profile was refused",
+    "HMBackendNotSupportedException": "this profile cannot run on the requested driver (UMDF2 / USB/IP)",
+    "HMDriverSigningException": "Windows does not allow installing the UMDF2 driver here (e.g. Windows on ARM64)",
 }
 
 
