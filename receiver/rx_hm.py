@@ -7,7 +7,8 @@ backend choice (HMBackend), and its default Auto keeps the plain DualSense on th
 USB/IP - this module never names a backend; 2.4.0 adds touch and pen devices and loads usbip-win2's filter on HIDMaestro's own
 root hub, so Windows hands the composite pad's speaker stream over every 10 ms instead of in 20 ms pairs). Calls used:
 LoadDefaultProfiles, InstallDriver, GetProfile, CreateControllerAt, SubmitRawReport,
-OutputReceived, Dispose - the same in all versions; 2.0 only adds diagnostics: ProfileLoadIssues, LastDriverInstall,
+OutputReceived, Dispose - the same in all versions; the virtual touchpad alone needs 2.4.0 (HidDescriptorBuilder.Touchpad,
+HMProfileBuilder, HMProfile.Touch, SubmitTouch); 2.0 only adds diagnostics: ProfileLoadIssues, LastDriverInstall,
 TransportIndex and exceptions derived from InvalidOperationException - see describe_error. Composite pads also use
 UsbAudio.Output (FramesReceived, Channels, SampleRateHz, BitsPerSample, ChannelRoles), unchanged in 2.4.0.
 
@@ -18,6 +19,7 @@ rights (Windows: SeLoadDriverPrivilege) - without them the backend does not load
   get(cfg_path)   -> Backend (loaded once per DLL path; an error is remembered until reset())
   find_dll(path)  the path from the settings, or the newest downloaded version (rx_hm_update: hidmaestro/vX.Y.Z/), then
                   hidmaestro/HIDMaestro.Core.dll next to the receiver (unpacked by hand)
+  Backend.create_touchpad(slot) -> Touchpad: the virtual precision touchpad of rx_vtouch (2.4.0+: SubmitTouch)
   Backend.create(slot, on_fb) -> Pad: build() writes a DualSense report into pad.buf, submit() sends it without copying
   Backend.create(slot, on_fb, composite=True): the "dualsense-composite" profile (the real four-interface USB DualSense) for game
                   haptics: Pad.attach_audio(sink) hands the PCM of the pad's USB audio OUT stream (ch 3/4 = the haptic voice coils)
@@ -49,6 +51,10 @@ from rx_state import NEUTRAL_OUT
 
 DLL = "HIDMaestro.Core.dll"
 PROFILE = "dualsense"          # the USB DualSense profile (054C:0CE6) from HIDMaestro
+TOUCHPAD_INDEX: Final = 16     # HIDMaestro index of slot 0's virtual touchpad: above every pad slot
+TOUCHPAD_SIZE_MM: Final = (106, 52)           # the declared size: the touchpad's 1919 : 942 shape, larger = a faster cursor
+TOUCH_MAX: Final = (1919, 942)                # the scale of the touch packet (rx_net)
+TOUCHPAD_VID_PID: Final = (0x1209, 0x0001)    # the pid.codes test id, as in HIDMaestro's own example
 PROFILE_COMPOSITE = "dualsense-composite"   # the same pad with its USB audio (speaker + haptics out, microphone); needs usbip-win2
 AUDIO_SCRATCH: Final = 1 << 16  # the fixed buffer one audio callback is copied into (a window is a few ms: 384 B per ms at 48 kHz x 4 ch)
 REPORT_LEN = 63                # input report 0x01 without the ID byte
@@ -382,6 +388,89 @@ def memcopy_delegate(clr: Any) -> Callable[[Any, Any, int], int]:
         raise HMError(f"cannot bind the audio copy: {e!r}") from e
 
 
+def touch_delegate(clr: Any, ctrl_type: Any, contact_type: Any, buttons_type: Any) -> Callable[[Any, Any, int, int], None]:
+    """A delegate (controller, HMTouchContact[], count, buttons).
+
+    SubmitTouch(new ReadOnlySpan<HMTouchContact>(array, 0, count), (HMMouseButtons)buttons) as an IL method, for the same
+    reason as submit_delegate: pythonnet cannot pass a span.
+    """
+    try:
+        from System import Action, Array, Byte, Int32, Type, Void
+        from System.Reflection.Emit import DynamicMethod, OpCodes
+        t_int = clr.GetClrType(Int32)
+        t_ctrl, t_contact = clr.GetClrType(ctrl_type), clr.GetClrType(contact_type)
+        t_array = t_contact.MakeArrayType()
+        span = clr.GetClrType(Byte).Assembly.GetType("System.ReadOnlySpan`1").MakeGenericType(t_contact)
+        ctor = span.GetConstructor(Array[Type]([t_array, t_int, t_int]))
+        meth = t_ctrl.GetMethod("SubmitTouch", Array[Type]([span, clr.GetClrType(buttons_type)]))
+        if ctor is None or meth is None:
+            raise HMError("SubmitTouch not found in this HIDMaestro version (2.4.0 or newer is needed)")
+        dm = DynamicMethod("dsbridge_submit_touch", clr.GetClrType(Void), Array[Type]([t_ctrl, t_array, t_int, t_int]),
+                           t_ctrl.Module, True)
+        il = dm.GetILGenerator()
+        il.Emit(OpCodes.Ldarg_0)
+        il.Emit(OpCodes.Ldarg_1)
+        il.Emit(OpCodes.Ldc_I4_0)
+        il.Emit(OpCodes.Ldarg_2)
+        il.Emit(OpCodes.Newobj, ctor)
+        il.Emit(OpCodes.Ldarg_3)                 # an int is a valid value of the byte-sized flags enum on the IL stack
+        il.Emit(OpCodes.Callvirt, meth)
+        il.Emit(OpCodes.Ret)
+        fn = dm.CreateDelegate(clr.GetClrType(Action[ctrl_type, Array[contact_type], Int32, Int32]))
+        return getattr(fn, "Invoke", fn)
+    except HMError:
+        raise
+    except Exception as e:      # any reflection / IL error becomes a readable backend error
+        raise HMError(f"cannot bind SubmitTouch: {e!r}") from e
+
+
+def touchpad_profile() -> Any:
+    """The profile of the virtual precision touchpad, built with HIDMaestro's descriptor builder (two fingers)."""
+    from HIDMaestro import HidDescriptorBuilder, HMProfileBuilder
+    vid, pid = TOUCHPAD_VID_PID
+    width, height = TOUCHPAD_SIZE_MM
+    descriptor = HidDescriptorBuilder().Touchpad(2, width, height)
+    builder = HMProfileBuilder().Id("dsbridge-touchpad").Name("DualSense bridge Touchpad").Vendor("dualsense-bridge")
+    builder = builder.Vid(vid).Pid(pid).ProductString("DualSense bridge Touchpad").ManufacturerString("dualsense-bridge")
+    return builder.Type("touchpad").Connection("usb").FromDescriptorBuilder(descriptor).Build()
+
+
+def touchpad_parts(clr: Any) -> tuple[Any, Any, Callable[[Any, Any, int, int], None]]:
+    """(profile, the HMTouchContact type, the submit delegate); HMError when this HIDMaestro has no touch devices."""
+    try:
+        from HIDMaestro import HMController, HMMouseButtons, HMTouchContact
+    except ImportError:
+        raise HMError("this HIDMaestro has no touch devices (2.4.0 or newer is needed)") from None
+    return touchpad_profile(), HMTouchContact, touch_delegate(clr, HMController, HMTouchContact, HMMouseButtons)
+
+
+class Touchpad:
+    """One virtual precision touchpad: submit() takes the contacts of rx_vtouch."""
+
+    def __init__(self, ctrl: Any, layout: Any, contact: Any, submit: Callable[[Any, Any, int, int], None]) -> None:
+        """Keep the controller, the ranges of its descriptor and one reused contact array."""
+        from System import Array
+        self.ctrl, self._contact, self._submit = ctrl, contact, submit
+        self._max = (int(layout.X.Maximum), int(layout.Y.Maximum))
+        self._ids = int(layout.MaxContactId)
+        self._array = Array[contact](2)
+
+    def submit(self, contacts: Sequence[Any], click: bool) -> None:
+        """Report every finger down now (one left out is lifted) and the click."""
+        for k, c in enumerate(contacts[:2]):
+            item = self._contact()
+            item.Id = c.id & self._ids
+            item.X = c.x * self._max[0] // TOUCH_MAX[0]
+            item.Y = c.y * self._max[1] // TOUCH_MAX[1]
+            item.Palm = c.palm
+            self._array[k] = item
+        self._submit(self.ctrl, self._array, min(len(contacts), 2), 1 if click else 0)   # button 1 = the click
+
+    def close(self) -> None:
+        """Remove the device; HIDMaestro lifts what is still down."""
+        self.ctrl.Dispose()
+
+
 def _type_error(path: str) -> str | None:
     """The DLL loaded but has no types: the first missing component from LoaderExceptions (a dependency, the runtime version)."""
     try:
@@ -431,6 +520,7 @@ class Backend:
         self.clr = clr
         self._composite: Any = None            # the "dualsense-composite" profile, looked up on first use
         self._copy_fn: Callable[[Any, Any, int], int] | None = None
+        self._touch: tuple[Any, Any, Callable[[Any, Any, int, int], None]] | None = None   # see touchpad_parts
         self.path = path
         print(f"HIDMaestro loaded: {path}")
 
@@ -450,6 +540,18 @@ class Backend:
         if self._copy_fn is None:
             self._copy_fn = memcopy_delegate(self.clr)
         return self._copy_fn
+
+    def create_touchpad(self, slot: int) -> "Touchpad":
+        """A virtual Windows precision touchpad for the slot (HIDMaestro 2.4+); HMError / a .NET error when it cannot be made."""
+        if self._touch is None:
+            self._touch = touchpad_parts(self.clr)
+        profile, contact, submit = self._touch
+        ctrl = self.ctx.CreateControllerAt(TOUCHPAD_INDEX + slot, profile, f"dualsense-bridge:touchpad:{slot}")
+        try:
+            return Touchpad(ctrl, profile.Touch, contact, submit)
+        except Exception:
+            ctrl.Dispose()
+            raise
 
     def create(self, slot: int, on_fb: Callable[..., None], composite: bool = False) -> "Pad":
         """A virtual DualSense on a fixed index and with a fixed slot identity.

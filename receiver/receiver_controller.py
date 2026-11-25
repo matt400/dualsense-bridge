@@ -7,7 +7,8 @@ Files: proto.py (shared), rx_config.py, rx_state.py, rx_buttons.py (remap + rema
        rx_shape.py (deadzones, curves, gyro), rx_hotkeys.py (PS shortcuts), rx_games.py (profile per game),
        rx_gyro.py (gyro as a mouse), rx_gstick.py + rx_gstick_io.py (pad tilt as a stick),
        rx_feedback.py (rumble, lightbar, confirmations),
-       rx_winapi.py, rx_mouse.py, rx_report.py, rx_net.py, rx_dsu.py, rx_ds4.py, rx_haptics.py (game HD haptics),
+       rx_winapi.py, rx_mouse.py, rx_vtouch.py,
+       rx_report.py, rx_net.py, rx_dsu.py, rx_ds4.py, rx_haptics.py (game HD haptics),
        rx_speaker.py (pad speaker),
        rx_console.py + rx_audio.py (console mode: monitor / TV, console.json),
        rx_settings.py (settings.json: mouse, master pad), rx_master.py (master pad: permissions, PS + button),
@@ -211,6 +212,7 @@ def _init_modules() -> None:
     import rx_speaker
     import rx_state as S
     import rx_testmode
+    import rx_vtouch
     import rx_winapi
 
     S.init(rx_buttons.RemapStore(C.REMAP_PATH))
@@ -222,6 +224,7 @@ def _init_modules() -> None:
     rx_master.init(C.NUM_PADS)
     rx_testmode.init(C.NUM_PADS)
     rx_ds4.init()
+    rx_vtouch.init(C.NUM_PADS, rx_ds4.touchpad, rx_ds4.touchpad_allowed, rx_ds4.hm_loaded)
     rx_haptics.init()
     rx_speaker.init()
     rx_gstick_io.runner.init()
@@ -244,6 +247,7 @@ def _start_workers() -> tuple[list[threading.Thread], threading.Thread]:
     import rx_gyro
     import rx_net
     import rx_state as S
+    import rx_vtouch
 
     gc.collect()
     gc.freeze()        # objects from startup are no longer scanned by the GC - shorter, rarer pauses in the real-time threads
@@ -255,6 +259,7 @@ def _start_workers() -> tuple[list[threading.Thread], threading.Thread]:
         rx_hm_update.on_installed = rx_ds4.hm_installed
         S.start_thread("hidmaestro update", rx_hm_update.thread, S.stop, rx_ds4.hm_auto_enabled)
     S.start_thread("gyro mouse", rx_gyro.mouse_thread)
+    S.start_thread("virtual touchpad", rx_vtouch.thread)
     S.start_thread("gyro stick", rx_gstick_io.thread)     # pad tilt -> stick; the engine steps only here
     # always (also without game profiles): a change of the foreground program stops game rumble
     # that ended during the rumble; game profiles are switched only with game_profiles (rx_state.reload_profile)
@@ -314,6 +319,7 @@ def _shutdown(slot_threads: list[threading.Thread], fb_thread: threading.Thread)
     import rx_haptics
     import rx_net
     import rx_state as S
+    import rx_vtouch
     import rx_winapi
 
     S.stop.set()
@@ -331,6 +337,7 @@ def _shutdown(slot_threads: list[threading.Thread], fb_thread: threading.Thread)
         S.want[i].clear()
         rx_net.clear_slot(i)
         S.wake[i].set()
+    rx_vtouch.shutdown()                # removes the virtual touchpads (nothing stays held in Windows)
     deadline = time.monotonic() + 2.0
     for t in slot_threads:      # slot threads disconnect the virtual DS4 from ViGEm (thread end = disconnected)
         t.join(max(0.0, deadline - time.monotonic()))

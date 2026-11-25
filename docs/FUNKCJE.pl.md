@@ -37,8 +37,13 @@
   jądra (evdev), nigdy przez raport HID DualSense.
 - **Serwer DSU (Cemuhook)** z ruchem i dotykiem dla emulatorów (Cemu, Yuzu/Ryujinx, Dolphin) na tym komputerze;
   emulator na innym urządzeniu wymaga `dsu_bind = "0.0.0.0"`.
-- **Touchpad jako mysz:** kursor, tap = lewy przycisk, przewijanie dwoma palcami, tap dwoma palcami = prawy przycisk.
-  Przełączanie: PS + klik touchpada. Fizyczny klik nie przesuwa kursora: ruch z ostatnich ~80 ms przed kliknięciem
+- **Touchpad jako mysz:** przełączanie PS + klik touchpada. Z HIDMaestro (2.4.0+) touchpad trafia do
+  **wirtualnego precyzyjnego touchpada Windows**: kursor, tapnięcia, przewijanie, zoom i klik obsługuje Windows, a
+  ustawia się je w Ustawieniach Windows → Touchpad. Pojawia się przy pierwszym dotknięciu (zanim będzie gotowy i gdy nie
+  da się go utworzyć, działa stara mysz opisana niżej). Gdy Windows ma wyłączać touchpad przy podłączonej myszy, zostaw
+  go tam włączony.
+- **Touchpad jako mysz bez HIDMaestro** (ViGEmBus): kursor, tap = lewy przycisk, przewijanie dwoma palcami, tap dwoma
+  palcami = prawy przycisk. Fizyczny klik nie przesuwa kursora: ruch z ostatnich ~80 ms przed kliknięciem
   jest cofany, przez ~150 ms po wciśnięciu i puszczeniu kursor stoi, a przeciąganie z wciśniętym klikiem zaczyna się
   dopiero po wyraźnym ruchu palca. Czułość i te czasy: Ustawienia → Mysz (działa od razu).
 - **Jedno okno do wszystkiego** (PySide6, ikona w zasobniku):

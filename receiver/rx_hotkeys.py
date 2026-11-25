@@ -21,6 +21,7 @@ from typing import Any, Final
 import rx_feedback as F
 import rx_master as master
 import rx_mouse
+import rx_vtouch
 import rx_state as S
 import rx_winapi as W
 from rx_buttons import BIT, PS_BIT
@@ -241,6 +242,8 @@ def _sens(i: int, factor: float) -> None:
 
     Not saved - Settings -> Mouse keeps it.
     """
+    if rx_vtouch.live(i):
+        return                      # the virtual touchpad: the speed is a Windows setting
     if not master.check(i, "sens"):
         return
     old = rx_mouse.sens[i]

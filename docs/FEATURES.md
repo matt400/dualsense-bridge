@@ -38,8 +38,12 @@
   never through the DualSense HID report.
 - **DSU server (Cemuhook)** with motion and touch for emulators (Cemu, Yuzu/Ryujinx, Dolphin) on this PC; an emulator
   on another device needs `dsu_bind = "0.0.0.0"`.
-- **Touchpad as mouse:** cursor, tap = left button, two-finger scrolling, two-finger tap = right button.
-  Toggle: PS + touchpad click. A physical click doesn't move the cursor: movement from the last ~80 ms before the
+- **Touchpad as mouse:** toggle with PS + touchpad click. With HIDMaestro (2.4.0+) the touchpad is handed to a
+  **virtual Windows precision touchpad**: cursor, taps, scrolling, zoom and the click are Windows' own, set in Windows
+  Settings → Touchpad. It appears on the first touch (until it is ready, and when it can't be created, the old mouse
+  below works). If Windows is set to turn the touchpad off while a mouse is connected, keep it on there.
+- **Touchpad as mouse without HIDMaestro** (ViGEmBus): cursor, tap = left button, two-finger scrolling, two-finger tap =
+  right button. A physical click doesn't move the cursor: movement from the last ~80 ms before the
   click is undone, the cursor stays still for ~150 ms after pressing and releasing, and dragging with the click held
   starts only after a clear finger movement. Sensitivity and these timings: Settings → Mouse (takes effect immediately).
 - **One window for everything** (PySide6, tray icon):
