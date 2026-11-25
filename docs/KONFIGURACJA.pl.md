@@ -32,7 +32,7 @@ Najczęściej zmieniane:
 | `haptics_motors` | sender | haptics | gdy gra wibruje podczas haptyki: `haptics` (silniki ignorowane, log raz) lub `rumble` (silniki wstrzymują haptykę) |
 | `key` | oba | "" | wspólny klucz HMAC: podpisane pakiety i ochrona przed replay ([BEZPIECZENSTWO.pl.md](BEZPIECZENSTWO.pl.md)) |
 | `dsu_bind` | receiver | 127.0.0.1 | adres serwera DSU; `0.0.0.0` = emulator na innym urządzeniu |
-| `mouse_sens`, `scroll_sens` | receiver | 0.5, 0.6 | czułość myszy i przewijania touchpadem |
+| `mouse_sens`, `scroll_sens` | receiver | 0.5, 0.6 | czułość myszy i przewijania touchpadem (bez wirtualnego touchpada) |
 | `ps_modifier` | receiver | true | PS jako klawisz skrótów (PS idzie do gry po puszczeniu) |
 | `ps_hold_action` | receiver | gamebar | długie PS: `gamebar`, `bigpicture`, `none` |
 | `game_profiles` | receiver | true | automatyczny profil wg aktywnego okna |

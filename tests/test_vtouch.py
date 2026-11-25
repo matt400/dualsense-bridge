@@ -1,6 +1,6 @@
 """Receiver: the virtual touchpad (rx_vtouch) - which path drives the mouse, lifting without a tap, failures.
     python3 tests/test_vtouch.py receiver"""
-import os, sys
+import os, sys, threading
 sys.path.insert(0, os.path.dirname(__file__))
 from chk import check, fails, wait_for
 from rxenv import *  # noqa: F403
@@ -125,6 +125,47 @@ check(last.closed and not V.live(0), "shutdown removes the device")
 fingers()
 fingers((10, 1, 1))
 check(len(devs) == 2, "nothing is created after shutdown")
+
+# a release while the worker is inside the driver (the queue taken, nothing recorded as sent yet) still lifts the finger
+class Interrupted(Dev):
+    def submit(s, contacts, click):
+        super().submit(contacts, click)
+        if len(s.frames) == 1: V.release(0)
+
+
+V.init(C.NUM_PADS, lambda i: Interrupted())
+fingers()
+fingers((12, 1, 1))
+check(wait_for(lambda: V.links[0].dev is not None), "device for the release race")
+fingers()
+fingers((13, 1, 1))
+dev = V.links[0].dev
+V.step(0)
+V.step(0)
+check(dev.frames[-1] == V.NOTHING and not V.step(0), "no stuck finger after a release during a submit")
+
+# a device created while the settings change is removed, and the next create waits until it is gone
+gate, made = threading.Event(), []
+
+
+def slow(i):
+    gate.wait(5)
+    made.append(Dev())
+    return made[-1]
+
+
+V.init(C.NUM_PADS, slow)
+fingers()
+fingers((14, 1, 1))
+V.reset_devices()
+fingers()
+fingers((15, 1, 1))
+gate.set()
+check(wait_for(lambda: not V.links[0].creating), "the interrupted create ends")
+check(len(made) == 1 and made[0].closed and V.links[0].dev is None, "a device from before the reset is not used")
+fingers()
+fingers((16, 1, 1))
+check(wait_for(lambda: V.links[0].dev is not None) and not made[-1].closed, "the next touch creates a fresh one")
 
 V.init(C.NUM_PADS, lambda i: None)
 fingers()

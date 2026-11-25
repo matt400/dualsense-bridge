@@ -61,7 +61,9 @@ class Link:
         self.contacts: tuple[Contact, ...] = ()
         self.click = False
         self.queue: deque[Frame] = deque(maxlen=MAX_QUEUE)
+        self.tail: Frame = NOTHING    # the newest frame queued: what the device will show, also while the worker is sending it
         self.sent: Frame = NOTHING    # what the device got last
+        self.gen = 0                  # bumped by _drop: a device still being created belongs to the old settings
 
 
 links: list[Link] = []
@@ -109,7 +111,13 @@ def in_use() -> bool:
 
 def _push(link: Link) -> None:
     """Queue the live frame (call under link.lock)."""
-    link.queue.append((link.contacts, link.click))
+    _queue(link, (link.contacts, link.click))
+
+
+def _queue(link: Link, frame: Frame) -> None:
+    """Queue a frame for the worker (call under link.lock)."""
+    link.queue.append(frame)
+    link.tail = frame
     wake.set()
 
 
@@ -118,10 +126,10 @@ def _start_create(i: int, link: Link) -> None:
     if link.creating or link.dev is not None or time.monotonic() < link.retry_at or factory is None or not allowed():
         return
     link.creating = True
-    threading.Thread(target=_create, args=(i, link), name=f"touchpad{i}", daemon=True).start()
+    threading.Thread(target=_create, args=(i, link, link.gen), name=f"touchpad{i}", daemon=True).start()
 
 
-def _create(i: int, link: Link) -> None:
+def _create(i: int, link: Link, gen: int) -> None:
     """The creation thread: any driver / .NET failure leaves the slot on the old mouse."""
     dev, error = None, None
     try:
@@ -130,14 +138,17 @@ def _create(i: int, link: Link) -> None:
     except Exception as e:  # noqa: BLE001 - whatever HIDMaestro throws: the old mouse keeps working
         error = e
     with link.lock:
-        link.creating = False
-        stale = factory is None or i >= len(links) or links[i] is not link      # shut down or reset meanwhile
-        if dev is not None and not stale:
+        stale = factory is None or i >= len(links) or links[i] is not link or link.gen != gen      # shut down or reset meanwhile
+        if not stale:
+            link.creating = False
             link.dev = dev
-        if dev is None:
-            link.retry_at = time.monotonic() + RETRY_S
-    if stale and dev is not None:
-        _close(dev)
+            if dev is None:
+                link.retry_at = time.monotonic() + RETRY_S
+    if stale:
+        if dev is not None:
+            _close(dev)
+        with link.lock:
+            link.creating = False       # only now: the next create takes the same device index
     elif error is not None:
         _failed(i, error)
     elif dev is not None:
@@ -212,12 +223,11 @@ def release(i: int) -> None:
         link.muted = bool(link.contacts)
         link.click = False
         if link.live:
-            down, held = link.queue[-1] if link.queue else link.sent
+            down, held = link.tail
             if down:
-                link.queue.append((tuple(c._replace(palm=True) for c in down), False))
+                _queue(link, (tuple(c._replace(palm=True) for c in down), False))
             if down or held:
-                link.queue.append(NOTHING)
-                wake.set()
+                _queue(link, NOTHING)
 
 
 def forget(i: int) -> None:
@@ -247,8 +257,7 @@ def step(i: int) -> bool:
             dev.submit(*frame)
             last = frame
     except Exception as e:  # noqa: BLE001 - the device is gone or refused the report: back to the old mouse
-        if link.dev is dev:      # not a device another thread has just removed
-            _drop(link, RETRY_S)
+        if _drop(link, RETRY_S, only=dev):      # False: another thread has just removed this device
             _failed(i, e)
         return False
     with link.lock:
@@ -265,15 +274,29 @@ def _close(dev: Any) -> None:
         print(f"Virtual touchpad close failed: {e!r}")
 
 
-def _drop(link: Link, retry_s: float) -> None:
-    """Detach and remove the device of a link."""
+def _drop(link: Link, retry_s: float, only: Any = None) -> bool:
+    """Detach and remove the device of a link, and disown one still being created.
+
+    Args:
+        link: The link.
+        retry_s: How long before the next create may start.
+        only: Do nothing unless this is still the link's device.
+
+    Returns:
+        False when `only` was given and the link has another device (or none) by now.
+    """
     with link.lock:
+        if only is not None and link.dev is not only:
+            return False
         dev, link.dev = link.dev, None
-        link.live, link.click, link.sent = False, False, NOTHING
+        link.live, link.click = False, False
+        link.sent = link.tail = NOTHING
         link.queue.clear()
         link.retry_at = time.monotonic() + retry_s
+        link.gen += 1
     if dev is not None:
         _close(dev)
+    return True
 
 
 def reset_devices() -> None:

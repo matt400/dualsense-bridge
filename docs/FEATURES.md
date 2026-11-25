@@ -196,7 +196,7 @@
   | Shortcut | Action |
   |---|---|
   | PS + Share | screenshot |
-  | PS + d-pad up / down | mouse sensitivity |
+  | PS + d-pad up / down | mouse sensitivity (not with the virtual touchpad) |
   | PS + d-pad left / right | profile change |
   | long PS | Xbox Game Bar or Steam Big Picture |
 
@@ -249,7 +249,7 @@
   - **Console mode:** you pick the pad button by pressing it on the pad, times are number fields, audio devices are
     lists of active Windows outputs, "Test" turns the mode on for 10 s with the values from the window. Changing console
     mode saves `console.json` and restarts the receiver (unsaved remap profile changes are lost);
-  - **Mouse:** sensitivity and touchpad click stabilisation;
+  - **Mouse:** sensitivity and touchpad click stabilisation (with the virtual touchpad: a note, Windows sets them);
   - **Master:** the master pad, what only it is allowed, action buttons. Mouse and master take effect immediately,
     without a restart (`settings.json`);
   - **Lightbar:** colour per pad / default, mode, blinking, low battery threshold (immediately). The pad list sits at the top of the tab with a **Default settings** checkbox: on = you edit what pads without their own setting get, off = you edit the chosen pad (its first change makes a copy of the defaults; the reset button next to the list drops the pad's own setting);

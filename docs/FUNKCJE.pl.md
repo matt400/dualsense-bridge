@@ -190,7 +190,7 @@
   | Skrót | Działanie |
   |---|---|
   | PS + Share | zrzut ekranu |
-  | PS + d-pad góra / dół | czułość myszy |
+  | PS + d-pad góra / dół | czułość myszy (nie przy wirtualnym touchpadzie) |
   | PS + d-pad lewo / prawo | zmiana profilu |
   | długie PS | Xbox Game Bar albo Steam Big Picture |
 
@@ -242,7 +242,7 @@
   - **Tryb konsoli:** przycisk pada wybierasz naciśnięciem go na padzie, czasy to pola liczbowe, urządzenia audio to
     listy aktywnych wyjść Windows, „Przetestuj” włącza tryb na 10 s z wartościami z okna. Zmiana trybu konsoli zapisuje
     `console.json` i restartuje receiver (niezapisane zmiany profilu remapowania przepadają);
-  - **Mysz:** czułość i stabilizacja kliknięcia touchpada;
+  - **Mysz:** czułość i stabilizacja kliknięcia touchpada (przy wirtualnym touchpadzie: informacja, ustawia je Windows);
   - **Master:** pad master, co wolno tylko jemu, przyciski akcji. Mysz i master działają od razu, bez restartu
     (`settings.json`);
   - **Lightbar:** kolor per pad / domyślny, tryb, miganie, próg niskiej baterii (od razu). Lista padów jest na samej górze zakładki z checkboxem **Ustawienia domyślne**: włączony = edytujesz to, co dostają pady bez własnego ustawienia, wyłączony = edytujesz wybrany pad (pierwsza zmiana robi kopię domyślnych; przycisk obok listy kasuje własne ustawienie pada);
