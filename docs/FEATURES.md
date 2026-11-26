@@ -38,8 +38,12 @@
   never through the DualSense HID report.
 - **DSU server (Cemuhook)** with motion and touch for emulators (Cemu, Yuzu/Ryujinx, Dolphin) on this PC; an emulator
   on another device needs `dsu_bind = "0.0.0.0"`.
-- **Touchpad as mouse:** cursor, tap = left button, two-finger scrolling, two-finger tap = right button.
-  Toggle: PS + touchpad click. A physical click doesn't move the cursor: movement from the last ~80 ms before the
+- **Touchpad as mouse:** toggle with PS + touchpad click. With HIDMaestro (2.4.0+) the touchpad is handed to a
+  **virtual Windows precision touchpad**: cursor, taps, scrolling, zoom and the click are Windows' own, set in Windows
+  Settings → Touchpad. It appears on the first touch (until it is ready, and when it can't be created, the old mouse
+  below works). If Windows is set to turn the touchpad off while a mouse is connected, keep it on there.
+- **Touchpad as mouse without HIDMaestro** (ViGEmBus): cursor, tap = left button, two-finger scrolling, two-finger tap =
+  right button. A physical click doesn't move the cursor: movement from the last ~80 ms before the
   click is undone, the cursor stays still for ~150 ms after pressing and releasing, and dragging with the click held
   starts only after a clear finger movement. Sensitivity and these timings: Settings → Mouse (takes effect immediately).
 - **One window for everything** (PySide6, tray icon):
@@ -192,7 +196,7 @@
   | Shortcut | Action |
   |---|---|
   | PS + Share | screenshot |
-  | PS + d-pad up / down | mouse sensitivity |
+  | PS + d-pad up / down | mouse sensitivity (not with the virtual touchpad) |
   | PS + d-pad left / right | profile change |
   | long PS | Xbox Game Bar or Steam Big Picture |
 
@@ -245,7 +249,7 @@
   - **Console mode:** you pick the pad button by pressing it on the pad, times are number fields, audio devices are
     lists of active Windows outputs, "Test" turns the mode on for 10 s with the values from the window. Changing console
     mode saves `console.json` and restarts the receiver (unsaved remap profile changes are lost);
-  - **Mouse:** sensitivity and touchpad click stabilisation;
+  - **Mouse:** sensitivity and touchpad click stabilisation (with the virtual touchpad: a note, Windows sets them);
   - **Master:** the master pad, what only it is allowed, action buttons. Mouse and master take effect immediately,
     without a restart (`settings.json`);
   - **Lightbar:** colour per pad / default, mode, blinking, low battery threshold (immediately). The pad list sits at the top of the tab with a **Default settings** checkbox: on = you edit what pads without their own setting get, off = you edit the chosen pad (its first change makes a copy of the defaults; the reset button next to the list drops the pad's own setting);

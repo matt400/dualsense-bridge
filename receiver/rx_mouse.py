@@ -9,6 +9,9 @@ on the sensor, which makes the cursor "run away" from the target:
           acceleration treats them the same way, so the cursor returns to the same spot)
   freeze  for click_freeze_ms after the press and after the release the movement is ignored
   drag    while the click is held the cursor starts moving only after drag_threshold units (a deliberate drag)
+
+This is the path without HIDMaestro (ViGEmBus). With it, rx_vtouch hands the touchpad to a virtual Windows precision
+touchpad, and the click and mouse packets of that slot are left to Windows.
 """
 from __future__ import annotations
 
@@ -18,6 +21,7 @@ from typing import Final
 
 import rx_settings
 import rx_state as S
+import rx_vtouch
 import rx_winapi as W
 from proto import MOUSE_SCROLL, MOUSE_TAP, MOUSE_TAP_ID_SHIFT, MOUSE_TAP_RIGHT
 from rx_config import C
@@ -62,7 +66,8 @@ rx_settings.on_change(_settings_changed)
 
 def reset(i: int) -> None:
     """Release the button and clear the fractional remainders (pad disconnect, mode change)."""
-    mouse_button(i, 0)
+    rx_vtouch.release(i)
+    _button(i, 0)
     mrem[i] = [0.0, 0.0]
     srem[i] = [0.0, 0.0]
     hist[i].clear()
@@ -147,6 +152,8 @@ def _move(i: int, dx: int, dy: int) -> None:
 
 def mouse_rel(i: int, dx: int, dy: int, flags: int) -> None:
     """Handle a T_MOUSE packet of pad i: taps (once per tap number), two-finger scrolling or cursor movement."""
+    if rx_vtouch.live(i):
+        return                              # Windows reads the fingers itself
     if flags & (MOUSE_TAP | MOUSE_TAP_RIGHT) and not _tap(i, flags):
         return
     if not (dx or dy):
@@ -170,8 +177,16 @@ def _rewind(i: int, now: float) -> None:
 def mouse_button(i: int, btn: int) -> None:
     """Physical touchpad click: 0 = release, 1 = left, 2 = right.
 
-    Changing the button while one is held releases the previous one.
+    The virtual touchpad gets it as its one button (Windows tells left from right by the fingers).
     """
+    if rx_vtouch.click(i, btn != 0):
+        _button(i, 0)                       # a button the old path still holds
+        return
+    _button(i, btn)
+
+
+def _button(i: int, btn: int) -> None:
+    """The SendInput click: changing the button while one is held releases the previous one."""
     cur = mdown[i]
     if btn == cur:
         return

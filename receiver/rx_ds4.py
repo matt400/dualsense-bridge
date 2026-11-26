@@ -38,6 +38,7 @@ else:
 import rx_events as ev
 import rx_feedback as F
 import rx_swap
+import rx_vtouch
 import rx_xbox
 import rx_haptics
 import rx_hm
@@ -293,6 +294,7 @@ def backend_changed(old: rx_settings.Settings, new: rx_settings.Settings) -> Non
         rx_hm.reset()
         _hm_warned = None
         gen += 1
+        rx_vtouch.reset_devices()
     if old.vpad != new.vpad and S.wake:
         for w in S.wake:
             w.set()
@@ -328,6 +330,7 @@ def hm_installed(tag: str) -> None:
     if rx_hm.loaded() is None:
         rx_hm.reset()
         _hm_warned = None
+        rx_vtouch.reset_devices()      # the touchpad mouse may try the driver at once
         ev.info(_("HIDMaestro {v} pobrany - pady przejdą na DualSense przy następnym połączeniu").format(v=tag))
     else:
         ev.info(_("HIDMaestro {v} pobrany - zadziała po restarcie receivera").format(v=tag))
@@ -348,6 +351,22 @@ def hm_backend() -> rx_hm.Backend | None:
         return None
     hm_note = None
     return b
+
+
+def touchpad_allowed() -> bool:
+    """Whether the settings let the touchpad mouse use the driver (the ViGEmBus choice keeps the old mouse)."""
+    return rx_settings.cur.vpad.backend != "vigem"
+
+
+def hm_loaded() -> bool:
+    """Whether HIDMaestro is loaded in this process."""
+    return rx_hm.loaded() is not None
+
+
+def touchpad(idx: int) -> Any:
+    """Create the virtual precision touchpad of a slot (rx_vtouch's factory, on its own thread); None without HIDMaestro."""
+    hm = hm_backend()
+    return None if hm is None else hm.create_touchpad(idx)
 
 
 def vigem_pad(idx: int) -> Any:

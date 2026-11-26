@@ -16,6 +16,7 @@ import rx_console
 import rx_master
 import rx_settings
 import rx_testmode
+import rx_vtouch
 from rx_config import C
 from rx_i18n import _
 
@@ -65,9 +66,10 @@ def _ps() -> Group:
         items.append(Shortcut(("ps", _s(C.PS_HOLD_S)), _(hold), "ps_hold"))
     if share := SHARE_ACTION.get(C.PS_SHARE_ACTION):
         items.append(Shortcut(("ps", "+", "share"), _(share), "screenshot"))
+    if not rx_vtouch.in_use():          # with the virtual touchpad the speed is a Windows setting
+        items += [Shortcut(("ps", "+", "dpad_up"), _("Czułość myszy touchpada +15 %"), "sens"),
+                  Shortcut(("ps", "+", "dpad_down"), _("Czułość myszy touchpada −15 %"), "sens")]
     items += [
-        Shortcut(("ps", "+", "dpad_up"), _("Czułość myszy touchpada +15 %"), "sens"),
-        Shortcut(("ps", "+", "dpad_down"), _("Czułość myszy touchpada −15 %"), "sens"),
         Shortcut(("ps", "+", "dpad_left"), _("Poprzedni profil pada"), "profile"),
         Shortcut(("ps", "+", "dpad_right"), _("Następny profil pada"), "profile"),
     ]
@@ -76,8 +78,11 @@ def _ps() -> Group:
 
 def _touchpad() -> Group:
     """The touchpad group: switching between mouse and DS4 touch, and the gestures of the mouse mode."""
+    toggle = Shortcut(("ps", "+", "touchpad"), _("Przełącz: mysz ↔ dotyk DS4 (klik touchpada)"), "mouse")
+    if rx_vtouch.in_use():
+        return Group(_("Touchpad"), (toggle,), _("W trybie myszy gesty i klik obsługuje Windows (ustawienia touchpada)."))
     return Group(_("Touchpad"), (
-        Shortcut(("ps", "+", "touchpad"), _("Przełącz: mysz ↔ dotyk DS4 (klik touchpada)"), "mouse"),
+        toggle,
         Shortcut(("touchpad", _("stuknięcie")), _("Mysz: lewy przycisk")),
         Shortcut(("touchpad", _("2 palce")), _("Mysz: prawy przycisk (stuknięcie dwoma palcami)")),
         Shortcut(("touchpad", _("2 palce") + " ↕"), _("Mysz: przewijanie (ruch dwoma palcami)")),

@@ -20,6 +20,7 @@ import rx_hotkeys as hotkeys
 import rx_latency
 import rx_master as master
 import rx_mouse as mouse
+import rx_vtouch as vtouch
 import rx_selftest
 import rx_sender_cfg
 import rx_settings
@@ -460,6 +461,7 @@ def clear_slot(i: int, forget_id: bool = False) -> None:
             S.remap_maps[i] = S.effective_profile(i, S.active[i])
     S.reset_state(i)
     mouse.reset(i)
+    vtouch.forget(i)
     if forget_id:
         master.mouse_follows_master()  # the master left -> the mouse follows mouse_pads
 
@@ -569,7 +571,11 @@ def _on_state(t: int, i: int, data: bytes, arr: int, now: float) -> None:
 
 
 def _on_touch(i: int, data: bytes) -> None:
-    """Touchpad finger positions (two fingers); in the mouse mode they are only remembered, the pointer comes from T_MOUSE."""
+    """Touchpad finger positions (two fingers).
+
+    In the mouse mode the game does not get them: they go to the virtual touchpad (rx_vtouch), and without one the
+    pointer comes from T_MOUSE.
+    """
     v = ST_TOUCH.unpack_from(data, 4)
     if v == S.last_touch[i]:
         return
@@ -584,6 +590,7 @@ def _on_touch(i: int, data: bytes) -> None:
             s["ver"] += 1
     if not S.mouse_mode[i]:
         S.notify(i)
+    vtouch.touch(i, touch, bool(S.mouse_mode[i]) and not testmode.capturing(i))
 
 
 def _on_click(i: int, data: bytes) -> None:

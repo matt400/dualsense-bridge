@@ -37,8 +37,13 @@
   jądra (evdev), nigdy przez raport HID DualSense.
 - **Serwer DSU (Cemuhook)** z ruchem i dotykiem dla emulatorów (Cemu, Yuzu/Ryujinx, Dolphin) na tym komputerze;
   emulator na innym urządzeniu wymaga `dsu_bind = "0.0.0.0"`.
-- **Touchpad jako mysz:** kursor, tap = lewy przycisk, przewijanie dwoma palcami, tap dwoma palcami = prawy przycisk.
-  Przełączanie: PS + klik touchpada. Fizyczny klik nie przesuwa kursora: ruch z ostatnich ~80 ms przed kliknięciem
+- **Touchpad jako mysz:** przełączanie PS + klik touchpada. Z HIDMaestro (2.4.0+) touchpad trafia do
+  **wirtualnego precyzyjnego touchpada Windows**: kursor, tapnięcia, przewijanie, zoom i klik obsługuje Windows, a
+  ustawia się je w Ustawieniach Windows → Touchpad. Pojawia się przy pierwszym dotknięciu (zanim będzie gotowy i gdy nie
+  da się go utworzyć, działa stara mysz opisana niżej). Gdy Windows ma wyłączać touchpad przy podłączonej myszy, zostaw
+  go tam włączony.
+- **Touchpad jako mysz bez HIDMaestro** (ViGEmBus): kursor, tap = lewy przycisk, przewijanie dwoma palcami, tap dwoma
+  palcami = prawy przycisk. Fizyczny klik nie przesuwa kursora: ruch z ostatnich ~80 ms przed kliknięciem
   jest cofany, przez ~150 ms po wciśnięciu i puszczeniu kursor stoi, a przeciąganie z wciśniętym klikiem zaczyna się
   dopiero po wyraźnym ruchu palca. Czułość i te czasy: Ustawienia → Mysz (działa od razu).
 - **Jedno okno do wszystkiego** (PySide6, ikona w zasobniku):
@@ -185,7 +190,7 @@
   | Skrót | Działanie |
   |---|---|
   | PS + Share | zrzut ekranu |
-  | PS + d-pad góra / dół | czułość myszy |
+  | PS + d-pad góra / dół | czułość myszy (nie przy wirtualnym touchpadzie) |
   | PS + d-pad lewo / prawo | zmiana profilu |
   | długie PS | Xbox Game Bar albo Steam Big Picture |
 
@@ -237,7 +242,7 @@
   - **Tryb konsoli:** przycisk pada wybierasz naciśnięciem go na padzie, czasy to pola liczbowe, urządzenia audio to
     listy aktywnych wyjść Windows, „Przetestuj” włącza tryb na 10 s z wartościami z okna. Zmiana trybu konsoli zapisuje
     `console.json` i restartuje receiver (niezapisane zmiany profilu remapowania przepadają);
-  - **Mysz:** czułość i stabilizacja kliknięcia touchpada;
+  - **Mysz:** czułość i stabilizacja kliknięcia touchpada (przy wirtualnym touchpadzie: informacja, ustawia je Windows);
   - **Master:** pad master, co wolno tylko jemu, przyciski akcji. Mysz i master działają od razu, bez restartu
     (`settings.json`);
   - **Lightbar:** kolor per pad / domyślny, tryb, miganie, próg niskiej baterii (od razu). Lista padów jest na samej górze zakładki z checkboxem **Ustawienia domyślne**: włączony = edytujesz to, co dostają pady bez własnego ustawienia, wyłączony = edytujesz wybrany pad (pierwsza zmiana robi kopię domyślnych; przycisk obok listy kasuje własne ustawienie pada);

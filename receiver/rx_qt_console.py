@@ -39,6 +39,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog, QGridLayout, QH
 import rx_audio
 import rx_console
 import rx_settings
+import rx_vtouch
 import rx_state as S
 from rx_buttons import LABELS
 from rx_config import C
@@ -210,7 +211,10 @@ class ConsoleSettings(SafetyTabs, VpadTab, HapticsTab, LightWolTabs, QDialog):
         click = group(_("KLIKNIĘCIE"), self.freeze, self.rewind, self.drag,
                       label(_("0 ms wyłącza daną poprawkę. Gdy kursor wciąż ucieka przy kliknięciu - zwiększ oba czasy; "
                               "gdy przeciąganie (np. okna) rusza za późno - zmniejsz ostatni suwak."), "dim", wrap=True))
-        return [cursor, click, left(dflt)]
+        self.mouse_driver_note = label(_("Z HIDMaestro touchpad działa jako touchpad Windows: czułość i gesty ustawisz w "
+                                         "Ustawieniach Windows → Touchpad."), "dim", wrap=True)
+        self.mouse_old = (cursor, click, dflt)               # the SendInput mouse: only without the virtual touchpad
+        return [self.mouse_driver_note, cursor, click, left(dflt)]
 
     def _window_tab(self) -> list[QWidget | QLayout]:
         """The Window tab: the screen to open on, window / full screen, and the language."""
@@ -359,6 +363,7 @@ class ConsoleSettings(SafetyTabs, VpadTab, HapticsTab, LightWolTabs, QDialog):
         self._load_screens()
         self._load_backups()
         self._load_mouse(rx_settings.cur.mouse)
+        self._show_mouse_path()
         self._load_master(rx_settings.cur.master)
         self._load_light(rx_settings.cur.lightbar)
         self._load_haptics(rx_settings.cur.haptics, rx_settings.cur.speaker)
@@ -438,6 +443,13 @@ class ConsoleSettings(SafetyTabs, VpadTab, HapticsTab, LightWolTabs, QDialog):
                 items.append((current, _("{name} (niedostępne)").format(name=current)))
             combo.set_items(items)
             combo.set_data(current or "")
+
+    def _show_mouse_path(self) -> None:
+        """Show either the note about the virtual touchpad or the settings of the old mouse."""
+        driver = rx_vtouch.in_use()
+        self.mouse_driver_note.setVisible(driver)
+        for w in self.mouse_old:
+            w.setVisible(not driver)
 
     def _load_mouse(self, m: MouseConfig) -> None:
         """Fill the Mouse tab from a MouseConfig."""

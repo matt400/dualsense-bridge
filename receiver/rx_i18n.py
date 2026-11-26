@@ -347,6 +347,12 @@ EN: Final[dict[str, str]] = {
         "changes (Save in the main window) are lost.",
     "Touchpad jako mysz (PS + klik touchpada przełącza). Zmiany działają od razu po zapisie.":
         "Touchpad as a mouse (PS + touchpad click toggles). Changes apply right after saving.",
+    "Z HIDMaestro touchpad działa jako touchpad Windows: czułość i gesty ustawisz w Ustawieniach Windows → Touchpad.":
+        "With HIDMaestro the touchpad works as a Windows touchpad: set the speed and gestures in Windows Settings → Touchpad.",
+    "W trybie myszy gesty i klik obsługuje Windows (ustawienia touchpada).":
+        "In mouse mode Windows handles the gestures and the click (touchpad settings).",
+    "{pad}: wirtualny touchpad nie działa, mysz po staremu ({err})":
+        "{pad}: the virtual touchpad does not work, using the old mouse ({err})",
     "Czułość kursora": "Cursor sensitivity",
     "Kursor stoi po wciśnięciu i puszczeniu kliku [ms]": "Cursor holds still after press and release [ms]",
     "Cofnij ruch sprzed kliknięcia [ms] (docisk palca przesuwa kursor)":

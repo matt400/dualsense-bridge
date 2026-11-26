@@ -99,7 +99,8 @@ The tests cover:
   kernel receive timeout (SO_RCVTIMEO) instead of select() before every packet (`test_receiver_core.py`);
 - virtual pads: HIDMaestro / ViGEmBus backend and switching between them at runtime, placeholder pad for fixed
   player order, DualSense report, feedback from the DualSense output report (`test_vpad.py`, the Pads tab in
-  `test_settings_gui.py`), downloading HIDMaestro via HTTP Range, versions, zip / network errors and running as
+  `test_settings_gui.py`), the virtual touchpad: switching from the old mouse, lifting without a tap, failures
+  (`test_vtouch.py`; its .NET side in `test_hm_il.py`, which needs pythonnet and `HM_DLL`), downloading HIDMaestro via HTTP Range, versions, zip / network errors and running as
   administrator (`test_hm_update.py`);
 - security: protocol v3 with a key - freshness token, exact replays, signed v2 always rejected, the sender's PC clock
   after a receiver restart, a replayed ping can't

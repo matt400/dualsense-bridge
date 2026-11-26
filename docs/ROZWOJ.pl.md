@@ -94,6 +94,8 @@ Testy obejmują:
   na `/dev/input` i powtórki bye / poleceń / spustów jako ten sam pakiet rozłożony w czasie (`test_devwatch_tx.py`,
   `test_receiver_core.py`, `test_e2e.py`), odczyt tylko potrzebnych bajtów raportu wyjściowego HIDMaestro (`test_vpad.py`),
   limit czasu odbioru w jądrze (SO_RCVTIMEO) zamiast select() przed każdym pakietem (`test_receiver_core.py`);
+- wirtualny touchpad: przejście ze starej myszy, podnoszenie palców bez tapnięcia, awarie (`test_vtouch.py`; strona
+  .NET w `test_hm_il.py`, który wymaga pythonnet i `HM_DLL`);
 - wirtualne pady: backend HIDMaestro / ViGEmBus i ich zmiana w trakcie, pad zastępczy dla stałej kolejności graczy,
   raport DualSense, feedback z raportu wyjściowego DualSense (`test_vpad.py`, zakładka Pady w `test_settings_gui.py`),
   pobieranie HIDMaestro przez HTTP Range, wersje, błędy zipa / sieci i uruchamianie jako administrator (`test_hm_update.py`);
