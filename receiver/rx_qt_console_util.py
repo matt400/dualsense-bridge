@@ -71,8 +71,15 @@ class TabBase:
     restart: Any
     outputs_listed: Any
     sender_cfg: SenderCfgPanel
+    vpad_backend: Any                       # the Pads tab's backend choice: other tabs grey what it rules out
 
     if TYPE_CHECKING:
+        def _haptics_backend_state(self) -> None:
+            """Grey the Haptics tab when HIDMaestro does not work."""
+
+        def _touchpad_state(self) -> None:
+            """Update the touchpad handling group of the Mouse tab."""
+
         def _status(self, text: str, level: str = "") -> None:
             """Show a message in the window's status line."""
 

@@ -350,6 +350,18 @@ def hm_backend() -> rx_hm.Backend | None:
     return b
 
 
+def no_hm_reason(backend: str) -> str:
+    """Why what only HIDMaestro can do does not work with `backend` (the window's choice, maybe not saved yet); "" when it can.
+
+    "vigem" rules it out by itself. With the other choices the receiver may have fallen back to ViGEm: hm_note then says why.
+    """
+    if backend == "vigem":
+        return _("wybrany backend to ViGEmBus (zakładka Pady)")
+    if hm_note:
+        return _("HIDMaestro nieużywany: {why}").format(why=hm_note)
+    return ""
+
+
 def vigem_pad(idx: int) -> Any:
     """Create a ViGEm virtual DS4 and register its rumble / lightbar callback (a failed registration is only reported)."""
     if vg is None:

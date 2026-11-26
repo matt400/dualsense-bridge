@@ -5,7 +5,7 @@ Nine tabs, in a column on the left (horizontal text, one under another):
   Console mode  the pad button is chosen by pressing it on the pad (rx_console.arm_capture), the audio devices are a list of
                 active Windows outputs (rx_audio, Refresh); "Test" switches the console mode on for a few seconds
                 with the values from the window (not saved yet) and returns to extend by itself
-  Mouse         touchpad cursor sensitivity and click stabilisation (rx_settings.MouseConfig)
+  Mouse         who serves the touchpad (receiver / HIDMaestro driver, rx_ptp), cursor sensitivity and click stabilisation
   Master        the master pad, features only for it, "PS + button" actions (rx_settings.MasterConfig, rx_master)
   Lightbar      the colour when a game set nothing (solid / by battery) and low battery blinking - per pad (MAC)
                 or the default for all; the low battery threshold (the same drives the warning on the pad card)
@@ -38,6 +38,9 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog, QGridLayout, QH
 
 import rx_audio
 import rx_console
+import rx_ds4
+import rx_hm
+import rx_ptp
 import rx_settings
 import rx_state as S
 from rx_buttons import LABELS
@@ -51,8 +54,8 @@ from rx_qt_sendercfg import SenderCfgPanel
 from rx_qt_style import set_prop
 from rx_qt_widgets import (Combo, SideTabs, SliderRow, button, field, group, icon_label, input_items,
                            label, left, pair, spinbox)
-from rx_settings import (ABSENT, COMBO_BUTTONS, MASTER_ACTIONS, MASTER_FEATURES,
-                         MOUSE_LIMITS, HapticsConfig, LightbarConfig,
+from rx_settings import (ABSENT, COMBO_BUTTONS, MASTER_ACTIONS, MASTER_FEATURES, MOUSE_LIMITS, TOUCHPAD_ENGINES,
+                         HapticsConfig, LightbarConfig,
                          MasterConfig, MouseConfig, SpeakerConfig)
 from rx_qt_console_haptics import HapticsTab
 from rx_qt_console_light import LightWolTabs
@@ -203,6 +206,14 @@ class ConsoleSettings(SafetyTabs, VpadTab, HapticsTab, LightWolTabs, QDialog):
         self.drag = SliderRow(_("Przeciąganie z wciśniętym klikiem zaczyna się po (jednostki touchpada)"), *lim["drag_threshold"], 5)
         dflt = button(_("Domyślne"), small=True)
         dflt.clicked.connect(lambda: self._load_mouse(MouseConfig(sens=C.MOUSE_SENS)))
+        self.tp_engine = Combo([(k, _(v)) for k, v in TOUCHPAD_ENGINES.items()])
+        self.tp_engine.changed.connect(lambda _v: self._touchpad_state())
+        self.tp_note = label("", wrap=True)
+        set_prop(self.tp_note, "level", "warn")
+        self.tp_info = label(_("Kursor, stuknięcia, przewijanie i gesty obsługuje Windows: Ustawienia → Bluetooth i urządzenia "
+                               "→ Touchpad. Poniższe suwaki i PS + ↑ / ↓ dotyczą tylko obsługi receivera."), "dim", wrap=True)
+        engine = group(_("OBSŁUGA TOUCHPADA"), field(_("Touchpad w trybie myszy obsługuje"), self.tp_engine),
+                       self.tp_note, self.tp_info)
         cursor = group(_("KURSOR"),
                        label(_("Touchpad jako mysz (PS + klik touchpada przełącza). Zmiany działają od razu po zapisie."),
                              "dim", wrap=True),
@@ -210,7 +221,29 @@ class ConsoleSettings(SafetyTabs, VpadTab, HapticsTab, LightWolTabs, QDialog):
         click = group(_("KLIKNIĘCIE"), self.freeze, self.rewind, self.drag,
                       label(_("0 ms wyłącza daną poprawkę. Gdy kursor wciąż ucieka przy kliknięciu - zwiększ oba czasy; "
                               "gdy przeciąganie (np. okna) rusza za późno - zmniejsz ostatni suwak."), "dim", wrap=True))
-        return [cursor, click, left(dflt)]
+        self._own_mouse_widgets: tuple[QWidget, ...] = (cursor, click, dflt)
+        return [engine, cursor, click, left(dflt)]
+
+    def _touchpad_state(self) -> None:
+        """Warn when the driver's touchpad cannot work (the receiver's own mouse then does), and grey what has no effect.
+
+        The driver cannot be picked without HIDMaestro; a stored "driver" choice stays changeable. The sliders are grey only
+        while the driver really would serve the touchpad.
+        """
+        backend = self.vpad_backend.currentData()
+        why = rx_ds4.no_hm_reason(backend)
+        if not why and rx_hm.find_dll(self.vpad_dll.text().strip()) is None:
+            why = _("brak HIDMaestro.Core.dll")
+        driver = self.tp_engine.currentData() == "driver"
+        if not why and driver:
+            why = rx_ptp.error
+        self.tp_engine.setEnabled(not why or driver)
+        self.tp_note.setText(("⚠  " + _("Sterownik HIDMaestro jest niedostępny - touchpad obsługuje receiver. Powód: {why}")
+                              .format(why=why)) if why else "")
+        self.tp_note.setVisible(bool(why))
+        self.tp_info.setVisible(driver and not why)
+        for w in self._own_mouse_widgets:
+            w.setEnabled(not (driver and not why))
 
     def _window_tab(self) -> list[QWidget | QLayout]:
         """The Window tab: the screen to open on, window / full screen, and the language."""
@@ -359,6 +392,7 @@ class ConsoleSettings(SafetyTabs, VpadTab, HapticsTab, LightWolTabs, QDialog):
         self._load_screens()
         self._load_backups()
         self._load_mouse(rx_settings.cur.mouse)
+        self.tp_engine.set_data(rx_settings.cur.mouse.engine)
         self._load_master(rx_settings.cur.master)
         self._load_light(rx_settings.cur.lightbar)
         self._load_haptics(rx_settings.cur.haptics, rx_settings.cur.speaker)
@@ -440,7 +474,7 @@ class ConsoleSettings(SafetyTabs, VpadTab, HapticsTab, LightWolTabs, QDialog):
             combo.set_data(current or "")
 
     def _load_mouse(self, m: MouseConfig) -> None:
-        """Fill the Mouse tab from a MouseConfig."""
+        """Fill the Mouse tab from a MouseConfig (the engine is loaded separately: "Default" keeps it)."""
         self.sens.set(m.sens)
         self.freeze.set(m.click_freeze_ms)
         self.rewind.set(m.click_rewind_ms)
@@ -475,7 +509,8 @@ class ConsoleSettings(SafetyTabs, VpadTab, HapticsTab, LightWolTabs, QDialog):
         The log settings stay as they are.
         """
         mouse = MouseConfig(sens=round(self.sens.value(), 2), click_freeze_ms=round(self.freeze.value()),
-                            click_rewind_ms=round(self.rewind.value()), drag_threshold=round(self.drag.value()))
+                            click_rewind_ms=round(self.rewind.value()), drag_threshold=round(self.drag.value()),
+                            engine=self.tp_engine.currentData())
         # a master left unchanged in this window stays the current one: the crown on the pad card or PS + R3 while Settings is open
         # must not be undone by Save (e.g. when only the mouse is changed)
         pad = (self.master_pad.currentData() or "") if self._master_touched else rx_settings.cur.master.pad

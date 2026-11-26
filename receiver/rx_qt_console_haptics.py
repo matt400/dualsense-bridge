@@ -6,12 +6,14 @@ from typing import Any
 from rx_i18n import _
 from PySide6.QtWidgets import (QCheckBox, QLayout, QWidget)
 
+import rx_ds4
 import rx_eq
 import rx_haptics
 import rx_speaker
 import rx_state as S
 from rx_config import C
 from rx_qt_padscope import PadScope
+from rx_qt_style import set_prop
 from rx_qt_widgets import (Combo, SliderRow, button, field, group, label, pair, spinbox)
 from rx_settings import (DEFAULT_PAD, HAPTICS_GAIN, SPEAKER_GAIN, HapticsConfig, PadHaptics, PadSpeaker, SpeakerConfig)
 
@@ -38,6 +40,8 @@ class HapticsTab(TabBase):
         self.hap_test = button(_("Test haptyki"))
         self.hap_test.clicked.connect(self._test_haptics)
         self.hap_note = label("", "dim", wrap=True)
+        self.hap_backend_note = label("", wrap=True)
+        set_prop(self.hap_backend_note, "level", "warn")
         self.spk_on = QCheckBox(_("Głośnik pada (dźwięk gry) na tym padzie"))
         self.spk_on.toggled.connect(self._haptics_edited)
         self.spk_gain = spinbox(*SPEAKER_GAIN, 5, " %")
@@ -72,7 +76,7 @@ class HapticsTab(TabBase):
                         label(_("Korektor działa na dźwięk gry przed wysłaniem na głośnik pada i ma to samo ustawienie "
                                 "własne / domyślne co pad. Test głośnika gra z pokazanymi ustawieniami."), "dim", wrap=True),
                         label(_("Zmiana włączenia działa po ponownym połączeniu pada; głośność - od razu."), "dim", wrap=True))
-        return [group("", self.hap_scope), box, speaker]
+        return [group("", self.hap_scope), self.hap_backend_note, box, speaker]
 
     def _haptics_scope_changed(self, key: str) -> None:
         """The user flipped "Default settings" or picked another pad on the Haptics tab: remember it and show that entry."""
@@ -116,6 +120,19 @@ class HapticsTab(TabBase):
             if S.pad_id[i] and S.alive[i] and S.profile_key(i) == self._haptics_key:
                 return i
         return None
+
+    def _haptics_backend_state(self) -> None:
+        """Game haptics and the speaker need HIDMaestro's composite pad: without it grey their settings and say why.
+
+        The test buttons stay usable: their sound goes straight to the sender, no virtual pad is involved.
+        """
+        why = rx_ds4.no_hm_reason(self.vpad_backend.currentData())
+        game: tuple[QWidget, ...] = (self.hap_on, self.hap_gain, self.spk_on, self.spk_gain, self.eq_preset, *self.eq_rows)
+        for w in game:
+            w.setEnabled(not why)
+        self.hap_backend_note.setText(_("Haptyka i głośnik z gry wymagają HIDMaestro (pad USB composite) - {why}. Testy działają.")
+                                      .format(why=why) if why else "")
+        self.hap_backend_note.setVisible(bool(why))
 
     def _haptics_enable(self) -> None:
         """Enable the test buttons only for a connected pad; say when the pad cannot play haptics / the speaker."""

@@ -30,6 +30,7 @@ class VpadTab(TabBase):
         self.vpad_dll = QLineEdit()
         self.vpad_dll.setPlaceholderText(_("automatycznie"))
         self.vpad_now = label("", "dim", wrap=True)
+        self.vpad_limits = label("", "dim", wrap=True)
         self.vpad_admin = button(_("Uruchom ponownie jako administrator"), small=True)
         self.vpad_admin.setIcon(icon("shield"))
         self.vpad_admin.clicked.connect(self.elevate.emit)
@@ -65,7 +66,7 @@ class VpadTab(TabBase):
                         field(_("Backend"), self.vpad_backend),
                         self.vpad_auto,
                         field(_("Własna HIDMaestro.Core.dll (plik albo folder; puste = pobrana automatycznie)"), self.vpad_dll),
-                        self.vpad_now, row_of(self.vpad_check, self.vpad_net, self.vpad_admin, self.vpad_restart))
+                        self.vpad_limits, self.vpad_now, row_of(self.vpad_check, self.vpad_net, self.vpad_admin, self.vpad_restart))
         self.pads_mode = Combo([("dynamic", _("Dynamiczna: tylko podłączone pady")), ("fixed", _("Stała: zawsze te same sloty"))])
         self.pads_mode.changed.connect(lambda _v: self._pads_view_state())
         self.pads_count = spinbox(PADS_COUNT[0], min(PADS_COUNT[1], C.NUM_PADS))
@@ -120,7 +121,7 @@ class VpadTab(TabBase):
 
     def _hm_check(self) -> None:
         """Download the pinned HIDMaestro in the background if it is not on disk (minutes); the state is refreshed every 0.5 s."""
-        threading.Thread(target=rx_hm_update.check, name="hidmaestro check", daemon=True).start()
+        threading.Thread(target=rx_hm_update.refresh, name="hidmaestro check", daemon=True).start()
         self._hm_timer.start()
         self._vpad_state(busy=True)
 
@@ -136,6 +137,16 @@ class VpadTab(TabBase):
         threading.Thread(target=run, name="dotnet install", daemon=True).start()
         self._hm_timer.start()
         self._vpad_state()
+
+    def _vpad_limits(self, backend: str) -> None:
+        """Say what games lose without HIDMaestro (and why the HIDMaestro fields are grey under the ViGEmBus choice)."""
+        why = rx_ds4.no_hm_reason(backend)
+        text = _("Bez HIDMaestro gra nie ustawi spustów adaptacyjnych, diod gracza ani diody mute i nie zagra haptyką ani "
+                 "głośnikiem pada.") if why else ""
+        if backend == "vigem":
+            text = _("Ustawienia HIDMaestro są nieaktywne: wybrany backend to ViGEmBus.") + " " + text
+        self.vpad_limits.setText(text)
+        self.vpad_limits.setVisible(bool(text))
 
     def _vpad_state(self, busy: bool = False) -> None:
         """What works now: the kind of plugged pads.
@@ -162,6 +173,11 @@ class VpadTab(TabBase):
             self._hm_timer.stop()
         self.sender_cfg.stop()
         self.vpad_check.setEnabled(not busy and backend != "vigem")
+        self.vpad_auto.setEnabled(backend != "vigem")
+        self.vpad_dll.setEnabled(backend != "vigem")
+        self._vpad_limits(backend)
+        self._haptics_backend_state()
+        self._touchpad_state()
         if backend != "vigem" and rx_ds4.hm_note:
             lines.append(_("HIDMaestro nieużywany: {why}").format(why=rx_ds4.hm_note))
         need_admin = backend != "vigem" and not rx_winapi.is_admin()

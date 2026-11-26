@@ -113,6 +113,7 @@ QToolButton#crown:hover {{ background: {TRACK}; }}
 QComboBox, QLineEdit, QSpinBox, QPlainTextEdit {{ background: {TRACK}; border: 1px solid {LINE}; border-radius: {p(8)};
                        padding: {p(6)} {p(10)}; selection-background-color: {ACCENT}; selection-color: #ffffff; }}
 QComboBox:hover, QComboBox:focus, QLineEdit:focus, QSpinBox:focus, QPlainTextEdit:focus {{ border-color: {ACCENT}; }}
+QComboBox:disabled, QLineEdit:disabled, QSpinBox:disabled {{ color: {MUTED}; background: transparent; border-color: {BORDER}; }}
 QSpinBox::up-button, QSpinBox::down-button {{ width: {p(18)}; border: none; background: transparent; }}
 QComboBox::drop-down {{ border: none; width: {p(22)}; }}
 QComboBox QAbstractItemView {{ background: {CARD_HI}; border: 1px solid {LINE}; selection-background-color: {ACCENT};
@@ -123,6 +124,9 @@ QCheckBox {{ spacing: {p(8)}; }}
 QCheckBox::indicator {{ width: {p(16)}; height: {p(16)}; border-radius: {p(4)}; border: 1px solid #4a5062; background: {TRACK}; }}
 QCheckBox::indicator:checked {{ background: {ACCENT}; border-color: {ACCENT}; }}
 QCheckBox:focus {{ color: {ACCENT_HI}; }}
+QCheckBox:disabled, QLabel:disabled {{ color: {MUTED}; }}
+QCheckBox::indicator:disabled {{ background: transparent; border-color: {BORDER}; }}
+QCheckBox::indicator:checked:disabled {{ background: {MUTED}; border-color: {MUTED}; }}
 
 QSlider {{ min-height: {p(18)}; }}
 QSlider::groove:horizontal {{ height: {p(4)}; border-radius: {p(2)}; background: {LINE}; }}

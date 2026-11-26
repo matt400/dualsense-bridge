@@ -34,6 +34,7 @@ import rx_master
 import rx_profiles as P
 import rx_state as S
 import rx_settings
+import rx_hm_update
 import rx_update
 import rx_status as ST
 import rx_testmode
@@ -607,8 +608,8 @@ class MainWindow(UpdateFlow, ScreenPlacement):
     def _banner(self) -> QFrame:
         """A bar under the header, visible only when there is something to do.
 
-        A new version on GitHub and / or a sender on a different version than the receiver. A text with a description (not
-        colour alone). The update itself is started with the header button.
+        A new version on GitHub (of the project or of HIDMaestro) and / or a sender on a different version than the
+        receiver. A text with a description (not colour alone). The update itself is started with the header button.
         """
         bar = QFrame()
         bar.setObjectName("banner")
@@ -635,6 +636,9 @@ class MainWindow(UpdateFlow, ScreenPlacement):
         if stale:
             lines.append("⚠  " + _("Nadajnik ma inną wersję ({s}) niż receiver ({r}) - Aktualizuj pobierze tę samą na obu")
                          .format(s=stale[0], r=stale[1]))
+        if rx_settings.cur.vpad.backend != "vigem" and (hm := rx_hm_update.newer_release()):
+            lines.append("⬆  " + _("Nowa wersja HIDMaestro: {v} (receiver używa przypiętej {p}) - przyjdzie z aktualizacją "
+                                   "receivera").format(v=hm, p=rx_hm_update.PINNED_TAG))
         sig = tuple(lines)
         if sig == self._banner_sig:
             return
