@@ -87,13 +87,18 @@ class MouseConfig:
     click_rewind_ms: int = 80       # movement from the last this-many ms before the click is undone (the cursor returns to where you aimed)
     drag_threshold: int = 60        # while a click is held the cursor starts moving (a drag) only after this many touchpad units
 
+    engine: str = "receiver"        # who serves the touchpad in the mouse mode: TOUCHPAD_ENGINES (driver: rx_ptp)
+
     V: ClassVar[Validators]          # validators - assigned below (a class attribute, not an instance field)
 
+
+TOUCHPAD_ENGINES: Final = {"receiver": "Receiver (mysz bez sterownika)", "driver": "Sterownik HIDMaestro (touchpad Windows)"}
 
 # ranges shared by settings.json validation and the sliders in the settings window (a slider narrower than the validation would clip the
 # saved value)
 MOUSE_LIMITS: Final = {"sens": (0.05, 5.0), "click_freeze_ms": (0, 600), "click_rewind_ms": (0, 300), "drag_threshold": (0, 600)}
-MouseConfig.V = {k: _num(lo, hi, float if k == "sens" else int) for k, (lo, hi) in MOUSE_LIMITS.items()}
+MouseConfig.V = {**{k: _num(lo, hi, float if k == "sens" else int) for k, (lo, hi) in MOUSE_LIMITS.items()},
+                 "engine": _choice(TOUCHPAD_ENGINES)}
 
 # ---------------- master pad ----------------
 # what can be reserved for the master only: key -> (label in the window, icon from rx_qt_icons); order = order in the window

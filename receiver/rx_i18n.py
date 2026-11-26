@@ -169,6 +169,28 @@ EN: Final[dict[str, str]] = {
     "profil: {name}": "profile: {name}",
     "domyślny": "default",
     "Touchpad jako mysz": "Touchpad as mouse",
+    "Receiver (mysz bez sterownika)": "Receiver (mouse without a driver)",
+    "Sterownik HIDMaestro (touchpad Windows)": "HIDMaestro driver (Windows touchpad)",
+    "OBSŁUGA TOUCHPADA": "TOUCHPAD HANDLING",
+    "Touchpad w trybie myszy obsługuje": "In mouse mode the touchpad is handled by",
+    "Kursor, stuknięcia, przewijanie i gesty obsługuje Windows: Ustawienia → Bluetooth i urządzenia → Touchpad. Poniższe "
+    "suwaki i PS + ↑ / ↓ dotyczą tylko obsługi receivera.":
+        "Windows handles the cursor, taps, scrolling and gestures: Settings → Bluetooth & devices → Touchpad. The sliders "
+        "below and PS + ↑ / ↓ only apply to the receiver's own handling.",
+    "brak HIDMaestro.Core.dll": "HIDMaestro.Core.dll is missing",
+    "Sterownik HIDMaestro jest niedostępny - touchpad obsługuje receiver. Powód: {why}":
+        "The HIDMaestro driver is unavailable - the receiver handles the touchpad. Reason: {why}",
+    "Touchpad ze sterownika niedostępny - działa obsługa receivera: {why}":
+        "Driver touchpad unavailable - the receiver handles it: {why}",
+    "Nowa wersja HIDMaestro: {v} (receiver używa przypiętej {p}) - przyjdzie z aktualizacją receivera":
+        "New HIDMaestro version: {v} (the receiver uses the pinned {p}) - it arrives with a receiver update",
+    "wybrany backend to ViGEmBus (zakładka Pady)": "the selected backend is ViGEmBus (Pads tab)",
+    "Haptyka i głośnik z gry wymagają HIDMaestro (pad USB composite) - {why}. Testy działają.":
+        "Game haptics and speaker need HIDMaestro (USB composite pad) - {why}. The tests work.",
+    "Bez HIDMaestro gra nie ustawi spustów adaptacyjnych, diod gracza ani diody mute i nie zagra haptyką ani głośnikiem pada.":
+        "Without HIDMaestro a game cannot set adaptive triggers, player LEDs or the mute LED, nor play haptics or the pad speaker.",
+    "Ustawienia HIDMaestro są nieaktywne: wybrany backend to ViGEmBus.":
+        "HIDMaestro settings are inactive: the selected backend is ViGEmBus.",
     "Touchpad jako dotyk DS4": "Touchpad as DS4 touch",
     "Ustawienia": "Settings",
     "Tryb konsoli, mysz touchpada, pad master, okno, język": "Console mode, touchpad mouse, master pad, window, language",

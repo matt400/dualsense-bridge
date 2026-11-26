@@ -28,6 +28,7 @@ again, and after a restart the previous version loads. Delete state.json to try 
   mark_bad()        a version that failed to load: skipped from now on, the previous one takes over after a restart
   restart_tag()     the version a receiver restart would load instead of the one in use (the window offers the restart)
   check()           make sure the pinned version is on disk (download it when it is not) -> Status
+  check_newer()     the latest release on GitHub, for the notice under the window header only (never downloaded)
   thread()          the receiver thread: a check after startup and then hourly (a failed download is retried)
 """
 from __future__ import annotations
@@ -57,6 +58,7 @@ DEPS: Final = ("Microsoft.Windows.SDK.NET.dll", "WinRT.Runtime.dll")   # Windows
 LICENSE: Final = "LICENSE"
 NOTICES: Final = "THIRD-PARTY-NOTICES.txt"
 EXTRAS: Final = (LICENSE, NOTICES)
+LATEST_URL: Final = f"https://api.github.com/repos/{REPO}/releases/latest"
 PIN_FILE: Final = "hm_pin.json"
 STATE_FILE: Final = "state.json"            # in hidmaestro/: {"bad": {tag: why}} - versions that failed to load
 KEEP: Final = 2                             # versions kept on disk: the newest and the one to roll back to
@@ -87,6 +89,7 @@ class Status:
 status = Status()
 _lock = threading.Lock()
 _lock_state = threading.Lock()
+upstream = ""                                # the latest release tag GitHub reported (check_newer), "" = not asked / unknown
 failed_tag = ""                              # the version that failed to load in this process (set by rx_hm), "" = none
 # fn(version) after a new version is downloaded (rx_ds4: HIDMaestro from the next pad connection)
 on_installed: Callable[[str], None] | None = None
@@ -487,6 +490,33 @@ def _check() -> None:
         on_installed(tag)
 
 
+def check_newer(opener: Callable[..., Any] | None = None) -> str:
+    """Ask GitHub for the latest HIDMaestro release - only to tell the user; nothing newer than the pin is ever downloaded.
+
+    A failed request (offline, rate limit, an unexpected answer) keeps what was known. -> the latest tag, "" = unknown.
+    """
+    global upstream
+    try:
+        with (opener or _get)(LATEST_URL) as r:
+            tag = json.load(r).get("tag_name")
+        if isinstance(tag, str) and version_key(tag) is not None:
+            upstream = tag
+    except (OSError, ValueError, AttributeError) as e:
+        print(f"HIDMaestro latest release unknown: {e!r}")
+    return upstream
+
+
+def newer_release() -> str:
+    """The latest release on GitHub when it is newer than the pinned one, else ""."""
+    return upstream if version_tuple(upstream) > version_tuple(PINNED_TAG) and PINNED_TAG else ""
+
+
+def refresh() -> None:
+    """One round of the receiver thread and of "Check now": the pinned version on disk, then what GitHub has."""
+    check()
+    check_newer()
+
+
 def thread(stop: threading.Event, enabled: Callable[[], bool]) -> None:
     """Run the receiver thread; enabled() tells whether downloading is allowed (the settings may change meanwhile)."""
     refresh_status()
@@ -496,6 +526,6 @@ def thread(stop: threading.Event, enabled: Callable[[], bool]) -> None:
         return
     while not stop.is_set():
         if enabled():
-            check()
+            refresh()
         if stop.wait(WATCH_EVERY_S):
             return

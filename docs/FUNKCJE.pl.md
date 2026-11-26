@@ -24,6 +24,10 @@
   | Serwer DSU, touchpad jako mysz, profile, remap, skróty | ✅ | ✅ |
   | Wymaga | administratora, .NET 10, sterownika HIDMaestro | sterownika ViGEmBus; bez administratora |
   | Rozwój | aktywny | porzucony przez autora, bez aktualizacji - zapas |
+
+  Gdy nie działa HIDMaestro (wybrany ViGEmBus albo zejście na niego), okno ustawień wyszarza to, co potrafi tylko on -
+  haptykę z gry i głośnik (przyciski testów dalej działają) oraz, przy wybranym ViGEmBus, pola pobierania i DLL
+  HIDMaestro - i mówi dlaczego.
 - **DualShock 4, Xbox i inne pady** obok DualSense (nadajnik v18+). Nadajnik rozpoznaje pad po USB id (DualSense, DualShock 4,
   Xbox 360 / One / Series, Switch Pro; nieznany pad, który nazywa się „Xbox”, liczy się jako Xbox) i tłumaczy go na jeden układ, którym
   mówi cały most, więc remapowanie, profile, skróty i okno działają dla każdego pada. Prawa gałka i spusty są wyszukiwane z tego, co
@@ -37,6 +41,11 @@
   jądra (evdev), nigdy przez raport HID DualSense.
 - **Serwer DSU (Cemuhook)** z ruchem i dotykiem dla emulatorów (Cemu, Yuzu/Ryujinx, Dolphin) na tym komputerze;
   emulator na innym urządzeniu wymaga `dsu_bind = "0.0.0.0"`.
+- **Kto obsługuje touchpad** (Ustawienia → Mysz): receiver (domyślnie, opis niżej) albo **sterownik HIDMaestro**
+  (2.4.0+), który tworzy precyzyjny touchpad Windows - szybkość kursora, stuknięcia, przewijanie i gesty pochodzą wtedy
+  z ustawień Windows → Touchpad, a suwaki zakładki Mysz nie działają. Bez HIDMaestro (albo przy backendzie ViGEmBus)
+  obsługuje go receiver, a zakładka mówi dlaczego. O nowszym HIDMaestro na GitHubie informuje pasek pod nagłówkiem;
+  instaluje się dopiero, gdy projekt przesunie przypiętą wersję.
 - **Touchpad jako mysz:** kursor, tap = lewy przycisk, przewijanie dwoma palcami, tap dwoma palcami = prawy przycisk.
   Przełączanie: PS + klik touchpada. Fizyczny klik nie przesuwa kursora: ruch z ostatnich ~80 ms przed kliknięciem
   jest cofany, przez ~150 ms po wciśnięciu i puszczeniu kursor stoi, a przeciąganie z wciśniętym klikiem zaczyna się

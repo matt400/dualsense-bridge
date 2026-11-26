@@ -394,6 +394,67 @@ def _type_error(path: str) -> str | None:
         return f"cannot load its types: {first or e}"
 
 
+def touch_delegate(clr: Any, ctrl_type: Any, contact_type: Any, buttons_type: Any) -> Callable[[Any, Any, int, Any], None]:
+    """A delegate (controller, HMTouchContact[], count, buttons) built as an IL method.
+
+    SubmitTouch(new ReadOnlySpan<HMTouchContact>(array, 0, count), buttons): the span is a ref struct pythonnet cannot pass.
+    """
+    from System import Action, Array, Int32, Type, Void
+    from System.Reflection.Emit import DynamicMethod, OpCodes
+    t_ctrl, t_item, t_buttons = clr.GetClrType(ctrl_type), clr.GetClrType(contact_type), clr.GetClrType(buttons_type)
+    t_int, t_array = clr.GetClrType(Int32), t_item.MakeArrayType()
+    span = clr.GetClrType(Int32).Assembly.GetType("System.ReadOnlySpan`1").MakeGenericType(t_item)
+    ctor = span.GetConstructor(Array[Type]([t_array, t_int, t_int]))
+    meth = t_ctrl.GetMethod("SubmitTouch", Array[Type]([span, t_buttons]))
+    if ctor is None or meth is None:
+        raise HMError("SubmitTouch not found in this HIDMaestro version")
+    dm = DynamicMethod("dsbridge_submit_touch", clr.GetClrType(Void), Array[Type]([t_ctrl, t_array, t_int, t_buttons]),
+                       t_ctrl.Module, True)
+    il = dm.GetILGenerator()
+    il.Emit(OpCodes.Ldarg_0)
+    il.Emit(OpCodes.Ldarg_1)
+    il.Emit(OpCodes.Ldc_I4_0)
+    il.Emit(OpCodes.Ldarg_2)
+    il.Emit(OpCodes.Newobj, ctor)
+    il.Emit(OpCodes.Ldarg_3)
+    il.Emit(OpCodes.Callvirt, meth)
+    il.Emit(OpCodes.Ret)
+    fn = dm.CreateDelegate(clr.GetClrType(Action[ctrl_type, Array[contact_type], Int32, buttons_type]))
+    return getattr(fn, "Invoke", fn)
+
+
+def create_touchpad(backend: "Backend", index: int, vid: int, pid: int, contacts: int, width_mm: int, height_mm: int,
+                    key: str) -> tuple[Any, Callable[[Any, Sequence[tuple[int, int, int]], bool], None]]:
+    """A virtual Windows precision touchpad (HIDMaestro 2.4.0+). -> (controller, send(controller, [(id, x, y)], clicked)).
+
+    Raises:
+        HMError: This HIDMaestro has no touch support, or binding SubmitTouch failed.
+    """
+    try:
+        from HIDMaestro import HidDescriptorBuilder, HMController, HMMouseButtons, HMProfileBuilder, HMTouchContact
+        from System import Array, UInt16
+    except ImportError as e:
+        raise HMError(f"HIDMaestro 2.4.0 or newer is needed for a touchpad ({e})") from None
+    submit = touch_delegate(backend.clr, HMController, HMTouchContact, HMMouseButtons)
+    descriptor = HidDescriptorBuilder().Touchpad(contacts, width_mm, height_mm, 1)
+    name = "DualSense bridge touchpad"
+    builder = HMProfileBuilder().Id("dsbridge-touchpad").Name(name).Vendor("dualsense-bridge")
+    builder = builder.Vid(UInt16(vid)).Pid(UInt16(pid)).ProductString(name).ManufacturerString("dualsense-bridge")
+    profile = builder.Type("touchpad").Connection("usb").FromDescriptorBuilder(descriptor).Build()
+    ctrl = backend.ctx.CreateControllerAt(index, profile, key)
+    array = Array[HMTouchContact]([HMTouchContact() for _unused in range(contacts)])
+    none, click = HMMouseButtons(0), HMMouseButtons.Left
+
+    def send(c: Any, fingers: Sequence[tuple[int, int, int]], clicked: bool) -> None:
+        for n, (fid, x, y) in enumerate(fingers):
+            item = HMTouchContact()                 # a struct: filled, then stored (array[n].X = ... would change a copy)
+            item.Id, item.X, item.Y = fid, x, y
+            array[n] = item
+        submit(c, array, len(fingers), click if clicked else none)
+
+    return ctrl, send
+
+
 class Backend:
     """The loaded HIDMaestro library: creates virtual DualSense pads (Backend.create)."""
 

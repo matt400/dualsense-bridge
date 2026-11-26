@@ -25,6 +25,10 @@
   | DSU server, touchpad as mouse, profiles, remap, shortcuts | ✅ | ✅ |
   | Needs | administrator, .NET 10, the HIDMaestro driver | the ViGEmBus driver; no administrator needed |
   | Maintenance | active | retired by its author, no updates - a fallback |
+
+  When HIDMaestro is not what works (the ViGEmBus choice, or a fallback to it), the settings window greys out what only
+  it can do - game haptics and the speaker (their test buttons keep working) and, with the ViGEmBus choice, the
+  HIDMaestro download and DLL fields - and says why.
 - **DualShock 4, Xbox and other pads** next to the DualSense (sender v18+). The sender recognises the pad by its USB id (DualSense, DualShock 4,
   Xbox 360 / One / Series, Switch Pro; an unknown pad that calls itself an "Xbox" pad counts as Xbox) and translates it into the one layout
   the rest of the bridge speaks, so the remap, profiles, shortcuts and the window work for every pad. The right stick and the triggers are
@@ -38,6 +42,11 @@
   never through the DualSense HID report.
 - **DSU server (Cemuhook)** with motion and touch for emulators (Cemu, Yuzu/Ryujinx, Dolphin) on this PC; an emulator
   on another device needs `dsu_bind = "0.0.0.0"`.
+- **Who handles the touchpad** (Settings → Mouse): the receiver (default, described below) or the **HIDMaestro driver**
+  (2.4.0+), which creates a Windows precision touchpad - cursor speed, taps, scrolling and gestures then come from
+  Windows Settings → Touchpad, and the sliders of the Mouse tab do not apply. Without HIDMaestro (or with the ViGEmBus
+  backend) the receiver handles it and the tab says why. A newer HIDMaestro on GitHub is announced under the header; it
+  is installed only once the project's pin moves.
 - **Touchpad as mouse:** cursor, tap = left button, two-finger scrolling, two-finger tap = right button.
   Toggle: PS + touchpad click. A physical click doesn't move the cursor: movement from the last ~80 ms before the
   click is undone, the cursor stays still for ~150 ms after pressing and releasing, and dragging with the click held

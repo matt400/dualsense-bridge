@@ -16,6 +16,7 @@ import time
 from collections import deque
 from typing import Final
 
+import rx_ptp
 import rx_settings
 import rx_state as S
 import rx_winapi as W
@@ -60,9 +61,18 @@ def _settings_changed(old: rx_settings.Settings, new: rx_settings.Settings) -> N
 rx_settings.on_change(_settings_changed)
 
 
+def release_own(i: int) -> None:
+    """Let go of a button the receiver's own mouse holds (the driver's touchpad takes the slot over)."""
+    if mdown[i]:
+        W.send_mouse(BTN[mdown[i]][1])
+        mdown[i] = 0
+    drag[i] = None
+
+
 def reset(i: int) -> None:
     """Release the button and clear the fractional remainders (pad disconnect, mode change)."""
-    mouse_button(i, 0)
+    rx_ptp.release(i)
+    release_own(i)
     mrem[i] = [0.0, 0.0]
     srem[i] = [0.0, 0.0]
     hist[i].clear()
@@ -146,7 +156,12 @@ def _move(i: int, dx: int, dy: int) -> None:
 
 
 def mouse_rel(i: int, dx: int, dy: int, flags: int) -> None:
-    """Handle a T_MOUSE packet of pad i: taps (once per tap number), two-finger scrolling or cursor movement."""
+    """Handle a T_MOUSE packet of pad i: taps (once per tap number), two-finger scrolling or cursor movement.
+
+    Ignored while the driver's touchpad serves the pad: Windows makes all of it from the fingers themselves.
+    """
+    if rx_ptp.active(i):
+        return
     if flags & (MOUSE_TAP | MOUSE_TAP_RIGHT) and not _tap(i, flags):
         return
     if not (dx or dy):
@@ -172,6 +187,9 @@ def mouse_button(i: int, btn: int) -> None:
 
     Changing the button while one is held releases the previous one.
     """
+    if rx_ptp.active(i):
+        rx_ptp.button(i, btn in BTN)
+        return
     cur = mdown[i]
     if btn == cur:
         return

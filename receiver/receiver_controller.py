@@ -242,7 +242,9 @@ def _start_workers() -> tuple[list[threading.Thread], threading.Thread]:
     import rx_games
     import rx_gstick_io
     import rx_gyro
+    import rx_mouse
     import rx_net
+    import rx_ptp
     import rx_state as S
 
     gc.collect()
@@ -254,6 +256,8 @@ def _start_workers() -> tuple[list[threading.Thread], threading.Thread]:
         import rx_hm_update
         rx_hm_update.on_installed = rx_ds4.hm_installed
         S.start_thread("hidmaestro update", rx_hm_update.thread, S.stop, rx_ds4.hm_auto_enabled)
+        # joined with the slot threads at shutdown: it removes its virtual touchpads when it ends
+        slot_threads.append(S.start_thread("touchpad driver", rx_ptp.thread, S.stop, rx_mouse.release_own))
     S.start_thread("gyro mouse", rx_gyro.mouse_thread)
     S.start_thread("gyro stick", rx_gstick_io.thread)     # pad tilt -> stick; the engine steps only here
     # always (also without game profiles): a change of the foreground program stops game rumble

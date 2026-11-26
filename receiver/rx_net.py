@@ -22,6 +22,7 @@ import rx_master as master
 import rx_mouse as mouse
 import rx_selftest
 import rx_sender_cfg
+import rx_ptp
 import rx_settings
 import rx_state as S
 import rx_swap
@@ -584,6 +585,10 @@ def _on_touch(i: int, data: bytes) -> None:
             s["ver"] += 1
     if not S.mouse_mode[i]:
         S.notify(i)
+    elif testmode.capturing(i):
+        rx_ptp.release(i)               # the capture freezes the cursor: the driver's touchpad sees no finger
+    else:
+        rx_ptp.touch(i, touch)
 
 
 def _on_click(i: int, data: bytes) -> None:
