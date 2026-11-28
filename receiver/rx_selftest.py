@@ -60,7 +60,8 @@ NS_PER_S: Final = 1_000_000_000
 NS_PER_MS: Final = 1_000_000
 SILENCE_S: Final = 0.1                           # the gap between the tone and the sweep (shorter than the silence that ends a stream)
 FAMILY_NAMES: Final = {PK_DUALSENSE: "DualSense", PK_DS4: "DualShock 4", PK_XBOX: "Xbox", PK_OTHER: "other"}
-BACKEND_NAMES: Final = {"hm": "HIDMaestro (DualSense)", "vigem": "ViGEm (DS4)", "x360": "ViGEm (Xbox 360)"}
+BACKEND_NAMES: Final = {"hm": "HIDMaestro (DualSense)", "hm_ds4": "HIDMaestro (DS4)", "hm_x360": "HIDMaestro (Xbox 360)",
+                        "vigem": "ViGEm (DS4)", "x360": "ViGEm (Xbox 360)"}
 
 
 class AbortedError(Exception):

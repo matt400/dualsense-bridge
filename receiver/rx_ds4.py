@@ -1,11 +1,11 @@
 """Receiver: virtual pads on demand.
 
-A DualSense through HIDMaestro (rx_hm), a DS4 or an Xbox 360 pad through ViGEmBus (vgamepad); feedback from the game goes to
-rx_feedback.
+A DualSense, a DS4 or an Xbox 360 pad through HIDMaestro (rx_hm), or a DS4 / Xbox 360 pad through ViGEmBus (vgamepad) when
+HIDMaestro is not used; feedback from the game goes to rx_feedback.
 
 Which virtual pad a slot gets follows the physical pad (the sender's padkind packet, settings vpad.mirror): a DualSense -> a
-DualSense (HIDMaestro, else a DS4), a DualShock 4 -> a DS4 (ViGEm), an Xbox or any other pad -> an Xbox 360 pad (ViGEm). Without
-ViGEmBus those two fall back to the HIDMaestro DualSense, so the pad still works - the game just sees another pad.
+DualSense, a DualShock 4 -> a DS4, an Xbox or any other pad (Switch Pro too) -> an Xbox 360 pad, all three on HIDMaestro. Without
+HIDMaestro (the vigem setting, or it failed) the DualSense becomes a ViGEm DS4 and the others their ViGEm counterparts.
 
 Backend (Settings -> Pads, rx_settings.VpadConfig): auto = HIDMaestro when the DLL is there and the receiver runs as
 administrator, otherwise ViGEm; hidmaestro = like auto, but a missing / failing HIDMaestro is a warning in the log (ViGEm
@@ -15,7 +15,8 @@ Fixed player order (fixed_slots): games, Steam and Windows number pads by the or
 When the pad of slot 2 connects while slot 1 is empty, slot_mode decides how pad 2 stays player 2:
 - placeholder (default): pad 2 first waits the grace time (vpad.slot_grace_ms, 1 s) for pad 1 (two pads switched on together never need a
   placeholder, so Steam Input sees no extra device). Only if pad 1 is still missing, slot 1 gets a neutral virtual pad
-  that pad 1 later takes over. It disappears together with the last pad of a higher slot.
+  that pad 1 later takes over. It disappears together with the last pad of a higher slot. The placeholder is the kind of pad the
+  slot last had (last_family), so an Xbox pad coming back takes over an Xbox placeholder instead of re-plugging behind pad 2.
 - hold: pad 2's virtual pad waits longer (HOLD_WAIT) for pad 1 and never uses a placeholder; if pad 1 does not come,
   pad 2 is plugged in alone (and may then be player 1).
 """
@@ -127,7 +128,8 @@ class Out:
 
 
 outs: list[Out | None] = []   # Out per slot or None (the virtual pad is not plugged)
-kinds: list[str | None] = []   # the virtual pad of a slot: "hm" (DualSense) | "vigem" (DS4) | "x360" | None (window: the pad card)
+kinds: list[str | None] = []   # the virtual pad of a slot: rx_hm "hm" / "hm_ds4" / "hm_x360", ViGEm "vigem" / "x360", None (window)
+last_family: list[int] = []   # the family (PK_*) of the physical pad a slot last had: placeholders and a pad before its padkind
 holding: set[int] = set()   # placeholder mode: slots that stopped waiting for lower pads - the lower slots now hold the place
 failing: list[bool] = []   # the slot cannot create a pad (a backend error) - higher slots do not wait for it
 interval = 0.0            # 1 / pad_hz
@@ -135,7 +137,8 @@ gen = 0                   # a backend change in the settings: plugged pads unplu
 hm_note: str | None = None   # the last reason HIDMaestro is not used (window: the Pads tab)
 _hm_warned: str | None = None   # this reason has already reached the log (no repeats on every connection)
 
-LABELS = {"hm": "DualSense (HIDMaestro)", "vigem": "DS4 (ViGEmBus)", "x360": "Xbox 360 (ViGEmBus)"}
+LABELS = {"hm": "DualSense (HIDMaestro)", "hm_ds4": "DS4 (HIDMaestro)", "hm_x360": "Xbox 360 (HIDMaestro)",
+          "vigem": "DS4 (ViGEmBus)", "x360": "Xbox 360 (ViGEmBus)"}
 KIND_WAIT_S = 0.1      # how long a connecting pad's slot waits for the padkind packet (it follows the ident packet within milliseconds)
 
 
@@ -149,6 +152,7 @@ def init() -> None:
     n = C.NUM_PADS
     outs[:] = [None] * n
     kinds[:] = [None] * n
+    last_family[:] = [PK_DUALSENSE] * n
     failing[:] = [False] * n
     interval = 1.0 / C.PAD_HZ if C.PAD_HZ else 0.0
     S.push = push
@@ -387,9 +391,18 @@ def xbox_pad(idx: int) -> rx_xbox.XboxPad:
 
 
 def physical_family(idx: int) -> int:
-    """The family (PK_*) of the physical pad in a slot; a DualSense when the sender did not say (a lost padkind, a placeholder)."""
+    """The family (PK_*) of the physical pad in a slot.
+
+    When the sender has not said (a placeholder, a pad before its padkind packet, a lost packet) it is the family the slot last had
+    (a DualSense at first): the sender keeps a pad in its slot (slots.json), so the pad that comes back is usually the same one,
+    and its virtual pad - often a placeholder already plugged - does not have to be re-plugged.
+    """
     k = S.pad_kind[idx] if idx < len(S.pad_kind) else None
-    return PK_DUALSENSE if k is None else k[0]
+    if k is None:
+        return last_family[idx] if idx < len(last_family) else PK_DUALSENSE
+    if idx < len(last_family):
+        last_family[idx] = k[0]
+    return k[0]
 
 
 def virtual_family(idx: int) -> int:
@@ -411,30 +424,39 @@ def wait_kind(idx: int, timeout: float = KIND_WAIT_S) -> None:
         time.sleep(0.01)
 
 
+def _hm_pad(hm: rx_hm.Backend, idx: int, family: int) -> tuple[Any, str]:
+    """The HIDMaestro pad of a family: a DS4, an Xbox 360 pad (Xbox and other pads) or a DualSense (composite when wanted)."""
+    def on_fb(motors: tuple[int, int] | None, rgb: Sequence[int] | None, trig: Any = None,
+              leds: tuple[int | None, int | None] | None = None) -> None:
+        large, small = motors or (None, None)
+        F.game(idx, large, small, rgb=rgb, trig=trig, leds=leds)
+    if family == PK_DS4:
+        return hm.create_ds4(idx, on_fb), "hm_ds4"
+    if family in (PK_XBOX, PK_OTHER):
+        return hm.create_x360(idx, on_fb), "hm_x360"
+    pad = rx_haptics.create_composite(hm, idx, on_fb) if rx_haptics.composite_wanted(idx) else None
+    return (pad if pad is not None else hm.create(idx, on_fb)), "hm"
+
+
 def create_pad(idx: int) -> tuple[Any, str]:
     """-> (pad, kind).
 
-    The virtual pad follows the physical one (virtual_family): a DualShock 4 gets a ViGEm DS4, an Xbox or other pad a ViGEm Xbox
-    360 pad; without ViGEmBus these use the DualSense below. A DualSense gets HIDMaestro when available; its creation error =
-    this pad through ViGEm (log), the next connection tries HIDMaestro again (PnP errors can be transient).
+    The virtual pad follows the physical one (virtual_family): a DualSense, a DS4 or an Xbox 360 pad on HIDMaestro. A HIDMaestro
+    creation error = this pad through ViGEm (log), the next connection tries HIDMaestro again (PnP errors can be transient).
+    Without HIDMaestro a DualShock 4 gets a ViGEm DS4, an Xbox or other pad a ViGEm Xbox 360 pad, a DualSense a ViGEm DS4.
     """
     family = virtual_family(idx)
-    if vg is not None and family in (PK_DS4, PK_XBOX, PK_OTHER):
-        try:
-            return (vigem_pad(idx), "vigem") if family == PK_DS4 else (xbox_pad(idx), "x360")
-        except Exception as e:  # noqa: BLE001 - ViGEmBus refused (driver gone, no free target): the pad still works as a DualSense
-            print(f"Controller {idx}: virtual {'DS4' if family == PK_DS4 else 'Xbox 360'} failed ({e!r}) - using a DualSense")
     hm = hm_backend()
     if hm is not None:
-        def on_fb(motors: tuple[int, int] | None, rgb: Sequence[int] | None, trig: Any = None,
-                  leds: tuple[int | None, int | None] | None = None) -> None:
-            large, small = motors or (None, None)
-            F.game(idx, large, small, rgb=rgb, trig=trig, leds=leds)
         try:
-            pad = rx_haptics.create_composite(hm, idx, on_fb) if rx_haptics.composite_wanted(idx) else None
-            return (pad if pad is not None else hm.create(idx, on_fb)), "hm"
+            return _hm_pad(hm, idx, family)
         except Exception as e:  # noqa: BLE001 - any HIDMaestro / .NET failure falls back to ViGEm
             _note_hm(_("tworzenie pada: {err}").format(err=rx_hm.describe_error(e)), warn=True)
+    if vg is not None and family in (PK_XBOX, PK_OTHER):
+        try:
+            return xbox_pad(idx), "x360"
+        except Exception as e:  # noqa: BLE001 - ViGEmBus refused (driver gone, no free target): the pad still works as a DS4
+            print(f"Controller {idx}: virtual Xbox 360 failed ({e!r}) - using a DS4")
     return vigem_pad(idx), "vigem"
 
 
@@ -530,6 +552,7 @@ def slot_thread(idx: int) -> None:
     while len(outs) <= idx:                   # without init() (tests) - the slot thread must not fail on an empty list
         outs.append(None)
         kinds.append(None)
+        last_family.append(PK_DUALSENSE)
         failing.append(False)
     boost_thread()
     while not S.stop.is_set():

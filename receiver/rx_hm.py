@@ -1,19 +1,19 @@
-"""Receiver: the HIDMaestro backend - a virtual DualSense (a user-mode UMDF2 driver, MIT, actively developed).
+"""Receiver: the HIDMaestro backend - virtual DualSense, DualShock 4 and Xbox 360 pads (a user-mode UMDF2 driver, MIT).
 
-Compatible with HIDMaestro 1.x, 2.0.x, 2.1.x, 2.2.x, 2.3.x and 2.4.x (no signature used here changed since 2.0.3; 2.1.0 only
-snapshots HMProfile.ButtonMap / AxisMap / ExtendedReport / Layout, which this module never touches; 2.2.0 only makes a frame
-wait for a pending protocol reply on profiles with a protocol host, which the DualSense profiles do not have; 2.3.0 adds a
+Compatible with HIDMaestro 1.x, 2.0.x, 2.1.x, 2.2.x, 2.3.x and 2.4.x up to 2.4.1 (no signature used here changed since 2.0.3; 2.1.0
+only snapshots HMProfile.ButtonMap / AxisMap / ExtendedReport / Layout, which this module never touches; 2.2.0 only makes a frame
+wait for a pending protocol reply on profiles with a protocol host, which the profiles used here do not have; 2.3.0 adds a
 backend choice (HMBackend), and its default Auto keeps the plain DualSense on the UMDF2 driver on x64 and the composite on
 USB/IP - this module never names a backend; 2.4.0 adds touch and pen devices and loads usbip-win2's filter on HIDMaestro's own
-root hub, so Windows hands the composite pad's speaker stream over every 10 ms instead of in 20 ms pairs). Calls used:
-LoadDefaultProfiles, InstallDriver, GetProfile, CreateControllerAt, SubmitRawReport,
-OutputReceived, Dispose - the same in all versions; 2.0 only adds diagnostics: ProfileLoadIssues, LastDriverInstall,
-TransportIndex and exceptions derived from InvalidOperationException - see describe_error. Composite pads also use
-UsbAudio.Output (FramesReceived, Channels, SampleRateHz, BitsPerSample, ChannelRoles), unchanged in 2.4.0.
+root hub, so Windows hands the composite pad's speaker stream over every 10 ms instead of in 20 ms pairs; 2.4.1 changes nothing
+used here). Calls used: LoadDefaultProfiles, InstallDriver, GetProfile, CreateControllerAt, SubmitRawReport, SubmitState,
+HMGamepadStateHelpers.StandardAxes, OutputReceived, Dispose - the same in all versions; 2.0 only adds diagnostics:
+ProfileLoadIssues, LastDriverInstall, TransportIndex and exceptions derived from InvalidOperationException - see describe_error.
+Composite pads also use UsbAudio.Output (FramesReceived, Channels, SampleRateHz, BitsPerSample, ChannelRoles), unchanged in 2.4.1.
 
 HIDMaestro is a .NET library (HIDMaestro.Core.dll, .NET 10) - called from Python through pythonnet (CoreCLR). The driver
 lives inside the DLL and installs on first use (InstallDriver, idempotent). Creating a device needs administrator
-rights (Windows: SeLoadDriverPrivilege) - without them the backend does not load and the receiver falls back to ViGEm.
+rights (Windows: SeLoadDriverPrivilege) - without them the backend does not load.
 
   get(cfg_path)   -> Backend (loaded once per DLL path; an error is remembered until reset())
   find_dll(path)  the path from the settings, or the newest downloaded version (rx_hm_update: hidmaestro/vX.Y.Z/), then
@@ -22,15 +22,24 @@ rights (Windows: SeLoadDriverPrivilege) - without them the backend does not load
   Backend.create(slot, on_fb, composite=True): the "dualsense-composite" profile (the real four-interface USB DualSense) for game
                   haptics: Pad.attach_audio(sink) hands the PCM of the pad's USB audio OUT stream (ch 3/4 = the haptic voice coils)
                   to sink(view, n) on HIDMaestro's audio pump thread, copied with one IL delegate call (rx_haptics does the rest)
+  Backend.create_ds4(slot, on_fb) -> DS4Pad: the "dualshock-4-v2" profile (USB 054C:09CC); the DS4 report of rx_report, rumble and
+                  lightbar from output report 0x05
+  Backend.create_x360(slot, on_fb) -> X360Pad: the "xbox-360-wired" profile (045E:028E with HIDMaestro's XUSB companion, so XInput
+                  sees it); the state goes through SubmitState, rumble comes back as XInput vibration packets
 
 Hot path: SubmitRawReport(ReadOnlySpan<byte>) cannot be called from pythonnet directly (Span is a ref struct), so
 loading emits a small IL method: (controller, pointer, length) -> SubmitRawReport(new ReadOnlySpan(ptr, len)).
 The report sits in a fixed Python buffer - one delegate call per report (~4 us), no allocation or copying on the
 Python side. The interop was checked with pythonnet 3.2 and .NET 10 on a mock of the HIDMaestro API (same signatures).
 
+The Xbox 360 profile cannot take a raw report: XInput reads a separate XUSB slice that only SubmitState fills (a raw report leaves
+it as the last SubmitState did). Building an HMGamepadState from Python would cost a .NET call per field, so another IL method
+reads a fixed native block (six floats, the HMButton bits, the HMHat byte: rx_xbox.build_state) into a stack HMGamepadState with
+a reused axis dictionary and calls SubmitState(in state) - again one delegate call per report.
+
 The audio callback gets a ReadOnlyMemory<byte> (a plain struct, not a ref struct, so pythonnet can pass it) - but only the
 IL helper can read it without a per-element .NET call: (memory, pointer, capacity) -> copies min(length, capacity) bytes into
-the fixed scratch buffer and returns the count. The helper was run against a real CoreCLR (see tests/test_hm_il.py, which
+the fixed scratch buffer and returns the count. The helpers were run against a real CoreCLR (see tests/test_hm_il.py, which
 skips itself without pythonnet and a .NET runtime).
 """
 import ctypes
@@ -44,17 +53,21 @@ from typing import Any, Final, TypeAlias
 from proto import TRIG_RAW_LEN
 import rx_winapi
 from rx_config import HERE
-from rx_report import build_ds5_report
+import rx_xbox
+from rx_report import build_ds5_report, build_report
 from rx_state import NEUTRAL_OUT
 
 DLL = "HIDMaestro.Core.dll"
 PROFILE = "dualsense"          # the USB DualSense profile (054C:0CE6) from HIDMaestro
 PROFILE_COMPOSITE = "dualsense-composite"   # the same pad with its USB audio (speaker + haptics out, microphone); needs usbip-win2
+PROFILE_DS4: Final = "dualshock-4-v2"       # the USB DualShock 4 v2 (054C:09CC): the same 64-byte input report 0x01 as ViGEm's DS4
+PROFILE_X360: Final = "xbox-360-wired"      # the wired Xbox 360 pad (045E:028E), XInput through HIDMaestro's XUSB companion
 AUDIO_SCRATCH: Final = 1 << 16  # the fixed buffer one audio callback is copied into (a window is a few ms: 384 B per ms at 48 kHz x 4 ch)
 REPORT_LEN = 63                # input report 0x01 without the ID byte
 ORDER_WAIT = 10.0              # creating a PnP device takes from ~0.1 s to several s (higher slots wait for lower ones)
 OUT_REPORT = 0x02              # the DualSense output report: motors, trigger effects, lightbar
 HID_OUTPUT = 0                 # HMOutputSource.HidOutput
+XINPUT_OUTPUT: Final = 2       # HMOutputSource.XInput: XInputSetState as the XUSB vibration packet
 
 
 NET_MAJOR = 10                 # HIDMaestro.Core.dll targets net10.0 - an older runtime cannot load its types
@@ -382,6 +395,106 @@ def memcopy_delegate(clr: Any) -> Callable[[Any, Any, int], int]:
         raise HMError(f"cannot bind the audio copy: {e!r}") from e
 
 
+def axis_keys(profile: Any) -> tuple[Any, ...]:
+    """The HMAxis keys a profile reads its six simple slots from: (left X, left Y, right X, right Y, left trigger, right trigger).
+
+    Asked from HMGamepadStateHelpers.StandardAxes with six distinct values, so the profile's own layout (Vx / Vy triggers on the
+    Xbox 360 profiles, Z / Rz right stick on Sony's) decides, not a table here.
+
+    Raises:
+        HMError: The answer does not hold six distinct keys.
+    """
+    from HIDMaestro import HMGamepadStateHelpers
+    probe = (0.125, 0.25, 0.375, 0.5, 0.625, 0.75)        # exact in a float32: matched back by value
+    axes = HMGamepadStateHelpers.StandardAxes(profile, *probe)
+    by_value = {round(float(kv.Value), 3): kv.Key for kv in axes}
+    keys = tuple(by_value.get(v) for v in probe)
+    if None in keys:
+        raise HMError(f"StandardAxes of '{profile.Id}' gave no key for every slot ({sorted(by_value)})")
+    return keys
+
+
+def _emit_fill(clr: Any, t_ctrl: Any, t_ptr: Any, t_dict: Any, keys: Sequence[Any]) -> Any:
+    """The fill IL method: (pointer, axes) -> HMGamepadState read from rx_xbox.build_state's block (see state_delegates)."""
+    from HIDMaestro import HMGamepadState
+    from System import Array, Int32, Type
+    from System.Reflection.Emit import DynamicMethod, OpCodes
+    t_state = clr.GetClrType(HMGamepadState)
+    set_item = t_dict.GetMethod("set_Item")
+    f_axes, f_buttons, f_hat = (t_state.GetField(n) for n in ("Axes", "Buttons", "Hat"))
+    if None in (set_item, f_axes, f_buttons, f_hat):
+        raise HMError("HMGamepadState.Axes / Buttons / Hat not found in this HIDMaestro version")
+    fill = DynamicMethod("dsbridge_fill_state", t_state, Array[Type]([t_ptr, t_dict]), t_ctrl.Module, True)
+    il = fill.GetILGenerator()
+    st = il.DeclareLocal(t_state)
+    il.Emit(OpCodes.Ldloca, st)
+    il.Emit(OpCodes.Initobj, t_state)                   # a zeroed state: no touch / motion / nullable hat forms
+    il.Emit(OpCodes.Ldloca, st)
+    il.Emit(OpCodes.Ldarg_1)
+    il.Emit(OpCodes.Stfld, f_axes)
+    for i, key in enumerate(keys):                      # axes[key] = *(float*)(pointer + 4 i)
+        il.Emit(OpCodes.Ldarg_1)
+        il.Emit(OpCodes.Ldc_I4, Int32(int(key)))
+        il.Emit(OpCodes.Ldarg_0)
+        il.Emit(OpCodes.Ldc_I4, Int32(4 * i))
+        il.Emit(OpCodes.Add)
+        il.Emit(OpCodes.Ldind_R4)
+        il.Emit(OpCodes.Callvirt, set_item)
+    for field, offset, load in ((f_buttons, rx_xbox.STATE_BUTTONS, OpCodes.Ldind_U4), (f_hat, rx_xbox.STATE_HAT, OpCodes.Ldind_U1)):
+        il.Emit(OpCodes.Ldloca, st)
+        il.Emit(OpCodes.Ldarg_0)
+        il.Emit(OpCodes.Ldc_I4, Int32(offset))
+        il.Emit(OpCodes.Add)
+        il.Emit(load)
+        il.Emit(OpCodes.Stfld, field)
+    il.Emit(OpCodes.Ldloc, st)
+    il.Emit(OpCodes.Ret)
+    return fill
+
+
+def state_delegates(clr: Any, ctrl_type: Any, keys: Sequence[Any]) -> tuple[Callable[[Any, Any], Any], Callable[[Any, Any, Any], None]]:
+    """Two IL methods over the native state block of rx_xbox.build_state: (fill, submit).
+
+    fill(pointer, axes) -> HMGamepadState: axes[keys[i]] = the i-th float, Buttons = the uint32 at STATE_BUTTONS, Hat = the
+    byte at STATE_HAT, Axes = the dictionary (reused: SubmitState copies what it keeps). submit(controller, pointer, axes) calls
+    fill and then controller.SubmitState(in state) - the state lives on the .NET stack, so nothing is allocated per report.
+    fill is separate so tests can read the state without a driver.
+
+    Raises:
+        HMError: A member is missing in this HIDMaestro version, or emitting the IL failed.
+    """
+    try:
+        from HIDMaestro import HMAxis, HMGamepadState
+        from System import Action, Array, IntPtr, Single, Type, Void
+        from System.Collections.Generic import Dictionary
+        from System.Reflection.Emit import DynamicMethod, OpCodes
+        t_ctrl, t_state, t_ptr = clr.GetClrType(ctrl_type), clr.GetClrType(HMGamepadState), clr.GetClrType(IntPtr)
+        t_dict = clr.GetClrType(Dictionary[HMAxis, Single])
+        submit = t_ctrl.GetMethod("SubmitState", Array[Type]([t_state.MakeByRefType()]))
+        if submit is None:
+            raise HMError("SubmitState(in HMGamepadState) not found in this HIDMaestro version")
+        fill = _emit_fill(clr, t_ctrl, t_ptr, t_dict, keys)
+        send = DynamicMethod("dsbridge_submit_state", clr.GetClrType(Void), Array[Type]([t_ctrl, t_ptr, t_dict]), t_ctrl.Module, True)
+        il = send.GetILGenerator()
+        st = il.DeclareLocal(t_state)
+        il.Emit(OpCodes.Ldarg_1)
+        il.Emit(OpCodes.Ldarg_2)
+        il.Emit(OpCodes.Call, fill)
+        il.Emit(OpCodes.Stloc, st)
+        il.Emit(OpCodes.Ldarg_0)
+        il.Emit(OpCodes.Ldloca, st)                     # `in` = a managed pointer to the local
+        il.Emit(OpCodes.Callvirt, submit)
+        il.Emit(OpCodes.Ret)
+        func_t = clr.GetClrType(IntPtr).Assembly.GetType("System.Func`3").MakeGenericType(Array[Type]([t_ptr, t_dict, t_state]))
+        fill_fn = fill.CreateDelegate(func_t)
+        send_fn = send.CreateDelegate(clr.GetClrType(Action[ctrl_type, IntPtr, Dictionary[HMAxis, Single]]))
+        return getattr(fill_fn, "Invoke", fill_fn), getattr(send_fn, "Invoke", send_fn)
+    except HMError:
+        raise
+    except Exception as e:      # any reflection / IL error becomes a readable backend error
+        raise HMError(f"cannot bind SubmitState: {e!r}") from e
+
+
 def _type_error(path: str) -> str | None:
     """The DLL loaded but has no types: the first missing component from LoaderExceptions (a dependency, the runtime version)."""
     try:
@@ -456,7 +569,7 @@ def create_touchpad(backend: "Backend", index: int, vid: int, pid: int, contacts
 
 
 class Backend:
-    """The loaded HIDMaestro library: creates virtual DualSense pads (Backend.create)."""
+    """The loaded HIDMaestro library: creates virtual DualSense (create), DualShock 4 (create_ds4) and Xbox 360 (create_x360) pads."""
 
     name = "hm"
 
@@ -492,6 +605,8 @@ class Backend:
         self.clr = clr
         self._composite: Any = None            # the "dualsense-composite" profile, looked up on first use
         self._copy_fn: Callable[[Any, Any, int], int] | None = None
+        self._profiles: dict[str, Any] = {}    # the DS4 / Xbox 360 profiles, looked up on first use
+        self._state_fn: Callable[[Any, Any, Any], None] | None = None
         self.path = path
         print(f"HIDMaestro loaded: {path}")
 
@@ -512,20 +627,27 @@ class Backend:
             self._copy_fn = memcopy_delegate(self.clr)
         return self._copy_fn
 
-    def create(self, slot: int, on_fb: Callable[..., None], composite: bool = False) -> "Pad":
-        """A virtual DualSense on a fixed index and with a fixed slot identity.
+    def profile_named(self, name: str) -> Any:
+        """A profile of this HIDMaestro by id, looked up once; HMError when it has none (or refused to load it)."""
+        profile = self._profiles.get(name)
+        if profile is None:
+            profile = self.ctx.GetProfile(name)
+            if profile is None:
+                why = "; ".join(profile_issues(self.ctx))
+                raise HMError(f"HIDMaestro has no '{name}' profile (update HIDMaestro)" + (f" (refused: {why})" if why else ""))
+            self._profiles[name] = profile
+        return profile
 
-        The same device paths after every recreation (Steam / games remember the pad's settings). An old SDK without the
-        identity key - the index alone.
+    def state_submit(self) -> Callable[[Any, Any, Any], None]:
+        """The SubmitState IL delegate for the Xbox 360 profile (its axis keys baked in) - built once."""
+        if self._state_fn is None:
+            from HIDMaestro import HMController
+            keys = axis_keys(self.profile_named(PROFILE_X360))
+            self._state_fn = state_delegates(self.clr, HMController, keys)[1]
+        return self._state_fn
 
-        Args:
-            slot: The slot (the HIDMaestro index).
-            on_fb: Callback for what the game sends to the pad (motors, lightbar, triggers).
-            composite: Use the four-interface USB profile (game haptics). The first one installs the usbip-win2 host
-                controller (a kernel driver) and adds a Windows audio endpoint; any failure is raised to the caller.
-        """
-        key = f"dualsense-bridge:{slot}"
-        profile = self.composite_profile() if composite else self.profile
+    def _controller(self, slot: int, profile: Any, key: str) -> Any:
+        """CreateControllerAt on a fixed index with a fixed identity (an old SDK without the identity key: the index alone)."""
         try:
             ctrl = self.ctx.CreateControllerAt(slot, profile, key)
         except TypeError:
@@ -534,8 +656,42 @@ class Backend:
         ti = getattr(ctrl, "TransportIndex", None)
         if ti is not None and int(ti) != slot:
             print(f"Controller {slot}: HIDMaestro transport index {int(ti)} (slot {slot} is used by another program)")
+        return ctrl
+
+    def create(self, slot: int, on_fb: Callable[..., None], composite: bool = False) -> "Pad":
+        """A virtual DualSense on a fixed index and with a fixed slot identity.
+
+        The same device paths after every recreation (Steam / games remember the pad's settings).
+
+        Args:
+            slot: The slot (the HIDMaestro index).
+            on_fb: Callback for what the game sends to the pad (motors, lightbar, triggers).
+            composite: Use the four-interface USB profile (game haptics). The first one installs the usbip-win2 host
+                controller (a kernel driver) and adds a Windows audio endpoint; any failure is raised to the caller.
+        """
+        profile = self.composite_profile() if composite else self.profile
+        ctrl = self._controller(slot, profile, f"dualsense-bridge:{slot}")
         try:
             return Pad(self, ctrl, on_fb)
+        except Exception:
+            ctrl.Dispose()
+            raise
+
+    def create_ds4(self, slot: int, on_fb: Callable[..., None]) -> "DS4Pad":
+        """A virtual DualShock 4 (USB) on a fixed index; its identity key names the kind, so its device paths are its own."""
+        ctrl = self._controller(slot, self.profile_named(PROFILE_DS4), f"dualsense-bridge:ds4:{slot}")
+        try:
+            return DS4Pad(self, ctrl, on_fb)
+        except Exception:
+            ctrl.Dispose()
+            raise
+
+    def create_x360(self, slot: int, on_fb: Callable[..., None]) -> "X360Pad":
+        """A virtual wired Xbox 360 pad on a fixed index (XInput through the XUSB companion), with its own identity key."""
+        submit = self.state_submit()                   # before the device: a missing member fails without a device to remove
+        ctrl = self._controller(slot, self.profile_named(PROFILE_X360), f"dualsense-bridge:x360:{slot}")
+        try:
+            return X360Pad(self, ctrl, on_fb, submit)
         except Exception:
             ctrl.Dispose()
             raise
@@ -607,11 +763,48 @@ def parse_leds(report_id: int, data: Sequence[int]) -> tuple[int | None, int | N
     return (mute, player) if mute is not None or player is not None else None
 
 
-class Pad:
-    """One virtual DualSense. buf has a fixed address (the ctypes export blocks resizing).
+DS4_OUT_REPORT: Final = 0x05                  # the DS4 USB output report: flags, motors, lightbar, flash
+DS4_OUT_LEN: Final = 8                        # the bytes read (without the ID): flags 0 ... blue
+DS4_F_MOTORS, DS4_F_LIGHTBAR = 0x01, 0x02     # validity flag 0: the motors (bytes 3 / 4), the lightbar colour (5..7)
+XINPUT_LEN: Final = 5                         # the XUSB vibration packet: cmd, size, low-frequency (left) motor, high (right), 0
+XINPUT_RAW_LEN: Final = 4                     # a bare XINPUT_VIBRATION: two little-endian 16-bit motor speeds
 
-    The report is built in place and sent through the delegate without a copy on the Python side.
+
+def parse_ds4_output(report_id: int, data: Sequence[int]) -> tuple[tuple[int, int] | None, tuple[int, int, int] | None]:
+    """A DS4 output report (without the ID byte) -> ((large, small) | None, (r, g, b) | None).
+
+    Byte 0 = the validity flags (bit 0 motors, bit 1 lightbar), byte 3 = the right (small, high-frequency) motor, byte 4 = the
+    left (large) one, bytes 5..7 = the colour. Only the bytes the flags ask for are read (each is a .NET call on the real array).
     """
+    if report_id != DS4_OUT_REPORT or len(data) < DS4_OUT_LEN:
+        return None, None
+    f = data[0]
+    motors = (data[4], data[3]) if f & DS4_F_MOTORS else None
+    rgb = (data[5], data[6], data[7]) if f & DS4_F_LIGHTBAR else None
+    return motors, rgb
+
+
+def parse_xinput(data: Sequence[int]) -> tuple[int, int] | None:
+    """An XInput vibration packet -> (large, small), or None when it is too short.
+
+    The XUSB wire packet (5 bytes: cmd, size, left motor, right motor, 0) carries the motor bytes at 2 / 3; a bare
+    XINPUT_VIBRATION (4 bytes: two little-endian 16-bit speeds) carries their high bytes at 1 / 3.
+    """
+    n = len(data)
+    if n >= XINPUT_LEN:
+        return data[2], data[3]
+    if n == XINPUT_RAW_LEN:
+        return data[1], data[3]
+    return None
+
+
+class RawPad:
+    """A virtual pad fed with a raw input report. buf has a fixed address (the ctypes export blocks resizing).
+
+    The report is built in place and sent through the IL delegate without a copy on the Python side; subclasses read what the
+    game sends back (_on_output).
+    """
+
     kind = "hm"
     build = staticmethod(build_ds5_report)
 
@@ -622,22 +815,100 @@ class Pad:
         """
         self.ctrl, self.on_fb = ctrl, on_fb
         self._backend = backend
-        self._audio_handler: Callable[[Any, Any], None] | None = None
-        self._ctl_handler: Callable[[Any, Any], None] | None = None
-        self.composite = getattr(ctrl, "UsbAudio", None) is not None
         # an all-zero buffer is not neutral: sticks 0/0 and the D-pad nibble 0 (= up). A game that polls the new pad
         # before the first real report would see that as input, so the first submit() sends centred sticks, no buttons.
-        self.buf = build_ds5_report(NEUTRAL_OUT, 0, False)
-        self._view = (ctypes.c_char * REPORT_LEN).from_buffer(self.buf)
+        self.buf = self.build(NEUTRAL_OUT, 0, False)
+        self._view = (ctypes.c_char * len(self.buf)).from_buffer(self.buf)
         self._ptr = backend.IntPtr(ctypes.addressof(self._view))
-        self._fn = backend.submit_fn
+        self._bind(backend)
         self._handler = self._on_output        # a reference (the .NET delegate must not vanish through the GC)
         ctrl.OutputReceived += self._handler
         self.submit()                          # try at once: a wrong submit path fails here, not in a game
 
+    def _bind(self, backend: Backend) -> None:
+        """Take the delegate submit() calls."""
+        self._fn = backend.submit_fn
+
     def submit(self) -> None:
         """Send the current contents of buf to the virtual device."""
         self._fn(self.ctrl, self._ptr, REPORT_LEN)
+
+    def _on_output(self, _ctrl: Any, pkt: Any) -> None:
+        """The HIDMaestro output thread (overridden per kind)."""
+
+    def close(self) -> None:
+        """Unsubscribe from the output reports and dispose of the controller."""
+        try:
+            self.ctrl.OutputReceived -= self._handler
+        except Exception:  # noqa: BLE001, S110 - best effort: the controller may already be disposed
+            pass
+        self.ctrl.Dispose()                    # removes the device from the system
+
+
+class DS4Pad(RawPad):
+    """One virtual DualShock 4: the 63-byte DS4 report of rx_report (the profile's input report 0x01 without its ID)."""
+
+    kind = "hm_ds4"
+    build = staticmethod(build_report)
+
+    def _on_output(self, _ctrl: Any, pkt: Any) -> None:
+        """The HIDMaestro output thread: rumble and lightbar colour from report 0x05 (no trigger effects, no player LEDs)."""
+        try:
+            if int(pkt.Source) != HID_OUTPUT:
+                return
+            motors, rgb = parse_ds4_output(int(pkt.ReportId), pkt.Data.ToArray())
+            if motors is not None or rgb is not None:
+                self.on_fb(motors, rgb)
+        except Exception:  # noqa: BLE001, S110 - the .NET event thread: an unparsable report must not raise into HIDMaestro
+            pass
+
+
+class X360Pad(RawPad):
+    """One virtual wired Xbox 360 pad: buf is the native state block of rx_xbox.build_state, submit() is the SubmitState delegate."""
+
+    kind = "hm_x360"
+    build = staticmethod(rx_xbox.build_state)
+
+    def __init__(self, backend: Backend, ctrl: Any, on_fb: Callable[..., None], submit: Callable[[Any, Any, Any], None]) -> None:
+        """Keep the SubmitState delegate and a reused axis dictionary (SubmitState copies the values it keeps)."""
+        from HIDMaestro import HMAxis
+        from System import Single
+        from System.Collections.Generic import Dictionary
+        self._state_fn = submit
+        self._axes = Dictionary[HMAxis, Single]()
+        super().__init__(backend, ctrl, on_fb)
+
+    def _bind(self, backend: Backend) -> None:
+        """submit() goes through the SubmitState delegate given to the constructor."""
+
+    def submit(self) -> None:
+        """Send the state block (one IL call: fill an HMGamepadState on the .NET stack, SubmitState)."""
+        self._state_fn(self.ctrl, self._ptr, self._axes)
+
+    def _on_output(self, _ctrl: Any, pkt: Any) -> None:
+        """The HIDMaestro output thread: XInputSetState arrives as an XInput vibration packet (the pad has no HID output)."""
+        try:
+            if int(pkt.Source) != XINPUT_OUTPUT:
+                return
+            motors = parse_xinput(pkt.Data.ToArray())
+            if motors is not None:
+                self.on_fb(motors, None)
+        except Exception:  # noqa: BLE001, S110 - the .NET event thread: an unparsable packet must not raise into HIDMaestro
+            pass
+
+
+class Pad(RawPad):
+    """One virtual DualSense: rumble, lightbar, trigger effects and LEDs from report 0x02; the composite one also has USB audio."""
+
+    kind = "hm"
+    build = staticmethod(build_ds5_report)
+
+    def __init__(self, backend: Backend, ctrl: Any, on_fb: Callable[..., None]) -> None:
+        """Note whether the controller has USB audio, then set up the report path (RawPad)."""
+        self._audio_handler: Callable[[Any, Any], None] | None = None
+        self._ctl_handler: Callable[[Any, Any], None] | None = None
+        self.composite = getattr(ctrl, "UsbAudio", None) is not None
+        super().__init__(backend, ctrl, on_fb)
 
     def _on_output(self, _ctrl: Any, pkt: Any) -> None:
         """The HIDMaestro output thread: quick reads only (the SDK overwrites the oldest packets while the handler is busy)."""
@@ -760,10 +1031,6 @@ class Pad:
             pass
 
     def close(self) -> None:
-        """Unsubscribe from the output reports and the audio, and dispose of the controller."""
+        """Unsubscribe from the audio, the output reports, and dispose of the controller."""
         self.detach_audio()
-        try:
-            self.ctrl.OutputReceived -= self._handler
-        except Exception:  # noqa: BLE001, S110 - best effort: the controller may already be disposed
-            pass
-        self.ctrl.Dispose()                    # removes the device from the system
+        super().close()
