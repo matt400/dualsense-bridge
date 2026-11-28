@@ -145,6 +145,7 @@ check(rx_ds4.gen == g, "the mirror switch does not re-plug every pad (gen unchan
 
 # ---------- a pad's virtual pad: plugged, driven, replaced when another kind arrives ----------
 S.pad_kind[0] = None
+rx_ds4.last_family[0] = PK_DUALSENSE                            # a fresh slot (the checks above left an Xbox pad as its last kind)
 S.sender_info[0] = (proto.SENDER_VERSION, 0, 0)                 # the padkind packet got lost: the pad waits KIND_WAIT_S at most
 log.clear()
 t = threading.Thread(target=rx_ds4.slot_thread, args=(0,), daemon=True)

@@ -24,11 +24,22 @@ def reports(path, size):
 
 
 async def settle(writer, timeout=2.0):
-    """Wait until the writer thread has emptied its queue (and the loop ran its callbacks)."""
+    """Wait until the writer thread has emptied its queue, finished the write it took last, and the loop ran its callbacks.
+
+    An empty queue alone is not enough: the thread may still be inside os.write for the last report (on a loaded CI runner
+    for longer than a fixed grace), so the write counters must also stay unchanged for a moment.
+    """
     end = time.monotonic() + timeout
     while writer._q.qsize() and time.monotonic() < end:
         await asyncio.sleep(0.002)
-    await asyncio.sleep(0.02)
+    st = writer.stats
+    last = (st.n, st.errors)
+    while time.monotonic() < end:
+        await asyncio.sleep(0.02)
+        now = (st.n, st.errors)
+        if now == last and not writer._q.qsize():
+            break
+        last = now
 
 
 async def main():
@@ -111,9 +122,19 @@ async def main():
         rep.payload[:] = bytes([n + 1]) * len(rep.payload)
         check(r.write_haptics(rep), "a haptics report is queued")
     await settle(r._writer)
-    tail = open(path, "rb").read()[-3 * REPORT_LEN:]             # the last three writes are the haptics reports
-    check([tail[k * REPORT_LEN] for k in range(3)] == [0x32] * 3 and [tail[k * REPORT_LEN + 13] for k in range(3)] == [1, 2, 3], "each haptics report keeps its own samples (copied before the next tick)")
+    # split the file by report: a rumble refresh (0x31, 78 B) can land between or after the haptics reports on a slow runner
+    data, i, hapt = open(path, "rb").read(), 0, []
+    while i < len(data):
+        if data[i] == 0x32:
+            hapt.append(data[i + 13])
+        i += REPORT_LEN if data[i] == 0x32 else 78
+    check(i == len(data) and hapt[-3:] == [1, 2, 3], f"each haptics report keeps its own samples (copied before the next tick) {hapt}")
 
+    # stop the motors first: while they run, the rumble watchdog (WATCHDOG_S) and the repeat send HID reports, and on a slow
+    # runner one could fall inside the failing window below and count as an error of the HID way
+    r.set(0, 0)
+    await asyncio.sleep(3 * R.REPEAT_S)
+    await settle(r._writer)
     calls = []
 
     def failing(fd, data):

@@ -2,6 +2,7 @@ import asyncio, os, sys, time
 sys.path.insert(0, sys.argv[1])
 sys.path.insert(1, sys.argv[1] + "/../common")
 sys.path.insert(0, os.path.dirname(__file__))
+from chk import await_for
 from fakenet import PacketSock
 import sender_config; sender_config.init(["127.0.0.1"])
 from sender_config import C
@@ -60,9 +61,13 @@ async def t_info():
     for _ in range(25):
         c.reports["pad"] += 50; c.reports["motion"] += 48
         await asyncio.sleep(0.1)
+    sent = list(out)                                 # the info packets while the pad was sending (later ones read 0 Hz)
+    # the power-off runs bluetoothctl (a fake script): on a loaded runner it can still be running at 2.5 s
+    await await_for(lambda: f"disconnect {mac}" in open(LOG).read(), 5.0)
+    await asyncio.sleep(0.2)                         # a second (wrong) power-off would show up in this time
     task.cancel()
-asyncio.run(t_info())
-infos = [v for t, i, v in out if t == T_INFO]
+    return sent
+infos = [v for t, i, v in asyncio.run(t_info()) if t == T_INFO]
 assert len(infos) >= 2 and 400 <= infos[-1][1] <= 560 and 380 <= infos[-1][2] <= 540, infos
 assert open(LOG).read().count(f"disconnect {mac}") == 1, "idle 1.5 s -> one power-off"
 print(f"OK   info: {infos[-1]} (ping x10, pad Hz, motion Hz), power-off after idle")
