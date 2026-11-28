@@ -1,9 +1,10 @@
 """Shared assertion helper for the plain-script tests: ``check(cond, msg)`` prints OK / FAIL and collects failures;
 ``raises(exc, fn, msg)`` checks that a call fails with that exception; ``wait_for(pred)`` polls a condition another thread
-makes true.
+makes true; ``await_for(pred)`` does the same inside an asyncio test without blocking its loop.
 
 A test ends with ``sys.exit(1 if fails else 0)``; ``fails`` is the one list this module owns, so import it instead of redefining it.
 """
+import asyncio
 import time
 from collections.abc import Callable
 
@@ -35,6 +36,19 @@ def wait_for(pred: Callable[[], object], timeout: float = 2.5) -> bool:
         if pred():
             return True
         time.sleep(0.01)
+    return bool(pred())
+
+
+async def await_for(pred: Callable[[], object], timeout: float = 2.5) -> bool:
+    """``wait_for`` for a coroutine: poll every 10 ms with ``asyncio.sleep``, so the loop keeps running the code under test.
+
+    Use it instead of a fixed sleep before a check: a loaded CI runner can need much longer than a quick machine.
+    """
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        if pred():
+            return True
+        await asyncio.sleep(0.01)
     return bool(pred())
 
 

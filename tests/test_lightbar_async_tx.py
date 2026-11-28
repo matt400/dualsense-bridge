@@ -13,7 +13,7 @@ import sender_config; sender_config.init(["127.0.0.1"])
 import sender_ctrl
 import sender_net as net
 
-from chk import check, fails                                  # noqa: E402  (shared helper, tests/chk.py)
+from chk import await_for, check, fails                       # noqa: E402  (shared helper, tests/chk.py)
 
 out = []
 net.emit = sender_ctrl.net.emit = lambda t, i, *v: out.append((t, v))
@@ -40,7 +40,7 @@ async def t_led():
     for rgb in ((2, 2, 2), (3, 3, 3), (4, 4, 4)):
         c._write_led(rgb)
     gate.set()
-    await asyncio.sleep(0.2)
+    await await_for(lambda: c.led_color == (4, 4, 4) and not c._led_busy)
     check([t[1] for t in threads] == [(1, 1, 1), (4, 4, 4)] and not any(t[0] for t in threads),
           f"lightbar: one write at a time in a worker, only the newest colour follows ({threads})")
     check(c.led_color == (4, 4, 4) and not c._led_busy, "lightbar: the final colour is recorded")
@@ -65,7 +65,7 @@ async def t_led_back():
     await asyncio.sleep(0.05)
     c.apply_feedback(0, 0, 0, 0, 255)                    # the PC wants blue again, before red has finished
     gate.set()
-    await asyncio.sleep(0.2)
+    await await_for(lambda: c.led_color == (0, 0, 255) and not c._led_busy)
     check(written == [(255, 0, 0), (0, 0, 255)] and c.led_color == (0, 0, 255),
           f"lightbar: back to the old colour during a write is written ({written}, {c.led_color})")
 asyncio.run(t_led_back())
